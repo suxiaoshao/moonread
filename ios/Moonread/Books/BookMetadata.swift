@@ -11,10 +11,6 @@ extension Notification.Name {
 }
 
 extension Notification {
-    var defersBookMetadataCatalogRefresh: Bool {
-        userInfo?[BookMetadataChange.catalogRefreshDeferredKey] as? Bool == true
-    }
-
     func affectsLibraryMetadata(_ domains: UserProjectionDomain, keys: @autoclosure () -> Set<String>? = nil) -> Bool {
         if let fields = userInfo?[BookMetadataChange.projectionFieldsKey] as? Int,
            !domains.contains(.metadata), domains.intersection(.init(rawValue: fields)).isEmpty { return false }
@@ -25,7 +21,6 @@ extension Notification {
 }
 
 private enum BookMetadataChange {
-    static let catalogRefreshDeferredKey = "catalogRefreshDeferred"
     static let projectionFieldsKey = "projectionFields"
 }
 
@@ -64,23 +59,13 @@ extension BookDetailsResult {
 
 extension AppDataService {
     func bookDetails(_ target: BookTarget) async throws -> BookDetailsResult {
-        let result = try await readingQuery(.book(target), options: .init(scope: "book-details", fields: [.position, .metadata, .chapter]))
-            .bookDetails(target: target)
-        if case .identified(_, let details) = result {
-            try await userStore().requireMetadataReadable(key: details.metadata.sha)
-        }
-        return result
+        try await bookInformation(target, fileID: nil, includeRecordSource: false).1
     }
     func details(bookID: String) async throws -> BookDetails {
         try await bookDetails(.cached(bookId: bookID)).requireIdentified()
     }
     func details(sha: String) async throws -> BookDetails {
         try await bookDetails(.record(key: .formal(sha256: sha))).requireIdentified()
-    }
-    func metadataOptions(shelfID: String?) async throws -> BookFilterOptions {
-        try await readingQuery(.catalogue(catalogueScope(shelfID.map { .init(shelfID: $0) }, recursive: true)),
-                               options: .init(scope: "library-filter-options", fields: [.author, .tags]))
-            .bookFilterOptions(shelfId: shelfID)
     }
     nonisolated func metadataEditPlan(base: BookMetadata, edited: BookMetadata, fields: Set<String>? = nil) throws -> BookMetadataEditPlan {
         guard base.sha == edited.sha, (try? parseSha256(value: base.sha)) != nil, edited.author.utf8.count <= 1024,
@@ -102,6 +87,7 @@ extension AppDataService {
         return BookMetadataEditPlan(sha: base.sha, values: changes)
     }
     func saveMetadata(base: BookMetadata, edited: BookMetadata) async throws {
+        let admission = try indexStore().lease
         var final = edited
         if let cover = edited.cover, cover != base.cover {
             let bytes = try Data(contentsOf: coverDraftURL(cover))
@@ -110,17 +96,22 @@ extension AppDataService {
             }
         }
         let plan = try metadataEditPlan(base: base, edited: final)
-        try await commitMetadata(plan, cover: final.cover != base.cover ? final.cover : nil)
+        try await commitMetadata(plan, cover: final.cover != base.cover ? final.cover : nil, admission: admission)
         if let cover = edited.cover { discardCoverDraft(cover) }
     }
-    func commitMetadata(_ plan: BookMetadataEditPlan, cover: BookCoverAsset?) async throws {
+    private func commitMetadata(_ plan: BookMetadataEditPlan, cover: BookCoverAsset?, admission: DataSessionLease) async throws {
         guard !plan.values.isEmpty else { return }
-        let store = try await userStore()
         let asset = try cover.map { try Self.readCoverDraft($0, url: coverDraftURL($0), length: nil) }
-        try await store.putMetadata([.init(plan: plan, cover: asset)], device: userDevice)
-        publishMetadataCommit([plan], deferCatalogRefresh: false)
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        guard admission == index.lease else { throw ReadingDataError.changed }
+        try index.session.writeUsers(index.lease) {
+            try UserValueRows.putMetadata($0, [.init(plan: plan, cover: asset)], device: userDevice, now: userValueClock, scope: index.lease.scope)
+        }
+        publishMetadataCommit([plan])
     }
-    nonisolated static func readCoverDraft(_ cover: BookCoverAsset, url: URL, length: Int?) throws -> UserDataStore.CoverWrite {
+    nonisolated static func readCoverDraft(_ cover: BookCoverAsset, url: URL, length: Int?) throws -> UserValueRows.CoverWrite {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard values.isRegularFile == true, let size = values.fileSize, size > 0, length == nil || size == length else {
             throw CocoaError(.fileReadCorruptFile)
@@ -132,10 +123,10 @@ extension AppDataService {
               coverDigestString(bytes) == cover.sha256 else { throw CocoaError(.fileReadCorruptFile) }
         return .init(id: cover.id, bytes: bytes)
     }
-    func publishMetadataCommit(_ plans: [BookMetadataEditPlan], deferCatalogRefresh: Bool) {
-        dataChanged(refreshSystemCatalog: !deferCatalogRefresh)
+    func publishMetadataCommit(_ plans: [BookMetadataEditPlan]) {
+        dataChanged()
         NotificationCenter.default.post(name: .bookMetadataChanged, object: nil, userInfo: [
-            "keys": plans.map(\.sha), BookMetadataChange.catalogRefreshDeferredKey: deferCatalogRefresh,
+            "keys": plans.map(\.sha),
             BookMetadataChange.projectionFieldsKey: plans.lazy.flatMap { $0.values.keys }.reduce(into: UserProjectionDomain()) { result, key in
                 if let field = key.split(separator: "/", maxSplits: 2).last {
                     result.formUnion(.metadataField(String(field)))
@@ -406,7 +397,7 @@ extension AppDataService {
         let url = try coverURL(cover)
         let bytes: Data
         if FileManager.default.fileExists(atPath: url.path) { bytes = try Data(contentsOf: url) }
-        else if let value = try await userStore().cover(cover.id) { bytes = value }
+        else if let value = try storedCoverBytes(cover) { bytes = value }
         else { throw CocoaError(.fileNoSuchFile) }
         guard Self.coverDigestString(bytes) == cover.sha256 else { throw CocoaError(.fileReadCorruptFile) }
         return bytes
@@ -414,9 +405,14 @@ extension AppDataService {
     func coverImage(_ cover: BookCoverAsset, pixels: Int, exactSize: Bool = false) async throws -> UIImage? {
         let configuration = userCloudConfigurationRevision
         let image = try await coverResources.image(cover, pixels: exactSize ? pixels : CoverImageLoader.bucket(pixels), allowLarger: !exactSize, directory: dataDirectoryName,
-            scope: configuration, attachment: { [self] in try await userStore().cover(cover.id) })
+            scope: configuration, attachment: { [self] in try await storedCoverBytes(cover) })
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         return image
+    }
+
+    private func storedCoverBytes(_ cover: BookCoverAsset) throws -> Data? {
+        let index = try relationalUserIndex()
+        return try index.session.readUsers(index.lease) { try UserValueRows.coverBytes($0, id: cover.id, sha: cover.sha256) }
     }
 
 }

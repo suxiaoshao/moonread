@@ -58,3 +58,14 @@ impl From<rusqlite::Error> for ReaderError {
     }
 }
 pub(crate) type Result<T> = std::result::Result<T, ReaderError>;
+
+/// Preserve the released failed-import row format while Swift owns the row.
+#[uniffi::export]
+pub fn encode_import_error(error: ReaderError) -> Result<String> {
+    serde_json::to_string(&error).map_err(|_| ReaderError::InvalidSettings)
+}
+
+#[uniffi::export]
+pub fn decode_import_error(json: String) -> Result<ReaderError> {
+    serde_json::from_str(&json).map_err(|_| ReaderError::InvalidSettings)
+}

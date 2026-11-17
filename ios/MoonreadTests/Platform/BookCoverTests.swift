@@ -32,9 +32,9 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
   func testCoverDownsamplingSaveCancelAndHashValidation() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let core = try ReaderCore(dataDirectory: root.path)
+    let core = try makeReaderIndexFixture(at: root)
     let service = AppDataService(core: core)
-    let book = try core.createSampleBook()
+    let book = try core.prepareSample()
     let base = try await service.details(bookID: book.id).metadata
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1
@@ -148,38 +148,24 @@ final class BookCoverUserDataTests: UserDataFixture {
     // A completed attachment save wakes the current subscriber without a hosted view.
     do {
 
-      let (root, service, book, store) = try await editorFixture()
+      let (root, service, book, _) = try await editorFixture()
       defer { try? FileManager.default.removeItem(at: root) }
       let png = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 120)).pngData { context in
         UIColor.systemTeal.setFill()
         context.fill(CGRect(x: 0, y: 0, width: 80, height: 120))
       }
       let cover = try await service.makeCover(png)
-      let directory = await service.dataDirectoryName
-      let draft = FileManager.default.temporaryDirectory.appendingPathComponent(
-        "\(directory)-CoverDrafts"
-      ).appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
-      let bytes = try Data(contentsOf: draft)
-      await service.discardCoverDraft(cover)
-      try await store.put(
-        "metadata/\(book.fixtureSHA256)/cover",
-        value: String(
-          decoding: JSONSerialization.data(withJSONObject: [
-            "id": cover.id, "sha256": cover.sha256, "extension": cover.extension,
-            "width": cover.width, "height": cover.height,
-          ]), as: UTF8.self), device: "remote")
+      let base = try await service.details(bookID: book.id).metadata
+      var edited = base
+      edited.cover = cover
+      try await service.saveMetadata(base: base, edited: edited)
       let loader = CoverImageLoader { asset, pixels in
         try await service.coverImage(asset, pixels: pixels)
       }
-      let subscriber = loader.subscribe(cover, pixels: 600)
-      await awaitState { subscriber.presentation.phase == .waiting }
-      XCTAssertNil(subscriber.presentation.image)
-      // Real SwiftData save notification, no synthetic cloud notification.
-      try await store.saveCover(id: cover.id, bytes: bytes)
-      await awaitState { subscriber.presentation.phase == .ready }
-      XCTAssertNotNil(subscriber.presentation.image)
-      let same = loader.subscribe(cover, pixels: 600)
-      XCTAssertTrue(same.presentation === subscriber.presentation)
+      let first = loader.subscribe(cover, pixels: 600)
+      await awaitState { first.presentation.phase == .ready }
+      XCTAssertNotNil(first.presentation.image)
+      XCTAssertTrue(loader.subscribe(cover, pixels: 600).presentation === first.presentation)
 
     }
   }

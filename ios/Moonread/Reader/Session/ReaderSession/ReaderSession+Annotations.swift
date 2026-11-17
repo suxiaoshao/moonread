@@ -32,8 +32,9 @@ extension ReaderSession {
         changingBookmark = true
         defer { changingBookmark = false }
         let position = anchor
+        let admission = readingLease?.writeAdmission
         do {
-            let added = try await service.toggleBookmark(id, at: position)
+            let added = try await service.toggleBookmark(id, at: position, admission: admission)
             guard !isLeaving, readingID == id else { return false }
             if anchor == position { bookmarked = added }
             marksRevision += 1
@@ -66,6 +67,7 @@ extension ReaderSession {
 
     func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
         guard !isLeaving, let id = readingID else { return }
+        let admission = readingLease?.writeAdmission
         toolsSession.send(.selectionChanged)
         if action == .beginRange { selectionStart = start; refreshAnnotations(); return }
         Task {
@@ -88,9 +90,9 @@ extension ReaderSession {
                     range = try await service.textRange(id, start: from, end: to)
                 }
                 if action == .highlight {
-                    _ = try await service.annotate(id, start: range.startUtf8, end: range.endUtf8)
+                    _ = try await service.annotate(id, start: range.startUtf8, end: range.endUtf8, admission: admission)
                 } else {
-                    let value = try await service.prepareAnnotation(id, start: range.startUtf8, end: range.endUtf8)
+                    let value = try await service.prepareAnnotation(id, start: range.startUtf8, end: range.endUtf8, admission: admission)
                     guard !isLeaving else { return }
                     editor = value
                 }
@@ -102,13 +104,14 @@ extension ReaderSession {
     }
 
     func openAnnotation(_ id: String) {
-        guard !isLeaving else { return }
+        guard !isLeaving, let bookID = readingID else { return }
+        let admission = readingLease?.writeAdmission
         toolsSession.send(.ordinaryEdit)
         Task {
             do {
                 let value = try await service.mark(id)
-                guard !isLeaving, let bookID = readingID else { return }
-                let edit = try await service.prepareAnnotation(bookID, start: value.startUtf8, end: value.endUtf8)
+                guard !isLeaving, readingID == bookID else { return }
+                let edit = try await service.prepareAnnotation(bookID, start: value.startUtf8, end: value.endUtf8, admission: admission)
                 if !isLeaving { editor = edit }
             }
             catch { if !isLeaving { self.error = ReaderMessages.error(error) } }

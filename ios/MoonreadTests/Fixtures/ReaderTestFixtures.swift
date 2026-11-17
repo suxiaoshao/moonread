@@ -1,5 +1,5 @@
 import Observation
-import SQLite3
+import GRDB
 import SwiftData
 import SwiftUI
 import UIKit
@@ -17,9 +17,9 @@ import XCTest
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let file = root.appendingPathComponent("合成空行.txt")
     try Data(text.utf8).write(to: file)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let book = try core.importBook(filePath: file.path, title: "合成空行")
-    let frame = try core.querySnapshot(json: "{}").readingFrame(bookId: book.id, offsetUtf8: 0)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
+    let book = try importBookFixture(core, filePath: file.path, title: "合成空行")
+    let frame = try core.readerFrame(book.id, offset: 0)
     return ReadingWindow(frame: frame)
   }
 
@@ -85,34 +85,20 @@ actor LibraryInitializationProbe {
 class ReaderIntegrationFixture: XCTestCase {
 
   @MainActor func singleBookFixture() throws -> (
-    URL, AppDataService, ReaderCore, UserDataStore, UserDataStore, ImportText, ImportText, String
+    URL, AppDataService, ReaderIndex, UserRowsFixture, ImportText, ImportText, String
   ) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let schema = UserDataStore.schema
-    let formal = UserDataStore(
-      modelContainer: try ModelContainer(
-        for: schema,
-        configurations: [
-          ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-        ]))
-    let pending = UserDataStore(
-      modelContainer: try ModelContainer(
-        for: schema,
-        configurations: [
-          ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-        ]))
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
+    let rows = UserRowsFixture(index: core)
     let suite = "SingleBook.\(UUID().uuidString)"
-    let service = AppDataService(
-      core: core, libraryDirectory: root, sourceDefaultsSuite: suite,
-      userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
+    let service = AppDataService(core: core, libraryDirectory: root, sourceDefaultsSuite: suite)
     let a = root.appendingPathComponent("a.txt")
     let b = root.appendingPathComponent("b.txt")
     try "第一章 合成甲\n春风吹过合成的书页。\n第二章 合成\n继续正文。\n".write(to: a, atomically: true, encoding: .utf8)
     try "第一章 合成乙\n仅用于回归的第二本书。\n".write(to: b, atomically: true, encoding: .utf8)
-    let first = try core.importBook(filePath: a.path, title: "甲")
-    let second = try core.importBook(filePath: b.path, title: "乙")
+    let first = try importBookFixture(core, filePath: a.path, title: "甲")
+    let second = try importBookFixture(core, filePath: b.path, title: "乙")
     try core.saveLibraryShelf(
       id: "builtin", name: "我的书架",
       bookmark: a.deletingLastPathComponent().bookmarkData(
@@ -132,27 +118,19 @@ class ReaderIntegrationFixture: XCTestCase {
       try core.linkLibraryFile(
         fileId: file.id, bookId: file.relativePath == "a.txt" ? first.id : second.id)
     }
-    return (root, service, core, formal, pending, first, second, suite)
+    return (root, service, core, rows, first, second, suite)
   }
 
   @MainActor func introductionFixture(
     scan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])? = nil
-  ) throws -> (URL, AppDataService, ReaderCore, String) {
+  ) throws -> (URL, AppDataService, ReaderIndex, String) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let directory = root.appendingPathComponent("library")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let schema = UserDataStore.schema
-    let store = UserDataStore(
-      modelContainer: try ModelContainer(
-        for: schema,
-        configurations: [
-          ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-        ]))
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     let suite = "Introduction-" + UUID().uuidString
-    let service = AppDataService(
-      core: core, libraryDirectory: directory, sourceDefaultsSuite: suite,
-      userStoreFactory: { _, _ in store }, libraryScan: scan)
+    let service = AppDataService(core: core, libraryDirectory: directory,
+                                 sourceDefaultsSuite: suite, libraryScan: scan)
     try core.saveLibraryShelf(
       id: "builtin", name: "我的书架",
       bookmark: directory.bookmarkData(
@@ -161,36 +139,13 @@ class ReaderIntegrationFixture: XCTestCase {
     return (root, service, core, suite)
   }
 
-  func importJobIDs(_ root: URL) throws -> [String] {
-    var db: OpaquePointer?
-    XCTAssertEqual(
-      sqlite3_open_v2(
-        root.appendingPathComponent("db/reader.sqlite3").path, &db, SQLITE_OPEN_READONLY, nil),
-      SQLITE_OK)
-    defer { sqlite3_close(db) }
-    var query: OpaquePointer?
-    XCTAssertEqual(
-      sqlite3_prepare_v2(db, "SELECT book_id FROM import_jobs ORDER BY book_id", -1, &query, nil),
-      SQLITE_OK)
-    defer { sqlite3_finalize(query) }
-    let statement = try XCTUnwrap(query)
-    var result: [String] = []
-    var status = sqlite3_step(statement)
-    while status == SQLITE_ROW {
-      result.append(String(cString: try XCTUnwrap(sqlite3_column_text(statement, 0))))
-      status = sqlite3_step(statement)
-    }
-    XCTAssertEqual(status, SQLITE_DONE)
-    return result
-  }
-
   /// The reader chooses a list before showing it: the first frame has the target title and
   /// never rows of the other mark kind; a new book no longer falls back to chapters.
 
   /// 学习…, the speech group and 共享… share one section using the supplied objects; other shapes stay as supplied.
 
   static func pausedSourceFixture() async throws -> (
-    URL, AppDataService, ReaderCore, SourceFile, String, UserDefaults, String
+    URL, AppDataService, ReaderIndex, SourceFile, String, UserDefaults, String
   ) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let local = root.appendingPathComponent("local")
@@ -199,12 +154,12 @@ class ReaderIntegrationFixture: XCTestCase {
     try "第一章 月光\n这是暂停语义的原创合成正文。\n".write(to: source, atomically: true, encoding: .utf8)
     let suite = "PauseIntent-\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
     let entry = try XCTUnwrap(
-      core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin").first)
+      core.catalogue("builtin", grouping: .name).entries.first)
     let control = try core.createImport(title: "暂停语义样本")
     let id = control.bookId()
     try core.streamImport(
@@ -358,7 +313,7 @@ final class TrashScanProbe: @unchecked Sendable {
   func fixture(
     _ names: [String] = ["a.txt"], deletion: @escaping @Sendable (URL, Bool) throws -> Void,
     scan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])? = nil
-  ) async throws -> (URL, ReaderCore, AppDataService, [LibraryEntry]) {
+  ) async throws -> (URL, ReaderIndex, AppDataService, [LibraryEntry]) {
     try await makeLibraryFileFixture(names, deletion: deletion, scan: scan)
   }
   func wait(
@@ -378,7 +333,7 @@ func makeLibraryFileFixture(
   _ names: [String] = ["a.txt"],
   deletion: @escaping @Sendable (URL, Bool) throws -> Void,
   scan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])? = nil
-) async throws -> (URL, ReaderCore, AppDataService, [LibraryEntry]) {
+) async throws -> (URL, ReaderIndex, AppDataService, [LibraryEntry]) {
 
   let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(
     "LibraryTrashFixture-" + UUID().uuidString)
@@ -390,7 +345,7 @@ func makeLibraryFileFixture(
       at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data(("第一章\n" + String(repeating: "离线删除测试。\n", count: 2)).utf8).write(to: url)
   }
-  let core = try ReaderCore(dataDirectory: temporary.appendingPathComponent("db").path)
+  let core = try makeReaderIndexFixture(at: temporary.appendingPathComponent("db"))
   let service = AppDataService(
     core: core, libraryDirectory: root,
     sourceDefaultsSuite: "LibraryTrashFixture-" + UUID().uuidString,

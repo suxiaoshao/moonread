@@ -1,10 +1,12 @@
 //! Reading facts, not wall-clock time between opening and closing a book.
 //! The platform supplies scene visibility, actual text interaction and a monotonic clock.
-pub(crate) mod coverage;
+mod coverage;
+mod segments;
+pub use coverage::*;
+pub use segments::*;
 
+use crate::reading::compute::StepState;
 use crate::*;
-use rusqlite::Connection;
-use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -31,7 +33,7 @@ pub struct ReadingMoment {
 }
 
 /// A bounded observation of visible text. It is evidence, not a claim of read coverage.
-#[derive(Clone, Debug, Serialize, Deserialize, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(deny_unknown_fields)]
 pub struct ReadingExposure {
     pub start_utf8: u64,
@@ -60,9 +62,81 @@ struct ClockState {
     book_id: String,
     session_id: String,
     visit_id: String,
+    timing: ReadingTiming,
+    pending: Option<ReadingSlice>,
+}
+
+struct ReadingTiming {
     previous: Option<ReadingMoment>,
     remaining: u64,
-    pending: Option<ReadingSlice>,
+}
+
+struct ReadingCharge {
+    previous: ReadingMoment,
+    elapsed: u64,
+    duration: u64,
+    ends_visit: bool,
+}
+
+impl ReadingTiming {
+    fn new() -> Self {
+        Self {
+            previous: None,
+            remaining: IDLE_MS,
+        }
+    }
+
+    fn charged_for(&self, moment: &ReadingMoment) -> u64 {
+        let Some(previous) = &self.previous else {
+            return 0;
+        };
+        if !previous.readable {
+            return 0;
+        }
+        let elapsed = moment.monotonic_ms.saturating_sub(previous.monotonic_ms);
+        if previous.automatic_moving {
+            moment
+                .automatic_milliseconds
+                .saturating_sub(previous.automatic_milliseconds)
+                .min(elapsed)
+        } else {
+            elapsed.min(self.remaining)
+        }
+    }
+
+    /// Both collectors share the released idle, motion and clock-jump rules.
+    /// Storage-specific checkpoint and boundary handling is in the caller.
+    fn advance(&mut self, moment: ReadingMoment) -> Option<ReadingCharge> {
+        let duration = self.charged_for(&moment);
+        let charge = self.previous.take().map(|previous| {
+            let elapsed = moment.monotonic_ms.saturating_sub(previous.monotonic_ms);
+            if !previous.automatic_moving {
+                self.remaining -= duration;
+            }
+            let clock_changed = moment
+                .unix_ms
+                .saturating_sub(previous.unix_ms)
+                .saturating_sub(i64::try_from(elapsed).unwrap_or(i64::MAX))
+                .unsigned_abs()
+                > 2000;
+            let ends_visit = !moment.readable
+                || moment.preview != previous.preview
+                || moment.utc_offset_seconds != previous.utc_offset_seconds
+                || clock_changed
+                || (self.remaining == 0 && !moment.automatic_moving);
+            ReadingCharge {
+                previous,
+                elapsed,
+                duration,
+                ends_visit,
+            }
+        });
+        if moment.interaction {
+            self.remaining = IDLE_MS;
+        }
+        self.previous = Some(moment);
+        charge
+    }
 }
 
 #[derive(uniffi::Object)]
@@ -72,87 +146,165 @@ pub struct ReadingClock(Mutex<ClockState>);
 impl ReadingClock {
     #[uniffi::constructor]
     pub fn new(book_id: String) -> Arc<Self> {
-        Arc::new(Self(Mutex::new(ClockState {
+        Arc::new(Self(Mutex::new(ClockState::new(
             book_id,
-            session_id: Uuid::new_v4().to_string(),
-            visit_id: Uuid::new_v4().to_string(),
-            previous: None,
-            remaining: IDLE_MS,
-            pending: None,
-        })))
+            Uuid::new_v4().to_string(),
+            Uuid::new_v4().to_string(),
+        ))))
     }
 
-    /// Returning to the foreground does not refresh idle credit. Only explicit interaction does.
-    /// Emits immutable, retryable facts at checkpoints, pauses, midnight and kind changes.
     pub fn update(&self, moment: ReadingMoment) -> Vec<ReadingSlice> {
         let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let mut output = Vec::new();
-        if let Some(previous) = state.previous.clone() {
-            let elapsed = moment.monotonic_ms.saturating_sub(previous.monotonic_ms);
-            let charged = if previous.readable {
-                if previous.automatic_moving {
-                    moment
-                        .automatic_milliseconds
-                        .saturating_sub(previous.automatic_milliseconds)
-                        .min(elapsed)
-                } else {
-                    elapsed.min(state.remaining)
-                }
-            } else {
-                0
-            };
-            if charged > 0 {
-                state.append(&previous, charged, &mut output);
-                if !previous.automatic_moving {
-                    state.remaining -= charged;
-                }
-            }
-            // append assumes contiguous wall time. Automatic motion can cover
-            // only part (or none) of this interval; do not join the next motion
-            // to the pending slice across the uncharged gap.
-            if previous.automatic_moving && charged < elapsed {
-                state.finish(&mut output);
-            }
-            let clock_changed = (moment.unix_ms.saturating_sub(previous.unix_ms)
-                - i64::try_from(elapsed).unwrap_or(i64::MAX))
-            .unsigned_abs()
-                > 2_000;
-            if !moment.readable
-                || moment.preview != previous.preview
-                || moment.utc_offset_seconds != previous.utc_offset_seconds
-                || clock_changed
-                || (state.remaining == 0 && !moment.automatic_moving)
-            {
-                state.finish(&mut output);
-                state.visit_id = Uuid::new_v4().to_string();
-            }
-        }
-        if moment.interaction {
-            state.remaining = IDLE_MS;
-        }
-        state.previous = Some(moment);
-        output
+        state.advance(
+            moment,
+            || Uuid::new_v4().to_string(),
+            || Uuid::new_v4().to_string(),
+        )
     }
 
-    /// Called after settling the current moment, before an intentional relocation.
     pub fn break_visit(&self) -> Vec<ReadingSlice> {
         let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let mut output = Vec::new();
-        state.finish(&mut output);
-        state.visit_id = Uuid::new_v4().to_string();
-        state.previous = None;
-        output
+        state.relocate(Uuid::new_v4().to_string())
     }
 }
 
+#[derive(uniffi::Object)]
+pub struct ReadingClockState(StepState<ClockState>);
+
+#[derive(uniffi::Record)]
+pub struct ReadingClockStep {
+    pub next: Arc<ReadingClockState>,
+    pub slices: Vec<ReadingSlice>,
+}
+
+#[uniffi::export]
+pub fn begin_reading_clock(
+    book_id: String,
+    session_id: String,
+    visit_id: String,
+) -> Result<Arc<ReadingClockState>> {
+    if book_id.is_empty() || session_id.is_empty() || visit_id.is_empty() {
+        return Err(ReaderError::InvalidSettings);
+    }
+    Ok(Arc::new(ReadingClockState(StepState::new(
+        ClockState::new(book_id, session_id, visit_id),
+    ))))
+}
+
+/// The host gives each step its own UUID seed; with more than one new slice
+/// the later IDs are deterministic suffixes of that seed. Pending slices keep
+/// the IDs assigned when they were opened, even if emitted on another step.
+#[uniffi::export]
+pub fn advance_reading_clock(
+    previous: Arc<ReadingClockState>,
+    moment: ReadingMoment,
+    fact_seed: String,
+    next_visit_id: String,
+) -> Result<ReadingClockStep> {
+    let mut state = previous.0.take()?;
+    let seed = Uuid::parse_str(&fact_seed)
+        .map_err(|_| ReaderError::InvalidSettings)?
+        .to_string();
+    if next_visit_id.is_empty()
+        || moment.unix_ms.unsigned_abs()
+            > (i64::MAX - i64::from(i32::MAX) * 1000 - 2 * DAY_MS) as u64
+        || state.timing.charged_for(&moment) > DAY_MS as u64
+    {
+        return Err(ReaderError::InvalidRange);
+    }
+    let mut ordinal = 0;
+    let slices = state.advance(
+        moment,
+        || {
+            let id = if ordinal == 0 {
+                seed.clone()
+            } else {
+                format!("{seed}:{ordinal}")
+            };
+            ordinal += 1;
+            id
+        },
+        || next_visit_id,
+    );
+    Ok(ReadingClockStep {
+        next: Arc::new(ReadingClockState(StepState::new(state))),
+        slices,
+    })
+}
+
+/// The host has already settled the last moment before a relocation.
+#[uniffi::export]
+pub fn break_reading_clock_visit(
+    previous: Arc<ReadingClockState>,
+    next_visit_id: String,
+) -> Result<ReadingClockStep> {
+    let mut state = previous.0.take()?;
+    if next_visit_id.is_empty() {
+        return Err(ReaderError::InvalidSettings);
+    }
+    let slices = state.relocate(next_visit_id);
+    Ok(ReadingClockStep {
+        next: Arc::new(ReadingClockState(StepState::new(state))),
+        slices,
+    })
+}
+
 impl ClockState {
+    fn new(book_id: String, session_id: String, visit_id: String) -> Self {
+        Self {
+            book_id,
+            session_id,
+            visit_id,
+            timing: ReadingTiming::new(),
+            pending: None,
+        }
+    }
+
+    /// Only explicit interaction refreshes idle credit. Emits checkpoints at
+    /// the same column/visit/midnight boundaries for both adapters.
+    fn advance(
+        &mut self,
+        moment: ReadingMoment,
+        mut next_id: impl FnMut() -> String,
+        next_visit: impl FnOnce() -> String,
+    ) -> Vec<ReadingSlice> {
+        let mut output = Vec::new();
+        if let Some(charge) = self.timing.advance(moment) {
+            if charge.duration > 0 {
+                self.append(&charge.previous, charge.duration, &mut output, &mut next_id);
+            }
+            if charge.previous.automatic_moving && charge.duration < charge.elapsed {
+                self.finish(&mut output);
+            }
+            if charge.ends_visit {
+                self.finish(&mut output);
+                self.visit_id = next_visit();
+            }
+        }
+        output
+    }
+
+    fn relocate(&mut self, visit_id: String) -> Vec<ReadingSlice> {
+        let mut output = Vec::new();
+        self.finish(&mut output);
+        self.visit_id = visit_id;
+        self.timing.previous = None;
+        output
+    }
+
     fn finish(&mut self, output: &mut Vec<ReadingSlice>) {
         if let Some(value) = self.pending.take() {
             output.push(value);
         }
     }
 
-    fn append(&mut self, moment: &ReadingMoment, duration: u64, output: &mut Vec<ReadingSlice>) {
+    fn append(
+        &mut self,
+        moment: &ReadingMoment,
+        duration: u64,
+        output: &mut Vec<ReadingSlice>,
+        next_id: &mut impl FnMut() -> String,
+    ) {
         let mut at = moment.unix_ms;
         let mut left = duration as i64;
         while left > 0 {
@@ -160,7 +312,7 @@ impl ClockState {
             let day = (at + offset).div_euclid(DAY_MS);
             let boundary = (day + 1) * DAY_MS - offset;
             let slice = self.pending.get_or_insert_with(|| ReadingSlice {
-                id: Uuid::new_v4().to_string(),
+                id: next_id(),
                 session_id: self.session_id.clone(),
                 visit_id: self.visit_id.clone(),
                 book_id: self.book_id.clone(),
@@ -256,152 +408,6 @@ pub struct ReadingActivity {
     pub start_utf8: u64,
 }
 
-fn preferences(db: &Connection) -> Result<StatisticsPreferences> {
-    Ok(db.query_row(
-        "SELECT enabled,generation FROM statistics_preferences WHERE singleton=1",
-        [],
-        |r| {
-            Ok(StatisticsPreferences {
-                enabled: r.get(0)?,
-                generation: unsigned_column(r, 1)?,
-            })
-        },
-    )?)
-}
-
-fn statistics_days(
-    db: &Connection,
-    first_day: i64,
-    last_day: i64,
-    content_key: Option<String>,
-) -> Result<Vec<StatisticsDay>> {
-    let mut query = db.prepare("SELECT local_day,SUM(ended_ms-started_ms),COUNT(DISTINCT content_key) FROM reading_activity WHERE deleted=0 AND local_day>=?1 AND local_day<=?2 AND (?3 IS NULL OR content_key=?3) GROUP BY local_day ORDER BY local_day")?;
-    let days = query
-        .query_map(params![first_day, last_day, content_key], |r| {
-            Ok(StatisticsDay {
-                day: r.get(0)?,
-                duration_ms: unsigned_column(r, 1)?,
-                book_count: unsigned_column(r, 2)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    Ok(days)
-}
-
-impl ReaderCore {
-    pub(crate) fn statistics_overview(
-        &self,
-        first_day: i64,
-        last_day: i64,
-        content_key: Option<String>,
-    ) -> Result<StatisticsOverview> {
-        let db = self.read_lock()?;
-        let mut query = db.prepare("SELECT a.content_key,a.book_id,a.title,SUM(a.ended_ms-a.started_ms),MIN(a.started_ms),MAX(a.ended_ms),MAX(CASE WHEN a.preview=0 THEN a.ended_ms ELSE 0 END),COUNT(DISTINCT a.local_day),m.value FROM reading_activity a LEFT JOIN book_metadata m ON m.content_sha=a.content_key WHERE a.deleted=0 AND a.local_day>=?1 AND a.local_day<=?2 AND (?3 IS NULL OR a.content_key=?3) GROUP BY a.content_key ORDER BY MAX(CASE WHEN a.preview=0 THEN a.ended_ms ELSE 0 END) DESC,a.title,a.content_key")?;
-        let books = query
-            .query_map(params![first_day, last_day, content_key], |r| {
-                let metadata = crate::library::bookshelf::metadata_column(r, 8)?;
-                Ok(StatisticsBook {
-                    author: metadata
-                        .as_ref()
-                        .map(|m| m.author.clone())
-                        .filter(|a| !a.is_empty()),
-                    cover: metadata.and_then(|m| m.cover),
-                    content_key: crate::identity::content::reading_key_column(r, 0)?
-                        .ok_or(rusqlite::Error::InvalidQuery)?,
-                    book_id: r.get(1)?,
-                    title: r.get(2)?,
-                    duration_ms: unsigned_column(r, 3)?,
-                    first_read_ms: r.get(4)?,
-                    last_read_ms: r.get(5)?,
-                    last_formal_ms: r.get(6)?,
-                    reading_days: unsigned_column(r, 7)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        let days = statistics_days(&db, first_day, last_day, content_key)?;
-        Ok(StatisticsOverview {
-            total_duration_ms: books.iter().map(|book| book.duration_ms).sum(),
-            books,
-            days,
-            preferences: preferences(&db)?,
-        })
-    }
-    pub(crate) fn statistics_widget_summary(
-        &self,
-        today: i64,
-        week_start: i64,
-    ) -> Result<StatisticsWidgetSummary> {
-        if today < i64::MIN + 7 || week_start > today {
-            return Err(ReaderError::InvalidSettings);
-        }
-        let db = self.read_lock()?;
-        let days = statistics_days(&db, i64::MIN, today, None)?;
-        let durations: std::collections::BTreeMap<_, _> =
-            days.iter().map(|d| (d.day, d.duration_ms)).collect();
-        let mut cursor = if durations.get(&today).copied().unwrap_or(0) > 0 {
-            today
-        } else {
-            today - 1
-        };
-        let mut streak = 0;
-        while durations.get(&cursor).copied().unwrap_or(0) > 0 {
-            streak += 1;
-            let Some(previous) = cursor.checked_sub(1) else {
-                break;
-            };
-            cursor = previous;
-        }
-        Ok(StatisticsWidgetSummary {
-            has_reading_history: durations.values().any(|duration| *duration > 0),
-            today_duration_ms: durations.get(&today).copied().unwrap_or(0),
-            week_duration_ms: days
-                .iter()
-                .filter(|d| d.day >= week_start)
-                .map(|d| d.duration_ms)
-                .sum(),
-            current_streak_days: streak,
-            days: (today - 6..=today)
-                .map(|day| StatisticsDay {
-                    day,
-                    duration_ms: durations.get(&day).copied().unwrap_or(0),
-                    book_count: days
-                        .iter()
-                        .find(|d| d.day == day)
-                        .map_or(0, |d| d.book_count),
-                })
-                .collect(),
-        })
-    }
-    pub(crate) fn reading_activities(
-        &self,
-        first_day: i64,
-        last_day: i64,
-        content_key: Option<String>,
-    ) -> Result<Vec<ReadingActivity>> {
-        let db = self.read_lock()?;
-        let mut query = db.prepare("SELECT id,session_id,content_key,book_id,title,started_ms,ended_ms,local_day,utc_offset_seconds,preview,first_exposure_start FROM reading_activity WHERE deleted=0 AND local_day>=?1 AND local_day<=?2 AND (?3 IS NULL OR content_key=?3) ORDER BY started_ms,id")?;
-        let rows = query
-            .query_map(params![first_day, last_day, content_key], |r| {
-                Ok(ReadingActivity {
-                    id: r.get(0)?,
-                    session_id: r.get(1)?,
-                    content_key: crate::identity::content::reading_key_column(r, 2)?
-                        .ok_or(rusqlite::Error::InvalidQuery)?,
-                    book_id: r.get(3)?,
-                    title: r.get(4)?,
-                    started_ms: r.get(5)?,
-                    ended_ms: r.get(6)?,
-                    local_day: r.get(7)?,
-                    utc_offset_seconds: r.get(8)?,
-                    preview: r.get(9)?,
-                    start_utf8: unsigned_column(r, 10)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(rows)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -421,56 +427,6 @@ mod tests {
     }
     fn duration(slices: &[ReadingSlice]) -> i64 {
         slices.iter().map(|s| s.ended_ms - s.started_ms).sum()
-    }
-    #[test]
-    fn widget_streak_uses_today_or_yesterday_and_effective_days_without_a_seven_day_cap() {
-        let dir = tempfile::tempdir().unwrap();
-        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
-        {
-            let db = core.read_lock().unwrap();
-            // Populate the same effective TEMP projection used after fact/clear adjudication.
-            for day in 80..=100 {
-                db.execute("INSERT INTO reading_activity(id,session_id,content_key,book_id,title,started_ms,ended_ms,local_day,utc_offset_seconds,preview,first_exposure_start,deleted) VALUES(?1,'s','key',NULL,'synthetic',0,60000,?2,0,0,0,0)", params![format!("day-{day}"),day]).unwrap();
-            }
-        }
-        let summary = core.statistics_widget_summary(100, 99).unwrap();
-        assert_eq!(summary.current_streak_days, 21);
-        assert_eq!(summary.today_duration_ms, 60_000);
-        assert_eq!(summary.week_duration_ms, 120_000); // Calendar week, not seven days.
-        assert_eq!(summary.days.len(), 7);
-        assert_eq!(
-            core.statistics_widget_summary(101, 99)
-                .unwrap()
-                .current_streak_days,
-            21
-        );
-        assert_eq!(
-            core.statistics_widget_summary(102, 99)
-                .unwrap()
-                .current_streak_days,
-            0
-        );
-        core.read_lock()
-            .unwrap()
-            .execute(
-                "UPDATE reading_activity SET deleted=1 WHERE local_day=99",
-                [],
-            )
-            .unwrap();
-        assert_eq!(
-            core.statistics_widget_summary(100, 99)
-                .unwrap()
-                .current_streak_days,
-            1
-        );
-        core.read_lock()
-            .unwrap()
-            .execute("UPDATE reading_activity SET deleted=1", [])
-            .unwrap();
-        let empty = core.statistics_widget_summary(100, 99).unwrap();
-        assert_eq!(empty.current_streak_days, 0);
-        assert_eq!(empty.today_duration_ms, 0);
-        assert!(empty.days.iter().all(|d| d.duration_ms == 0));
     }
     #[test]
     fn idle_is_capped_and_interaction_never_backfills() {
@@ -581,6 +537,49 @@ mod tests {
         assert_eq!(duration(&slices), 50_000);
         assert!(slices.iter().all(|s| s.preview));
     }
+    #[test]
+    fn explicit_clock_preserves_pending_id_and_midnight_with_host_inputs() -> Result<()> {
+        let day_start = DAY_MS - 28_800_000 - 5_000;
+        let mut start = moment(0, true, true);
+        start.unix_ms = day_start;
+        let a = begin_reading_clock("book".into(), "session".into(), "visit-1".into())?;
+        let seed_a = "00000000-0000-4000-8000-000000000001";
+        let seed_b = "00000000-0000-4000-8000-000000000002";
+        let seed_c = "00000000-0000-4000-8000-000000000003";
+        let b = advance_reading_clock(a.clone(), start, seed_a.into(), "unused-a".into())?.next;
+        assert!(
+            advance_reading_clock(a, moment(0, true, true), seed_a.into(), "unused-a".into())
+                .is_err()
+        );
+        let mut mid = moment(2_000, true, false);
+        mid.unix_ms = day_start + 2_000;
+        let waiting = advance_reading_clock(b, mid, seed_b.into(), "unused-b".into())?;
+        assert!(waiting.slices.is_empty());
+        let mut stop = moment(10_000, false, false);
+        stop.unix_ms = day_start + 10_000;
+        let ended = advance_reading_clock(waiting.next, stop, seed_c.into(), "visit-2".into())?;
+        assert_eq!(duration(&ended.slices), 10_000);
+        assert_eq!(
+            ended
+                .slices
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
+            [seed_b, seed_c]
+        );
+        assert!(
+            ended
+                .slices
+                .iter()
+                .all(|s| s.session_id == "session" && s.visit_id == "visit-1")
+        );
+        assert_eq!(ended.slices[0].local_day + 1, ended.slices[1].local_day);
+        let broken = break_reading_clock_visit(ended.next.clone(), "visit-3".into())?;
+        assert!(broken.slices.is_empty());
+        assert!(break_reading_clock_visit(ended.next, "visit-4".into()).is_err());
+        Ok(())
+    }
+
     #[test]
     fn midnight_and_clock_changes_do_not_change_elapsed_time() {
         let clock = ReadingClock::new("book".into());

@@ -381,7 +381,8 @@ final class ReaderSession {
         showStoreShotListening()
         #endif
         let at = Int64(Date().timeIntervalSince1970 * 1000)
-        openedTask = Task { [service] in try? await service.recordBookOpened(id, at: at) }
+        let admission = readingLease?.writeAdmission
+        openedTask = Task { [service] in try? await service.recordBookOpened(id, at: at, admission: admission) }
     }
 
     func beganReadingInteraction() {
@@ -394,6 +395,7 @@ final class ReaderSession {
     func adoptReadingPosition(_ position: UInt64?, bookID: String, request: ReaderNavigationRequest,
                               expectedConfiguration: UUID? = nil, whileCurrent: () -> Bool = { true }) async throws -> Bool {
         guard currentNavigation(request), readingID == bookID, whileCurrent() else { return false }
+        let admission = readingLease?.writeAdmission
         autoReading?.end()
         activeListening?.pause(savePosition: false)
         await saveTask?.value
@@ -406,7 +408,7 @@ final class ReaderSession {
             // Leaving waits for this already accepted write. Cancelling the
             // regular save waiter does not cancel the explicit commit.
             let commit = Task { [service] in
-                try await service.writePosition(bookID, offset: position, expectedConfiguration: expectedConfiguration)
+                try await service.writePosition(bookID, offset: position, expectedConfiguration: expectedConfiguration, admission: admission)
             }
             saveTask = Task { _ = await commit.result }
             try await commit.value
@@ -423,6 +425,7 @@ final class ReaderSession {
         if !adopting { saveTask?.cancel() }
         let audioOwnedPosition = listeningOwnsPosition
         let currentAnchor = listeningPosition ?? ((autoReading?.phase ?? .idle) == .idle ? anchor : (viewportAccess.capture()?.offset ?? anchor))
+        let admission = readingLease?.writeAdmission
         // Capture before any suspension. Exit clears preview state, and settings
         // writes may finish after the reader's UI has started disappearing.
         let progress = isLeaving ? leavingProgress : readingID.flatMap { id in
@@ -435,7 +438,7 @@ final class ReaderSession {
         guard !adopting, adoption == positionAdoptionGeneration,
               !audioOwnedPosition || listeningOwnsPosition else { return }
         guard let progress else { return }
-        do { try await service.savePosition(bookID: progress.bookID, offset: progress.offset) }
+        do { try await service.savePosition(bookID: progress.bookID, offset: progress.offset, admission: admission) }
         catch { reportAutomaticReadingError(error) }
     }
 
@@ -468,7 +471,7 @@ final class ReaderSession {
         cancelNavigation()
         pendingChapterAnchor = nil
         error = nil
-        let task = Task { await openedTask?.value; await flush(); await StatisticsWriter.shared.drain(); await service.scheduleSystemReadingCatalog(immediate: true) }
+        let task = Task { await openedTask?.value; await flush(); await StatisticsWriter.shared.drain() }
         leaveTask = task
         return task
     }

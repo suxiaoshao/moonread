@@ -304,8 +304,7 @@ struct MetadataConfirmedImport: Sendable {
     let books: [MetadataPreviewBook]
     let writeIndices: [Int]
     let renameIndices: [Int]
-    let store: UserDataStore
-    let storeID: UUID
+    let lease: DataSessionLease
     let deletionTokens: [String: UUID]
     var committed = 0
     var renamedThrough = 0

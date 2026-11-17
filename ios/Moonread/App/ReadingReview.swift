@@ -98,9 +98,9 @@ struct ReadingReviewCandidate: Equatable {
             do {
                 try await Task.sleep(for: .seconds(1))
                 guard canPresent, library.libraryPath == returnPath else { return }
-                let overview = try await AppDataService.shared.statistics(first: 0, last: StatisticsDates.day(Date()))
-                guard !Task.isCancelled, canPresent, library.libraryPath == returnPath,
-                      store.claim(days: overview.days, milliseconds: candidate.milliseconds, version: version) else { return }
+                let read = try await AppDataService.shared.statisticsDayRead(first: 0, last: StatisticsDates.day(Date()))
+                guard read.compatibilityNotice == nil, !Task.isCancelled, canPresent, library.libraryPath == returnPath,
+                      store.claim(days: read.value, milliseconds: candidate.milliseconds, version: version) else { return }
                 requestReview()
             } catch { /* Missing statistics or cancellation must never interrupt reading. */ }
         }

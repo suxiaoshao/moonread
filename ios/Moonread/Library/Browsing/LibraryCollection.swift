@@ -14,6 +14,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
     let layout: LibraryLayout
     let theme: ThemeSurface
     let disabled: Bool
+    let retryObservation: () -> Void
     var showsEmpty = false
     @Binding var editing: EditMode
     @Binding var selection: Set<String>
@@ -326,6 +327,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
 
         @objc private func refreshFiles() {
             guard let config = configuration else { refresh.endRefreshing(); return }
+            config.retryObservation()
             Task { await config.model.refresh(showIndicator: false); refresh.endRefreshing() }
         }
     }

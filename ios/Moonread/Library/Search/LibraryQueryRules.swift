@@ -1,7 +1,7 @@
 import Foundation
 
-/// Book matching and result composition. Database scope/identity and natural
-/// ordering come from Rust; deliberately different entry contracts stay named.
+/// Book matching and result composition. Fixed reads supply scope/identity;
+/// Rust supplies natural ordinals. The library and AI profiles stay distinct.
 extension LibraryQueryRules {
     struct SearchSpec: Sendable {
         enum Profile: Sendable, Equatable { case library, ai }
@@ -91,7 +91,7 @@ extension LibraryQueryRules {
     static func filterAndRank(_ candidates: [LibrarySearchCandidate], spec: SearchSpec) -> [LibraryEntry] {
         searchOutcome(candidates, spec: spec).entries
     }
-    struct SearchOutcome { var entries: [LibraryEntry]; var unknownCount: Int }
+    struct SearchOutcome: Sendable { var entries: [LibraryEntry]; var unknownCount: Int }
     static func searchOutcome(_ candidates: [LibrarySearchCandidate], spec: SearchSpec) -> SearchOutcome {
         let literal = spec.profile == .library
         let query = literal ? literalQuery(spec.query) : spec.query
@@ -196,30 +196,5 @@ extension LibrarySearchCandidate {
             return entry.readingIdentity?.formalSHA256 == nil ? nil : .init(fields)
         }
         return resolvedMetadata.map(LibraryQueryRules.SearchMetadata.init)
-    }
-}
-
-/// A superseded directory response cannot publish into a new input scope.
-/// SwiftUI cancels its task; the token also guards services which finish after cancellation.
-@MainActor
-final class LibraryCatalogueRequest {
-    struct Input: Hashable {
-        let location: LibraryLocation
-        let libraryRevision: Int
-        let readingRevision: UInt64
-        var metadataRevision: UInt64 = 0
-    }
-    private var generation = UUID()
-    func read(_ fetch: () async throws -> [LibraryEntry]) async throws -> [LibraryEntry]? {
-        let request = UUID(); generation = request
-        do {
-            let result = try await fetch()
-            guard generation == request else { return nil }
-            try Task.checkCancellation()
-            return result
-        } catch {
-            guard generation == request else { return nil }
-            throw error
-        }
     }
 }

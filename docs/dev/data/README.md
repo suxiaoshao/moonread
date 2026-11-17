@@ -125,7 +125,7 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 | 用户封面 | SwiftData `UserCover.bytes` 外部存储；权威图片不是缓存；附件暂缺时用预设装帧兜底，无有效正文身份时用文字封面；预设不是用户事实 |
 | SHA 完成前的阅读数据 | 设备 SwiftData `pending-users.store`，禁止云同步；完成后转入 SHA 用户存储并回收暂存 |
 | 原文件编码选择 | SwiftData UserValue `source-decoding/<rawSHA>`，整值 LWW；导出全部包含，整书删除不删除此全局设置 |
-| 旧手选升级待办 | SQLite v23 `source_decoding_migration`，只登记升级前非 auto 值；未知 raw 的离线原件暂留，保存 epoch 候选后才删除 |
+| 旧手选升级待办 | SQLite v23 `source_decoding_migration`，只登记升级前非 auto 值；未知 raw 的离线原件暂留。v2 App 的来源阶段内，接受的 epoch 候选与导入 seed 同事务保存，落败版本不改胜者来源；来源阶段收口后才确认原始 SHA 的旧待办直接消费，不接回新库。两条路径都在用户库事务成功后才清待办 |
 | 本机续读提示基线 | UserDefaults `Moonread.localReadingResume.v1`，schemaVersion 1，按 storeScope/SHA 保存实际写入 offset/token，不同步 |
 | 当前配色/明暗、按配色纹理开关、排版/模式、设备控制、动效、记录开关 | 本机 UserDefaults；不随配色方案一起同步 |
 | 任务源描述、最近隐藏、上次文件入口 | 本机 UserDefaults；任务按持有期回收；批注未提交编辑仅在内存 |

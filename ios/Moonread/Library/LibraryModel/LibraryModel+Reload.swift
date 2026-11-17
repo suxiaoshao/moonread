@@ -33,9 +33,7 @@ extension LibraryModel {
         if let discoveryRoot, discoveryRoot != (await service.cloudDiscoveryRoot()) {
             startCloudDiscovery(reset: true)
         }
-        let localRecents = try await service.recentLibrary(UInt32(Self.homeRecentLimit), cold: !homeReady)
-        let next = HomeSnapshot(shelves: localShelves, recents: localRecents)
-        if !homeReady { await warmHomeCovers(next.recents) }
+        let next = HomeSnapshot(shelves: localShelves)
         try Task.checkCancellation()
         guard homeRequest == token else { return }
         let structuralChange = libraryStructure != nil && libraryStructure != structure
@@ -53,45 +51,16 @@ extension LibraryModel {
             for shelf in localShelves where shelfIndexes[shelf.id] == nil { await refreshIndexSummary(shelf.id) }
         }
     }
-    private func warmHomeCovers(_ entries: [LibraryEntry]) async {
-        // The resume card and the covers visible in the first screen of the recent row.
-        homeCovers = entries.prefix(4).compactMap { $0.displayMetadata?.cover }.map { CoverImageLoader.shared.subscribe($0, pixels: 384) }
-        let deadline = ContinuousClock.now.advanced(by: .milliseconds(150))
-        while homeCovers.contains(where: { $0.presentation.phase == .loading }), ContinuousClock.now < deadline {
-            do { try await Task.sleep(for: .milliseconds(5)) } catch { return }
-        }
-    }
     private func publishHome(_ next: HomeSnapshot) {
-        homeIndex = next
         guard next != home else { return }
         let shelfChanged = next.shelves != home.shelves
         var transaction = Transaction(); transaction.disablesAnimations = true
         withTransaction(transaction) { home = next; if shelfChanged { revision += 1 } }
     }
-    func refreshRecentCards() async {
-        guard homeReady else { return }
-        let request = homeRequest, readingRevision = readingInputRevision
-        do {
-            let cards = try await service.recentLibrary(UInt32(Self.homeRecentLimit))
-            try Task.checkCancellation()
-            guard request == homeRequest, readingRevision == readingInputRevision else { return }
-            var next = homeIndex
-            next.recents = cards
-            publishHome(next)
-        } catch is CancellationError { }
-        catch { self.error = ReaderMessages.error(error) }
-    }
-
-    /// Called only after the reader's existing final-save contract completes.
+    /// Readers still update legacy consumers that have not moved to
+    /// observation. Recents follows the committed database on its own.
     func reloadBook(_ route: ReaderRoute) async {
-        defer { readingInputRevision &+= 1 }
-        do {
-            var next = homeIndex
-            next.recents = try await service.recentLibrary(UInt32(Self.homeRecentLimit))
-            try Task.checkCancellation()
-            publishHome(next)
-        } catch is CancellationError { }
-        catch { self.error = ReaderMessages.error(error) }
+        readingInputRevision &+= 1
     }
     func returnedToLibrary() {
         if automaticRefreshDeferred, !path.contains(where: \.isReader) { automaticRefreshDeferred = false; scheduleRefresh() }
@@ -99,7 +68,10 @@ extension LibraryModel {
     /// One library refresh at a time. A caller arriving while one runs asks for
     /// another pass and waits for the shared work, so a pull's spinner ends with it.
     func refresh(showIndicator: Bool = false, userInitiated: Bool = false) async {
-        if userInitiated { await service.scheduleRecentRestoration(retry: true) }
+        if userInitiated {
+            recentReading.retryIfFailed()
+            await service.scheduleRecentRestoration(retry: true)
+        }
         guard !busy else { return }
         if !userInitiated, path.contains(where: \.isReader) { automaticRefreshDeferred = true; return }
         guard initialized else { _ = await load(); return }

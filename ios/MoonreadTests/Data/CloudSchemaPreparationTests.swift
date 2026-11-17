@@ -6,7 +6,7 @@ import XCTest
 final class CloudSchemaPreparationTests: CloudSchemaPreparationFixture {
   // S252: 云用户模型集合不得混入 AI 会话/凭据；仅断言本应用持久化 schema 的允许类型，删 CoreData 自动属性和日志格式。
   func testGeneratedModelMatchesExactlyTheSixUserTypesWithoutAIEntities() throws {
-    let model = try CloudSchemaPreparation.model()
+    let model = try XCTUnwrap(NSManagedObjectModel.makeManagedObjectModel(for: UserDataStore.modelTypes))
     XCTAssertEqual(
       Set(model.entities.compactMap(\.name)),
       Set([

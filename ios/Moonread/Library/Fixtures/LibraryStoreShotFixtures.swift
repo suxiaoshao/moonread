@@ -25,15 +25,15 @@ extension AppDataService {
             try book.text.write(to: parent.appendingPathComponent(book.title + ".txt"), atomically: true, encoding: .utf8)
         }
         try refreshLibraryShelf("builtin")
-        let core = try textCore()
+        let core = try indexStore()
         let files = try core.sourceFileSnapshots(fileId: nil).filter { $0.shelfId == "builtin" }
         for file in files {
             let path = root.appendingPathComponent(file.relativePath)
-            let identity = try SourceIdentityProbe().identify(filePath: path.path, decoding: file.decoding)
-            guard try core.publishSourceIdentity(file: file, identity: identity) else { throw ReaderError.InvalidRange }
             let title = path.deletingPathExtension().lastPathComponent
-            let book = try core.importBook(filePath: path.path, title: title)
-            try core.linkLibraryFile(fileId: file.id, bookId: book.id)
+            let entry = try await libraryEntry(file.id)
+            let prepared = try await aiPrepare(entry.source)
+            let book = try await snapshot(prepared.id).book
+            defer { withExtendedLifetime(prepared) {} }
             if let index = [f.books[1].title, f.books[2].title].firstIndex(of: title) {
                 guard let range = f.books[index + 1].text.range(of: f.progressChapters[index]) else { throw ReaderError.InvalidRange }
                 let offset = UInt64(f.books[index + 1].text[..<range.lowerBound].utf8.count)
@@ -87,7 +87,7 @@ extension AppDataService {
                         // Same persisted candidate path as sync, without changing
                         // this device's just-written local resume baseline.
                         let json = String(decoding: try JSONEncoder().encode(winner), as: UTF8.self)
-                        try await userStore().put("position/" + book.readingKey.storageKey, value: json, device: "store-shot-other-device")
+                        try writeFixtureValue("position/" + book.readingKey.storageKey, value: json, device: "store-shot-other-device")
                         dataChanged()
                     }
                     if scene == .statistics { try await createStoreShotStatistics(bookID: book.id) }
@@ -140,21 +140,22 @@ extension AppDataService {
         }
     }
 
-    private func publishStoreShotWidget(book: ImportText, fixture: StoreShotFixture) async throws {
+    private func publishStoreShotWidget(book: BookInfo, fixture: StoreShotFixture) async throws {
         #if targetEnvironment(simulator)
         guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SystemReadingSnapshotFile.groupIdentifier) else {
             throw LibraryFileError.invalidDestination
         }
         guard let sha = book.readingKey.formalSHA256 else { throw ReaderError.NotFound }
         let id = try SystemReadingBookID(sha: sha).rawValue
-        let query = try await readingQuery(.catalogue(.all), options: .init(scope: "store-shot-widget", sparseCatalogue: true))
-        guard let projected = try query.systemReadingCatalogue().first(where: { $0.contentSha256 == sha }) else { throw ReaderError.NotFound }
+        guard let projected = try await systemBookCatalogue().systemBookCatalogue.first(where: { $0.readingKey == sha })
+        else { throw ReaderError.NotFound }
         let entry = SystemReadingSnapshot.Book(id: id, title: book.title, author: fixture.author, tags: [],
             availability: .available, sourceCount: 1, naturalOrdinal: 0, progress: projected.percentage,
             chapterLabel: projected.chapterTitle, recentRank: 0, allowsAutomaticExposure: true)
         let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("StoreScreenshots", isDirectory: true))
-        try file.publish(.init(storeScope: "synthetic-store-screenshots", books: [entry], recentIDs: [id],
-                               appearance: await systemWidgetAppearance()))
+        let scope = "synthetic-store-screenshots", appearance = await systemWidgetAppearance()
+        try file.publish(.init(storeScope: scope, books: [entry], recentIDs: [id], appearance: appearance))
+        try file.publishStatistics(.init(storeScope: scope, appearance: appearance, statistics: try await systemWidgetStatistics()))
         UserDefaults(suiteName: SystemReadingSnapshotFile.groupIdentifier)?.set(fixture.language, forKey: "StoreScreenshots.language")
         await MainActor.run { WidgetCenter.shared.reloadAllTimelines() }
         #endif

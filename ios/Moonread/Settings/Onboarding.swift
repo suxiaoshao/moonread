@@ -61,6 +61,7 @@ struct ReaderSelectionTip: Tip {
     var enabled: Bool { completed && tipsEnabled }
     static let completionKey = "Moonread.onboarding.completed.v1"
     private(set) var completed: Bool
+    var hasCompletedIntroduction: Bool { defaults.bool(forKey: Self.completionKey) }
     enum Destination { case importBook, story(LibraryEntry), library }
     private var destination: Destination?
     private enum Key {

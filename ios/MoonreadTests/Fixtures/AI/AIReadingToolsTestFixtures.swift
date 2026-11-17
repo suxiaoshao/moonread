@@ -6,25 +6,18 @@ import XCTest
 
 @MainActor class AIReadingToolsFixture: XCTestCase {
   func fixture(paragraphs: Int = 8, text: String? = nil) async throws -> (
-    URL, AppDataService, ImportText, UserDataStore, AIReadingTools
+    URL, AppDataService, ImportText, UserRowsFixture, AIReadingTools
   ) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let file = root.appendingPathComponent("book.txt")
     try (text ?? ("第一章 月\n\n" + String(repeating: "甲乙丙丁你好。\n", count: paragraphs) + "第二章 星\n再次阅读\n")).write(
       to: file, atomically: true, encoding: .utf8)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let book = try core.importBook(filePath: file.path, title: "Book")
-    let container = try ModelContainer(
-      for: UserDataStore.schema,
-      configurations: [
-        ModelConfiguration(
-          schema: UserDataStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-      ])
-    let store = UserDataStore(modelContainer: container)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
+    let book = try importBookFixture(core, filePath: file.path, title: "Book")
+    let store = UserRowsFixture(index: core)
     let reader = AppDataService(
-      core: core, sourceDefaultsSuite: "AI-\(root.lastPathComponent)",
-      userStoreFactory: { _, _ in store })
+      core: core, sourceDefaultsSuite: "AI-\(root.lastPathComponent)")
     let shelf = try await reader.registerLibraryShelf(root)
     try await reader.refreshLibraryShelf(shelf)
     let fileEntry = try await reader.allLibraryBooks(shelf).first!

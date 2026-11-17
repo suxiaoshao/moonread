@@ -46,8 +46,8 @@ extension AppDataService {
             guard let json = stored as? String else { throw ReaderError.InvalidSettings }
             snapshot.preferences = try decodeThemePreferences(json: json)
         }
-        let rows = try await userStore().allValues(prefix: "palette/")
-        let custom = try rows.values.filter { $0 != "null" }.map { try decodeThemePalette(json: $0) }.filter(\.custom)
+        let index = try relationalUserIndex()
+        let custom = try index.session.readUsers(index.lease) { try UserValueRows.palettes($0).filter(\.custom) }
         snapshot.palettes = defaultThemeSnapshot().palettes + custom
         // A remotely removed palette falls back to the existing device defaults.
         let defaults = defaultThemeSnapshot().preferences
@@ -59,22 +59,40 @@ extension AppDataService {
         return snapshot
     }
     func saveThemes(_ value: ThemePreferences) async throws -> ThemeSnapshot {
-        var snapshot = try await themes(); snapshot.preferences = value
+        var snapshot = try await themes()
+        let prior = snapshot.preferences
+        snapshot.preferences = value
         _ = try resolveThemes(value: snapshot, system: .light, highContrast: false)
         sourceDefaults.set(try encodeThemePreferences(value: value), forKey: "Moonread.themePreferences")
+        if prior.appMode != value.appMode || prior.appLight != value.appLight || prior.appDark != value.appDark {
+            scheduleSystemReadingCatalog()
+            scheduleSystemWidgetStatistics()
+        }
         dataChanged(); return snapshot
     }
     func savePalette(_ value: ThemePalette, creating: Bool) async throws -> ThemePalette {
+        let configuration = userCloudConfigurationRevision
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         let snapshot = try await themes()
         if let issue = Self.paletteSaveIssue(in: snapshot, editing: creating ? nil : value) { throw issue }
         let palette = try makeThemePalette(id: creating ? "custom-\(UUID().uuidString)" : value.id, name: value.name, appearance: value.appearance, colors: value.colors)
         let json = try encodeThemePalette(value: palette)
-        try await userStore().put("palette/\(palette.id)", value: json, device: userDevice)
+        let index = try relationalUserIndex()
+        try index.session.writeUsers(index.lease) {
+            try UserValueRows.put($0, key: .init("palette/" + palette.id), value: json, device: userDevice, now: userValueClock, scope: index.lease.scope)
+        }
         dataChanged(); return palette
     }
     func deletePalette(_ id: String) async throws -> ThemeSnapshot {
+        let configuration = userCloudConfigurationRevision
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         guard try await themes().palettes.contains(where: { $0.custom && $0.id == id }) else { throw ReaderError.NotFound }
-        try await userStore().put("palette/\(id)", value: "null", device: userDevice)
+        let index = try relationalUserIndex()
+        try index.session.writeUsers(index.lease) {
+            try UserValueRows.put($0, key: .init("palette/" + id), value: "null", device: userDevice, now: userValueClock, scope: index.lease.scope)
+        }
         dataChanged(); return try await themes()
     }
 }

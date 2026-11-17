@@ -15,7 +15,7 @@ struct StatisticsDayView: View {
     private var compatibilityNotice: String? { state.compatibilityNotice }
     private var loaded: Bool { state.content != nil }
     private var error: String? { state.error }
-    private var total: UInt64 { spans.reduce(0) { $0 + $1.milliseconds } }
+    private var total: UInt64 { state.content?.timelineDurationMs ?? 0 }
     var body: some View {
         GeometryReader { geometry in
             ScrollView {
@@ -43,7 +43,7 @@ struct StatisticsDayView: View {
                     ContentUnavailableView {
                         Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
                     } description: { Text(error).foregroundStyle(Color(uiColor: theme.secondary)) } actions: {
-                        Button("重试") { Task { await load() } }.buttonStyle(ThemedProminentButtonStyle())
+                        Button("重试") { model.restartObservation() }.buttonStyle(ThemedProminentButtonStyle())
                     }
                 } else if !loaded { LoadingActivity(fullPage: true, waitingLabel: "正在读取统计") }
                 else {
@@ -53,7 +53,7 @@ struct StatisticsDayView: View {
                 }
             }
         }
-        .task(id: "\(route.id)-\(model.dataRevision)") { await model.load(scope) }
+        .task(id: "\(route.id)-\(model.dataRevision)") { await model.observe(scope) }
         .accessibilityIdentifier("statisticsDay")
         .onDisappear { model.cancel() }
     }
@@ -62,6 +62,7 @@ struct StatisticsDayView: View {
             Label(error, systemImage: "exclamationmark.circle").font(.footnote)
                 .foregroundStyle(Color(uiColor: theme.destructive))
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
+            Button("重试") { model.restartObservation() }
         }
         VStack(alignment: .leading, spacing: 12) {
             Text("当天累计").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
@@ -82,5 +83,4 @@ struct StatisticsDayView: View {
             if let compatibilityNotice { Text(compatibilityNotice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
         }
     }
-    private func load() async { await model.load(scope) }
 }

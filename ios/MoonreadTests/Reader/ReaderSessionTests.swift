@@ -12,7 +12,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testPreviewCancelContinueBookmarkAndImmediateReopenUseFormalPosition()
     async throws
   {
-    let (root, service, _, _, _, book, other, suite) = try singleBookFixture()
+    let (root, service, _, _, book, other, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -70,12 +70,12 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
 
   // S318: 上下文任务返回原宿主路由，不破坏挂起的阅读路径或串到别的书。
   @MainActor func testContextualResultUsesHostRouteAndPreservesSuspendedReaderPath() async throws {
-    let (root, service, core, _, _, _, _, suite) = try singleBookFixture()
+    let (root, service, core, _, _, _, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
     }
-    let entry = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")[1]
+    let entry = try core.catalogue("builtin", grouping: .name).entries[1]
     let model = LibraryModel(service: service)
     model.path = [.folder(.init(shelfID: "builtin"))]
     let origin = model.path
@@ -100,7 +100,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   // S340: 原件暂不可用时保留已读正文并禁用不可执行编码操作，不强制退出阅读。
   @MainActor func testUnavailableEncodingSourceDoesNotBlockReadingOrExposeControls() async throws {
     for scenario in ["missing", "corrupt", "removed-file"] {
-      let (root, service, core, _, _, book, _, suite) = try singleBookFixture()
+      let (root, service, core, _, book, _, suite) = try singleBookFixture()
       let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
       let key = await service.importSourceKey(book.id)
       if scenario == "corrupt" {
@@ -142,7 +142,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   func testReadingChangeWaitRegistersAtomicallyAndWakesAllWaiters() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
+    let service = AppDataService(core: try makeReaderIndexFixture(at: root))
     let before = await service.readingChangeRevision("book")
     await service.readingChanged("book")
     try await service.waitForChange("book", after: before, timeout: .seconds(5))
@@ -194,12 +194,12 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
 
   // S400: 点击先提交阅读页；返回后的进度和 lease 不得进入旧会话。
   @MainActor func testOpeningRoutesBeforeSourceAndDiscardsLateResultAfterReturn() async throws {
-    let (root, service, core, _, _, book, _, suite) = try singleBookFixture()
+    let (root, service, core, _, book, _, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
     }
-    let entries = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
+    let entries = try core.catalogue("builtin", grouping: .name).entries
     let first = try XCTUnwrap(entries.first), next = try XCTUnwrap(entries.dropFirst().first)
     let model = LibraryModel(service: service)
     model.open(first)
@@ -256,7 +256,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   func testSourceAvailabilityDoesNotImportOrRecordReading() async throws {
     let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: temporary) }
-    let core = try ReaderCore(dataDirectory: temporary.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: temporary.appendingPathComponent("db"))
     let root = temporary.appendingPathComponent("books")
     let service = AppDataService(core: core, libraryDirectory: root)
     try await service.prepareLibrary()
@@ -267,23 +267,24 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     let published = expectation(description: "Available index is published before preparation returns")
     published.assertForOverFulfill = true
     let token = NotificationCenter.default.addObserver(forName: .libraryIndexChanged, object: service, queue: nil) { @Sendable _ in
-      XCTAssertFalse((try? core.querySnapshot(json: "{}").libraryEntry(fileId: location.id).needsDownload) ?? true)
+      XCTAssertFalse((try? core.sourceFileSnapshots(fileId: location.id).first?.needsDownload ?? false) ?? true)
       published.fulfill()
     }
     defer { NotificationCenter.default.removeObserver(token) }
     try await service.prepareSourceFile(entries[0].source)
     await fulfillment(of: [published], timeout: 0)
-    XCTAssertFalse(try core.querySnapshot(json: "{}").libraryEntry(fileId: entries[0].id).needsDownload)
+    XCTAssertFalse(try core.sourceFileSnapshots(fileId: entries[0].id).first?.needsDownload ?? false)
     try await service.prepareSourceFile(entries[0].source) // No change, no second publication.
     XCTAssertTrue(try core.sourceFiles(shelfId: "builtin").allSatisfy { $0.bookId == nil })
-    XCTAssertTrue(try core.querySnapshot(json: "{}").recentLibraryEntries(limit: 3).isEmpty)
+    let recents = try await service.recentLibrary(3)
+    XCTAssertTrue(recents.isEmpty)
     XCTAssertTrue(try core.setSourceFileAvailability(file: location, needsDownload: true))
     try FileManager.default.removeItem(at: root.appendingPathComponent(entries[0].name))
     do {
       try await service.prepareSourceFile(entries[0].source)
       XCTFail("Missing originals must fail on the shelf before opening a reader")
     } catch {}
-    XCTAssertTrue(try core.querySnapshot(json: "{}").libraryEntry(fileId: entries[0].id).needsDownload)
+    XCTAssertTrue(try core.sourceFileSnapshots(fileId: entries[0].id).first?.needsDownload ?? false)
     XCTAssertTrue(try core.sourceFiles(shelfId: "builtin").allSatisfy { $0.bookId == nil })
   }
 
@@ -446,8 +447,8 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   func testLeavingReaderFreezesProgressAndRejectsLatePresentation() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let core = try ReaderCore(dataDirectory: directory.path)
-    let book = try core.createSampleBook()
+    let core = try makeReaderIndexFixture(at: directory)
+    let book = try core.prepareSample()
     let service = AppDataService(core: core)
     let session = ReaderSession(service: service)
     await session.open(.book(book.id))

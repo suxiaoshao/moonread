@@ -8,7 +8,7 @@ import XCTest
 @testable import Moonread
 
 final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
-  // S274: 只测 recorder 把暂停/预览/停止事件正确传给 Rust 并只提交返回 slices；idle 时长算法仅 R048/R049，删 Swift 重算。
+  // S274: 只测 recorder 把暂停/预览/停止事件正确传给 Rust 并只提交返回段快照；idle 时长算法仅 R048/R049，删 Swift 重算。
   @MainActor func testEffectiveSessionDurationUsesReadingClockIdleAndPauseRules() async throws {
     func readable(_ body: Bool = true, _ preparation: Bool = false, _ share: Bool = false,
                   _ alert: Bool = false, _ chooser: Bool = false) -> Bool {
@@ -31,7 +31,7 @@ final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
     XCTAssertNil(controller.annotationChooser)
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
+    let service = AppDataService(core: try makeReaderIndexFixture(at: root))
     let clock = ReviewTestTime()
     let viewport = ReadingViewportAccess(
       capture: {
@@ -42,16 +42,20 @@ final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
     let host = StatisticsPresentationController()
     host.addChild(controller); controller.didMove(toParent: host)
     viewport.controller = controller
-    var slices: [ReadingSlice] = []
+    var segments: [ReadingSegment] = []
+    var bookIDs: [String] = []
     var generations: [UInt64] = []
-    let writer = StatisticsWriter { values, generation in
-      slices += values
-      generations.append(generation)
+    let writer = StatisticsWriter { batch in
+      segments += batch.values
+      bookIDs.append(batch.bookID)
+      generations.append(batch.generation)
     }
     let recorder = ReadingActivityRecorder(
       writer: writer,
       time: {
         ReadingActivityTime(uptime: clock.elapsed, date: self.now.addingTimeInterval(clock.elapsed))
+      }, captureAuthor: { _ in
+        ReadingSegmentAuthor(ownerInstanceId: "test-install", sessionId: "test-session", title: "Fixture", device: "test-device")
       }
     ) { StatisticsPreferences(enabled: true, generation: 17) }
     controller.statisticsPresentationChanged = { [weak recorder] in recorder?.sample() }
@@ -99,16 +103,16 @@ final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
     clock.elapsed = 310
     await recorder.flush()
     XCTAssertEqual(recorder.effectiveReadingMilliseconds, exhausted, "Task dismissal cannot grant new idle credit")
-    XCTAssertTrue(slices.contains { !$0.preview }, "formal reading is passed to the writer")
-    XCTAssertTrue(slices.contains { $0.preview }, "preview facts remain distinguishable")
-    XCTAssertTrue(slices.allSatisfy { $0.bookId == "activity-fixture" })
+    XCTAssertTrue(segments.contains { !$0.header.preview }, "formal reading is passed to the writer")
+    XCTAssertTrue(segments.contains { $0.header.preview }, "preview facts remain distinguishable")
+    XCTAssertTrue(bookIDs.allSatisfy { $0 == "activity-fixture" })
     XCTAssertTrue(generations.allSatisfy { $0 == 17 })
-    let ids = slices.map(\.id)
+    let ids = segments.map { $0.header.id }
     recorder.stop()
     host.modal = nil
     controller.statisticsPresentationChanged() // A late native callback cannot resume a stopped session.
     await writer.drain()
-    XCTAssertEqual(slices.map(\.id), ids, "stop must not resend already flushed facts")
+    XCTAssertEqual(segments.map { $0.header.id }, ids, "stop must not resend already flushed facts")
   }
 
   @MainActor func testNativePresentationExemptsOnlyTheCurrentReadingAccessory() {
@@ -148,9 +152,12 @@ final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
 final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
   // S311: 取消/离开/失败前后的晚到 activity lease 必须释放且不回填可见前时长；两个受控时序。
   @MainActor func testActivityStartCancellationAndStopReleaseLateLease() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
+    let (root, service, core, _, book, _, suite) = try singleBookFixture()
+    defer {
+      try? core.session.close()
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
     let entered = expectation(description: "preferences suspended")
     let gate = SourceReadinessGate(entered: entered)
     let recorder = ReadingActivityRecorder {
@@ -159,7 +166,7 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
     }
     let token = UUID()
     recorder.prepareStart(token)
-    var lease: ReadingLease? = ReadingLease(id: "cancelled", service: service)
+    var lease: ReadingLease? = try await service.openReading(book.id)
     weak var retained = lease
     let task = Task { [lease = lease!] in
       await recorder.start(lease: lease, viewport: ReadingViewportAccess(), attempt: token)
@@ -181,9 +188,14 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
 
   // S312: 旧开始请求晚到不得替换新会话计时 owner，两个确定 gate。
   @MainActor func testActivityOldAttemptCannotOverwriteNewClock() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
+    let (root, service, core, _, first, second, suite) = try singleBookFixture()
+    defer {
+      try? core.session.close()
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let firstLease = try await service.openReading(first.id)
+    let secondLease = try await service.openReading(second.id)
     let entered = expectation(description: "old preferences")
     let gate = SourceReadinessGate(entered: entered)
     var calls = 0
@@ -196,20 +208,20 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
     recorder.prepareStart(old)
     let task = Task {
       await recorder.start(
-        lease: ReadingLease(id: "old", service: service), viewport: ReadingViewportAccess(),
+        lease: firstLease, viewport: ReadingViewportAccess(),
         attempt: old)
     }
     await fulfillment(of: [entered], timeout: 2)
     let fresh = UUID()
     recorder.prepareStart(fresh)
     await recorder.start(
-      lease: ReadingLease(id: "new", service: service), viewport: ReadingViewportAccess(),
+      lease: secondLease, viewport: ReadingViewportAccess(),
       attempt: fresh)
-    XCTAssertEqual(recorder.recordingBookID, "new")
+    XCTAssertEqual(recorder.recordingBookID, second.id)
     recorder.update(visibility: .init(body: false), preview: false)  // Background state remains authoritative during a late start.
     await gate.release()
     await task.value
-    XCTAssertEqual(recorder.recordingBookID, "new")
+    XCTAssertEqual(recorder.recordingBookID, second.id)
     XCTAssertTrue(recorder.hasSamplingTimer)
     recorder.stop()
   }
@@ -220,22 +232,23 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
   {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
+    let service = AppDataService(core: try makeReaderIndexFixture(at: root))
     let entered = expectation(description: "pending writer")
     let gate = SourceReadinessGate(entered: entered)
-    let writer = StatisticsWriter { _, _ in await gate.wait() }
+    let writer = StatisticsWriter { _ in await gate.wait() }
     var lease: ReadingLease? = ReadingLease(id: "pending-write", service: service)
     weak var retained = lease
-    let clock = ReadingClock(bookId: "pending-write")
+    let state = try beginReadingSegment(author: .init(ownerInstanceId: "test-install", sessionId: "test-session",
+        title: "Fixture", device: "test-device"), visitId: "test-visit", limits: readingSegmentLimits())
     var moment = ReadingMoment(
       monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true, automaticMoving: false, automaticMilliseconds: 0, preview: false, startUtf8: 0, endUtf8: 9)
-    _ = clock.update(moment: moment)
+    let first = try advanceReadingSegment(previous: state, moment: moment, segmentSeed: UUID().uuidString.lowercased(), nextVisitId: "next")
     moment.monotonicMs = 1000
     moment.unixMs = 1000
     moment.readable = false
-    let slices = clock.update(moment: moment)
-    XCTAssertFalse(slices.isEmpty)
-    writer.enqueue(slices, generation: 0, lease: lease!)
+    let stop = try advanceReadingSegment(previous: first.next, moment: moment, segmentSeed: UUID().uuidString.lowercased(), nextVisitId: "ended")
+    XCTAssertFalse(stop.segmentUpdates.isEmpty)
+    writer.enqueue(stop.segmentUpdates, generation: 0, lease: lease!)
     let recorder = ReadingActivityRecorder()
     recorder.stop()
     lease = nil

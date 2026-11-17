@@ -22,7 +22,7 @@ final class OnboardingStateTests: ReaderIntegrationFixture {
       await service.setCloudSyncRequested(!choice)
       let onboarding = Onboarding(defaults: defaults, enabled: false, showIntroduction: true)
       let cloud = CloudStore(
-        coordinator: CloudSyncCoordinator(service: service, available: false, observeEvents: false))
+        coordinator: CloudSyncCoordinator(service: service))
       let published = expectation(
         description: "completion is published after the sync intent is persisted")
       withObservationTracking {
@@ -76,7 +76,7 @@ final class OnboardingStateTests: ReaderIntegrationFixture {
       defer { try? FileManager.default.removeItem(at: temporary) }
       let data = temporary.appendingPathComponent("db")
       let root = temporary.appendingPathComponent("books")
-      let core = try ReaderCore(dataDirectory: data.path)
+      let core = try makeReaderIndexFixture(at: data)
       let service = AppDataService(
         core: core, libraryDirectory: root,
         libraryDeletion: { url, _ in try TrashIOProbe.move(url) })
@@ -84,7 +84,8 @@ final class OnboardingStateTests: ReaderIntegrationFixture {
       try await service.refreshLibrary()
       let entries = try await service.libraryEntries(LibraryLocation(shelfID: "builtin"))
       XCTAssertEqual(entries.map(\.name), ["月光下的归途.txt"])
-      XCTAssertTrue(try core.querySnapshot(json: "{}").recentLibraryEntries(limit: 3).isEmpty)
+      let recents = try await service.recentLibrary(3)
+      XCTAssertTrue(recents.isEmpty)
       XCTAssertTrue(
         try core.sourceFiles(shelfId: "builtin").allSatisfy { $0.bookId == nil },
         "Creating the file must not import it or mark it as read")
@@ -92,7 +93,7 @@ final class OnboardingStateTests: ReaderIntegrationFixture {
       XCTAssertTrue(try String(contentsOf: file, encoding: .utf8).contains("第三章 灯下"))
       try await service.deleteLibraryItem(entries[0])
       let reopened = AppDataService(
-        core: try ReaderCore(dataDirectory: data.path), libraryDirectory: root)
+        core: try makeReaderIndexFixture(at: data), libraryDirectory: root)
       try await reopened.prepareLibrary()
       try await reopened.refreshLibrary()
       let remaining = try await reopened.libraryEntries(LibraryLocation(shelfID: "builtin"))

@@ -4,28 +4,29 @@ import Charts
 /// The selected range's day-level rhythm: seven daily bars, a month calendar,
 /// a year's monthly bars, or all-time yearly bars when there is more than one year.
 struct StatisticsRhythm: View {
-    let window: StatisticsWindow
+    let period: StatisticsPeriod
+    let bounds: ClosedRange<Int64>
     let days: [StatisticsDay]
     let today: Int64
     var book: String?
     let open: (StatisticsDayRoute) -> Void
     private var buckets: [StatisticsBucket] {
-        switch window.period {
-        case .recent: StatisticsBuckets.days(days, range: window.bounds(today: today))
+        switch period {
+        case .recent: StatisticsBuckets.days(days, range: bounds)
         case .month: []
-        case .year: StatisticsBuckets.months(days, year: window.bounds(today: today), today: today)
+        case .year: StatisticsBuckets.months(days, year: bounds, today: today)
         case .all: StatisticsBuckets.years(days, today: today)
         }
     }
-    var hasContent: Bool { window.period == .all ? buckets.count > 1 : true }
+    var hasContent: Bool { period == .all ? buckets.count > 1 : true }
     var body: some View {
-        switch window.period {
+        switch period {
         case .recent:
             StatisticsBarChart(buckets: buckets, label: { $0.first == today ? String(localized: "今天") : StatisticsDates.format($0.first, template: "EE") },
                                accessibilityLabel: { StatisticsDates.dateLabel($0.first, full: true) },
                                open: { bucket in if bucket.durationMs > 0 { open(StatisticsDayRoute(day: bucket.first, book: book)) } })
         case .month:
-            ReadingCalendarChart(days: days, month: window.bounds(today: today), today: today) { open(StatisticsDayRoute(day: $0, book: book)) }
+            ReadingCalendarChart(days: days, month: bounds, today: today) { open(StatisticsDayRoute(day: $0, book: book)) }
         case .year:
             StatisticsBarChart(buckets: buckets, slots: 12, label: { StatisticsDates.format($0.first, template: "MMM") },
                                accessibilityLabel: { StatisticsDates.format($0.first, template: "yMMMM") })

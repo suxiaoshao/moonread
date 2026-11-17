@@ -447,7 +447,7 @@ extension AppDataService {
         }
         sourceDefaults.set(roots.owner, forKey: "Moonread.cloudLibraryOwner")
         cloudLibraryConflict = nil
-        let core = try textCore()
+        let core = try indexStore()
         let files = Dictionary(uniqueKeysWithValues: try core.sourceFiles(shelfId: "builtin").filter { !$0.directory }.map { ($0.relativePath, $0.id) })
         do {
             var receipts = try await CloudHandoffWork.run {
@@ -491,7 +491,7 @@ extension AppDataService {
                              validateIdentity: @escaping @Sendable () throws -> Void = {}, requireIdleImports: Bool = false) async throws {
         libraryScans["builtin"] = UUID()
         cloudLibraryPublicationCount += 1
-        let core = try textCore(), initial = receipts, previousRoot = cloudLibraryRoot
+        let core = try indexStore(), initial = receipts, previousRoot = cloudLibraryRoot
         let sources = importSourceSnapshot(), cloudItems = cloudDocumentItems
         let outcome = try await CloudHandoffWork.run { [self] in
             ReaderOpenDiagnostics.background("cloudPublication.coordination.begin")
@@ -528,7 +528,7 @@ extension AppDataService {
         observeLibraryRoot("builtin", root: cloud)
     }
 
-    private func commitCloudHandoff(core: ReaderCore, cloud: URL, previousRoot: URL?, bookmark: Data,
+    private func commitCloudHandoff(core: ReaderIndex, cloud: URL, previousRoot: URL?, bookmark: Data,
         files: [LibraryHandoffFile], items: [ScannedLibraryItem], sources: [String: Data], updates: [String: Data],
         requireIdleImports: Bool, validateIdentity: @Sendable () throws -> Void) throws {
         try validateIdentity()

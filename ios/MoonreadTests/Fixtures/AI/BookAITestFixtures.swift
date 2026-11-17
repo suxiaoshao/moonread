@@ -65,25 +65,18 @@ actor CoverCallGate {
 }
 
 @MainActor class BookAIFixture: XCTestCase {
-  func fixture() async throws -> (URL, AppDataService, ImportText, UserDataStore, String) {
+  func fixture() async throws -> (URL, AppDataService, ImportText, UserRowsFixture, String) {
     let root = FileManager.default.temporaryDirectory.appending(path: "AITest-" + UUID().uuidString)
     let library = root.appending(path: "library")
     try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
     let file = library.appending(path: "book.txt")
     try "第一章 月\n\n甲乙丙丁。\n第二段文字。\n".write(to: file, atomically: true, encoding: .utf8)
-    let core = try ReaderCore(dataDirectory: root.appending(path: "db").path)
-    let book = try core.importBook(filePath: file.path, title: "Book")
-    let container = try ModelContainer(
-      for: UserDataStore.schema,
-      configurations: [
-        ModelConfiguration(
-          schema: UserDataStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-      ])
-    let users = UserDataStore(modelContainer: container)
+    let core = try makeReaderIndexFixture(at: root.appending(path: "db"))
+    let book = try importBookFixture(core, filePath: file.path, title: "Book")
+    let users = UserRowsFixture(index: core)
     let reader = AppDataService(
       core: core, libraryDirectory: library,
-      sourceDefaultsSuite: "AI-FollowUp-" + root.lastPathComponent,
-      userStoreFactory: { _, _ in users })
+      sourceDefaultsSuite: "AI-FollowUp-" + root.lastPathComponent)
     let shelf = try await reader.registerLibraryShelf(library)
     try await reader.refreshLibraryShelf(shelf)
     let libraryEntries = try await reader.allLibraryBooks(shelf)

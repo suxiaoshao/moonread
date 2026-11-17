@@ -66,11 +66,12 @@ extension AppDataService {
         sourceDefaults.set(try JSONEncoder().encode(bindings), forKey: ShelfReferenceBindings.key)
     }
     /// Called after registration and on configuration/import refresh. Stable local
-    /// IDs are saved before awaiting SwiftData, so reentrant retries reuse them.
+    /// IDs are saved locally before publishing the description.
     func shelfRecoverySnapshot() async throws -> ShelfRecoverySnapshot {
         let revision = userCloudConfigurationRevision, scope = shelfReferenceScope
-        let store = try await userStore()
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
         guard revision == userCloudConfigurationRevision, scope == shelfReferenceScope else { throw CancellationError() }
+        let index = try relationalUserIndex()
         let shelves = try shelves()
         var changed = false
         for shelf in shelves where !shelf.builtin {
@@ -88,12 +89,15 @@ extension AppDataService {
                 if bindings.scopes[scope]?.published?[id] == value { continue }
                 let key = "shelf-reference/" + id
                 do {
-                    let old = try await store.value(key)
-                    guard revision == userCloudConfigurationRevision, scope == shelfReferenceScope else { throw CancellationError() }
                     guard let current = try? libraryShelf(shelf.id), current.name == shelf.name, current.location == shelf.location,
                           try shelfBindings().scopes[scope]?.bindings[id] == shelf.id else { continue }
-                    if old.flatMap({ try? JSONDecoder().decode(ShelfReferenceValue.self, from: Data($0.utf8)) }) != value {
-                        try await store.put(key, value: UserSyncJSON.encode(value), device: userDevice); changed = true
+                    if try index.session.writeUsers(index.lease, { db in
+                        guard try UserValueRows.shelfReferences(db, id: id).first?.value != value else { return false }
+                        try UserValueRows.put(db, key: .init(key), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock,
+                                              scope: index.lease.scope)
+                        return true
+                    }) {
+                        changed = true
                     }
                     guard revision == userCloudConfigurationRevision, scope == shelfReferenceScope else { throw CancellationError() }
                     var latest = try shelfBindings()
@@ -105,7 +109,7 @@ extension AppDataService {
                 } catch is UserSyncCompatibilityError { continue }
             }
         }
-        let references = try await store.shelfReferences()
+        let references = try index.session.readUsers(index.lease) { try UserValueRows.shelfReferences($0) }
         guard revision == userCloudConfigurationRevision, scope == shelfReferenceScope else { throw CancellationError() }
         let local = try shelfBindings().scopes[scope] ?? .init()
         let currentShelves = try self.shelves()

@@ -8,6 +8,7 @@ struct AIChatView: View {
     enum Placement { case page, sheet }
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
+    @Environment(\.systemReadingRouter) private var systemReadingRouter
     let conversationID: String
     var placement: Placement = .page
     var taskObject: AITaskObject?
@@ -61,6 +62,7 @@ struct AIChatView: View {
                         }, toggleProcessItem: toggle)
                         .background(row.turnID == highlightedTurn && highlightedTurn != nil ? Color(uiColor: theme.search) : .clear)
                         .environment(ai).environment(\.theme, theme).environment(\.dynamicTypeSize, typeSize)
+                        .environment(\.systemReadingRouter, systemReadingRouter)
                         .environment(\.colorScheme, theme.scheme)
                     }
                 })

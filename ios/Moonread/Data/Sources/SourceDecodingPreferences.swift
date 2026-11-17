@@ -3,13 +3,14 @@ import OSLog
 
 struct SourceDecodingValue: Codable, Sendable { let decoding: String }
 struct SourceDecodingSnapshot: Sendable {
-    let values: [String: StoredValue]
+    struct Policy: Sendable { let updated: Int64; let token, decoding: String }
+    let values: [String: Policy]
     let blocked: Set<String>
     func resolve(rawSHA: String) throws -> String {
         let key = "source-decoding/" + (try parseSha256(value: rawSHA))
         guard !blocked.contains(key) else { throw UserSyncCompatibilityError() }
         guard let stored = values[key] else { return "auto" }
-        return try normalizeSourceDecoding(decoding: UserSyncJSON.decode(SourceDecodingValue.self, stored.value, as: UserSyncJSON.sourceDecoding).decoding)
+        return try normalizeSourceDecoding(decoding: stored.decoding)
     }
 }
 
@@ -88,9 +89,14 @@ final class SourceDecodingRead: @unchecked Sendable {
 }
 
 extension AppDataService {
+    func currentSourceDecodings() throws -> SourceDecodingSnapshot {
+        let index = try relationalUserIndex()
+        return try index.session.readUsers(index.lease) { try UserValueRows.sourceDecodings($0) }
+    }
+
     func resolveSourceDecoding(rawSHA: String) async throws -> String {
         let configuration = userCloudConfigurationRevision
-        let policy = try await userStore().sourceDecodingSnapshot().resolve(rawSHA: rawSHA)
+        let policy = try currentSourceDecodings().resolve(rawSHA: rawSHA)
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         return policy
     }
@@ -98,9 +104,9 @@ extension AppDataService {
     /// resolver, not a cache of applied tokens or a legacy preference fallback.
     func refreshIndexedSourceDecodings(_ shelfID: String) async throws {
         let configuration = userCloudConfigurationRevision
-        let policies = try await userStore().sourceDecodingSnapshot()
+        let policies = try currentSourceDecodings()
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
-        let core = try textCore()
+        let core = try indexStore()
         for file in try core.indexedSourcePolicies(shelfId: shelfID) {
             // Unknown values cannot invalidate/rewrite an existing identity;
             // attempting this source still reports isolation at the resolver.
@@ -108,60 +114,81 @@ extension AppDataService {
             try core.setSourceDecoding(fileId: file.fileId, decoding: decoding)
         }
     }
-    func prepareSourceDecoding(raw: RawSourceIdentity, fileID: String?, selection: String? = nil) async throws -> String {
+    func prepareSourceDecoding(raw: RawSourceIdentity, selection: String? = nil) async throws -> String {
         try Task.checkCancellation()
         let configuration = userCloudConfigurationRevision
-        let core = try textCore(), store = try await userStore()
+        let core = try relationalUserIndex()
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         try Task.checkCancellation()
         let pending = try core.sourceDecodingMigrations()
         for old in pending {
-            let matches = old.rawSha256 == raw.sha || (old.rawSha256 == nil && old.fileId == fileID && old.size == raw.size && old.modified == raw.modifiedMilliseconds)
-            guard matches else { continue }
-            try await store.mergeSourceDecodingEpoch(rawSHA: raw.sha, decoding: old.decoding)
+            guard old.rawSha256 == raw.sha else { continue }
+            try mergeSourceDecodingEpoch(rawSHA: raw.sha, decoding: old.decoding, index: core)
             guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
             try core.finishSourceDecodingMigration(fileId: old.fileId)
         }
         if let selection {
-            try await store.selectSourceDecoding(rawSHA: raw.sha, decoding: selection, device: userDevice)
+            let sha = try parseSha256(value: raw.sha), canonical = try normalizeSourceDecoding(decoding: selection)
+            let value = try UserSyncJSON.encode(SourceDecodingValue(decoding: canonical))
+            try core.session.writeUsers(core.lease) {
+                try UserValueRows.put($0, key: .init("source-decoding/" + sha), value: value, device: userDevice, now: userValueClock, scope: core.lease.scope)
+            }
             dataChanged()
         }
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
-        return try await store.sourceDecodingSnapshot().resolve(rawSHA: raw.sha)
+        return try currentSourceDecodings().resolve(rawSHA: raw.sha)
     }
     /// Known, valid raw identities need no download. Failed candidates stay queued
     /// and are reported when that source is prepared; other books remain usable.
     func migrateKnownSourceDecodings() async throws {
         let configuration = userCloudConfigurationRevision
-        let core = try textCore(), store = try await userStore()
+        let core = try relationalUserIndex()
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         for row in try core.sourceDecodingMigrations() {
             guard let raw = row.rawSha256 else { continue }
             do {
-                try await store.mergeSourceDecodingEpoch(rawSHA: raw, decoding: row.decoding)
+                try mergeSourceDecodingEpoch(rawSHA: raw, decoding: row.decoding, index: core)
                 guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
                 try core.finishSourceDecodingMigration(fileId: row.fileId)
             } catch is CancellationError { throw CancellationError() }
             catch { Logger(subsystem: "dev.moonread.Moonread", category: "SourceDecoding").error("Historical decoding migration remains pending") }
         }
     }
+
+    private func mergeSourceDecodingEpoch(rawSHA: String, decoding: String, index: ReaderIndex) throws {
+        try Task.checkCancellation()
+        try index.session.writeUsers(index.lease) { db in
+            // A choice with a raw identity verified by the released index is
+            // legacy seed data, never a later local edit.
+            guard try UpgradeOrigins.phase(db) != nil, try !ReadingCloudInitialization.isRecovering(db) else { return }
+            let input = try sourceDecodingEpoch(rawSHA: rawSHA, decoding: decoding)
+            let key = try UserValueRows.Key(input.key)
+            let device = "source-decoding-v23"
+            guard try UserValueRows.merge(db, key: key, head: input.value, device: device) else { return }
+            let id = UserValueRows.recordID(logical: key.logical, device: device)
+            // The same released raw SHA and normalized encoding keep their
+            // seed identity if interrupted between usr commit and index cleanup.
+            let batch = DataIdentity.id("legacy-index-v23-decoding", [input.value.token])
+            try UpgradeOrigins.record(db, .init(partition: 0, domain: .decoding, id: id), as: .seed(batch: batch))
+        }
+    }
+}
+
+private func sourceDecodingEpoch(rawSHA: String, decoding: String) throws -> (key: String, value: StoredValue) {
+    try Task.checkCancellation()
+    let sha = try parseSha256(value: rawSHA), canonical = try normalizeSourceDecoding(decoding: decoding)
+    let value = try UserSyncJSON.encode(SourceDecodingValue(decoding: canonical))
+    return ("source-decoding/" + sha, .init(updated: 0, token: "source-decoding-v23/" + sha + "/" + canonical, value: value))
 }
 
 extension UserDataStore {
-    func selectSourceDecoding(rawSHA: String, decoding: String, device: String) throws {
-        try Task.checkCancellation()
-        let sha = try parseSha256(value: rawSHA), canonical = try normalizeSourceDecoding(decoding: decoding)
-        try put("source-decoding/" + sha, value: UserSyncJSON.encode(SourceDecodingValue(decoding: canonical)), device: device)
-    }
+    // Released-store fixture, until the remaining legacy-store consumers are removed.
     func mergeSourceDecodingEpoch(rawSHA: String, decoding: String, beforeSave: @Sendable () throws -> Void = {}) throws {
-        try Task.checkCancellation()
-        let sha = try parseSha256(value: rawSHA), canonical = try normalizeSourceDecoding(decoding: decoding)
-        let value = try UserSyncJSON.encode(SourceDecodingValue(decoding: canonical))
-        let stored = StoredValue(updated: 0, token: "source-decoding-v23/" + sha + "/" + canonical, value: value)
+        let input = try sourceDecodingEpoch(rawSHA: rawSHA, decoding: decoding)
         try transaction {
-            try mergeValueRecord(key: "source-decoding/" + sha, device: "source-decoding-v23", payload: UserSyncJSON.envelope(UserSyncJSON.encode(stored)))
+            try mergeValueRecord(key: input.key, device: "source-decoding-v23", payload: UserSyncJSON.encode(input.value, envelope: true))
             try beforeSave()
         }
     }

@@ -1,7 +1,4 @@
 use crate::*;
-use rusqlite::Connection;
-use rusqlite::OptionalExtension;
-use rusqlite::params;
 use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
 pub enum ReadingMode {
@@ -228,6 +225,11 @@ pub(crate) fn horizontal_indent(c: char) -> bool {
     )
 }
 
+#[uniffi::export]
+pub fn is_horizontal_indent(text: String) -> bool {
+    text.chars().all(horizontal_indent)
+}
+
 /// Runtime display omissions, not normalization or persisted source coordinates.
 #[uniffi::export]
 pub fn reading_indent_omissions(
@@ -280,28 +282,33 @@ pub(crate) fn indent_omissions(
         .collect()
 }
 
-pub(crate) fn paragraphs(
-    db: &Connection,
-    id: &str,
+/// Only classify the supplied window; Swift selects its confirmed blank ranges and headings.
+#[uniffi::export]
+pub fn classify_reading_paragraphs(
+    chunks: Vec<TextChunk>,
+    chapters: Vec<ChapterInfo>,
+    blank_runs: Vec<SourceSpan>,
+    continues: bool,
+) -> Vec<ReadingParagraph> {
+    classify_paragraphs(&chunks, &chapters, &blank_runs, continues)
+}
+
+pub(crate) fn classify_paragraphs(
     chunks: &[TextChunk],
-) -> Result<Vec<ReadingParagraph>> {
+    chapters: &[ChapterInfo],
+    blank_runs: &[SourceSpan],
+    continues: bool,
+) -> Vec<ReadingParagraph> {
     let Some(first) = chunks.first() else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
-    let end = chunks.last().unwrap().end_utf8;
-    let mut stmt = db.prepare("SELECT start_utf8,level FROM effective_chapters WHERE book_id=?1 AND start_utf8>=?2 AND start_utf8<?3")?;
-    let headings = stmt
-        .query_map(params![id, first.start_utf8 as i64, end as i64], |r| {
-            Ok((unsigned_column(r, 0)?, r.get::<_, u32>(1)?))
-        })?
-        .collect::<std::result::Result<HashMap<_, _>, _>>()?;
-    let continues = if first.start_utf8 > 0 {
-        let raw_index = chunk_index(db, id, first.start_utf8 - 1)?;
-        let raw = chunk(db, id, raw_index)?;
-        let prefix = &raw.text[..(first.start_utf8 - raw.start_utf8) as usize];
-        !prefix.ends_with('\n')
-    } else {
-        false
+    let headings: HashMap<_, _> = chapters
+        .iter()
+        .map(|chapter| (chapter.start_utf8, chapter.level))
+        .collect();
+    let is_blank = |start, end| {
+        let index = blank_runs.partition_point(|run| run.start_utf8 <= start);
+        index > 0 && blank_runs[index - 1].end_utf8 >= end
     };
     let text: String = chunks.iter().map(|c| c.text.as_str()).collect();
     let mut offset = 0;
@@ -312,9 +319,9 @@ pub(crate) fn paragraphs(
         let kind = match headings.get(&start) {
             Some(0) => ParagraphKind::Volume,
             Some(_) => ParagraphKind::Heading,
-            None if body.is_empty() && db.query_row(
-                "SELECT EXISTS(SELECT 1 FROM reading_blanks WHERE book_id=?1 AND start_utf8=(SELECT max(start_utf8) FROM reading_blanks WHERE book_id=?1 AND start_utf8<=?2) AND end_utf8>=?3)",
-                params![id, start as i64, (start + line.len() as u64) as i64], |r| r.get::<_,bool>(0))? => ParagraphKind::Blank,
+            None if body.is_empty() && is_blank(start, start + line.len() as u64) => {
+                ParagraphKind::Blank
+            }
             None if body.starts_with(['•', '●', '※'])
                 || body.starts_with("- ")
                 || body.starts_with("* ") =>
@@ -332,7 +339,7 @@ pub(crate) fn paragraphs(
             indented: line.starts_with([' ', '\t', '　']),
         });
     }
-    Ok(result)
+    result
 }
 
 /// Uses constant memory even for an arbitrarily long whitespace-only line.
@@ -377,121 +384,8 @@ impl BlankScanner {
     pub fn discard_published_prefix(&mut self) {
         self.updates.clear();
     }
-    pub fn publish(&mut self, db: &Connection, id: &str) -> Result<()> {
+    pub(crate) fn drain(&mut self) -> (u64, Vec<(u64, u64)>) {
         let frontier = if self.visible { self.end } else { self.start };
-        // Replay may visit an already published prefix. Never regress a generation.
-        db.execute("UPDATE books SET projection_end=?2,projection_revision=projection_revision+1 WHERE id=?1 AND projection_end<?2 AND byte_count>=?2", params![id, frontier as i64])?;
-        for (start, end) in self.updates.drain(..) {
-            let changed = db.execute("INSERT INTO reading_blanks VALUES(?1,?2,?3) ON CONFLICT(book_id,start_utf8) DO UPDATE SET end_utf8=excluded.end_utf8 WHERE end_utf8<>excluded.end_utf8", params![id, start as i64, end as i64])?;
-            if changed > 0 {
-                db.execute(
-                    "UPDATE books SET projection_revision=projection_revision+1 WHERE id=?1",
-                    [id],
-                )?;
-            }
-        }
-        Ok(())
-    }
-}
-
-/// Runs are disjoint and maximal. One predecessor and a bounded start interval
-/// avoid scanning all earlier paragraphs when paging near the end of a book.
-pub(crate) fn blank_ranges(db: &Connection, id: &str, lo: u64, hi: u64) -> Result<Vec<(u64, u64)>> {
-    let predecessor: Option<(u64,u64)> = db.query_row(
-        "SELECT start_utf8,end_utf8 FROM reading_blanks WHERE book_id=?1 AND start_utf8<?2 ORDER BY start_utf8 DESC LIMIT 1",
-        params![id,lo as i64],|r|Ok((unsigned_column(r,0)?,unsigned_column(r,1)?))).optional()?;
-    let mut result = predecessor
-        .filter(|(_, end)| *end > lo)
-        .into_iter()
-        .collect::<Vec<_>>();
-    let mut query = db.prepare("SELECT start_utf8,end_utf8 FROM reading_blanks WHERE book_id=?1 AND start_utf8>=?2 AND start_utf8<?3 ORDER BY start_utf8")?;
-    result.extend(
-        query
-            .query_map(params![id, lo as i64, hi as i64], |r| {
-                Ok((unsigned_column(r, 0)?, unsigned_column(r, 1)?))
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?,
-    );
-    Ok(result)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn eof_only_blank_confirmation_revises_projection_without_new_chunks() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let core = ReaderCore::new(dir.path().join("db").to_string_lossy().into()).unwrap();
-        let source = "甲\n \t　";
-        let book = core
-            .ingest(
-                &mut std::io::Cursor::new(source.as_bytes()),
-                "合成".into(),
-                encoding_rs::UTF_8,
-            )
-            .unwrap();
-        core.lock()
-            .unwrap()
-            .execute("DELETE FROM reading_blanks WHERE book_id=?1", [&book.id])
-            .unwrap();
-        let before = core.reading_frame(book.id.clone(), 0).unwrap();
-        let mut scanner = BlankScanner::default();
-        scanner.push(source);
-        scanner.publish(&core.lock().unwrap(), &book.id).unwrap();
-        assert!(
-            core.reading_frame(book.id.clone(), 0)
-                .unwrap()
-                .omitted
-                .is_empty()
-        );
-        scanner.finish_line();
-        scanner.publish(&core.lock().unwrap(), &book.id).unwrap();
-        let after = core.reading_frame(book.id.clone(), 0).unwrap();
-        assert_eq!(
-            before.snapshot.book.byte_count,
-            after.snapshot.book.byte_count
-        );
-        assert_eq!(
-            before.snapshot.book.chunk_count,
-            after.snapshot.book.chunk_count
-        );
-        assert!(after.projection_revision > before.projection_revision);
-        assert_eq!(after.omitted.len(), 1);
-        assert_eq!(after.chunks[0].text, "甲\n");
-    }
-    #[test]
-    fn heading_metadata_spans_adjacent_physical_chunks() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let core = ReaderCore::new(dir.path().join("db").to_string_lossy().into()).unwrap();
-        let title = "第1章 跨物理块标题\n";
-        let book = core
-            .ingest(
-                &mut std::io::Cursor::new(format!("{title}正文。").as_bytes()),
-                "合成".into(),
-                encoding_rs::UTF_8,
-            )
-            .unwrap();
-        let mut db = core.lock().unwrap();
-        let tx = db.transaction().unwrap();
-        tx.execute("DELETE FROM chunks WHERE book_id=?1", [&book.id])
-            .unwrap();
-        let source = format!("{title}正文。");
-        let split = "第1章 跨".len();
-        for (index, (start, end)) in [(0, split), (split, source.len())].into_iter().enumerate() {
-            let text = &source[start..end];
-            tx.execute(
-                "INSERT INTO chunks VALUES(?1,?2,?3,?4,?5,0,0)",
-                params![book.id, index as u32, start as i64, end as i64, text],
-            )
-            .unwrap();
-        }
-        tx.execute("UPDATE books SET chunk_count=2 WHERE id=?1", [&book.id])
-            .unwrap();
-        tx.commit().unwrap();
-        drop(db);
-        let frame = core.reading_frame(book.id.clone(), 0).unwrap();
-        assert_eq!(frame.paragraphs[0].kind, ParagraphKind::Heading);
-        assert_eq!(frame.paragraphs[0].end_utf8, title.len() as u64);
-        assert_eq!(frame.paragraphs.len(), 2);
+        (frontier, std::mem::take(&mut self.updates))
     }
 }

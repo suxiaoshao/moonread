@@ -1,4 +1,4 @@
-//! Portable transport only. SwiftData remains the owner of payload schemas and merge rules.
+//! Portable transport only. The user-data owner interprets payloads and merges records.
 use super::archive_limits::*;
 use crate::{ReaderError, Result, parse_sha256};
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,13 @@ const RECORDS: [&str; 5] = [
     "records/facts.jsonl",
     "records/statistics-clears.jsonl",
 ];
+const SEGMENTS: &str = "records/segments.jsonl";
+const HISTORY_ISOLATION: &str = "records/history-isolation.jsonl";
+
+fn is_record_file(name: &str) -> bool {
+    RECORDS.contains(&name) || matches!(name, SEGMENTS | HISTORY_ISOLATION)
+}
+
 fn invalid(message: &str) -> ReaderError {
     ReaderError::Backup {
         message: message.into(),
@@ -32,7 +39,7 @@ fn safe_name(name: &str) -> Result<()> {
     if !name.is_ascii() {
         return Err(invalid("备份包含不安全路径"));
     }
-    if name == "manifest.json" || RECORDS.contains(&name) || name.starts_with("extensions/") {
+    if name == "manifest.json" || is_record_file(name) || name.starts_with("extensions/") {
         return Ok(());
     }
     if let Some(hash) = name
@@ -73,7 +80,7 @@ struct Manifest {
 fn manifest(text: &str) -> Result<Manifest> {
     let value: Manifest = serde_json::from_str(text).map_err(|_| invalid("备份清单无效"))?;
     if value.format != "moonread-backup"
-        || value.format_version != 1
+        || !matches!(value.format_version, 1 | 2)
         || value.identity_version != "normalization-v1"
         || value.scope != "all"
     {
@@ -100,6 +107,14 @@ fn manifest(text: &str) -> Result<Manifest> {
     if RECORDS.iter().any(|p| !names.contains(*p)) {
         return Err(invalid("备份缺少记录成员"));
     }
+    // v1 readers cannot inspect segments or newer clear envelopes. A v2
+    // package must declare both new streams, even if they have no records.
+    if [SEGMENTS, HISTORY_ISOLATION]
+        .iter()
+        .any(|p| names.contains(*p) != (value.format_version == 2))
+    {
+        return Err(invalid("备份记录与格式版本不匹配"));
+    }
     Ok(value)
 }
 fn copy_hash<R: Read, W: Write>(
@@ -121,7 +136,7 @@ fn copy_hash<R: Read, W: Write>(
         if bytes > limit(name) {
             return Err(invalid("备份超过成员大小上限"));
         }
-        if RECORDS.contains(&name) {
+        if is_record_file(name) {
             for b in &buffer[..n] {
                 if *b == b'\n' {
                     if line == 0 {
@@ -319,6 +334,47 @@ mod tests {
         }
         zip.finish().unwrap();
     }
+    #[test]
+    fn version_two_round_trips_both_history_streams_and_rejects_inconsistent_manifests() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("input");
+        let mut value = snapshot(&root);
+        value["formatVersion"] = json!(2);
+        assert!(manifest(&value.to_string()).is_err());
+        for (path, bytes) in [
+            (SEGMENTS, b"{}\n{}".as_slice()),
+            (HISTORY_ISOLATION, b"{}\n".as_slice()),
+        ] {
+            fs::write(root.join(path), bytes).unwrap();
+            let member =
+                backup_member(path.into(), root.join(path).to_string_lossy().into()).unwrap();
+            assert_eq!(member.records, if path == SEGMENTS { 2 } else { 1 });
+            value["members"].as_array_mut().unwrap().push(json!(member));
+        }
+        let archive = dir.path().join("snapshot.moonread-backup");
+        fs::write(root.join("manifest.json"), value.to_string()).unwrap();
+        write_backup(
+            root.to_string_lossy().into(),
+            archive.to_string_lossy().into(),
+        )
+        .unwrap();
+        let restored = inspect_backup(
+            archive.to_string_lossy().into(),
+            dir.path().to_string_lossy().into(),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(Path::new(&restored.directory).join(SEGMENTS)).unwrap(),
+            b"{}\n{}"
+        );
+        assert_eq!(
+            fs::read(Path::new(&restored.directory).join(HISTORY_ISOLATION)).unwrap(),
+            b"{}\n"
+        );
+        value["formatVersion"] = json!(1);
+        assert!(manifest(&value.to_string()).is_err());
+    }
+
     #[test]
     fn portable_backup_roundtrip_preserves_bytes_and_optional_extensions() {
         let dir = tempfile::tempdir().unwrap();

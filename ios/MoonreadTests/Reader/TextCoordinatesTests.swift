@@ -17,8 +17,8 @@ final class TextCoordinatesReaderSelectionTests: ReaderSelectionFixture {
     let expected = "甲🌙段。\n乙段。\n"
     let file = root.appendingPathComponent("选取.txt")
     try Data(raw.utf8).write(to: file)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let book = try core.importBook(filePath: file.path, title: "选取")
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
+    let book = try importBookFixture(core, filePath: file.path, title: "选取")
     let service = AppDataService(core: core)
     let session = ReaderSession(service: service)
     await session.open(.book(book.id))

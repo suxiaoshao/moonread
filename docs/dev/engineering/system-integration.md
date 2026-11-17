@@ -1,25 +1,18 @@
 # 系统续读、动作与书目快照
 
-1.3 当前实现，兼容基线为已发布的 1.2 (10) `6ceef33`；本批新增 Widget、Intent 与共享快照直接采用最终结构，无开发中间态迁移，本批快捷指令、小组件（含画廊配色）与正常阅读已通过用户真机试用，Spotlight 以全名可搜验收。本页记录当前接口和状态。产品默认见[系统集成设计](../design/ios-integration.md)，持久化与身份规则沿用[架构](architecture.md)。
+本页记录系统集成合同。已发布的真机验收不等于本次数据层重构已经过真机验证。产品默认见[系统集成设计](../design/ios-integration.md)，持久化与身份规则沿用[架构](architecture.md)。
 
-## 一个生产者，多个消费者
+## 两条独立的本机派生发布
 
 ```text
-SwiftData 用户事实 → 唯一候选裁决 ─┐
-Rust 索引、身份、来源状态 ─────────┴→ AppDataService / ReaderQuery
-                                      ↓ SystemReadingCatalog
-                               App Group 原子派生快照
-                              ↙          ↓          ↘
-                        App Entity   Spotlight     Widget
-                              ↘          ↓          ↙
-                         SystemReadingRouter → 主 App 正常开书
+正文索引 + 当前用户书目字段 → 固定书目查询 → catalog.json → Entity、Spotlight、续读小组件
+已结算书日量 + 相关隔离     → 固定统计查询 → statistics.json → 统计小组件
+明确 SHA / 最近一本         → 独立窄查询   → 主 App 正常开书
 ```
 
-主 App 唯一发布快照；扩展不打开 SwiftData/CloudKit、Rust SQLite 或根 bookmark，不读 TXT、不调用 AI、不写位置/统计。快照不进入同步/用户备份，不能回写权威事实。全库 catalog 不是 recentReadings 的十本截取；分批查询元数据，不加载正文/批注/统计 facts。
+主 App 的 `SystemReadingCatalog.swift` 负责两个发布工作，Swift 固定查询从同一连接池读取，Apollo 只生成书目结果类型。扩展只读自己所需的快照；不打开索引或用户库、不读 TXT，不回写位置/统计。全库书目不是最近列表截取，不取正文、简介、批注和事实。两个快照都可从库重建，不进入同步/用户备份。升级后在主 App 生成独立统计文件前，小组件显示统计暂不可用。
 
-主 App 的 `SystemIntegration/SystemReadingCatalog.swift` 负责生产，`SystemReadingRouter.swift` 负责开书路由，共享 DTO 位于 `ios/SystemIntegrationShared/`；未引入包管理工具或通用事件总线。
-
-导入小说资料时，每个成功提交的事务通知本批影响的书目。系统书目将本次执行中已提交的批次合并为退出时的一次刷新请求，完成、失败和取消均走同一收尾；作用域改变后不发布旧任务的目录。单本编辑、云导入和文件索引变化等其他失效仍按各自路径处理。
+系统书目/统计各观察同一 writer 的实际相关表列。提交回调只推进提交代次并发信号，正常目录刷新间隔 30 秒，正在构建时再来的变更只记一次待重查。资料保存、全量索引持有目录暂停票据，最后一个退出才允许重查；失败或取消后若已有提交也要刷新。旧账户的票据、待重查和发布能力一律作废。统计不受目录票据影响。
 
 ## 身份与字段
 
@@ -29,16 +22,16 @@ Rust 索引、身份、来源状态 ─────────┴→ AppDataSer
 | --- | --- |
 | BookEntity | id、title、author?；标题沿现有有效书名规则，不含正文、简介、批注、路径或精确时间 |
 | catalog 书目 | id、title、author?、tags、availability、sourceCount、naturalOrdinal；排序/代表副本沿既有 owner，availability 不是授权 |
-| 阅读摘要 | progress?、chapterLabel?、recentRank?；现有 ReaderQuery 计算，未知为 nil，不伪造0% |
-| envelope | schemaVersion=1、generation、storeScope、generatedAt、books、recentIDs、exposurePolicy、appearance?、statistics?；scope 为本机不透明域，不含 Apple ID |
+| 阅读摘要 | progress?、chapterLabel?、recentRank?；采用当前有效位置、修正章节与共用最近排名，未知为 nil |
+| 书目文件 | schemaVersion=1、generation、storeScope、generatedAt、books、recentIDs、exposurePolicy、appearance?；scope 为本机不透明域，不含 Apple ID。已发布可选 statistics 字段保留用于读旧派生文件及预览，生产书目不再写该字段 |
 | 封面引用 | fileName/revision/pixelWidth/pixelHeight；仅受控 Covers basename，损坏/缺图用共享预设装帧兜底，无有效身份才用文字封面，统计/主题不可得不阻断书目 |
-| 统计摘要 | status、generatedAt、localDay、validUntil、timeZoneID/calendarID/firstWeekday、recordingEnabled、今日/本周时长、连续日、七日条；不进 Entity/Spotlight/donation |
+| 统计文件 | schemaVersion=1、storeScope、appearance? 及统计摘要：status、generatedAt、localDay、validUntil、timeZoneID/calendarID/firstWeekday、recordingEnabled、今日/本周时长、连续日、七日条；不进 Entity/Spotlight/donation |
 
 不保存精确 offset/位置 token，点击时读最新权威位置，不能反算百分比跳页。共享 catalog 只引用自身 Covers 子目录内的受限缩略图，不发布原封面路径或字节；Spotlight 使用同一 `SystemBookCover` 显示入口生成缩略图，缺图共用 App 的预设装帧与排版。同 SHA 多副本合一；正文改变换身份，旧 ID 不按同名重绑。
 
 ## 发布和失效
 
-App Group `SystemReading/v1/` 同目录暂存后原子替换完整 JSON；串行发布者用配置代次丢弃旧结果。快照保护上限为总 JSON 8 MiB、单 title/author 1 KiB、tags 总 4 KiB；这是应用自身限额，不是 Apple API 限制。超额不能无声截断成完整快照。
+App Group `SystemReading/v1/` 同目录暂存后分别原子替换。书目在服务 actor 外编码暂存，最终替换前核对账户、政策、任务与提交代次；统计发布不读、不改书目。书目保护上限为总 JSON 8 MiB，统计文件上限 64 KiB、单 title/author 1 KiB、tags 总 4 KiB；这是应用自身限额，不是 Apple API 限制。超额不能无声截断成完整快照。
 
 | 事件 | 处理 |
 | --- | --- |
@@ -79,7 +72,7 @@ Spotlight 另记 `contentFormatVersion`（当前 8）：提交字段、关键词
 
 共享颜色由主 App 调用既有主题 owner 解析 App 界面（书架/设置）的 appMode 与 light/dark 槽；固定浅/深同样生效，系统配色槽使用原生角色，染色/锁屏由系统处理。小组件不读取阅读页配色或纸张纹理，使用纯色背景；扩展不重新混色。自设封面保留原色，复用 coverImage 下采样后重新编码（最长边 384，必要时 274/192；JPEG 0.8 或透明 PNG，去原图元数据），目标 128 KiB、单图硬上限 256 KiB。自身 Covers 目录按指定书、最近、其余书目优先，保留当前及预算内上一代引用，清理后总预算 32 MiB。先落图再原子发布 JSON，失败用共享预设封面回退，不省书目。Widget 配置查询独立于发布，失败不阻塞；scope 变更清空旧图，过时异步工作不得重新发布。
 
-统计从单个 ReaderQuery 有效事实快照查询，Rust statistics owner 统一日汇总、今日/本周及连续天数：今天有效时长 >0 则截至今天，否则截至昨天，向前数到断日，不限七天，清除规则沿原投影。Swift 只传 Calendar 周起点并格式化。位置变化复用统计摘要，事实/清除/导入/开关/跨日才标脏；关闭记录保留历史，未知必需格式提示更新、读取失败显示不可用，未取得摘要不伪造 0。
+统计只查询已结算书日量与相交隔离。今天有正时长则截至今天，否则截至昨天，沿日期索引查到断日，不限七天。书目位置变化不重算统计；事实贡献、清除、统计开关及日期参数变化才刷新数据。共同的应用配色变化会更新两份快照外观。关闭记录保留历史，未知必需格式提示更新、失败时不伪造 0。
 
 统计带本地日、时区/日历/周起点及下个民用午夜有效期。主 App 活跃时重算跨日/设置变化；扩展在午夜时间线 entry 显示“打开月读更新统计”并请求 reload，不能靠重读旧 JSON 冒充新一天或访问数据库。续读仍可用。显示数据没变不 reload；generation/generatedAt 本身不是内容变更。系统调度不保证按时刷新。
 

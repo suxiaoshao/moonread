@@ -3,12 +3,13 @@ import CryptoKit
 
 extension AppDataService {
     func metadataImportScope() -> String {
-        switch userCloudMode {
-        case .local: return "local"
-        case .cloud(let account):
-            let digest = SHA256.hash(data: Data(account.recordName.utf8))
-            return "cloud:" + digest.map { String(format: "%02x", $0) }.joined()
+        guard let scope = try? indexStore().lease.scope else { return "unavailable" }
+        // Preserve drafts for exactly the old migration owner, including
+        // while offline. Never use it for a newly attached account.
+        if let owner = userCloudOwner(), (try? publishedUserSource().scope) == scope {
+            return "cloud:" + SHA256.hash(data: Data(owner.utf8)).map { String(format: "%02x", $0) }.joined()
         }
+        return scope == .local ? "local" : "account:" + scope.key
     }
     func exportMetadata(shelfID: String?, format: MetadataFormat, progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }) async throws -> MetadataExportResult {
         try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
@@ -250,15 +251,13 @@ extension AppDataService {
         guard Set(books.map(\.id)).count == books.count,
               books.allSatisfy({ $0.selectionError == nil }) else { throw ReaderError.InvalidSettings }
         let deletionTokens = Dictionary(uniqueKeysWithValues: books.map { ($0.id, localReadingWriteLease($0.id)) })
-        let expectedStoreID = userStoreTask?.id
-        let store = try await userStore()
-        guard preview.session.configuration == userCloudConfigurationRevision, let storeID = userStoreTask?.id,
-              expectedStoreID == nil || expectedStoreID == storeID else { throw ReadingDataError.changed }
+        let lease = try relationalUserIndex().lease
+        guard preview.session.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
         return .init(session: preview.session, books: books,
                      writeIndices: books.indices.filter { !books[$0].changedMetadataFields.isEmpty },
                      renameIndices: books.indices.filter { books[$0].renameName != nil },
-                     store: store, storeID: storeID, deletionTokens: deletionTokens)
+                     lease: lease, deletionTokens: deletionTokens)
     }
 
     private struct PreparedMetadataBook: Sendable {
@@ -322,10 +321,9 @@ extension AppDataService {
         var checkpoint = confirmed
         var result = MetadataBatchResult()
         var wroteThisRun = false
+        let catalogueBatch = beginSystemReadingBatch()
         defer {
-            if wroteThisRun, confirmed.session.configuration == userCloudConfigurationRevision {
-                scheduleSystemReadingCatalog(immediate: systemCatalog?.task == nil)
-            }
+            endSystemReadingBatch(catalogueBatch, committed: wroteThisRun && confirmed.session.configuration == userCloudConfigurationRevision)
         }
         let bookAt = confirmed.books
         let writes = confirmed.writeIndices
@@ -354,18 +352,21 @@ extension AppDataService {
                 }
                 let entries = try prepared.map { item in
                     try Task.checkCancellation()
-                    let cover: UserDataStore.CoverWrite?
+                    let cover: UserValueRows.CoverWrite?
                     if let asset = item.asset, let url = item.url {
                         cover = try Self.readCoverDraft(asset, url: url, length: item.budget.covers)
                     } else { cover = nil }
-                    return UserDataStore.MetadataWrite(plan: item.plan, cover: cover)
+                    return UserValueRows.MetadataWrite(plan: item.plan, cover: cover)
                 }
                 try await acquireCancellableUserDataOperation()
                 do {
                     defer { releaseUserDataOperation() }
                     try Task.checkCancellation()
                     try validateMetadataScope(confirmed, indices: prepared.map(\.index))
-                    try await confirmed.store.putMetadata(entries, device: userDevice)
+                    let writer = try relationalUserIndex()
+                    try writer.session.writeUsers(confirmed.lease) {
+                        try UserValueRows.putMetadata($0, entries, device: userDevice, now: userValueClock, scope: confirmed.lease.scope)
+                    }
                     // A successful save is a fact even when a stop raced the return.
                     checkpoint.committed += prepared.count
                     wroteThisRun = true
@@ -374,7 +375,7 @@ extension AppDataService {
                         checkpoint.outcomes[item.index] = .init(id: book.id, title: book.title, saved: true,
                             message: nil, cover: book.edited?.cover, savedFieldCount: book.changedMetadataFields.count)
                     }
-                    publishMetadataCommit(prepared.map(\.plan), deferCatalogRefresh: true)
+                    publishMetadataCommit(prepared.map(\.plan))
                 }
                 progress(.init(phase: .saving, completed: checkpoint.committed, total: writes.count))
             }
@@ -394,6 +395,7 @@ extension AppDataService {
                                                 configuration: confirmed.session.configuration,
                                                 deletionToken: confirmed.deletionTokens[book.id])
                     outcome.renamed = true
+                    wroteThisRun = true
                 } catch is CancellationError { throw CancellationError() }
                 catch let error as ReadingDataError { throw error }
                 catch let error as AIFileExecutionError {
@@ -429,10 +431,10 @@ extension AppDataService {
     }
 
     private func validateMetadataScope(_ confirmed: MetadataConfirmedImport, indices: [Int]) throws {
-        guard confirmed.session.configuration == userCloudConfigurationRevision, confirmed.storeID == userStoreTask?.id,
+        guard confirmed.session.configuration == userCloudConfigurationRevision, try confirmed.lease == indexStore().lease,
               indices.allSatisfy({ index in
                   let key = confirmed.books[index].id
-                  return confirmed.deletionTokens[key] == localReadingWriteLeases[key]
+                  return confirmed.deletionTokens[key] == localReadingWriteLease(key)
               }) else { throw ReadingDataError.changed }
     }
     private nonisolated static func metadataRenameFailure(_ error: Error, saved: Bool) -> String {

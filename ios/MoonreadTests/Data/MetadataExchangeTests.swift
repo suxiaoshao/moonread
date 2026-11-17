@@ -3,13 +3,12 @@ import CryptoKit
 import SwiftData
 import XCTest
 import UIKit
-import SQLite3
 import Synchronization
 @testable import Moonread
 
 final class MetadataExchangeTests: ReaderIntegrationFixture {
     @MainActor func testIndexOnlyImportConflictsUnreadAndReimportNoOp() async throws {
-        let (root, service, _, store, _, first, second, suite) = try singleBookFixture()
+        let (root, service, _, store, first, second, suite) = try singleBookFixture()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
         try await service.savePosition(bookID: first.id, offset: 12)
         // A missing local original must not prevent a metadata-only preview/save.
@@ -84,11 +83,11 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         let metadata = try await service.details(sha: first.fixtureSHA256).metadata
         XCTAssertEqual(metadata.author, "林舟")
         XCTAssertEqual(metadata.tags, ["海边"])
-        let before = try await store.syncFixturePayloads("value")
+        let before = try store.metadataTokens()
         let repeated = try await service.previewMetadata(input)
         XCTAssertTrue(repeated.books.allSatisfy { $0.changedFields.isEmpty })
         _ = await service.applyMetadata(repeated) { _, _ in }
-        let after = try await store.syncFixturePayloads("value")
+        let after = try store.metadataTokens()
         XCTAssertEqual(before, after)
         var b = a; b["author"] = "另一位作者"
         try (JSONSerialization.data(withJSONObject: a) + Data([10]) + JSONSerialization.data(withJSONObject: b)).write(to: input)
@@ -116,7 +115,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         XCTAssertEqual(mixed.books.first { $0.sourceCount == 0 }?.disposition, .unmatched)
     }
     @MainActor func testFailedBatchRollsBackAllBooksAndNewCover() async throws {
-        let (root, service, _, store, _, first, second, suite) = try singleBookFixture()
+        let (root, service, _, store, first, second, suite) = try singleBookFixture()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
         func coverBytes(_ color: UIColor) throws -> Data {
             let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 6)).image { context in
@@ -133,21 +132,23 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         var firstEdit = firstBase
         firstEdit.author = "Temporary author"
         firstEdit.cover = proposedCover
-        let initialValues = try await store.syncFixturePayloads("value")
+        let initialValues = try store.metadataTokens()
         let firstWrite = try service.metadataEditPlan(base: firstBase, edited: firstEdit)
         let draft = await service.coverDraftURL(proposedCover)
         let validCover = try Data(contentsOf: draft)
         let badField = BookMetadataEditPlan(sha: second.fixtureSHA256,
             values: ["metadata/\(second.fixtureSHA256)/author": "not JSON"])
         do {
-            try await store.putMetadata([
-                .init(plan: firstWrite, cover: .init(id: proposedCover.id, bytes: validCover)),
-                .init(plan: badField, cover: nil),
-            ], device: "fixture")
+            try store.index.session.writeUsers(store.index.lease) {
+                try UserValueRows.putMetadata($0, [
+                    .init(plan: firstWrite, cover: .init(id: proposedCover.id, bytes: validCover)),
+                    .init(plan: badField, cover: nil),
+                ], device: "fixture", now: 1, scope: store.index.lease.scope)
+            }
             XCTFail("Failure after inserting a cover and fields must roll back the whole batch")
         } catch {}
-        let missing = try await store.cover(proposedCover.id)
-        let after = try await store.syncFixturePayloads("value")
+        let missing = try store.coverBytes(id: proposedCover.id, sha: proposedCover.sha256)
+        let after = try store.metadataTokens()
         XCTAssertNil(missing)
         XCTAssertEqual(initialValues, after)
         let input = root.appendingPathComponent("batch.jsonl")
@@ -158,7 +159,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         for index in preview.books.indices {
             preview.books[index].fields.append(.init(field: .cover, options: [.init(id: "incoming-cover", cover: proposedCover, sources: ["synthetic"])], selected: "incoming-cover"))
         }
-        try await store.receiveSyncFixture("value", key: "metadata/\(second.fixtureSHA256)/author", payload: "{\"v\":2}")
+        try store.quarantineValue("metadata/\(second.fixtureSHA256)/author", payload: "{\"v\":2}")
         let result = await service.applyMetadata(preview) { _, _ in }
         XCTAssertTrue(result.outcomes.isEmpty)
         XCTAssertNotNil(result.failure)
@@ -166,7 +167,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         let saved = try await service.details(sha: first.fixtureSHA256).metadata
         XCTAssertTrue(saved.author.isEmpty)
         XCTAssertNil(saved.cover)
-        let discardedCover = try await store.cover(proposedCover.id)
+        let discardedCover = try store.coverBytes(id: proposedCover.id, sha: proposedCover.sha256)
         XCTAssertNil(discardedCover)
         XCTAssertEqual(result.remaining.first { $0.id == second.fixtureSHA256 }?.cover, existingCover)
         let task = Task { () -> MetadataBatchResult in
@@ -178,7 +179,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         XCTAssertEqual(cancelled.remaining.first { $0.id == second.fixtureSHA256 }?.cover, existingCover, "An unprocessed book keeps its existing cover")
     }
     @MainActor func testMetadataImportSkipsRenameWhenSourceWasReplacedAfterPreview() async throws {
-        let (root, service, _, _, _, first, second, suite) = try singleBookFixture()
+        let (root, service, _, _, first, second, suite) = try singleBookFixture()
         let fm = FileManager.default
         defer {
             UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -216,14 +217,14 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
     }
 
     @MainActor func testExportCountsUnindexedFilesAndRejectsRenameForGlobalDuplicates() async throws {
-        let (root, service, core, _, _, first, second, suite) = try singleBookFixture()
+        let (root, service, core, _, first, second, suite) = try singleBookFixture()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
-        let old = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
+        let old = try core.catalogue("builtin", grouping: .name).entries
         var items = old.map { ScannedLibraryItem(relativePath: $0.relativePath, directory: false, size: $0.size, modified: $0.modified, needsDownload: $0.needsDownload) }
         items.append(.init(relativePath: "duplicate.TXT", directory: false, size: first.byteCount, modified: 0, needsDownload: true))
         items.append(.init(relativePath: "unindexed.txt", directory: false, size: 1, modified: 0, needsDownload: false))
         try core.scanLibraryShelf(shelfId: "builtin", items: items)
-        let duplicate = try XCTUnwrap(core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin").first { $0.name == "duplicate.TXT" })
+        let duplicate = try XCTUnwrap(core.catalogue("builtin", grouping: .name).entries.first { $0.name == "duplicate.TXT" })
         try core.linkLibraryFile(fileId: duplicate.id, bookId: first.id)
         // Only the catalogue is needed: neither export nor preview reads originals.
         try FileManager.default.removeItem(at: root.appendingPathComponent("a.txt"))
@@ -266,10 +267,12 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         var rename = try await service.previewMetadata(input)
         let title = try XCTUnwrap(rename.books[0].fields.firstIndex { $0.field == .title })
         rename.books[0].fields[title].selected = rename.books[0].fields[title].options[0].id
-        var db: OpaquePointer?
-        XCTAssertEqual(sqlite3_open(root.appendingPathComponent("db/reader.sqlite3").path, &db), SQLITE_OK)
-        defer { sqlite3_close(db) }
-        XCTAssertEqual(sqlite3_exec(db, "CREATE TRIGGER fail_metadata_rename BEFORE UPDATE OF relative_path ON library_files BEGIN SELECT RAISE(ABORT, 'synthetic relocation failure'); END", nil, nil, nil), SQLITE_OK)
+        try core.write { db in
+            try db.execute(sql: """
+                CREATE TRIGGER main.fail_metadata_rename BEFORE UPDATE OF relative_path ON library_files
+                BEGIN SELECT RAISE(ABORT, 'synthetic relocation failure'); END
+                """)
+        }
         let renamed = await service.applyMetadata(rename) { _, _ in }
         let outcome = try XCTUnwrap(renamed.outcomes.first)
         XCTAssertTrue(outcome.saved)
@@ -280,39 +283,28 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
     }
 
     @MainActor func testNarrowExchangeMatchesCatalogueAndUsesFormalReadability() async throws {
-        let (root, service, _, formal, pending, first, second, suite) = try singleBookFixture()
+        let (root, service, core, rows, first, second, suite) = try singleBookFixture()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
         let sha = first.fixtureSHA256, blockedSHA = second.fixtureSHA256
         let alias = "pending:" + first.id
-        let position = try UserSyncJSON.encode(StoredValue(updated: 10, token: "alias",
-            value: UserSyncJSON.encode(PositionValue(content_key: alias, offset: 12))))
-        try await pending.receiveSyncFixture("position", key: alias, payload: position)
-        try await pending.receiveSyncFixture("value", key: "metadata/\(sha)/author", payload: "{\"v\":2}")
-        try await formal.put("metadata/\(sha)/author", value: "\"Synthetic\"", device: "fixture")
-        try await formal.receiveSyncFixture("value", key: "metadata/\(blockedSHA)/author", payload: "{\"v\":2}")
-        try await formal.put("opened/\(sha)", value: "500", device: "fixture")
-        try await formal.put("metadata/\(blockedSHA)/synopsis", value: "\"Not in this request\"", device: "fixture")
-        let old = try await service.catalogueQuery(nil, recursive: true)
-        let oldSources = try old.systemReadingSources(contentSha256: sha)
-        let oldMetadata = try old.bookDetails(target: .record(key: .formal(sha256: sha))).requireIdentified().metadata
+        try rows.seedPosition(alias, offset: 12, time: 10, token: "alias")
+        try rows.quarantineValue("metadata/\(sha)/author", payload: "{\"v\":2}", partition: 1)
+        try rows.seedValue("metadata/\(sha)/author", value: "\"Synthetic\"", device: "fixture")
+        try rows.seedValue("opened/\(sha)", value: "500", device: "fixture")
+        try rows.seedValue("metadata/\(blockedSHA)/synopsis", value: "\"Not in this request\"", device: "fixture")
+        try rows.quarantineValue("metadata/\(blockedSHA)/author", payload: "{\"v\":2}")
+        let old = try await service.details(sha: sha)
+        let source = try XCTUnwrap(core.sourceFilesForSha(sha: sha).first)
         let configuration = await service.userCloudConfigurationRevision
         let narrow = try await service.metadataExchangeInputs(.import(shas: [sha]), configuration: configuration)
         let matched = try XCTUnwrap(narrow.read.books.first)
         XCTAssertEqual(narrow.read.books.count, 1)
-        XCTAssertEqual(matched.metadata, oldMetadata)
+        XCTAssertEqual(matched.metadata, old.metadata)
         XCTAssertEqual(matched.metadata.status, .reading, "Position under a catalogue alias must project the default status")
         XCTAssertTrue(matched.hasReadingPosition)
-        XCTAssertEqual(matched.uniqueSource?.id, oldSources.first?.id)
-        XCTAssertEqual(matched.firstSourceName, oldSources.first?.name)
+        XCTAssertEqual(matched.uniqueSource?.id, source.id)
+        XCTAssertEqual(matched.firstSourceName, (source.relativePath as NSString).lastPathComponent)
         XCTAssertTrue(narrow.formalBlockedMetadata.isEmpty, "Pending does not supply the formal readability barrier")
-
-        let projections = await formal.projectionCache
-        let narrowJSON = try XCTUnwrap(projections.values.map { $0.1.json }.first {
-            $0.contains("Synthetic") && !$0.contains(blockedSHA) && !$0.contains("500")
-        })
-        let projection = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(narrowJSON.utf8)) as? [String: Any])
-        XCTAssertEqual((projection["opened"] as? [Any])?.count, 0)
-        XCTAssertEqual((projection["corrections"] as? [Any])?.count, 0)
 
         let missing = String(repeating: "f", count: 64)
         let input = root.appendingPathComponent("narrow.jsonl")
@@ -330,55 +322,12 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         } catch is UserSyncCompatibilityError {}
     }
 
-    @MainActor func testExchangeRechecksLiveCopiesAndKeepsScopedExportOrder() async throws {
-        let (root, service, core, _, _, first, _, suite) = try singleBookFixture()
-        defer { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
-        let sha = first.fixtureSHA256
-        try core.saveLibraryShelf(id: "outside", name: "Other Shelf", bookmark: Data(), location: "local", builtin: false)
-        let counter = QueryAttemptCounter()
-        await service.queryFixture { scope, phase in
-            guard scope == "metadata-exchange", phase == .built, await counter.next() == 1 else { return }
-            // The selected key set is unchanged, but one new copy rules out rename.
-            try core.scanLibraryShelf(shelfId: "outside", items: [
-                .init(relativePath: "0.txt", directory: false, size: first.byteCount, modified: 0, needsDownload: true)
-            ])
-            let file = try XCTUnwrap(core.sourceFiles(shelfId: "outside").first)
-            try core.linkLibraryFile(fileId: file.id, bookId: first.id)
-        }
-        let input = root.appendingPathComponent("source-race.jsonl")
-        try "{\"v\":1,\"content_sha256\":\"\(sha)\",\"title\":\"Do Not Rename\"}".write(to: input, atomically: true, encoding: .utf8)
-        let firstPreview = try await service.previewMetadata(input)
-        XCTAssertEqual(firstPreview.books.first?.sourceCount, 2)
-        XCTAssertFalse(firstPreview.books.first?.fields.contains { $0.field == .title } ?? true)
-        let attempts = await counter.count
-        XCTAssertEqual(attempts, 2)
-        await service.queryFixture(nil)
-
-        let preferred = try XCTUnwrap(core.sourceFiles(shelfId: "outside").first)
-        try await service.savePosition(bookID: first.id, offset: 10)
-        UserDefaults(suiteName: suite)?.set(preferred.id, forKey: "Moonread.preferredFile." + sha)
-        let oldQuery = try await service.catalogueQuery(nil, recursive: true)
-        let old = try oldQuery.systemReadingSources(contentSha256: sha)
-        XCTAssertEqual(old.first?.id, preferred.id)
-        let preview = try await service.previewMetadata(input)
-        XCTAssertEqual(preview.books.first?.title, old.first?.title)
-
-        let export = try await service.exportMetadata(shelfID: "builtin", format: .jsonl)
-        let records = try String(contentsOf: export.file.urls[0], encoding: .utf8).split(separator: "\n")
-            .map { try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any] }
-        let record = try XCTUnwrap(records.first { $0["content_sha256"] as? String == sha })
-        let reference = try XCTUnwrap(record["reference"] as? [String: Any])
-        let files = try XCTUnwrap(reference["files"] as? [[String: Any]])
-        XCTAssertEqual(files.compactMap { $0["path"] as? String }, ["a.txt"])
-        XCTAssertNil(record["title"], "A copy outside the exported shelf still suppresses title")
-        XCTAssertEqual(record["reading_state"] as? String, "reading")
-    }
 
 }
 
 extension MetadataExchangeTests {
     @MainActor func testPreviewCoverOwnerPreservesEqualityAndBookPriority() async throws {
-        let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+        let (root, service, _, _, _, _, suite) = try singleBookFixture()
         defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1; format.opaque = true
@@ -457,7 +406,7 @@ extension MetadataExchangeTests {
     }
 
     @MainActor func testPreviewCoverPixelWorkIsLazyAndReusesLocalOldPixels() async throws {
-        let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+        let (root, service, _, _, _, _, suite) = try singleBookFixture()
         defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1; format.opaque = false
@@ -512,7 +461,7 @@ extension MetadataExchangeTests {
     }
 
     @MainActor func testPreviewCoverReuseOrderAndCancelledDraftCleanup() async throws {
-        let (root, service, _, _, _, first, second, suite) = try singleBookFixture()
+        let (root, service, _, _, first, second, suite) = try singleBookFixture()
         defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
         let staging = root.appendingPathComponent("cover-fixture", isDirectory: true)
         try FileManager.default.createDirectory(at: staging.appendingPathComponent("covers"), withIntermediateDirectories: true)

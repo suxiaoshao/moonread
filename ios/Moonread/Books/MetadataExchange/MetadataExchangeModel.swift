@@ -372,6 +372,19 @@ import BackgroundTasks
         cancellationRequested = true
         work?.cancel()
     }
+    func prepareUserScopeChange() async {
+        cancel()
+        exportTask.cancel()
+        await work?.value
+        await exportTask.waitForStop()
+    }
+    func invalidateUserScope() {
+        // Keep the imported package and its old scope on disk; a draft
+        // needs a fresh preview under the same authority before resuming.
+        preview = nil; checkpoint = nil; result = nil
+        if record != nil, phase != .completed { phase = .interrupted; requiresNewPreview = true }
+        exportTask.clear()
+    }
     func continueTask() {
         guard canContinue, work == nil else { return }
         if let checkpoint {
@@ -676,6 +689,8 @@ import BackgroundTasks
     fileprivate func sceneDidEnterBackground() {
         systemExecution.sceneDidEnterBackground()
     }
+
+    fileprivate func waitForStop() async { await work?.value }
 
     private func launch(_ request: Request) {
         self.request = request

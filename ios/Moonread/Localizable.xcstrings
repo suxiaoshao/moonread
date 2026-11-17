@@ -1,6 +1,15 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "阅读数据已更新": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Data Updated"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"閱讀資料已更新"}}}},
+    "月读改进了阅读数据的保存和同步方式。请把其他设备上的月读也更新到这个版本，旧版本上新记的进度、批注和统计不会同步过来。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Moonread has improved how reading data is saved and synced. Please update Moonread to this version on your other devices too. New progress, annotations, and statistics from older versions won’t sync to this version."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"月讀改進了閱讀資料的儲存和同步方式。請將其他裝置上的月讀也更新到這個版本，舊版本上新記錄的進度、批註和統計不會同步過來。"}}}},
+    "正在准备阅读数据…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Preparing reading data…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在準備閱讀資料…"}}}},
+    "暂时无法准备阅读数据": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t prepare reading data"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法準備閱讀資料"}}}},
+    "原有数据已保留。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Your existing data has been kept."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"原有資料已保留。"}}}},
+    "无法确认旧阅读数据的归属。请保留原数据，并在恢复原有账户归属后重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The owner of your previous reading data could not be verified. Keep the original data and try again once the original account ownership is restored."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"無法確認舊閱讀資料的歸屬。請保留原資料，並在恢復原有帳戶歸屬後再試。"}}}},
+    "暂时无法读取旧阅读数据。请确认本机数据可访问后重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t read your previous reading data. Make sure the data is accessible on this device, then try again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法讀取舊閱讀資料。請確認本機資料可存取後再試。"}}}},
+    "未能完成阅读数据迁入或校验。请检查可用存储空间后重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t finish moving or verifying your reading data. Check available storage and try again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"未能完成閱讀資料移轉或驗證。請檢查可用儲存空間後再試。"}}}},
+    "此版本暂不进行阅读数据 iCloud 同步，已保存的数据仍可在本机使用。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This version pauses iCloud sync for reading data. Saved data is still available on this device."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"此版本暫停透過 iCloud 同步閱讀資料。已儲存的資料仍可在本機使用。"}}}},
     "百炼": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Alibaba Cloud Model Studio"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"百煉"}}}},
     "撤销会停止此连接的内容任务。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Revoking permission stops this connection’s content tasks."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"撤銷會停止此連線的內容任務。"}}}},
     "在服务控制台查看余额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"View Balance in the Service Console"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"在服務控制台查看餘額"}}}},

@@ -24,11 +24,6 @@ extension PreparationState {
     }
 }
 
-enum QueryRefresh<Value: Sendable>: Sendable {
-    case unchanged(ReaderQuery)
-    case replaced(ReaderQuery, Value)
-}
-
 struct ReadingWindow: Equatable, Sendable {
     struct FrameIdentity: Equatable, Sendable {
         let bookID: String
@@ -130,8 +125,11 @@ struct ReadingWindow: Equatable, Sendable {
 /// Merely hiding the view (for settings, for example) does not end this lease.
 final class ReadingLease: Sendable {
     let id: String
-    private let service: AppDataService
-    init(id: String, service: AppDataService) { self.id = id; self.service = service }
+    let writeAdmission: DataSessionLease?
+    let service: AppDataService
+    init(id: String, service: AppDataService, writeAdmission: DataSessionLease? = nil) {
+        self.id = id; self.service = service; self.writeAdmission = writeAdmission
+    }
     deinit {
         let id = id, service = service
         Task { await service.releaseReading(id) }
@@ -208,9 +206,10 @@ actor AppDataService {
             return AppDataService(libraryDirectory: directory, sourceDefaultsSuite: suite)
         }
         #endif
-        return AppDataService()
+        return AppDataService(readingCloudEnvironment: CloudConfiguration.readingEnvironment ?? .production)
     }()
     var systemCatalog: SystemReadingCatalog?
+    var systemReadingBatches = Set<UUID>()
     var systemReadingLastError: String?
     var systemExposureTask: Task<Void, Never>?
     var systemWidgetReloadSnapshot: SystemReadingSnapshot?
@@ -222,19 +221,12 @@ actor AppDataService {
         let cache = NSCache<NSString, NSData>(); cache.totalCostLimit = 16 * 1024 * 1024; cache.countLimit = 128; return cache
     }()
     var systemSpotlightThumbnailFailures = Set<String>()
-    private var core: ReaderCore?
-    struct CachedQuery {
-        let signature: UserQuerySignature
-        let identities: [String: String]
-        let query: ReaderQuery
-        let statisticsIncomplete: Bool
-        let directoryActivity: ReaderQuery?
-        let formalBlockedMetadata: Set<String>
-    }
-    #if DEBUG
-    var queryTestBoundary: (@Sendable (String, UserQueryTestPhase) async throws -> Void)?
-    #endif
-    var queryCache: [String: CachedQuery] = [:]
+    private var core: ReaderIndex?
+    private var dataSession: DataSession?
+    private(set) var changingUserScope = false
+    var verifiedScopePublicationPending: Bool?
+    private var prepareUserScopePresentation: (@MainActor @Sendable () async throws -> Void)?
+    private var finishUserScopePresentation: (@MainActor @Sendable (Bool) -> Void)?
     var recoveryTask: Task<Void, Never>?
     var recentRestorationTask: Task<Void, Never>?
     var recentRestorationWork: RecentRestorationWork?
@@ -246,20 +238,12 @@ actor AppDataService {
     var recentRestorationBeforeCommit: (@Sendable () async -> Void)?
 
     nonisolated let settingsCache: ReaderSettingsCache
-    struct UserStoreInitialization {
-        let id = UUID()
-        let task: Task<UserDataStore, Error>
-    }
-    var pendingUserStoreTask: UserStoreInitialization?
-    var userStoreTask: UserStoreInitialization?
-    var userCloudConfigurationRevision = UUID()
-    let userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)?
-    enum UserCloudStoreMode: Equatable {
-        case local, cloud(CloudConfiguration.VerifiedAccount)
-        var isCloud: Bool { if case .cloud = self { true } else { false } }
-    }
-    var userCloudMode = UserCloudStoreMode.local
+    private(set) var userCloudConfigurationRevision = UUID()
+    #if DEBUG
+    var injectedLegacyReadFailure = false
+    #endif
     let userDirectoryName: String
+    let readingCloudEnvironment: DataScope.Environment
     var readingSourceIDs: [String: String] = [:]
     let dataManagementWriter: StatisticsWriter?
     var activeBackupExport: URL?
@@ -272,10 +256,10 @@ actor AppDataService {
         let resume: (Bool) -> Void
     }
     var userDataOperationWaiters: [UserDataOperationWaiter] = []
-    var localReadingWriteLeases: [String: UUID] = [:]
+    var metadataImportDeletionTokens: [String: UUID] = [:]
     var promotedUserKeys = Set<String>()
-    var shownCandidates: [String: [AnnotationCandidate]] = [:]
-    var undoCandidates: [String: ([AnnotationCandidate], AnnotationContent?)] = [:]
+    var shownCandidates: [String: MarkBaseline] = [:]
+    var undoCandidates: [String: MarkUndo] = [:]
     let sourceDefaults: UserDefaults
     nonisolated let cloudSyncIntent: CloudSyncIntent
     var cloudLibraryRoot: URL?
@@ -293,16 +277,17 @@ actor AppDataService {
     let libraryDirectoryOverride: URL?
     let libraryDeletion: @Sendable (URL, Bool) throws -> Void
     let libraryScan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])?
-    init(core: ReaderCore? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, dataManagementWriter: StatisticsWriter? = nil, userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)? = nil,
+    init(core: ReaderIndex? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, dataManagementWriter: StatisticsWriter? = nil,
+         readingCloudEnvironment: DataScope.Environment = .production,
          libraryDeletion: @escaping @Sendable (URL, Bool) throws -> Void = { url, permanently in
              if permanently { try FileManager.default.removeItem(at: url) }
              else { try FileManager.default.trashItem(at: url, resultingItemURL: nil) }
          },
          libraryScan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])? = nil) {
-        self.core = core; libraryDirectoryOverride = libraryDirectory
+        self.core = core; dataSession = core?.session; libraryDirectoryOverride = libraryDirectory
         self.libraryDeletion = libraryDeletion; self.libraryScan = libraryScan
-        self.userStoreFactory = userStoreFactory
         self.dataManagementWriter = dataManagementWriter
+        self.readingCloudEnvironment = readingCloudEnvironment
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let sessionIndex = arguments.firstIndex(of: "--ui-test-session")
@@ -318,7 +303,7 @@ actor AppDataService {
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("Moonread.importUserPaused.v1.") {
             defaults.removeObject(forKey: key)
         }
-        cloudSyncIntent = CloudSyncIntent(defaults: defaults)
+        cloudSyncIntent = CloudSyncIntent(defaults: defaults, environment: readingCloudEnvironment)
         settingsCache = ReaderSettingsCache(defaults: defaults)
     }
     deinit { for observer in libraryObservers.values { observer.stop() } }
@@ -392,9 +377,9 @@ actor AppDataService {
     }
     func identityMayRun() -> Bool { foregroundHolds.isEmpty }
     func cacheProtectedBookIDs() -> [String] { Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs)) }
-    func readingDataIsBusy(_ keys: Set<String>) -> Bool {
-        if foregroundHolds.keys.contains(where: { !$0.hasPrefix("book:") }) { return true }
-        return readers.keys.contains { id in (try? userKey(id).storageKey).map(keys.contains) ?? true }
+    func activeReadingIDsForDeletion() throws -> Set<String> {
+        guard foregroundHolds.keys.allSatisfy({ $0.hasPrefix("book:") }) else { throw ReadingDataError.busy }
+        return Set(readers.keys)
     }
     private func holdForeground(_ key: String) {
         foregroundHolds[key, default: 0] += 1
@@ -410,6 +395,253 @@ actor AppDataService {
         let waiters = idleWaiters; idleWaiters.removeAll()
         for waiter in waiters.values { waiter.resume() }
     }
+
+    func installUserScopePresentation(
+        prepare: @escaping @MainActor @Sendable () async throws -> Void,
+        finish: @escaping @MainActor @Sendable (Bool) -> Void
+    ) {
+        prepareUserScopePresentation = prepare; finishUserScopePresentation = finish
+    }
+
+    /// Rebind the App's existing authority, never create a parallel GRDB
+    /// pool. The cloud owner has already retired the old transport.
+    func selectReadingCloudScope(
+        _ status: DataIdentityStatus,
+        approval: CloudSyncCoordinator.Account?,
+        lookup: @Sendable () async -> CloudSyncCoordinator.Identity,
+        beforeRebind: (@MainActor @Sendable () async throws -> Void)? = nil,
+        afterRebind: (@MainActor @Sendable (Bool) -> Void)? = nil
+    ) async throws -> DataScopeSelection {
+        let cancellation = CloudScopeCancellation()
+        return try await withTaskCancellationHandler {
+            try cancellation.check()
+            guard !changingUserScope else { throw ReadingDataError.busy }
+            let old = try relationalUserIndex()
+            let session = old.session
+            let destination = try session.destination(status)
+            if let approval {
+                guard case .confirmed(let scope, true) = status, approval.scope == scope, scope != .local else {
+                    throw ReaderError.CloudAccountChanged
+                }
+            }
+            let claim = old.lease.scope == .local ? approval?.scope : nil
+            let rebind = claim != nil || old.lease.scope != destination.scope
+            let preparePresentation = beforeRebind ?? prepareUserScopePresentation
+            let finishPresentation = afterRebind ?? finishUserScopePresentation
+            if !rebind, approval == nil {
+                try cancellation.check()
+                let (_, selected) = try session.activate(status)
+                updateReadingScopePublication(status, selected)
+                return selected
+            }
+
+            var handoffStarted = false
+            var installed = false
+            var ownsWriteGate = false
+            do {
+                if rebind {
+                    verifiedScopePublicationPending = true
+                    setSystemReadingAccountPending(true)
+                    handoffStarted = true
+                    // Existing readers finish their own accepted position and
+                    // statistics writes while they still have their old lease.
+                    try await preparePresentation?()
+                    try cancellation.check()
+                    try await drainReadingScopeWork()
+                }
+
+                try await acquireCancellableUserDataOperation()
+                ownsWriteGate = true
+                try cancellation.check()
+                let intent = cloudSyncIntent
+                if let approval {
+                    guard intent.requested, case .confirmed(let current) = await lookup(), current == approval else {
+                        throw ReaderError.CloudAccountChanged
+                    }
+                    try cancellation.check()
+                    guard intent.requested else { throw CancellationError() }
+                }
+
+                if rebind {
+                    // Seal only this installation's known active segments
+                    // in the OLD file, after its reader/worker tasks finish.
+                    let installation = try session.readingInstallationID()
+                    try session.writeUsers(old.lease) {
+                        try ReadingSegmentRows.sealOwned($0, owner: installation, scope: old.lease.scope)
+                    }
+                    try cancellation.check()
+                    userCloudConfigurationRevision = UUID()
+                    resetUserScopeMemory()
+                    // On errors/cancel, retain the same session owner for
+                    // D1 recovery; never hand out the old invalidated index.
+                    core = nil
+                }
+                if let claim {
+                    _ = try session.activate(.confirmed(claim, syncRequested: false))
+                    try session.claimLocal(for: claim)
+                    // A legal commit must finish its original owner's
+                    // interrupted-move recovery. No other target can inherit it.
+                }
+                try cancellation.check()
+                let (lease, selected) = try session.activate(status)
+                if rebind {
+                    let index = ReaderIndex(session: session, lease: lease)
+                    try session.prepareIndex(dataDirectoryURL().appending(path: "reader.sqlite3"), token: lease)
+                    try prepareUserIndex(index)
+                    try session.prepareReadingHistory(lease, owner: session.readingInstallationID())
+                    try cancellation.check()
+                    core = index
+                    installed = true
+                }
+                if let approval, selected.scope == approval.scope, selected.maySync {
+                    try cancellation.check()
+                    guard intent.requested else { throw CancellationError() }
+                    intent.approve(approval.scope)
+                }
+                updateReadingScopePublication(status, selected)
+                releaseUserDataOperation()
+                ownsWriteGate = false
+                if handoffStarted {
+                    finishReadingScopeHandoff(invalidate: true)
+                    await finishPresentation?(true)
+                }
+                return selected
+            } catch {
+                if handoffStarted {
+                    if changingUserScope && (installed || core == nil) {
+                        // This also finishes an already committed D1 move;
+                        // it never retries or publishes an uncommitted claim.
+                        core = nil
+                        if let (lease, _) = try? session.activate(.unknown),
+                           (try? session.prepareIndex(dataDirectoryURL().appending(path: "reader.sqlite3"), token: lease)) != nil {
+                            let index = ReaderIndex(session: session, lease: lease)
+                            if (try? prepareUserIndex(index)) != nil { core = index }
+                        }
+                    }
+                }
+                if ownsWriteGate { releaseUserDataOperation() }
+                if handoffStarted {
+                    let rebound = installed || core?.lease != old.lease
+                    // A refusal at the presentation preflight did not
+                    // retire the old lease or any editor/observation.
+                    if changingUserScope { finishReadingScopeHandoff(invalidate: rebound) }
+                    await finishPresentation?(rebound)
+                }
+                throw error
+            }
+        } onCancel: { cancellation.cancel() }
+    }
+
+    func recoverReadingCloudZone(
+        _ account: CloudSyncCoordinator.Account,
+        presence: CloudAccountZoneRecovery.Presence?,
+        lookup: @Sendable () async -> CloudSyncCoordinator.Identity,
+        beforeClear: (@MainActor @Sendable () async throws -> Void)? = nil,
+        afterClear: (@MainActor @Sendable (Bool) -> Void)? = nil
+    ) async throws -> CloudAccountZoneRecovery.Outcome {
+        let cancellation = CloudScopeCancellation()
+        return try await withTaskCancellationHandler {
+            try cancellation.check()
+            let index = try relationalUserIndex()
+            guard index.lease.scope == account.scope, account.scope != .local else { throw DataV2Error.leaseExpired }
+            let needsClear = try index.session.readUsers(index.lease) {
+                try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone).requiresLocalClear
+            }
+            let finish = afterClear ?? finishUserScopePresentation
+            let intent = cloudSyncIntent
+            do {
+                if needsClear {
+                    verifiedScopePublicationPending = true
+                    setSystemReadingAccountPending(true)
+                    let prepare = beforeClear ?? prepareUserScopePresentation
+                    try await prepare?()
+                    try cancellation.check()
+                    try await drainReadingScopeWork()
+                }
+                let result: CloudAccountZoneRecovery.Outcome
+                do {
+                    try await acquireCancellableUserDataOperation()
+                    defer { releaseUserDataOperation() }
+                    try cancellation.check()
+                    guard core === index, intent.requested, isReadingCloudApproved(account.scope),
+                          case .confirmed(let current) = await lookup(), current == account else {
+                        throw ReaderError.CloudAccountChanged
+                    }
+                    try cancellation.check()
+                    result = try index.session.writeCloudRecovery(index.lease) { db in
+                        try cancellation.check()
+                        guard intent.requested else { throw CancellationError() }
+                        // Read the evidence again inside the recovery writer.
+                        let stage = try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone)
+                        guard !stage.requiresLocalClear || needsClear else { return .awaitingEvidence }
+                        let applied = try CloudAccountZoneRecovery.applyPending(db, presence: presence, scope: account.scope)
+                        try cancellation.check()
+                        guard intent.requested else { throw CancellationError() }
+                        return applied
+                    }
+                }
+                if needsClear {
+                    if result == .reset {
+                        userCloudConfigurationRevision = UUID()
+                        resetUserScopeMemory()
+                        verifiedScopePublicationPending = false
+                        setSystemReadingAccountPending(false)
+                    }
+                    finishReadingScopeHandoff(invalidate: result == .reset)
+                    await finish?(result == .reset)
+                }
+                return result
+            } catch {
+                if needsClear {
+                    if changingUserScope { finishReadingScopeHandoff(invalidate: false) }
+                    await finish?(false)
+                }
+                throw error
+            }
+        } onCancel: { cancellation.cancel() }
+    }
+
+    private func drainReadingScopeWork() async throws {
+        changingUserScope = true
+        recentRestorationActive = false
+        cancelRecentRestoration()
+        backgroundReadCancellation?()
+        recoveryTask?.cancel()
+        for id in Array(imports.keys) { pauseImport(id) }
+        try await waitForImportsIdle()
+        await waitForRecentRestoration()
+        await waitForUserRecovery()
+        while !foregroundHolds.isEmpty || backgroundReadCancellation != nil {
+            try await waitForGateChange()
+        }
+        // Publication tokens are already retired; join submitted work.
+        await systemSpotlightTask?.value
+        await systemExposureTask?.value
+    }
+
+    private func resetUserScopeMemory() {
+        recoveredImports = false
+        pendingPromotionIDs.removeAll(); promotedUserKeys.removeAll()
+        readingSourceIDs.removeAll(); shownCandidates.removeAll(); undoCandidates.removeAll()
+        recentRestorationAttempts.removeAll(); metadataImportDeletionTokens.removeAll()
+        activeBackupImport = nil
+        automaticallyPaused.removeAll(); requestedResumes.removeAll()
+    }
+
+    private func finishReadingScopeHandoff(invalidate: Bool) {
+        changingUserScope = false
+        recentRestorationActive = appActive
+        if core != nil { startUserRecovery(); scheduleRecentRestoration() }
+        if invalidate { NotificationCenter.default.post(name: .readingContinuationInvalidated, object: self) }
+    }
+
+    private func updateReadingScopePublication(_ status: DataIdentityStatus, _ selected: DataScopeSelection) {
+        if case .paused = status { return }
+        let pending: Bool = if case .unknown = status { selected.scope != .local } else { false }
+        verifiedScopePublicationPending = pending
+        setSystemReadingAccountPending(pending)
+    }
+
     private func waitForGateChange() async throws {
         let id = UUID()
         try await withTaskCancellationHandler {
@@ -427,11 +659,13 @@ actor AppDataService {
                                          operation: @Sendable () async throws -> T) async throws -> T {
         while !foregroundHolds.isEmpty || backgroundReadCancellation != nil { try await waitForGateChange() }
         try Task.checkCancellation()
+        guard !changingUserScope else { throw CancellationError() }
         backgroundReadCancellation = cancel
         defer { backgroundReadCancellation = nil; wakeIdleWaiters() }
         return try await operation()
     }
     func withForegroundOpening<T: Sendable>(operation: @Sendable () async throws -> T) async throws -> T {
+        guard !changingUserScope else { throw CancellationError() }
         let key = "opening:" + UUID().uuidString
         holdForeground(key)
         defer { releaseForeground(key) }
@@ -458,62 +692,91 @@ actor AppDataService {
     }
     // The normal app remains Moonread; injected stores and UI sessions own their caches.
     var dataDirectoryName: String { userDirectoryName }
+    func dataDirectoryURL() throws -> URL {
+        try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                    appropriateFor: nil, create: true)
+            .appending(path: dataDirectoryName, directoryHint: .isDirectory)
+    }
     // Internal text/file capability. UI-facing user data comes from domain
-    // queries below; this core never receives shared mutable user projections.
-    func textCore() throws -> ReaderCore {
+    // queries below; index tasks never build shared user projections.
+    func indexStore() throws -> ReaderIndex {
+        guard !changingUserScope else { throw CancellationError() }
         if let core {
             return core
         }
-        let directory = try FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: true
-        ).appendingPathComponent(dataDirectoryName, isDirectory: true)
+        let directory = try dataDirectoryURL()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let value = try ReaderCore(dataDirectory: directory.path)
+        let session: DataSession
+        if let dataSession { session = dataSession }
+        else {
+            let legacy = try publishedUserSource()
+            session = try DataSession(layout: DataLayout(applicationSupport: directory, environment: readingCloudEnvironment),
+                                      confirmedLegacyOwner: legacy.scope == .local ? nil : legacy.scope)
+            dataSession = session
+        }
+        let (lease, _) = try session.activate(.unknown)
+        try session.prepareIndex(directory.appending(path: "reader.sqlite3"), token: lease)
+        let value = ReaderIndex(session: session, lease: lease)
         core = value
         return value
     }
 
-    func books() async throws -> [ReadingSnapshot] { try await effectiveQuery(positionsOnly: true, scope: "reading-index").recentReadings() }
     func sample() async throws -> BookInfo {
-        let text = try textCore().createSampleBook()
+        let text = try await fixedReaderRead { try $0.prepareSample() }
         return try await book(text.id)
     }
-    func book(_ id: String) async throws -> BookInfo { try await bookQuery(id).bookInfo(bookId: id) }
+    func book(_ id: String) async throws -> BookInfo { try await snapshot(id).book }
     func chapter(bookID: String, offset: UInt64) async throws -> ChapterInfo? {
-        try await bookQuery(bookID).chapterAt(bookId: bookID, offsetUtf8: offset)
+        try await fixedReaderRead { try $0.readerChapter(bookID, offset: offset) }
     }
     nonisolated func settings() throws -> ReaderSettings { try settingsCache.get() }
     func saveSettings(_ value: ReaderSettings) throws { let json = try encodeReaderSettings(value: value); _ = try decodeReaderSettings(json: json); sourceDefaults.set(json, forKey: "Moonread.readerSettings"); settingsCache.set(value); dataChanged() }
     func location(_ id: String, percentage: Double) async throws -> ReadingLocation {
-        try await bookQuery(id).readingLocation(bookId: id, percentage: percentage)
+        try await fixedReaderRead { try $0.readerLocation(id, percentage: percentage) }
     }
     func adjacentChapter(_ id: String, offset: UInt64, forward: Bool) async throws -> ChapterInfo? {
-        try await bookQuery(id).adjacentChapter(bookId: id, offsetUtf8: offset, forward: forward)
+        try await fixedReaderRead { try $0.readerChapter(id, offset: offset, adjacent: forward) }
     }
     func correctChapter(_ id: String, offset: UInt64, title: String, level: UInt32, excluded: Bool = false) async throws {
         guard level <= 1, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.count <= 80,
-              !title.contains("\n"), !title.contains("\r"), offset < (try textCore().importStatus(bookId: id).text.byteCount) else { throw ReaderError.InvalidRange }
-        guard try textCore().importStatus(bookId: id).phase == .complete else { throw ReaderError.ImportBusy }
-        try textCore().validateChapterOffset(bookId: id, offsetUtf8: offset)
-        let key = try userKey(id).storageKey
-        let value = ChapterValue(content_key: key, offset: offset, title: title.trimmingCharacters(in: .whitespaces), level: level, excluded: excluded)
-        try await userStore().put("chapter/\(key)/\(offset)", value: String(decoding: JSONEncoder().encode(value), as: UTF8.self), device: userDevice)
+              !title.contains("\n"), !title.contains("\r") else { throw ReaderError.InvalidRange }
+        let admission = try indexStore().lease
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        guard admission == index.lease else { throw CancellationError() }
+        try index.session.writeUsers(index.lease) { db in
+            let body = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key)
+            guard (try? parseSha256(value: body.sha)) != nil else { throw ReaderError.ImportBusy }
+            try ReaderIndex.validateChapterCorrection(db, body: body, offset: offset)
+            let value = ChapterValue(content_key: body.sha, offset: offset, title: title.trimmingCharacters(in: .whitespaces), level: level, excluded: excluded)
+            try UserValueRows.put(db, key: .init("chapter/\(body.sha)/\(offset)"), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock,
+                                  scope: index.lease.scope)
+        }
         dataChanged()
     }
     func restoreChapterCorrections(_ id: String) async throws {
-        let store = try await userStore()
-        for key in try await store.allValues(prefix: "chapter/\(userKey(id).storageKey)/").keys { try await store.put(key, value: "null", device: userDevice) }
+        let admission = try indexStore().lease
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        guard admission == index.lease else { throw CancellationError() }
+        try index.session.writeUsers(index.lease) { db in
+            let body = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key)
+            try UserValueRows.retractChapters(db, book: body.sha, device: userDevice, now: userValueClock, scope: index.lease.scope)
+        }
         dataChanged()
     }
-    func rebuildChapters(_ id: String) throws -> ChapterRebuild { try textCore().rebuildChapters(bookId: id) }
+    func rebuildChapters(_ id: String) throws -> ChapterRebuild { try indexStore().rebuildChapters(bookId: id) }
     func advanceRebuild(_ job: ChapterRebuild) throws -> ChapterRebuildProgress { try job.nextBatch() }
     func rebuildPreview(_ job: ChapterRebuild, from offset: UInt64 = 0) throws -> [ChapterInfo] { try job.preview(fromUtf8: offset, limit: 80) }
     func applyRebuild(_ job: ChapterRebuild) throws { try job.apply(); dataChanged() }
-    func savePosition(bookID: String, offset: UInt64) async throws { try await writePosition(bookID, offset: offset) }
+    func savePosition(bookID: String, offset: UInt64, admission: DataSessionLease? = nil) async throws {
+        try await writePosition(bookID, offset: offset, admission: admission)
+    }
 
     func window(book: BookInfo, offset: UInt64) async throws -> ReadingWindow {
-        let frame = try await bookQuery(book.id).readingFrame(bookId: book.id, offsetUtf8: offset)
+        let frame = try await frame(book.id, offset: offset)
         return ReadingWindow(frame: frame)
     }
 
@@ -540,122 +803,91 @@ actor AppDataService {
     }
     #endif
 
-    func snapshot(_ id: String) async throws -> ReadingSnapshot { try await bookQuery(id).readingSnapshot(bookId: id) }
+    /// The DataSession capability selects the account; any CPU work runs
+    /// outside the service actor, and a late result cannot survive a rebind.
+    func fixedReaderRead<Value: Sendable>(_ read: @escaping @Sendable (ReaderIndex) throws -> Value) async throws -> Value {
+        let configuration = userCloudConfigurationRevision
+        let index = try relationalUserIndex()
+        let work = Task.detached(priority: Task.currentPriority) {
+            try Task.checkCancellation()
+            return try read(index)
+        }
+        let result = await withTaskCancellationHandler { await work.result } onCancel: { work.cancel() }
+        try Task.checkCancellation()
+        guard configuration == userCloudConfigurationRevision, core === index else { throw CancellationError() }
+        return try result.get()
+    }
+
+    func snapshot(_ id: String) async throws -> ReadingSnapshot {
+        try await fixedReaderRead { try $0.readerSnapshot(id) }
+    }
 
     func frame(_ id: String, offset: UInt64) async throws -> ReadingFrame {
-        try await bookQuery(id).readingFrame(bookId:id,offsetUtf8:offset)
+        try await fixedReaderRead { try $0.readerFrame(id, offset: offset) }
     }
-    func extensionFrame(_ id:String, cursor:UInt64, direction:ReadingDirection, retaining:SourceSpan? = nil) async throws -> ReadingFrame {
-        try await bookQuery(id).readingFrameExtension(bookId:id,cursor:cursor,direction:direction,keep:retaining)
+    func extensionFrame(_ id: String, cursor: UInt64, direction: ReadingDirection, retaining: SourceSpan? = nil) async throws -> ReadingFrame {
+        try await fixedReaderRead { try $0.readerFrame(id, offset: cursor, direction: direction, locate: false, keep: retaining) }
     }
 
-
-    /// Snapshot and its first frame share one immutable user input and one actor call.
+    /// Header, current position and bounded payload use one read snapshot.
     func openingFrame(_ id: String, offset: UInt64?, attempt: UUID? = nil, diagnostic: ReaderOpenTrace? = nil) async throws -> (ReadingSnapshot, ReadingFrame?) {
         diagnostic?.mark("openingFrame.actor.begin"); defer { diagnostic?.mark("openingFrame.actor.return") }
         ReaderOpenDiagnostics.mark(attempt, "actorOpeningBegin")
-        diagnostic?.mark("bookQuery.queued")
-        let query = try await bookQuery(id, diagnostic: diagnostic)
-        diagnostic?.mark("bookQuery.resumed")
-        ReaderOpenDiagnostics.mark(attempt, "actorProjectionReady")
-        diagnostic?.mark("snapshot.sync.begin")
-        let snapshot = try query.readingSnapshot(bookId: id)
-        diagnostic?.mark("snapshot.sync.return")
-        guard snapshot.readablePrefix == .readable else { return (snapshot, nil) }
+        diagnostic?.mark("fixedReaderOpening.queued")
         ReaderOpenDiagnostics.mark(attempt, "actorFrameBegin")
-        diagnostic?.mark("frame.sync.begin")
-        let frame = try query.readingFrame(bookId: id, offsetUtf8: offset ?? snapshot.book.positionUtf8)
-        diagnostic?.mark("frame.sync.return")
+        let result = try await fixedReaderRead { try $0.readerOpening(id, offset: offset) }
         ReaderOpenDiagnostics.mark(attempt, "actorFrameEnd")
-        return (frame.snapshot, frame)
+        diagnostic?.mark("fixedReaderOpening.resumed")
+        return result
     }
 
-    func chapterQuery(_ id: String) async throws -> ReaderQuery {
-        try await readingQuery(.book(.cached(bookId: id), facts: true), options: .init(scope: "chapters-" + id, fields: .chapter))
+    func chapterStructure(_ id: String) async throws -> ChapterOutline {
+        try await fixedReaderRead { try $0.readerChapterStructure(id) }
     }
-    func chapterStructure(_ id: String, reusing previous: ReaderQuery?) async throws -> QueryRefresh<ChapterOutline> {
-        try await chapterOutline(id, reusing: previous, coverage: false)
-    }
-    func chapters(_ id: String, reusing previous: ReaderQuery?) async throws -> QueryRefresh<ChapterOutline> {
-        try await chapterOutline(id, reusing: previous, coverage: true)
-    }
-    private func chapterOutline(_ id: String, reusing previous: ReaderQuery?, coverage: Bool) async throws -> QueryRefresh<ChapterOutline> {
-        let query = try await readingQuery(.book(.cached(bookId: id), facts: coverage), options: .init(
-            scope: (coverage ? "chapters-" : "chapter-structure-") + id, fields: .chapter))
-        if query === previous { return .unchanged(query) }
-        let work = Task.detached(priority: Task.currentPriority) {
-            try Task.checkCancellation()
-            return try coverage ? query.chapterOutline(bookId: id) : query.chapterStructure(bookId: id)
-        }
-        let outline = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
-        try Task.checkCancellation()
-        return .replaced(query, outline)
-    }
-    func chapters(_ id: String) async throws -> ChapterOutline {
-        switch try await chapters(id, reusing: nil) {
-        case .replaced(_, let value): return value
-        case .unchanged: throw ReaderError.NotFound
-        }
-    }
+
     func marks(_ id: String, kind: MarkKind, offset: UInt32, snapshot: NoteCandidates? = nil) async throws -> MarkPage {
         let values = try await userMarks(id, kind: kind, snapshot: snapshot), start = min(Int(offset), values.count), end = min(start + 60, values.count)
         return MarkPage(items: Array(values[start..<end]), hasMore: end < values.count)
     }
     func annotations(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] { try await userAnnotationRanges(id, start: start, end: end) }
     func bookmarkPositions(_ id: String, start: UInt64, end: UInt64) async throws -> [UInt64] { try await userMarks(id, kind: .bookmark).filter { $0.startUtf8 >= start && $0.startUtf8 < end }.map(\.startUtf8) }
-    func toggleBookmark(_ id: String, at offset: UInt64) async throws -> Bool {
-        let key = try userKey(id).storageKey, quote = try textCore().paragraphRange(bookId: id, offsetUtf8: offset).text
-        let result = try await userStore(for: key).bookmark(key: key, id: "bookmark/\(key)/\(offset)", content: AnnotationContent(start: offset, end: offset, excerpt: String(quote.prefix(160)), note: ""))
-        dataChanged(); return result
+    func toggleBookmark(_ id: String, at offset: UInt64, admission: DataSessionLease? = nil) async throws -> Bool {
+        try await changeBookmark(id, offset: offset, ensure: false, admission: admission) != nil
     }
-    func ensureBookmark(_ id: String, at offset: UInt64) async throws -> ReaderMark {
-        try await promoteUserData(id)
-        let key = try userKey(id).storageKey, quote = try textCore().paragraphRange(bookId: id, offsetUtf8: offset).text
-        let candidate = try await userStore(for: key).ensureBookmark(key: key, id: "bookmark/\(key)/\(offset)", content: .init(start: offset, end: offset, excerpt: String(quote.prefix(160)), note: ""))
-        guard let content = candidate.content else { throw ReaderError.InvalidRange }
-        dataChanged()
-        return ReaderMark(id: "bookmark/\(key)/\(offset)", kind: .bookmark, startUtf8: content.start, endUtf8: content.end, excerpt: content.excerpt, note: content.note, created: candidate.created)
+    func ensureBookmark(_ id: String, at offset: UInt64, admission: DataSessionLease? = nil) async throws -> ReaderMark {
+        guard let mark = try await changeBookmark(id, offset: offset, ensure: true, admission: admission)
+        else { throw ReaderError.InvalidRange }
+        return mark
     }
     func hasBookmark(_ id: String, at offset: UInt64) async throws -> Bool { try await userMarks(id, kind: .bookmark).contains { $0.startUtf8 == offset } }
-    func textRange(_ id: String, start: UInt64, end: UInt64) throws -> TextRange { try textCore().textRange(bookId: id, startUtf8: start, endUtf8: end) }
+    func textRange(_ id: String, start: UInt64, end: UInt64) throws -> TextRange { try indexStore().textRange(bookId: id, startUtf8: start, endUtf8: end) }
     func displayTextRange(_ id: String, start: UInt64, end: UInt64, indent: ReadingIndent = .original) async throws -> TextRange {
-        let core = try await bookQuery(id)
-        let read = Task.detached {
-            try Task.checkCancellation()
-            let value = try core.displayTextRange(bookId: id, startUtf8: start, endUtf8: end, indent: indent)
-            try Task.checkCancellation()
-            return value
-        }
-        return try await withTaskCancellationHandler {
-            let value = try await read.value
-            try Task.checkCancellation()
-            return value
-        } onCancel: { read.cancel() }
+        try await fixedReaderRead { try $0.displayTextRange(bookId: id, startUtf8: start, endUtf8: end, indent: indent) }
     }
     func textContext(_ id: String, at offset: UInt64, before: UInt32, after: UInt32) throws -> TextRange {
-        try textCore().textContext(bookId: id, offsetUtf8: offset, beforeParagraphs: before, afterParagraphs: after)
+        try indexStore().textContext(bookId: id, offsetUtf8: offset, beforeParagraphs: before, afterParagraphs: after)
     }
-    func paragraph(_ id: String, at offset: UInt64) throws -> TextRange { try textCore().paragraphRange(bookId: id, offsetUtf8: offset) }
-    func annotate(_ id: String, start: UInt64, end: UInt64) async throws -> ReaderMark {
-        let edit = try await prepareUserAnnotation(id, start: start, end: end)
+    func paragraph(_ id: String, at offset: UInt64) throws -> TextRange { try indexStore().paragraphRange(bookId: id, offsetUtf8: offset) }
+    func annotate(_ id: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async throws -> ReaderMark {
+        let edit = try await prepareUserAnnotation(id, start: start, end: end, admission: admission)
         if edit.baselines.values.contains(where: AnnotationReduction.conflicts) { throw UserDataConflict(candidates: edit.baselines.values.flatMap { $0 }) }
         return try await saveUserNote(edit, text: edit.note)
     }
-    func mark(_ id: String) async throws -> ReaderMark {
-        let (_, heads) = try await markStore(id).markCandidates(id)
-        shownCandidates[id] = heads
-        guard let value = heads.first(where: { $0.content != nil }), let content = value.content else { throw ReaderError.NotFound }
-        return ReaderMark(id: id, kind: value.bookmark ? .bookmark : .annotation, startUtf8: content.start, endUtf8: content.end, excerpt: content.excerpt, note: content.note, created: value.created)
+    func mark(_ id: String) async throws -> ReaderMark { try readAnnotationMark(id) }
+    func prepareAnnotation(_ id: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async throws -> AnnotationEdit {
+        try await prepareUserAnnotation(id, start: start, end: end, admission: admission)
     }
-    func prepareAnnotation(_ id: String, start: UInt64, end: UInt64) async throws -> AnnotationEdit { try await prepareUserAnnotation(id, start: start, end: end) }
     func saveNote(_ edit: AnnotationEdit, text: String) async throws -> ReaderMark { try await saveUserNote(edit, text: text) }
-    func removeAnnotations(_ id: String, start: UInt64, end: UInt64) async throws -> [String] {
-        let ids = try await annotations(id, start: start, end: end).map(\.id)
-        try await userDeleteMarks(ids, deleted: true); return ids
+    func removeAnnotations(_ id: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async throws -> [String] {
+        try await removeAnnotationRange(id, start: start, end: end, offered: admission)
     }
-    func deleteMarks(_ ids: [String], deleted: Bool) async throws { try await userDeleteMarks(ids, deleted: deleted) }
+    func deleteMarks(_ ids: [String], deleted: Bool, expected: NoteCandidates? = nil) async throws {
+        try await userDeleteMarks(ids, deleted: deleted, expected: expected)
+    }
     func search(_ id: String, query: String, regex: Bool, caseSensitive: Bool, range: SearchRange? = nil) async throws -> SearchJob {
-        try await bookQuery(id).startSearch(bookId: id, query: query, regularExpression: regex, caseSensitive: caseSensitive, range: range)
+        try await fixedReaderRead {
+            try $0.startSearch(bookId: id, query: query, regularExpression: regex, caseSensitive: caseSensitive, range: range)
+        }
     }
 
     func importSourceKey(_ id: String) -> String {
@@ -669,7 +901,7 @@ actor AppDataService {
 
     private func prepareOriginalSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void) async throws {
         try await simulateSourceDownload(progress)
-        let core = try textCore()
+        let core = try indexStore()
         let entry = try core.sourceFileLocation(fileId: file.id)
         guard !entry.directory else { throw ReaderError.NotFound }
         let shelf = try libraryShelf(entry.shelfId)
@@ -689,7 +921,7 @@ actor AppDataService {
 
     // Provider I/O suspends this actor. Check the authority and location again
     // before publishing availability, starting an import or handing out a lease.
-    private func confirmSourceLocation(_ entry: SourceFileLocation, shelf: LibraryShelf, configuration: UUID, core: ReaderCore) throws {
+    private func confirmSourceLocation(_ entry: SourceFileLocation, shelf: LibraryShelf, configuration: UUID, core: ReaderIndex) throws {
         try Task.checkCancellation()
         let currentShelf = try libraryShelf(entry.shelfId)
         guard configuration == userCloudConfigurationRevision,
@@ -725,7 +957,7 @@ actor AppDataService {
                                       progress: (@Sendable (Double?) -> Void)?) async throws -> ReadingLease {
         if recentRestorationWork?.fileID == file.id { recentRestorationWork?.cancel() }
 
-        let core = try textCore()
+        let core = try indexStore()
         let entry = try core.sourceFileLocation(fileId: file.id)
         guard !entry.directory else { throw ReaderError.NotFound }
         let shelf = try libraryShelf(entry.shelfId)
@@ -736,12 +968,12 @@ actor AppDataService {
         if let progress { try await simulateSourceDownload(progress) }
         let raw = try await read.read(bookmark: root, relativePath: entry.relativePath, progress: progress)
         try confirmSourceLocation(entry, shelf: shelf, configuration: configuration, core: core)
-        let decoding = try await prepareSourceDecoding(raw: raw, fileID: file.id)
+        let decoding = try await prepareSourceDecoding(raw: raw)
         try confirmSourceLocation(entry, shelf: shelf, configuration: configuration, core: core)
         if try core.setSourceFileAvailability(file: entry, needsDownload: false) { publishLibraryIndexChange() }
         let encoding = decoding == "auto" ? nil : decoding
         if let previous = sourceDefaults.string(forKey: key),
-           let state = try? textCore().importStatus(bookId: previous), state.phase != .complete, entry.bookId == state.text.id {
+           let state = try? indexStore().importStatus(bookId: previous), state.phase != .complete, entry.bookId == state.text.id {
             if let data = sourceDefaults.data(forKey: importSourceKey(previous)),
                let old = try? JSONDecoder().decode(ImportSource.self, from: data),
                try normalizeSourceDecoding(decoding: old.encoding ?? "auto") == decoding,
@@ -751,7 +983,7 @@ actor AppDataService {
                 sourceDefaults.set(try JSONEncoder().encode(moved), forKey: importSourceKey(previous))
                 try resumeSystemInterruptedImport(previous)
                 if trackReadingSource { readingSourceIDs[previous] = file.id }
-                return retainReading(previous)
+                return retainReading(previous, index: core)
             }
             pauseImport(previous)
         }
@@ -759,20 +991,21 @@ actor AppDataService {
                                       sourceKey: key, fileID: file.id, expectedRawSHA: raw.sha)
         let id = try startImport(title: file.title, descriptor: descriptor, encoding: encoding)
         if trackReadingSource { readingSourceIDs[id] = file.id }
-        return retainReading(id)
+        return retainReading(id, index: core)
     }
 
     func openReading(_ id: String, diagnostic: ReaderOpenTrace? = nil) throws -> ReadingLease {
         let opening = "opening:" + UUID().uuidString
         holdForeground(opening); defer { releaseForeground(opening) }
         diagnostic?.mark("lease.actor.begin"); defer { diagnostic?.mark("lease.actor.return") }
-        _ = try textCore().importStatus(bookId: id)
-        return retainReading(id)
+        let index = try indexStore()
+        _ = try index.importStatus(bookId: id)
+        return retainReading(id, index: index)
     }
 
-    private func retainReading(_ id: String) -> ReadingLease {
+    private func retainReading(_ id: String, index: ReaderIndex) -> ReadingLease {
         holdForeground("book:" + id)
-        return ReadingLease(id: id, service: self)
+        return ReadingLease(id: id, service: self, writeAdmission: index.lease)
     }
 
     fileprivate func releaseReading(_ id: String) {
@@ -788,17 +1021,20 @@ actor AppDataService {
         if pendingPromotionIDs.contains(id) { ReaderOpenDiagnostics.worker(id, "reclaim.skip.pendingPromotion"); return }
         if !promotedUserKeys.contains(id) { ReaderOpenDiagnostics.worker(id, "reclaim.skip.notPromoted"); return }
         guard let core else { ReaderOpenDiagnostics.worker(id, "reclaim.skip.noCore"); return }
-        guard (try? core.reclaimCompletedImport(bookId: id)) == true else { ReaderOpenDiagnostics.worker(id, "reclaim.skip.coreRetainedOrError"); return }
+        guard (try? core.reclaimCompletedImport(bookId: id, userPromotionCommitted: true)) == true else { ReaderOpenDiagnostics.worker(id, "reclaim.skip.coreRetainedOrError"); return }
         ReaderOpenDiagnostics.worker(id, "reclaim.success")
+        promotedUserKeys.remove(id)
         if let bytes = sourceDefaults.data(forKey: importSourceKey(id)), let source = try? JSONDecoder().decode(ImportSource.self, from: bytes),
            let key = source.sourceKey, sourceDefaults.string(forKey: key) == id { sourceDefaults.removeObject(forKey: key) }
         sourceDefaults.removeObject(forKey: importSourceKey(id))
-        queryCache = queryCache.filter { !$0.key.hasPrefix("book-" + id + "-") }
         changeRevisions[id] = nil
     }
-    func reclaimImports(_ core: ReaderCore) throws {
+    func reclaimImports(_ core: ReaderIndex) throws {
         ReaderOpenDiagnostics.background("reclaim.begin"); defer { ReaderOpenDiagnostics.background("reclaim.return") }
-        let remaining = Set(try core.reclaimCompletedImports(retainedBookIds: Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs))))
+        let remaining = Set(try core.reclaimCompletedImports(
+            retainedBookIds: Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs)),
+            promotedReadingBookIDs: promotedUserKeys))
+        promotedUserKeys.formIntersection(remaining)
         for id in Array(changeRevisions.keys) where !remaining.contains(id) && readers[id] == nil && imports[id] == nil && changeWaiters[id] == nil { changeRevisions[id] = nil }
         let sourcePrefix = importSourceKey("")
         let draftPrefix = "Moonread.sourceDraft.\(testSession ?? "library")."
@@ -812,7 +1048,7 @@ actor AppDataService {
     }
 
     private func startImport(title: String, descriptor: ImportSource, encoding: String?) throws -> String {
-        let core = try textCore()
+        let core = try indexStore()
         if let fileID = descriptor.fileID { try core.setSourceDecoding(fileId: fileID, decoding: encoding ?? "auto") }
         let control = try core.createImport(title: title)
         let id = control.bookId()
@@ -827,7 +1063,7 @@ actor AppDataService {
         return id
     }
 
-    private func launchImport(core: ReaderCore, control: ImportControl, descriptor: ImportSource, encoding: String?) {
+    private func launchImport(core: ReaderIndex, control: ImportControl, descriptor: ImportSource, encoding: String?) {
         let work = SourceImportWork(core: core, control: control, source: descriptor, encoding: encoding)
         let id = control.bookId()
         imports[id] = work
@@ -846,17 +1082,19 @@ actor AppDataService {
 
     private func importFinished(_ id: String) async {
         defer { dataChanged(); if cloudLibraryRetryAfterImport { scheduleCloudLibraryUpdate() } }
-        let sourceFileID = imports.removeValue(forKey: id)?.source.fileID
+        guard let work = imports.removeValue(forKey: id) else { return }
+        let sourceFileID = work.source.fileID
         let requested = requestedResumes.remove(id) != nil
         let automatic = automaticallyPaused.remove(id) != nil
         if requested || automatic {
             if appActive { try? resumeImport(id) }
             else { automaticallyPaused.insert(id) }
         }
-        if let core {
+        if let core, core === work.core {
             if (try? core.importStatus(bookId: id).phase) == .complete {
-                do { try await promoteUserData(id) }
-                catch { pendingPromotionIDs.insert(id) }
+                let configuration = userCloudConfigurationRevision
+                try? await promoteUserData(id)
+                guard self.core === core, userCloudConfigurationRevision == configuration else { return }
                 if let key = try? userKey(id), case .formal = key {
                     NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil, userInfo: [
                         "keys": [key.storageKey, ReadingKey.pending(bookId: id).storageKey],
@@ -870,7 +1108,7 @@ actor AppDataService {
 
     private func relocatedImportSource(_ source: ImportSource) throws -> ImportSource {
         guard let fileID = source.fileID else { return source }
-        let entry = try textCore().sourceFileLocation(fileId: fileID)
+        let entry = try indexStore().sourceFileLocation(fileId: fileID)
         let shelf = try libraryShelf(entry.shelfId)
         return ImportSource(rootBookmark: Data(shelf.bookmark), relativePath: entry.relativePath,
                             encoding: source.encoding, sourceKey: source.sourceKey, fileID: fileID, expectedRawSHA: source.expectedRawSHA)
@@ -886,7 +1124,7 @@ actor AppDataService {
     }
 
     private func resumeSystemInterruptedImport(_ id: String) throws {
-        if try textCore().importStatus(bookId: id).phase == .paused { try resumeImport(id) }
+        if try indexStore().importStatus(bookId: id).phase == .paused { try resumeImport(id) }
     }
     func pauseImport(_ id: String) {
         requestedResumes.remove(id)
@@ -903,13 +1141,14 @@ actor AppDataService {
         recentRestorationActive = false; cancelRecentRestoration()
         appActive = false
         for id in imports.keys {
-            let wasActive = (try? textCore().importStatus(bookId: id)).map { [.preparing, .importing, .finalizing].contains($0.phase) } ?? false
+            let wasActive = (try? indexStore().importStatus(bookId: id)).map { [.preparing, .importing, .finalizing].contains($0.phase) } ?? false
             pauseImport(id)
             if wasActive { automaticallyPaused.insert(id) }
         }
     }
     func resumePausedImports() {
         appActive = true
+        guard !changingUserScope else { return }
         recentRestorationActive = true; scheduleRecentRestoration()
         for id in Array(automaticallyPaused) where imports[id] == nil {
             automaticallyPaused.remove(id)
@@ -918,17 +1157,18 @@ actor AppDataService {
     }
 
     func resumeImport(_ id: String) throws {
+        guard !changingUserScope else { throw CancellationError() }
         guard imports[id] == nil else {
             // File-provider cancellation can outlive a resume request. Keep the
             // request until that accessor releases its scope and worker exits.
-            if [.paused, .failed].contains(try textCore().importStatus(bookId: id).phase) { requestedResumes.insert(id) }
+            if [.paused, .failed].contains(try indexStore().importStatus(bookId: id).phase) { requestedResumes.insert(id) }
             return
         }
         guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else {
             throw CocoaError(.fileReadNoPermission)
         }
         let descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
-        let core = try textCore()
+        let core = try indexStore()
         launchImport(core: core, control: try core.resumeImport(bookId: id), descriptor: descriptor, encoding: descriptor.encoding)
     }
 
@@ -959,14 +1199,14 @@ actor AppDataService {
         var descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
         let configuration = userCloudConfigurationRevision
         let raw = try await SourceDecodingRead().read(bookmark: descriptor.rootBookmark, relativePath: descriptor.relativePath)
-        let decoding = try await prepareSourceDecoding(raw: raw, fileID: descriptor.fileID, selection: encoding ?? "auto")
+        let decoding = try await prepareSourceDecoding(raw: raw, selection: encoding ?? "auto")
         try Task.checkCancellation()
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         descriptor.expectedRawSHA = raw.sha
         pauseImport(id)
-        let next = try startImport(title: textCore().importStatus(bookId: id).text.title, descriptor: descriptor, encoding: decoding == "auto" ? nil : decoding)
+        let next = try startImport(title: indexStore().importStatus(bookId: id).text.title, descriptor: descriptor, encoding: decoding == "auto" ? nil : decoding)
         if let fileID = descriptor.fileID { readingSourceIDs[next] = fileID }
-        return retainReading(next)
+        return retainReading(next, index: try indexStore())
     }
 
 
@@ -984,10 +1224,10 @@ struct ImportSource: Codable, Sendable {
 private enum SourceImportEvent: String, Sendable { case ready, failed, finished }
 
 /// All properties are immutable; cancellation is a Rust atomic flag. The queue
-/// owns the coordinator and keeps authorized access until Rust has stopped I/O.
+/// owns the coordinator and keeps authorized access throughout Swift file reads.
 private final class SourceImportWork: @unchecked Sendable {
     let token = UUID()
-    let core: ReaderCore
+    let core: ReaderIndex
     let control: ImportControl
     let source: ImportSource
     let encoding: String?
@@ -1008,7 +1248,7 @@ private final class SourceImportWork: @unchecked Sendable {
         #endif
     }
 
-    init(core: ReaderCore, control: ImportControl, source: ImportSource, encoding: String?) {
+    init(core: ReaderIndex, control: ImportControl, source: ImportSource, encoding: String?) {
         self.core = core; self.control = control; self.source = source; self.encoding = encoding
     }
 
@@ -1042,7 +1282,7 @@ private final class SourceImportWork: @unchecked Sendable {
                 }
             } catch {
                 let state = try? core.importStatus(bookId: control.bookId())
-                // Rust records typed failures; presentation localizes them in the current language.
+                // The Swift index records typed failures; presentation localizes them in the current language.
                 if state?.phase != .failed && state?.phase != .paused && state?.phase != .complete {
                     let failure = error as? ReaderError ?? .Io(message: "\((error as NSError).domain):\((error as NSError).code)")
                     try? core.failImport(control: control, error: failure)

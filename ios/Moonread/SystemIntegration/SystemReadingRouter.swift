@@ -57,6 +57,7 @@ enum SystemReadingRouteError: LocalizedError, Equatable {
     }
 }
 
+
 @MainActor @Observable
 final class SystemReadingRouter {
     private weak var library: LibraryModel?
@@ -89,6 +90,7 @@ final class SystemReadingRouter {
     var pending: SystemReadingRequest? { handoff.context?.request }
     private var task: Task<Void, Never>?
     private var resumeAfterCurrent = false
+    private var changingUserScope = false
     private weak var reader: ReaderSession?
     private var readerNavigationID: UUID?
     var sceneActive = false { didSet { if sceneActive { resume() } } }
@@ -142,31 +144,56 @@ final class SystemReadingRouter {
         // destination. A newer handoff's reader must not be popped by this task.
         if let navigationID { library.removeReaderDestination(navigationID) }
     }
-    private func openEntry(_ entry: LibraryEntry, expectedSHA: String?, in library: LibraryModel, context: RequestContext) async -> Bool {
-        guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
-        if expectedSHA == nil, let id = entry.bookId, reader?.isLeaving == false, reader?.readingID == id { return true }
+    func prepareForUserScopeChange() async throws {
+        changingUserScope = true
+        let oldTask = task
+        handoff = .idle(UUID()); task = nil; resumeAfterCurrent = false; requestError = nil
+        oldTask?.cancel()
+        await oldTask?.value
+        try Task.checkCancellation()
+        discardEdits?()
+        if let library { await finishReader(in: library) }
+    }
+    func finishUserScopeChange() { changingUserScope = false }
+    private func beginOpening(_ entry: LibraryEntry, in library: LibraryModel, context: RequestContext) -> Bool {
         guard admit(title: entry.title, library: library) else { return false }
         handoff = .opening(context)
-        await finishReader(in: library)
-        guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
+        return true
+    }
+    private func publishEntry(_ entry: LibraryEntry, expectedSHA: String?, in library: LibraryModel) {
         library.selectedTab = .library
         library.libraryPath = Array(library.libraryPath.prefix { !$0.isReader })
         library.open(entry, expectedContentSHA: expectedSHA)
+    }
+    private func openEntry(_ entry: LibraryEntry, expectedSHA: String?,
+                           in library: LibraryModel, context: RequestContext) async -> Bool {
+        guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
+        if expectedSHA == nil, let id = entry.bookId, reader?.isLeaving == false, reader?.readingID == id { return true }
+        guard beginOpening(entry, in: library, context: context) else { return false }
+        await finishReader(in: library)
+        guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
+        publishEntry(entry, expectedSHA: expectedSHA, in: library)
         return true
     }
     func submit(_ request: SystemReadingRequest) {
-        if pending == request { return }
+        guard !changingUserScope, pending != request else { return }
         requestError = nil
         handoff = .resolving(.init(request: request))
         task?.cancel(); task = nil; resumeAfterCurrent = false
         resume()
     }
+    func cancelForLibraryOpen() -> Bool {
+        guard !changingUserScope else { return false }
+        handoff = .idle(UUID()); task?.cancel(); task = nil
+        resumeAfterCurrent = false; requestError = nil
+        return true
+    }
     func resume() {
+        guard !changingUserScope else { return }
         guard task == nil else { resumeAfterCurrent = true; return }
         guard confirmationTitle == nil, let context = handoff.context, let library, library.initialized,
               sceneActive, Onboarding.shared.completed else { return }
         let current = context.token
-        let request = context.request
         handoff = .resolving(context)
         task = Task { [weak self] in
             guard let self else { return }
@@ -177,7 +204,8 @@ final class SystemReadingRouter {
                 }
             }
             do {
-                guard sceneActive else { return }
+                guard sceneActive, requestID == current, !Task.isCancelled else { return }
+                let request = context.request
                 let id: SystemReadingBookID
                 let automatic: Bool
                 switch request {

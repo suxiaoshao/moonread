@@ -1,9 +1,6 @@
-mod catalogue;
-mod search;
-mod text;
+mod search_compute;
 
-pub(crate) use catalogue::{chapter, content_key};
-pub use search::SearchJob;
+pub use search_compute::{SearchScanState, SearchScanStep, advance_search_scan, begin_search_scan};
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct TextRange {

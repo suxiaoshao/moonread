@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import UIKit
 
 enum ReaderLibraryTab: Hashable { case chapters, bookmarks, notes }
@@ -30,7 +31,6 @@ final class ReaderToolsModel {
     var chapters: [ChapterEntry] = []
     private struct ChapterStructure {
         let version = UUID()
-        let query: ReaderQuery
         let outline: ChapterOutline
     }
     private enum StructureLoad {
@@ -51,47 +51,51 @@ final class ReaderToolsModel {
             self = previous.map(Self.ready) ?? .idle
         }
     }
-    private struct ChapterCoverage {
-        let query: ReaderQuery
-        let outline: ChapterOutline
-    }
-    private enum CoverageLoad {
-        case notRequested
-        case loading(UUID, previous: ChapterCoverage?)
-        case ready(UUID, ChapterCoverage)
-        case failed(UUID, String, previous: ChapterCoverage?)
+    private var chapterStructure = StructureLoad.idle
+    private var allChapters: [ChapterEntry] { chapterStructure.snapshot?.outline.items ?? [] }
+    @ObservationIgnored private var accountChange: AnyCancellable?
+    private(set) var chapterAccountRevision: UUID?
+    private var coverage: ChapterOutline?
+    private(set) var chapterCoverageError: String?
+    var chapterCoverageReady: Bool { coverage?.items.contains { $0.coveredCharacters != nil } ?? false }
+    var chapterCoverageRequest: UUID? { chapterStructure.snapshot?.version }
 
-        func snapshot(for version: UUID) -> ChapterCoverage? {
-            switch self {
-            case .loading(let id, let snapshot) where id == version: snapshot
-            case .failed(let id, _, let snapshot) where id == version: snapshot
-            case .ready(let id, let snapshot) where id == version: snapshot
-            default: nil
+    func chapterWithCoverage(_ entry: ChapterEntry) -> ChapterEntry {
+        guard let coverage else { return entry }
+        var lo = 0, hi = coverage.items.count
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2
+            if coverage.items[mid].startUtf8 < entry.startUtf8 { lo = mid + 1 } else { hi = mid }
+        }
+        return lo < coverage.items.count && coverage.items[lo].startUtf8 == entry.startUtf8 ? coverage.items[lo] : entry
+    }
+
+    func releaseCoverage() { coverage = nil; chapterCoverageError = nil }
+
+    func observeCoverage(_ request: UUID) async {
+        guard let id = bookID, chapterCoverageRequest == request, !Task.isCancelled, tab == .chapters else { return }
+
+        do {
+            try await service.observeChapterCoverage(id) { [weak self] result in
+                guard let self, chapterCoverageRequest == request, !Task.isCancelled, tab == .chapters else { return }
+                switch result {
+                case .success(let value):
+                    guard let value else { coverage = nil; chapterCoverageError = nil; return }
+                    var structure = value
+                    for i in structure.items.indices { structure.items[i].coveredCharacters = nil }
+                    if structure == chapterStructure.snapshot?.outline { coverage = value }
+                case .failure(let error): chapterCoverageError = ReaderMessages.error(error)
+                }
             }
-        }
-        mutating func cancel() {
-            guard case .loading(let version, let previous) = self else { return }
-            self = previous.map { .ready(version, $0) } ?? .notRequested
-        }
+        } catch is CancellationError { }
+        catch { if chapterCoverageRequest == request, !Task.isCancelled { chapterCoverageError = ReaderMessages.error(error) } }
     }
-    private struct DirectoryState {
-        var structure = StructureLoad.idle
-        var coverage = CoverageLoad.notRequested
-        var currentCoverage: ChapterCoverage? {
-            structure.snapshot.flatMap { coverage.snapshot(for: $0.version) }
-        }
-    }
-    private var directory = DirectoryState()
-    private var allChapters: [ChapterEntry] {
-        directory.currentCoverage?.outline.items ?? directory.structure.snapshot?.outline.items ?? []
-    }
-    var chapterCoverageReady: Bool { directory.currentCoverage != nil }
     var collapsedVolumes: Set<UInt64> = []
-    var chapterComplete: Bool { directory.structure.snapshot?.outline.isComplete ?? false }
+    var chapterComplete: Bool { chapterStructure.snapshot?.outline.isComplete ?? false }
     var chapterTarget: UInt64?
     var chapterTargetCentered = true
     var chapterJumpRevision = 0
-    var loadingChapters: Bool { if case .loading = directory.structure { true } else { false } }
+    var loadingChapters: Bool { if case .loading = chapterStructure { true } else { false } }
     private struct SearchDraft {
         var query = ""
         var regex = false
@@ -219,8 +223,8 @@ final class ReaderToolsModel {
     }
     private(set) var notesLoad = NotesLoad.idle
     private enum SelectedMark {
-        case candidates(key: String, values: [AnnotationCandidate])
-        case blocked(key: String)
+        case candidates(key: String, values: [AnnotationCandidate], admission: DataSessionLease?)
+        case blocked(key: String, admission: DataSessionLease?)
         case unavailable
     }
     private enum NoteSelection {
@@ -254,8 +258,8 @@ final class ReaderToolsModel {
         marks = marks.filter { ids.contains($0.key) }
         for id in ids where marks[id] == nil {
             if let snapshot = noteSnapshot {
-                if snapshot.blocked.contains(id) { marks[id] = .blocked(key: snapshot.key) }
-                else if let values = snapshot.groups[id] { marks[id] = .candidates(key: snapshot.key, values: values) }
+                if snapshot.unknownMarks || snapshot.blocked.contains(id) { marks[id] = .blocked(key: snapshot.key, admission: snapshot.admission) }
+                else if let values = snapshot.groups[id] { marks[id] = .candidates(key: snapshot.key, values: values, admission: snapshot.admission) }
                 else { marks[id] = .unavailable }
             } else { marks[id] = .unavailable }
         }
@@ -268,15 +272,22 @@ final class ReaderToolsModel {
             guard let key = noteSnapshot?.key else { throw UserDataConflict(candidates: []) }
             var groups: [String: [AnnotationCandidate]] = [:]
             var blocked = Set<String>()
+            var selectedAccount: DataSessionLease?
             for (markID, mark) in marks {
+                let admission: DataSessionLease?
                 switch mark {
-                case .candidates(let markKey, let values) where markKey == key: groups[markID] = values
-                case .blocked(let markKey) where markKey == key: blocked.insert(markID)
+                case .candidates(let markKey, let values, let stamp) where markKey == key: groups[markID] = values; admission = stamp
+                case .blocked(let markKey, let stamp) where markKey == key: blocked.insert(markID); admission = stamp
                 default: throw UserDataConflict(candidates: [])
                 }
+                guard let admission else { throw UserDataConflict(candidates: []) }
+                if let selectedAccount, selectedAccount != admission {
+                    throw UserDataConflict(candidates: [])
+                }
+                selectedAccount = admission
             }
             let ids = Set(marks.keys)
-            try await service.deleteNoteSelection(id, expected: NoteCandidates(key: key, groups: groups, blocked: blocked), ids: ids)
+            try await service.deleteNoteSelection(id, expected: NoteCandidates(key: key, groups: groups, blocked: blocked, admission: selectedAccount), ids: ids)
             guard !isLeaving, id == bookID else { return }
             deletedIDs = ids.sorted(); clearNoteSelection()
             await loadNotes(reset: true)
@@ -298,8 +309,7 @@ final class ReaderToolsModel {
     private var bookID: String?
     private var currentChapter: UInt64 = 0
     private var chapterGeneration = 0
-    private var chapterTask: Task<QueryRefresh<ChapterOutline>, Error>?
-    private var coverageTask: Task<Void, Never>?
+    private var chapterTask: Task<ChapterOutline, Error>?
     private var notesGeneration = 0
     private var job: SearchJob?
     private var searchTask: Task<Void, Never>?
@@ -316,6 +326,13 @@ final class ReaderToolsModel {
          uptime: @escaping @Sendable () -> Duration = { .nanoseconds(Int64(DispatchTime.now().uptimeNanoseconds)) },
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.service = service; self.uptime = uptime; self.sleep = sleep
+        accountChange = MainActorNotifications.observe(.readingContinuationInvalidated, object: service) { [weak self] in
+            guard let self else { return }
+            cancelChapterLoads()
+            chapterStructure = .idle; chapters = []; collapsedVolumes = []
+            releaseCoverage()
+            chapterAccountRevision = UUID()
+        }
     }
 
     // Count only the time the reader can actually reach the undo capsule.
@@ -354,7 +371,7 @@ final class ReaderToolsModel {
         let changed = self.bookID != bookID
         if changed {
             cancelSearchJob(); cancelChapterLoads(); self.bookID = bookID
-            chapters = []; directory = DirectoryState(); collapsedVolumes = []; chapterFilter = ""
+            chapters = []; chapterStructure = .idle; releaseCoverage(); collapsedVolumes = []; chapterFilter = ""
             finishNoteSelection()
             notesGeneration += 1
             notesLoad = .idle
@@ -435,108 +452,42 @@ final class ReaderToolsModel {
     func cancelChapterLoads() {
         chapterGeneration += 1
         chapterTask?.cancel(); chapterTask = nil
-        coverageTask?.cancel(); coverageTask = nil
-        directory.structure.cancel()
-        directory.coverage.cancel()
-    }
-
-    func invalidateChapterCoverage() {
-        cancelChapterLoads()
-        directory.coverage = .notRequested
-        updateChapterRows()
-    }
-
-    func refreshChapterStatistics(reset: Bool, presented: Bool) async {
-        if reset { invalidateChapterCoverage() }
-        guard presented, tab == .chapters else { return }
-        await refreshChapters()
+        chapterStructure.cancel()
     }
 
     func refreshChapters(jumpTo offset: UInt64? = nil) async {
         guard !isLeaving, !Task.isCancelled, let id = bookID else { return }
         cancelChapterLoads()
         let generation = chapterGeneration
-        let previous = directory.structure.snapshot
-        directory.structure = .loading(previous: previous)
+        let previous = chapterStructure.snapshot
+        chapterStructure = .loading(previous: previous)
         // Native list layout must not delay the independent structure read.
         let task = Task.detached(priority: Task.currentPriority) { [service] in
-            try await service.chapterStructure(id, reusing: previous?.query)
+            try await service.chapterStructure(id)
         }
         chapterTask = task
         defer {
             if generation == chapterGeneration {
-                directory.structure.cancel()
+                chapterStructure.cancel()
                 chapterTask = nil
             }
         }
         do {
             let result = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
             guard !isLeaving, !Task.isCancelled, id == bookID, generation == chapterGeneration else { return }
-            let current: ChapterStructure
-            switch result {
-            case .unchanged:
-                guard let previous else { return }
-                current = previous
-            case .replaced(let query, let outline):
-                current = ChapterStructure(query: query, outline: outline)
-                directory.coverage = .notRequested
-            }
-            directory.structure = .ready(current)
+            let current = if let previous, previous.outline == result { previous }
+                          else { ChapterStructure(outline: result) }
+            if current.version != previous?.version { releaseCoverage() }
+            chapterStructure = .ready(current)
             if let offset { showChapter(offset) }
             else if current.version != previous?.version { updateChapterRows() }
-            if tab == .chapters { loadChapterCoverage(id, generation: generation, structureVersion: current.version) }
         } catch is CancellationError { }
         catch {
             guard !isLeaving, !Task.isCancelled, generation == chapterGeneration else { return }
             let message = ReaderMessages.error(error)
-            directory.structure = .failed(message, previous: previous)
+            chapterStructure = .failed(message, previous: previous)
             self.error = message
         }
-    }
-
-    private func loadChapterCoverage(_ id: String, generation: Int, structureVersion: UUID) {
-        let previous = directory.coverage.snapshot(for: structureVersion)
-        directory.coverage = .loading(structureVersion, previous: previous)
-        coverageTask = Task.detached(priority: Task.currentPriority) { [weak self, service] in
-            do {
-                let result = try await service.chapters(id, reusing: previous?.query)
-                try Task.checkCancellation()
-                await self?.publishChapterCoverage(result, id: id, generation: generation, structureVersion: structureVersion)
-            } catch is CancellationError { }
-            catch { await self?.chapterCoverageFailed(error, generation: generation, structureVersion: structureVersion) }
-        }
-    }
-
-    private func publishChapterCoverage(_ result: QueryRefresh<ChapterOutline>, id: String, generation: Int, structureVersion: UUID) {
-        guard !isLeaving, id == bookID, generation == chapterGeneration,
-              let structure = directory.structure.snapshot, structure.version == structureVersion,
-              case .loading(let version, let previous) = directory.coverage, version == structureVersion else { return }
-        coverageTask = nil
-        switch result {
-        case .unchanged:
-            directory.coverage = previous.map { .ready(version, $0) } ?? .notRequested
-        case .replaced(let query, let outline):
-            // A structure change between requests must go through the structure owner.
-            guard structure.outline.isComplete == outline.isComplete,
-                  structure.outline.items.count == outline.items.count,
-                  zip(structure.outline.items, outline.items).allSatisfy({ a, b in
-                      a.startUtf8 == b.startUtf8 && a.title == b.title && a.level == b.level && a.parentUtf8 == b.parentUtf8
-                  }) else {
-                directory.coverage = .notRequested
-                updateChapterRows()
-                return
-            }
-            directory.coverage = .ready(version, ChapterCoverage(query: query, outline: outline))
-            updateChapterRows() // Keep filter, folding, target and scroll revision.
-        }
-    }
-
-    private func chapterCoverageFailed(_ error: Error, generation: Int, structureVersion: UUID) {
-        guard !isLeaving, generation == chapterGeneration,
-              directory.structure.snapshot?.version == structureVersion else { return }
-        let message = ReaderMessages.error(error)
-        directory.coverage = .failed(structureVersion, message, previous: directory.coverage.snapshot(for: structureVersion))
-        coverageTask = nil; self.error = message
     }
 
     func loadNotes(reset: Bool, preservingCount: Int = 0) async {
@@ -556,6 +507,10 @@ final class ReaderToolsModel {
         }
         do {
             let snapshot = try await service.noteCandidates(id)
+            if !reset, let old = previous?.candidates {
+                guard old.key == snapshot.key, let before = old.admission, before == snapshot.admission
+                else { throw UserDataConflict(candidates: []) }
+            }
             var items: [ReaderMark] = []
             var more = false
             repeat {
@@ -570,7 +525,8 @@ final class ReaderToolsModel {
             for item in items where reset || displayedGroups[item.id] == nil {
                 displayedGroups[item.id] = snapshot.groups[item.id]
             }
-            let displayed = NoteCandidates(key: snapshot.key, groups: displayedGroups, blocked: snapshot.blocked)
+            let displayed = NoteCandidates(key: snapshot.key, groups: displayedGroups, blocked: snapshot.blocked,
+                                           unknownMarks: snapshot.unknownMarks, admission: snapshot.admission)
             var page = NotePageSnapshot(kind: kind, items: reset ? items : (previous?.items ?? []) + items,
                                         hasMore: more, locations: previous?.locations ?? [:], candidates: displayed)
             notesLoad = .loading(kind, previous: page)
@@ -600,17 +556,17 @@ final class ReaderToolsModel {
         guard !isLeaving, !ids.isEmpty else { return }
         error = nil
         do {
-            try await service.deleteMarks(ids, deleted: true)
+            try await service.deleteMarks(ids, deleted: true, expected: noteSnapshot)
             guard !isLeaving else { return }
             deletedIDs = ids; await loadNotes(reset: true)
         }
         catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
     }
-    func removeAnnotations(bookID: String, start: UInt64, end: UInt64) async {
+    func removeAnnotations(bookID: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async {
         guard !isLeaving else { return }
         error = nil
         do {
-            let ids = try await service.removeAnnotations(bookID, start: start, end: end)
+            let ids = try await service.removeAnnotations(bookID, start: start, end: end, admission: admission)
             guard !isLeaving else { return }
             deletedIDs = ids; await loadNotes(reset: true)
         } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }

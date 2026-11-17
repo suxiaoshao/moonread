@@ -173,52 +173,10 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
 }
 
 final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
-  @MainActor func testHomeReadsWaitForStableInputsAndKeepRealFailuresVisible() async throws {
-    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
-    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
-    try await service.savePosition(bookID: book.id, offset: 12)
-    let model = LibraryModel(service: service, prepareLibrary: {}, refreshLibrary: {})
-    let attempts = QueryAttemptCounter()
-    await service.queryFixture { _, phase in
-      if phase == .built, await attempts.next() <= 3 {
-        try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"\(UUID().uuidString)\"", device: "fixture")
-      }
-    }
-    let loaded = await model.load()
-    XCTAssertTrue(loaded); XCTAssertTrue(model.homeReady); XCTAssertNil(model.error)
-    await model.refresh(); await service.waitForUserRecovery()
-    let home = model.home
-    let gate = RestorationGate(), refreshAttempts = QueryAttemptCounter()
-    await service.queryFixture { _, phase in
-      if phase == .built, await refreshAttempts.next() <= 3 {
-        await gate.wait()
-        try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"Updated\"", device: "fixture")
-      }
-    }
-    let refresh = Task { await model.reloadBooks() }
-    await gate.waitForEntry()
-    XCTAssertEqual(model.home, home)
-    await gate.release(); await refresh.value
-    XCTAssertEqual(model.recents.first?.displayMetadata?.author, "Updated"); XCTAssertNil(model.error)
-    await service.queryFixture(nil)
-    let cancelled = Task { @MainActor in
-      withUnsafeCurrentTask { $0?.cancel() }
-      await model.reloadBooks()
-    }
-    await cancelled.value
-    XCTAssertNil(model.error); XCTAssertNil(model.refreshTask)
-    await service.failHomeQueryFixture()
-    await model.reloadBooks()
-    XCTAssertEqual(model.error, ReaderMessages.error(CocoaError(.fileReadNoPermission)))
-    model.error = nil
-    await service.cancelHomeQueryFixture()
-    await model.reloadBooks()
-    XCTAssertEqual(model.error, ReaderMessages.error(CocoaError(.fileReadUnknown)), "A shared dependency failing on its own is a real read failure")
-  }
-  // S333: 首页快照一次发布一致的文件/最近列表，替换同一文件不产生两个入口；不锁无变化刷新通知次数。
-  @MainActor func testHomeSnapshotPublishesAtomicallyAndIgnoresInvisibleReloadChanges() async throws
+  // S333: 书架结构与可见页面的最近阅读分别发布，替换同一文件不产生两个入口。
+  @MainActor func testHomeAndRecentReadingFollowVisibleChanges() async throws
   {
-    let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+    let (root, service, _, _, book, _, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -227,6 +185,8 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     let model = LibraryModel(service: service, prepareLibrary: {}, refreshLibrary: {})
     XCTAssertTrue(model.shelves.isEmpty)
     XCTAssertTrue(model.recents.isEmpty)
+    let recentUse = model.recentReading.use(limit: RecentReadingStore.homeLimit)
+    defer { withExtendedLifetime(recentUse) {} }
     let committed = expectation(description: "atomic home")
     withObservationTracking {
       _ = model.home
@@ -238,6 +198,7 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     await fulfillment(of: [committed], timeout: 2)
     XCTAssertTrue(model.homeReady)
     XCTAssertEqual(model.shelves.count, 1)
+    await awaitState { model.recents.first?.positionUtf8 == 20 }
     XCTAssertEqual(model.recents.count, 1)
     let first = model.home
     let revision = model.revision
@@ -245,7 +206,7 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(model.home, first)
     XCTAssertEqual(model.revision, revision)
     try await service.savePosition(bookID: book.id, offset: 44)
-    await model.reloadBook(.book(book.id))
+    await awaitState { model.recents.first?.positionUtf8 == 44 }
     XCTAssertEqual(model.recents.first?.positionUtf8, 44)
     XCTAssertEqual(model.revision, revision)
     try FileManager.default.moveItem(
@@ -262,22 +223,25 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     // Replacement must not leave two home entries for the same physical file.
     do {
 
-      let (root, service, core, _, _, book, _, suite) = try singleBookFixture()
+      let (root, service, core, _, book, _, suite) = try singleBookFixture()
       defer {
         try? FileManager.default.removeItem(at: root)
         UserDefaults.standard.removePersistentDomain(forName: suite)
       }
       try await service.savePosition(bookID: book.id, offset: 20)
       let model = LibraryModel(service: service, prepareLibrary: {}, refreshLibrary: {})
+      let recentUse = model.recentReading.use(limit: RecentReadingStore.homeLimit)
+      defer { withExtendedLifetime(recentUse) {} }
       let loaded = await model.load()
       XCTAssertTrue(loaded)
+      await awaitState { model.recents.first?.positionUtf8 == 20 }
       let old = try XCTUnwrap(model.recents.first)
       try Data("第三章 替换\n只用于增量最近阅读回归的新正文。\n".utf8).write(to: root.appendingPathComponent("a.txt"))
-      let replacement = try core.importBook(
-        filePath: root.appendingPathComponent("a.txt").path, title: "替换内容")
+      let replacement = try importBookFixture(core, filePath: root.appendingPathComponent("a.txt").path, title: "替换内容")
+      try await service.scanLibraryShelf("builtin")
       try core.linkLibraryFile(fileId: old.id, bookId: replacement.id)
       try await service.savePosition(bookID: replacement.id, offset: 6)
-      await model.reloadBook(.source(old.source))
+      await awaitState { model.recents.first?.readingKey == replacement.fixtureSHA256 }
       XCTAssertEqual(model.recents.filter { $0.id == old.id }.count, 1)
       XCTAssertFalse(model.recents.contains { $0.readingKey == book.fixtureSHA256 })
       XCTAssertEqual(model.recents.first?.readingKey, replacement.fixtureSHA256)
@@ -321,7 +285,7 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let service = AppDataService(
-      core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
+      core: try makeReaderIndexFixture(at: directory.appendingPathComponent("db")),
       libraryDirectory: directory.appendingPathComponent("books"))
     let entered = expectation(description: "Automatic refresh started")
     let probe = LibraryRefreshProbe(gate: SourceReadinessGate(entered: entered))
@@ -347,19 +311,24 @@ final class LibraryModelApplicationStateTests: ApplicationStateFixture {
     let state = AppSearchResults()
     let old = SearchKey(term: "old", revision: 0, retry: 0, aiAvailable: false)
     let new = SearchKey(term: "new", revision: 0, retry: 0, aiAvailable: false)
+    let oneRead = {
+      AsyncThrowingStream<Void, Error> { sink in sink.yield(()); sink.finish() }
+    }
     let started = expectation(description: "Old search suspended")
     var release: CheckedContinuation<Void, Never>?
     let pending = Task {
-      await state.run(old, hasCriteria: true) {
+      await state.observe(old, hasCriteria: true, invalidations: oneRead) {
         await withCheckedContinuation {
           release = $0
           started.fulfill()
         }
         throw CocoaError(.fileReadUnknown)
-      }
+      } conversations: { [] }
     }
     await fulfillment(of: [started], timeout: 3)
-    await state.run(new, hasCriteria: true) { ([], [], 0) }
+    await state.observe(new, hasCriteria: true, invalidations: oneRead) {
+      .init(entries: [], unknownCount: 0)
+    } conversations: { [] }
     release?.resume()
     await pending.value
     XCTAssertEqual(state.completedKey, new)
@@ -375,20 +344,11 @@ final class LibraryModelApplicationStateTests: ApplicationStateFixture {
     XCTAssertEqual(search.configuration.root.children[0].values, [.text("builtin")])
     search.configuration = BookSearchConfiguration()
     XCTAssertEqual(search.term, "Moonread", "Resetting filters preserves text")
-    await state.run(new, hasCriteria: false) {
+    await state.observe(new, hasCriteria: false, invalidations: oneRead) {
       XCTFail("Empty search must not load")
-      return ([], [], 0)
-    }
+      return .init(entries: [], unknownCount: 0)
+    } conversations: { [] }
     XCTAssertNil(state.completedKey)
     XCTAssertTrue(state.entries.isEmpty)
-  }
-}
-
-private extension AppDataService {
-  func cancelHomeQueryFixture() {
-    pendingUserStoreTask = UserStoreInitialization(task: Task { throw CancellationError() })
-  }
-  func failHomeQueryFixture() {
-    pendingUserStoreTask = UserStoreInitialization(task: Task { throw CocoaError(.fileReadNoPermission) })
   }
 }

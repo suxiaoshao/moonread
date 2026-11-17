@@ -1,5 +1,5 @@
-//! Typed reading facts for prepared queries. Swift binds row IDs, owns candidate
-//! selection, and keeps the original payload in SwiftData.
+//! Typed reading facts for wire intake and local clock output. Swift owns
+//! persistent rows, scope and candidate selection.
 use crate::{ReaderError, ReadingExposure, ReadingSlice, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::{
@@ -38,9 +38,9 @@ impl<'de, D: Deserializer<'de>> Deserializer<'de> for ObjectDeserializer<D> {
 #[repr(transparent)]
 #[derive(Deserialize)]
 #[serde(transparent, bound(deserialize = "T: Deserialize<'de>"))]
-struct JsonObject<T>(#[serde(deserialize_with = "deserialize_object")] T);
+pub(super) struct JsonObject<T>(#[serde(deserialize_with = "deserialize_object")] pub(super) T);
 
-fn deserialize_object<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+pub(super) fn deserialize_object<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<T, D::Error> {
     T::deserialize(ObjectDeserializer(deserializer))
@@ -185,6 +185,50 @@ fn decode(text: &str) -> std::result::Result<Arc<DecodedFact>, FactDecodeStatus>
     }))
 }
 
+/// Relational storage input. The original payload is parsed by the same serde
+/// boundary as the current reader, never reconstructed as another full JSON row.
+#[derive(uniffi::Record)]
+pub struct FactImportColumns {
+    pub payload_content_key: String,
+    pub title: String,
+    pub device: String,
+    pub slice: ReadingSlice,
+    pub duration_ms: Option<i64>,
+}
+
+impl FactImportColumns {
+    fn new(
+        payload_content_key: String,
+        title: String,
+        device: String,
+        slice: ReadingSlice,
+    ) -> Self {
+        let duration_ms = slice.ended_ms.checked_sub(slice.started_ms);
+        Self {
+            payload_content_key,
+            title,
+            device,
+            slice,
+            duration_ms,
+        }
+    }
+}
+
+/// Local clock output is already typed; never make it go through a wire
+/// payload to obtain the same columns as released JSON imports.
+#[uniffi::export]
+pub fn local_reading_fact_columns(
+    content_key: String,
+    title: String,
+    device: String,
+    slice: ReadingSlice,
+) -> Result<FactImportColumns> {
+    if slice.id.is_empty() {
+        return Err(ReaderError::InvalidSettings);
+    }
+    Ok(FactImportColumns::new(content_key, title, device, slice))
+}
+
 #[derive(uniffi::Object)]
 pub struct DecodedFactBatch {
     id: u64,
@@ -214,21 +258,38 @@ pub fn decode_fact_batch(base: u64, payloads: Vec<String>) -> Result<Arc<Decoded
     }))
 }
 
-#[uniffi::export]
 impl DecodedFactBatch {
-    /// For portable backup only. Query routing uses the SwiftData row key.
-    pub fn payload_content_key(&self, ordinal: u64) -> Result<String> {
+    fn entry(&self, ordinal: u64) -> Result<&DecodedFact> {
         let index = ordinal
             .checked_sub(self.base)
             .and_then(|index| usize::try_from(index).ok())
             .ok_or(ReaderError::InvalidRange)?;
-        let fact = self
-            .entries
+        self.entries
             .get(index)
             .ok_or(ReaderError::InvalidRange)?
-            .as_ref()
-            .map_err(|_| ReaderError::InvalidSettings)?;
-        Ok(fact.payload_content_key.clone())
+            .as_deref()
+            .map_err(|_| ReaderError::InvalidSettings)
+    }
+}
+
+#[uniffi::export]
+impl DecodedFactBatch {
+    /// For portable backup only. Query routing uses the SwiftData row key.
+    pub fn payload_content_key(&self, ordinal: u64) -> Result<String> {
+        Ok(self.entry(ordinal)?.payload_content_key.clone())
+    }
+
+    /// Used only when migrating a bound and accepted fact to the relational store.
+    pub fn import_columns(&self, ordinal: u64) -> Result<FactImportColumns> {
+        let fact = self.entry(ordinal)?;
+        let mut slice = fact.data.slice.clone();
+        slice.exposures = fact.data.exposures.to_vec();
+        Ok(FactImportColumns::new(
+            fact.payload_content_key.clone(),
+            fact.data.title.clone(),
+            fact.data.device.clone(),
+            slice,
+        ))
     }
 
     pub fn cues(&self) -> Vec<FactCue> {
@@ -267,12 +328,7 @@ pub struct FactBatchSelection {
 #[derive(uniffi::Object)]
 pub struct PreparedReadingFacts {
     id: u64,
-    pub(super) selected: Vec<SelectedFact>,
-}
-
-pub(super) struct SelectedFact {
-    pub(super) content_key: String,
-    pub(super) fact: Arc<DecodedFact>,
+    selected: Vec<Arc<DecodedFact>>,
 }
 
 #[uniffi::export]
@@ -301,10 +357,7 @@ pub fn seal_prepared_facts(chunks: Vec<FactBatchSelection>) -> Result<Arc<Prepar
                 .ok_or(ReaderError::InvalidRange)?
                 .as_ref()
                 .map_err(|_| ReaderError::InvalidSettings)?;
-            selected.push(SelectedFact {
-                content_key: pick.content_key.clone(),
-                fact: fact.clone(),
-            });
+            selected.push(fact.clone());
         }
     }
     // Preserve the Swift caller's chosen store-local output order.
@@ -317,9 +370,7 @@ pub fn seal_prepared_facts(chunks: Vec<FactBatchSelection>) -> Result<Arc<Prepar
 #[uniffi::export]
 impl PreparedReadingFacts {
     pub fn first_title(&self) -> Option<String> {
-        self.selected
-            .first()
-            .map(|item| item.fact.data.title.clone())
+        self.selected.first().map(|fact| fact.data.title.clone())
     }
 
     pub fn prepared_id(&self) -> u64 {
@@ -334,33 +385,6 @@ pub struct FactQuerySelection {
     pub prepared: Arc<PreparedReadingFacts>,
     pub prepared_id: u64,
     pub indices: Option<Vec<u64>>,
-}
-
-impl FactQuerySelection {
-    pub(super) fn try_each<'a>(&'a self, mut visit: impl FnMut(&'a SelectedFact)) -> Result<()> {
-        if self.prepared.id != self.prepared_id {
-            return Err(ReaderError::InvalidRange);
-        }
-        if let Some(indices) = &self.indices {
-            let mut previous = None;
-            for &index in indices {
-                if previous.is_some_and(|previous| previous >= index) {
-                    return Err(ReaderError::InvalidRange);
-                }
-                previous = Some(index);
-                let item = usize::try_from(index)
-                    .ok()
-                    .and_then(|i| self.prepared.selected.get(i))
-                    .ok_or(ReaderError::InvalidRange)?;
-                visit(item);
-            }
-        } else {
-            for item in &self.prepared.selected {
-                visit(item);
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -450,6 +474,28 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn import_columns_keep_fraction_free_exposures_and_checked_duration() -> Result<()> {
+        let normal = payload(
+            "one",
+            12,
+            r#"[{"start_utf8":9,"end_utf8":18446744073709551615,"duration_ms":7}]"#,
+        );
+        let overflow = normal.replace(
+            r#""started_ms":1200"#,
+            r#""started_ms":-9223372036854775808"#,
+        );
+        let batch = decode_fact_batch(40, vec![normal, overflow])?;
+        let columns = batch.import_columns(40)?;
+        assert_eq!(columns.payload_content_key, "embedded");
+        assert_eq!(columns.slice.visit_id, "v");
+        assert_eq!(columns.slice.exposures[0].end_utf8, u64::MAX);
+        assert_eq!(columns.duration_ms, Some(3000)); // not the exposure's 7 ms
+        assert_eq!(batch.import_columns(41)?.duration_ms, None);
+        assert!(batch.import_columns(39).is_err());
+        Ok(())
+    }
+
+    #[test]
     fn fact_intake_uses_standard_serde_json() {
         let bare = payload("one", 12, "[]");
         for malformed in [
@@ -497,27 +543,7 @@ pub(super) mod tests {
             Err(ReaderError::InvalidRange)
         ));
         let prepared = seal(vec![pick(&batch, 7, "row-key")])?;
-        let mut selected = Vec::new();
-        let mut query = FactQuerySelection {
-            prepared_id: prepared.id,
-            prepared,
-            indices: Some(vec![0]),
-        };
-        query.try_each(|row| selected.push(row.content_key.clone()))?;
-        assert_eq!(selected, ["row-key"]);
-        for indices in [vec![0, 0], vec![1]] {
-            query.indices = Some(indices);
-            assert!(matches!(
-                query.try_each(|_| ()),
-                Err(ReaderError::InvalidRange)
-            ));
-        }
-        query.indices = None;
-        query.prepared_id += 1;
-        assert!(matches!(
-            query.try_each(|_| ()),
-            Err(ReaderError::InvalidRange)
-        ));
+        assert_eq!(prepared.first_title().as_deref(), Some("Synthetic"));
         Ok(())
     }
 }

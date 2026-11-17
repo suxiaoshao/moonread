@@ -497,7 +497,7 @@ import AVFoundation
         switch editor.payload {
         case .palette(let draft): return draft.saving
         case .chapter(let draft): return draft.saving
-        case .rebuild: return false
+        case .rebuild(let model): return model.applying
         }
     }
     var hasEditableDraft: Bool {

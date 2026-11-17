@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 import CryptoKit
 import os
 
@@ -11,7 +10,7 @@ private final class CacheSourceWork: @unchecked Sendable {
     private let probe = SourceIdentityProbe()
     private let access = ProtectedFileAccess()
     func cancel() { cancelled.withLock { $0 = true }; probe.cancel(); access.cancel() }
-    func run(body: CachedBody, file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderCore, protected: [String]) async throws -> Bool {
+    func run(body: CachedBody, file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderIndex, protected: [String]) async throws -> Bool {
         try await Task.detached(priority: .utility) { [self] in
             let source = try ProtectedFileAccess.Source(bookmark: Data(shelf.bookmark), relativePath: file.relativePath)
             defer { withExtendedLifetime(source) {} }
@@ -41,14 +40,14 @@ private final class CacheSourceWork: @unchecked Sendable {
 }
 extension AppDataService {
     func cacheSummary() async throws -> CacheSummary {
-        let core = try textCore(), protected = cacheProtectedBookIDs()
+        let core = try indexStore(), protected = cacheProtectedBookIDs()
         // Only the handle and active IDs belong to the service actor.
         return try await Task.detached(priority: .utility) {
             try core.cacheSummary(protectedBookIds: protected)
         }.value
     }
     func clearRebuildableCaches() async throws -> CacheCleanupResult {
-        let core = try textCore(), bodies = try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs())
+        let core = try indexStore(), bodies = try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs())
         var result = CacheCleanupResult()
         for body in bodies {
             try Task.checkCancellation()
@@ -71,7 +70,9 @@ extension AppDataService {
             else { result.retained += 1 }
         }
         // Only thumbnail copies and persisted, verified cover read-outs. Never drafts.
-        let copies = try await userStore().recoverableCoverCopies()
+        let writer = try relationalUserIndex()
+        guard writer.lease == core.lease else { throw CancellationError() }
+        let copies = try writer.session.readUsers(writer.lease) { try UserValueRows.verifiedCoverCopies($0) }
         let directory = try coverDirectory()
         for name in (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [] {
             let url = directory.appendingPathComponent(name)
@@ -83,26 +84,22 @@ extension AppDataService {
         }
         let thumbs = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent(dataDirectoryName).appendingPathComponent("Covers")
         if FileManager.default.fileExists(atPath: thumbs.path) { try FileManager.default.removeItem(at: thumbs) }
-        queryCache.removeAll()
         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
         return result
     }
-    func clearDeletedReadingBodyCaches(_ keys: Set<String>) throws -> Bool {
-        let core = try textCore(); var allRemoved = true
-        for body in try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs()) where keys.contains(body.contentSha256) {
-            let removed = try core.evictCachedBody(bookId: body.bookId, contentSha256: body.contentSha256, verifiedFile: nil, protectedBookIds: cacheProtectedBookIDs(), discardOffline: true)
+
+    func clearDeletedReadingBodyCaches(_ selectedSHAs: Set<String>, index: ReaderIndex) throws -> Bool {
+        guard !selectedSHAs.isEmpty else { return true }
+        defer {
+            NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
+        }
+        let protected = cacheProtectedBookIDs()
+        var allRemoved = true
+        for body in try index.cacheInventory(protectedBookIds: protected) where selectedSHAs.contains(body.contentSha256) {
+            let removed = try index.evictCachedBody(bookId: body.bookId, contentSha256: body.contentSha256,
+                                                    verifiedFile: nil, protectedBookIds: protected, discardOffline: true)
             if !removed { allRemoved = false }
         }
-        queryCache.removeAll(); NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
         return allRemoved
-    }
-}
-struct PersistedCoverCopy: Sendable { let id: String; let sha256: String }
-extension UserDataStore {
-    func recoverableCoverCopies() throws -> [PersistedCoverCopy] {
-        try modelContext.fetch(FetchDescriptor<UserCover>()).compactMap { cover in
-            guard let bytes = cover.bytes else { return nil }
-            return .init(id: cover.id, sha256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined())
-        }
     }
 }

@@ -528,7 +528,7 @@ jobs:
           PY
           set_stage number-gate
           python3 "$private/asc.py" number-gate > "$private/number-gate.log" 2> "$private/number-gate.stderr.log"
-          run_xcode archive "${common[@]}" -configuration Release "${auth[@]}" -archivePath "$private/Moonread.xcarchive" archive
+          run_xcode archive "${common[@]}" -configuration Release "${auth[@]}" +            MOONREAD_READING_CLOUD_ENVIRONMENT=Production -archivePath "$private/Moonread.xcarchive" archive
           set_stage archive-validation
           python3 - > "$private/archive-validation.log" 2> "$private/archive-validation.stderr.log" <<'PY'
           import json, os, pathlib, plistlib
@@ -586,6 +586,7 @@ jobs:
               require(group in ent.get('com.apple.security.application-groups', []), 'missing App Group')
               if bundle == app:
                   require(info.get('ITSAppUsesNonExemptEncryption') is False, 'encryption declaration')
+                  require(info.get('MoonreadReadingCloudEnvironment') == 'Production', 'reading database environment must match Production signing')
                   require(ent.get('aps-environment') == 'production', 'push must be production')
                   require(ent.get('com.apple.developer.icloud-container-environment') == 'Production', 'CloudKit must be Production')
                   require(ent.get('com.apple.developer.icloud-container-identifiers') == [container], 'wrong CloudKit container')

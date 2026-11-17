@@ -1,0 +1,13 @@
+query RecentReading($limit: Int!) {
+  recentReading(limit: $limit) {
+    readingKey
+    bodyID
+    file { id shelfID shelfName relativePath parentPath name size modified needsDownload }
+    position
+    byteCount
+    lastRead
+    preferred
+    chapterTitle
+    metadata { author cover { id sha256 fileExtension width height } }
+  }
+}

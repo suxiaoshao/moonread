@@ -1,5 +1,6 @@
 use crate::{ReaderError, Result};
-use encoding_rs::{CoderResult, DecoderResult, Encoding};
+use encoding_rs::{CoderResult, Decoder, DecoderResult, Encoding};
+#[cfg(test)]
 use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -9,6 +10,7 @@ const MAX_GRAPHEME_BYTES: usize = 64 * 1024;
 /// Detection is shared by both import entry points. Decode/normalization stays in
 /// encoding_rs; never retry the whole book under a different encoding after publish.
 pub(crate) const ENCODING_PROBE_BYTES: usize = 64 * 1024;
+#[cfg(test)]
 pub(crate) fn detect_encoding(reader: &mut impl Read) -> Result<&'static Encoding> {
     let mut head = Vec::with_capacity(ENCODING_PROBE_BYTES + 1);
     // One lookahead byte distinguishes EOF from a truncated sample for chardetng.
@@ -17,28 +19,32 @@ pub(crate) fn detect_encoding(reader: &mut impl Read) -> Result<&'static Encodin
         .read_to_end(&mut head)?;
     let complete = head.len() <= ENCODING_PROBE_BYTES;
     head.truncate(ENCODING_PROBE_BYTES);
-    if let Some((encoding, _)) = Encoding::for_bom(&head) {
-        return Ok(encoding);
+    Ok(detect_sample(&head, complete))
+}
+
+pub(crate) fn detect_sample(head: &[u8], complete: bool) -> &'static Encoding {
+    if let Some((encoding, _)) = Encoding::for_bom(head) {
+        return encoding;
     }
     // BOMless UTF-16 requires manual selection; do not add a competing heuristic.
     let mut decoder = encoding_rs::UTF_8.new_decoder_without_bom_handling();
     let mut output = vec![0; head.len() + 4];
     // Only a capped sample may end inside a scalar. At real EOF validate strictly.
-    let (status, _, _) = decoder.decode_to_utf8_without_replacement(&head, &mut output, complete);
+    let (status, _, _) = decoder.decode_to_utf8_without_replacement(head, &mut output, complete);
     // Like Zed file_content, ESC must reach the ISO-2022-JP detector, even in ASCII.
     if !matches!(status, DecoderResult::Malformed(..)) && !head.contains(&0x1b) {
-        return Ok(encoding_rs::UTF_8);
+        return encoding_rs::UTF_8;
     }
     let mut detector = chardetng::EncodingDetector::new(chardetng::Iso2022JpDetection::Allow);
-    detector.feed(&head, complete);
+    detector.feed(head, complete);
     let encoding = detector.guess(None, chardetng::Utf8Detection::Deny);
     // Preserve the GB18030 decoder and recorded name of existing simplified books,
     // including its four-byte extension. No TLD/language hint biases the detector.
-    Ok(if encoding == encoding_rs::GBK {
+    if encoding == encoding_rs::GBK {
         encoding_rs::GB18030
     } else {
         encoding
-    })
+    }
 }
 
 // Recovery-v1 leaves all scalar values intact. Inspect fixed 4096-scalar windows,
@@ -69,26 +75,39 @@ impl BinaryGuard {
     }
 }
 
-/// Normalization v1: remove initial BOM, map CRLF/CR to LF, preserve all other text.
-/// Fixed-size buffers keep ingestion memory independent of book size.
-pub(crate) fn decode_chunks(
-    reader: &mut impl Read,
-    encoding: &'static Encoding,
-    mut emit: impl FnMut(&str) -> Result<()>,
-) -> Result<()> {
-    let mut decoder = encoding.new_decoder_with_bom_removal();
-    let mut input = [0u8; 8192];
-    let mut output = [0u8; 32768];
-    let mut pending = String::with_capacity(CHUNK_BYTES + output.len());
-    let mut previous_cr = false;
-    let mut binary = BinaryGuard::default();
-    let mut header = Vec::with_capacity(16);
-    loop {
-        let count = reader.read(&mut input)?;
-        let last = count == 0;
-        header.extend(input[..count].iter().take(16 - header.len()));
-        // These signatures contain controls rejected by the old strict reader;
-        // recognizing them does not change any previously successful text SHA.
+/// The published normalization/partitioning algorithm. No reader, clock or
+/// storage is owned here; adapters choose how to feed the fixed decoder window.
+pub(crate) const DECODER_WINDOW: usize = 8192;
+
+pub(crate) struct TextDecoder {
+    decoder: Decoder,
+    pending: String,
+    previous_cr: bool,
+    binary: BinaryGuard,
+    header: Vec<u8>,
+}
+
+impl TextDecoder {
+    pub(crate) fn new(encoding: &'static Encoding) -> Self {
+        Self {
+            decoder: encoding.new_decoder_with_bom_removal(),
+            pending: String::with_capacity(CHUNK_BYTES + 32768),
+            previous_cr: false,
+            binary: BinaryGuard::default(),
+            header: Vec::with_capacity(16),
+        }
+    }
+
+    pub(crate) fn decode(
+        &mut self,
+        input: &[u8],
+        last: bool,
+        mut emit: impl FnMut(&str) -> Result<()>,
+    ) -> Result<()> {
+        let mut output = [0u8; 32768];
+        self.header
+            .extend(input.iter().take(16 - self.header.len()));
+        // These signatures contain controls rejected by the old strict reader.
         if [
             b"\x89PNG\r\n\x1a\n".as_slice(),
             b"PK\x03\x04",
@@ -96,35 +115,33 @@ pub(crate) fn decode_chunks(
             b"\xff\xd8\xff\xe0\x00\x10JFIF\x00",
         ]
         .iter()
-        .any(|magic| header.starts_with(magic))
+        .any(|magic| self.header.starts_with(magic))
         {
             return Err(ReaderError::BinaryContent);
         }
         let mut consumed = 0;
         loop {
             let (status, read, written, _) =
-                decoder.decode_to_utf8(&input[consumed..count], &mut output, last);
+                self.decoder
+                    .decode_to_utf8(&input[consumed..], &mut output, last);
             consumed += read;
-            // encoding_rs guarantees valid UTF-8 output, even before a malformed input.
             let decoded =
                 std::str::from_utf8(&output[..written]).map_err(|e| ReaderError::Decode {
                     message: e.to_string(),
                 })?;
             for c in decoded.chars() {
-                binary.push(c)?;
-                if c == '\n' && previous_cr {
-                    previous_cr = false;
+                self.binary.push(c)?;
+                if c == '\n' && self.previous_cr {
+                    self.previous_cr = false;
                     continue;
                 }
-                previous_cr = c == '\r';
-                pending.push(if previous_cr { '\n' } else { c });
+                self.previous_cr = c == '\r';
+                self.pending.push(if self.previous_cr { '\n' } else { c });
             }
-            // Keep the trailing, potentially incomplete grapheme until more text or EOF.
-            // This also handles a decoder buffer ending between a base and combining mark,
-            // or between the scalars of a ZWJ emoji sequence.
-            while pending.len() >= CHUNK_BYTES {
+            // Hold back the final, potentially incomplete grapheme.
+            while self.pending.len() >= CHUNK_BYTES {
                 let mut boundary = 0;
-                for (index, _) in pending.grapheme_indices(true).skip(1) {
+                for (index, _) in self.pending.grapheme_indices(true).skip(1) {
                     if index > CHUNK_BYTES {
                         if boundary == 0 && index <= MAX_GRAPHEME_BYTES {
                             boundary = index;
@@ -134,23 +151,22 @@ pub(crate) fn decode_chunks(
                     boundary = index;
                 }
                 if boundary == 0 {
-                    if pending.len() <= MAX_GRAPHEME_BYTES {
+                    if self.pending.len() <= MAX_GRAPHEME_BYTES {
                         break;
                     }
-                    // A pathological extended grapheme may grow without bound.
-                    // Split only at scalar boundaries; never drop/rewrite codepoints.
+                    // Split a pathological grapheme only at scalar boundaries.
                     boundary = CHUNK_BYTES;
-                    while !pending.is_char_boundary(boundary) {
+                    while !self.pending.is_char_boundary(boundary) {
                         boundary -= 1;
                     }
                 }
-                if let Some(newline) = pending[..boundary].rfind('\n')
+                if let Some(newline) = self.pending[..boundary].rfind('\n')
                     && newline >= CHUNK_BYTES / 2
                 {
                     boundary = newline + 1;
                 }
-                emit(&pending[..boundary])?;
-                pending.drain(..boundary);
+                emit(&self.pending[..boundary])?;
+                self.pending.drain(..boundary);
             }
             match status {
                 CoderResult::InputEmpty => break,
@@ -158,14 +174,32 @@ pub(crate) fn decode_chunks(
             }
         }
         if last {
-            break;
+            self.binary.finish()?;
+            if !self.pending.is_empty() {
+                emit(&self.pending)?;
+                self.pending.clear();
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Legacy input adapter; normalized output is shared with the explicit stream.
+#[cfg(test)]
+pub(crate) fn decode_chunks(
+    reader: &mut impl Read,
+    encoding: &'static Encoding,
+    mut emit: impl FnMut(&str) -> Result<()>,
+) -> Result<()> {
+    let mut state = TextDecoder::new(encoding);
+    let mut input = [0u8; DECODER_WINDOW];
+    loop {
+        let count = reader.read(&mut input)?;
+        state.decode(&input[..count], count == 0, &mut emit)?;
+        if count == 0 {
+            return Ok(());
         }
     }
-    binary.finish()?;
-    if !pending.is_empty() {
-        emit(&pending)?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]

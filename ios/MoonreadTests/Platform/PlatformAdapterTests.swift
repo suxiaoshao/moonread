@@ -97,3 +97,51 @@ final class PlatformAdapterSystemReadingTests: XCTestCase {
     XCTAssertEqual(SystemReadingWidgetModel.selection(in: decoded, selectedID: nil).book?.id, book.id)
   }
 }
+
+final class SystemReadingPublicationTests: XCTestCase {
+  func testIndependentStatisticsFileAndAtomicBookPromotion() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: "SystemPublish-\(UUID())", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let output = SystemReadingSnapshotFile(directory: directory)
+    let statistics = SystemReadingStatisticsSnapshot(storeScope: "fixture")
+    try output.publishStatistics(statistics)
+    XCTAssertEqual(try output.readStatistics(), statistics)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: output.url.path))
+
+    let old = SystemReadingSnapshot(storeScope: "fixture")
+    try output.publish(old)
+    let next = SystemReadingSnapshot(storeScope: "fixture")
+    let staging = try output.stage(next)
+    XCTAssertEqual(try output.read(), old)
+    try output.publishStaged(staging)
+    XCTAssertEqual(try output.read(), next)
+    XCTAssertEqual(try output.readStatistics(), statistics)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+  }
+
+  func testUrgentRequestsWakeThrottleButDoNotReplaceAnActiveBuild() async {
+    let now = Date()
+    var lane = SystemPublicationLane()
+    lane.request(immediate: false)
+    lane.begin(at: now)
+    lane.task = Task {}
+    let active = UUID()
+    lane.taskID = active
+    let revision = lane.revision
+    lane.request(immediate: true)
+    lane.request(immediate: true)
+    XCTAssertEqual(lane.taskID, active)
+    XCTAssertNotEqual(lane.revision, revision)
+    XCTAssertTrue(lane.dirty)
+    XCTAssertTrue(lane.urgent)
+
+    lane.begin(at: now)
+    lane.request(immediate: false)
+    XCTAssertEqual(lane.delay(now: now.addingTimeInterval(10)), 20)
+    lane.waiting = true
+    lane.request(immediate: true)
+    XCTAssertNil(lane.task)
+    XCTAssertNil(lane.taskID)
+    XCTAssertEqual(lane.delay(now: now), 0)
+  }
+}

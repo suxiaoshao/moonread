@@ -1,7 +1,7 @@
 import SwiftUI
-import CloudKit
 import CoreSpotlight
 import UIKit
+import CloudKit
 
 @main
 struct MoonreadApp: App {
@@ -12,30 +12,121 @@ struct MoonreadApp: App {
     @State private var cloud = CloudStore()
     @State private var ai = AIService()
     @State private var tipJar = TipJar()
+    private enum Startup {
+        case preparing, failed(String), ready
+    }
+    @State private var startup = Startup.preparing
+    @State private var startupAttempt = 0
+    @State private var startupFiles: [LibraryImportFile] = []
+    @State private var startupSystemRequest: SystemReadingRequest?
+    private enum UpgradeNotice { case visible, dismissing }
+    private static let upgradeNoticeKey = "Moonread.readingDataUpgradeNotice.v1"
+    @State private var upgradeNotice: UpgradeNotice?
     @Environment(\.scenePhase) private var scenePhase
 
-    init() { _ = Onboarding.shared }
+    init() {
+        let onboarding = Onboarding.shared
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.upgradeNoticeKey) else { return }
+        let directory = URL.applicationSupportDirectory
+            .appending(path: AppDataService.shared.userDirectoryName, directoryHint: .isDirectory)
+        let hasReleasedStore = ["user-data.store", "pending-users.store", "reader.sqlite3"].contains {
+            FileManager.default.fileExists(atPath: directory.appending(path: $0).path)
+        }
+        if onboarding.hasCompletedIntroduction || hasReleasedStore {
+            _upgradeNotice = State(initialValue: .visible)
+        } else {
+            // A new install won't become eligible after it completes the introduction.
+            defaults.set(true, forKey: Self.upgradeNoticeKey)
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
-            #if DEBUG
-            if CloudSchemaPreparation.requested { CloudSchemaPreparationScreen() }
-            else { configuredAppContent }
-            #else
-            configuredAppContent
-            #endif
+            ZStack { configuredAppContent }
+                .sheet(isPresented: Binding(get: { upgradeNotice == .visible }, set: { _ in }),
+                       onDismiss: { upgradeNotice = nil }) {
+                    ReadingDataUpgradeNotice {
+                        UserDefaults.standard.set(true, forKey: Self.upgradeNoticeKey)
+                        upgradeNotice = .dismissing
+                    }
+                    .interactiveDismissDisabled()
+                }
         }
     }
     @ViewBuilder private var configuredAppContent: some View {
         #if READER_OPEN_DIAGNOSTICS
         if ReaderOpenDiagnostics.benchmark { ReaderOpenBenchmarkView().environment(ai).environment(themes) }
-        else { appContent }
+        else { startupContent }
         #else
-        appContent
+        startupContent
         #endif
     }
+    private var startupContent: some View {
+        Group {
+            switch startup {
+            case .preparing:
+                ProgressView("正在准备阅读数据…")
+            case .failed(let reason):
+                ContentUnavailableView {
+                    Label("暂时无法准备阅读数据", systemImage: "externaldrive.badge.exclamationmark")
+                } description: {
+                    VStack(spacing: 8) {
+                        Text(verbatim: reason)
+                        Text("原有数据已保留。")
+                    }
+                } actions: {
+                    Button("重试") { startup = .preparing; startupAttempt += 1 }
+                        .accessibilityIdentifier("retryUserMigration")
+                }
+            case .ready:
+                appContent
+            }
+        }
+        .task(id: startupAttempt) {
+            guard case .preparing = startup else { return }
+            do {
+                try await library.service.prepareUserAuthorityForStartup()
+                await library.service.installUserScopePresentation(prepare: { [weak library] in
+                    try await library?.prepareUserScopeChange()
+                }, finish: { [weak library, weak themes] rebound in
+                    library?.finishUserScopeChange(rebound: rebound)
+                    if rebound { Task { await themes?.load() } }
+                })
+                try Task.checkCancellation()
+                startup = .ready
+                if let request = startupSystemRequest {
+                    startupSystemRequest = nil
+                    library.systemReading.submit(request)
+                }
+                let files = startupFiles; startupFiles = []
+                for file in files { openURL(file) }
+            } catch is CancellationError { }
+            catch { startup = .failed(ReaderMessages.error(error)) }
+        }
+        .onOpenURL { url in
+            if url.scheme == "moonread" {
+                do { deliverSystemRequest(try SystemReadingRequest(url: url)) }
+                catch { library.error = ReaderMessages.error(error) }
+            } else {
+                let file = LibraryImportFile(url: url)
+                if case .ready = startup { openURL(file) }
+                else { startupFiles.append(file) }
+            }
+        }
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+            do { deliverSystemRequest(.openSearchBook(try SystemReadingBookID(rawValue: id))) }
+            catch { library.error = ReaderMessages.error(error) }
+        }
+    }
+
+    private func deliverSystemRequest(_ request: SystemReadingRequest) {
+        if case .ready = startup { library.systemReading.submit(request) }
+        else { startupSystemRequest = request }
+    }
     private var indexedAppContent: some View {
-        MoonreadRoot(library: library, themes: themes)
+        MoonreadRoot(library: library, themes: themes, defersIntroduction: upgradeNotice != nil)
             .environment(cloud).environment(ai).environment(tipJar).environment(readerSettings)
             .task { await tipJar.listenForTransactions() }
             .task { await ai.load() }
@@ -85,9 +176,6 @@ struct MoonreadApp: App {
                 if closed { library.systemReading.resume() }
                 if closed { Task { await library.coordinatePendingIndexes() } }
             }
-            .onChange(of: library.fullIndex.running) { _, running in
-                if !running { Task { await library.service.scheduleSystemReadingCatalog(immediate: true) } }
-            }
             .onChange(of: library.fullIndex.automatic) { _, enabled in
                 if enabled { Task { await library.coordinatePendingIndexes(all: true) } }
             }
@@ -100,7 +188,6 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { note in
                 Task {
                     await library.reloadBooks()
-                    await library.service.scheduleSystemReadingCatalog(immediate: !library.fullIndex.running)
                     if let id = library.fullIndex.shelfID { await library.refreshIndexSummary(id) }
                     if let message = note.object as? String { library.error = message }
                 }
@@ -108,18 +195,11 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: SystemReadingIntentDelivery.notification).receive(on: DispatchQueue.main)) { _ in
                 library.systemReading.receiveIntent()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
-                guard !change.defersBookMetadataCatalogRefresh else { return }
-                Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await CloudSyncCoordinator.shared.localDataChanged() }
-            }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true) }
+                Task { await library.service.scheduleSystemWidgetStatistics(immediate: true) }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange).receive(on: DispatchQueue.main)) { _ in
-                Task { await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true) }
+                Task { await library.service.scheduleSystemWidgetStatistics(immediate: true) }
             }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: DispatchQueue.main)) { _ in
                 // Calendar/region settings can change while the App stays active.
@@ -128,48 +208,49 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .cloudStatusChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await cloud.updateStatus(); await library.refreshShelfRecovery() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .readingCloudStatusChanged).receive(on: DispatchQueue.main)) { _ in
+                Task { await cloud.updateReadingStatus() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .CKAccountChanged).receive(on: DispatchQueue.main)) { _ in
+                Task { await cloud.identityChanged() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
+                if cloud.status.enabled { Task { await cloud.localDataChanged() } }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .recentReadingRestored).receive(on: DispatchQueue.main)) { _ in
                 Task { try? await library.reload() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
-                Task { await themes.load(); try? await library.reload(); await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true) }
+                Task { await themes.load(); try? await library.reload() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .NSUbiquityIdentityDidChange).receive(on: DispatchQueue.main)) { _ in
-                Task { library.startCloudDiscovery(reset: true); await cloud.identityChanged(); await library.refresh(); await cloud.refresh() }
+                Task { library.startCloudDiscovery(reset: true); await library.refresh(); await cloud.updateStatus() }
             }
             .onReceive(NotificationCenter.default.publisher(for: ReaderBuiltinFonts.changed).receive(on: DispatchQueue.main)) { _ in
                 readerSettings.refreshBuiltinFonts()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .CKAccountChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await cloud.identityChanged() }
             }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 library.systemReading.sceneActive = phase == .active
                 library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
+                    Task { await cloud.scene(active: false) }
                     MetadataExchangeModel.shared.sceneDidEnterBackground()
-                    Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences(); await readerSettings.flush() }
                     Task { await AppDataService.shared.pauseImports() }
                 }
                 if phase == .active {
+                    Task { await cloud.scene(active: true) }
                     readerSettings.refreshBuiltinFonts()
                     Task { await library.service.refreshSystemWidgetConfigurations() }
                     Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }
                     Task {
-                        await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
+                        await library.service.resumeSystemReadingPublication()
                         await AppDataService.shared.resumePausedImports(); await library.refresh()
                         if Onboarding.shared.completed { await library.receiveSharedInbox() }
                         await cloud.refresh()
                     }
                 }
             }
-            .onContinueUserActivity(CSSearchableItemActionType) { activity in
-                guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
-                do { library.systemReading.submit(.openSearchBook(try SystemReadingBookID(rawValue: id))) }
-                catch { library.error = ReaderMessages.error(error) }
-            }
-            .onOpenURL(perform: openURL)
 
     }
 
@@ -214,13 +295,8 @@ struct MoonreadApp: App {
     }
     #endif
 
-    private func openURL(_ url: URL) {
-        if url.scheme == "moonread" {
-            do { library.systemReading.submit(try SystemReadingRequest(url: url)) }
-            catch { library.error = ReaderMessages.error(error) }
-            return
-        }
-        let access = LibraryImportFile(url: url)
+    private func openURL(_ access: LibraryImportFile) {
+        let url = access.url
         Task {
             defer { access.finish() }
             guard await library.load() else { return }
@@ -234,11 +310,37 @@ struct MoonreadApp: App {
 
 }
 
+private struct ReadingDataUpgradeNotice: View {
+    let onContinue: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("阅读数据已更新")
+                    .font(.title.bold())
+                    .accessibilityAddTraits(.isHeader)
+                Text("月读改进了阅读数据的保存和同步方式。请把其他设备上的月读也更新到这个版本，旧版本上新记的进度、批注和统计不会同步过来。")
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button(action: onContinue) {
+                Text("onboarding.continue").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding()
+        }
+    }
+}
+
 private struct MoonreadRoot: View {
     @Environment(ReaderSettingsStore.self) private var readerSettings
     @Environment(AIService.self) private var ai
     @Bindable var library: LibraryModel
     let themes: ThemeStore
+    let defersIntroduction: Bool
     @Environment(\.colorScheme) private var systemScheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -262,8 +364,9 @@ private struct MoonreadRoot: View {
         let introductionCompleted = Onboarding.shared.completed
         NativeThemeHost(theme: library.path.last?.isReader == true ? readerTheme : appTheme) {
             tabs
+            .disabled(library.changingUserScope)
             .modifier(ReadingReviewAfterReading(library: library))
-            .fullScreenCover(isPresented: Binding(get: { !introductionCompleted }, set: { _ in }), onDismiss: finishIntroduction) {
+            .fullScreenCover(isPresented: Binding(get: { !introductionCompleted && !defersIntroduction }, set: { _ in }), onDismiss: finishIntroduction) {
                 FirstRunOnboarding().interactiveDismissDisabled()
             }
             // Library sheets read the app theme, so they are presented inside its scope.

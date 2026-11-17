@@ -67,8 +67,8 @@ class UserDataFixture: XCTestCase {
       modelContainer: try ModelContainer(for: UserDataStore.schema, configurations: [config]))
   }
   struct PositionWinnerFixture {
-    let root: URL, core: ReaderCore, book: ImportText, aliases: [String]
-    let formal: UserDataStore, pending: UserDataStore, service: AppDataService, suite: String
+    let root: URL, core: ReaderIndex, book: ImportText, aliases: [String]
+    let service: AppDataService, suite: String
     func clean() {
       UserDefaults.standard.removePersistentDomain(forName: suite)
       try? FileManager.default.removeItem(at: root)
@@ -79,7 +79,7 @@ class UserDataFixture: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let file = root.appendingPathComponent("synthetic.txt")
     try Data("Chapter 1\nSynthetic position winner fixture.\n".utf8).write(to: file)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("cache").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("cache"))
     let identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: "auto")
     var aliases: [String] = []
     for _ in 0..<2 {
@@ -93,26 +93,13 @@ class UserDataFixture: XCTestCase {
       aliases.append(control.bookId())
     }
     let book = try core.importStatus(bookId: aliases[0]).text
-    let formal = try store()
-    let pending = try store()
     let suite = "PositionWinner-" + UUID().uuidString
     let service = AppDataService(
-      core: core, sourceDefaultsSuite: suite,
-      userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
+      core: core, sourceDefaultsSuite: suite)
     return PositionWinnerFixture(
       root: root, core: core, book: book, aliases: aliases,
-      formal: formal, pending: pending, service: service, suite: suite)
+      service: service, suite: suite)
   }
-  func positionRecord(key: String, token: String, offset: UInt64) throws -> StoredValue {
-    StoredValue(
-      updated: 123456, token: token,
-      value: try UserSyncJSON.encode(PositionValue(content_key: key, offset: offset)))
-  }
-  func receivePosition(_ record: StoredValue, key: String, store: UserDataStore) async throws {
-    try await store.receiveSyncFixture(
-      "position", key: key, payload: UserSyncJSON.encode(record, envelope: true))
-  }
-
   func content(_ note: String, start: UInt64 = 0, end: UInt64 = 9) -> AnnotationContent {
     AnnotationContent(start: start, end: end, excerpt: "正文 \(start)…\(end)", note: note)
   }
@@ -122,52 +109,17 @@ class UserDataFixture: XCTestCase {
     AnnotationCandidate(id: id, ancestors: parents, content: content, created: 1, bookmark: false)
   }
 
-  @MainActor func editorFixture() async throws -> (URL, AppDataService, BookInfo, UserDataStore) {
+  @MainActor func editorFixture(account: DataScope? = nil) async throws -> (URL, AppDataService, BookInfo, UserRowsFixture) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let file = root.appendingPathComponent("book.txt")
-    try String(repeating: "0123456789", count: 20).write(
-      to: file, atomically: true, encoding: .utf8)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let book = try core.importBook(filePath: file.path, title: "Fixture")
-    let formal = try store()
-    let pending = try store()
-    let service = AppDataService(
-      core: core, sourceDefaultsSuite: "Review-\(root.lastPathComponent)",
-      userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
-    return (root, service, try await service.book(book.id), formal)
+    try Data(String(repeating: "0123456789", count: 20).utf8).write(to: file)
+    let index = try makeReaderIndexFixture(at: root.appendingPathComponent("db"), account: account)
+    let book = try importBookFixture(index, filePath: file.path, title: "Fixture")
+    let service = AppDataService(core: index, sourceDefaultsSuite: "Review-\(root.lastPathComponent)")
+    return (root, service, try await service.book(book.id), UserRowsFixture(index: index))
   }
 
-}
-
-actor BootstrapProbe {
-  let store: UserDataStore
-  var count = 0
-  var first: CheckedContinuation<UserDataStore, Error>?
-  var started: [CheckedContinuation<Void, Never>] = []
-  init(store: UserDataStore) { self.store = store }
-  func make(_ name: String, cloud: Bool) async throws -> UserDataStore {
-    count += 1
-    if count == 1 {
-      return try await withCheckedThrowingContinuation { continuation in
-        first = continuation
-        for waiter in started { waiter.resume() }
-        started = []
-      }
-    }
-    return store
-  }
-  func waitUntilStarted() async {
-    if first != nil { return }
-    await withCheckedContinuation { started.append($0) }
-  }
-  func failFirst() {
-    first?.resume(throwing: CocoaError(.fileReadUnknown))
-    first = nil
-  }
-}
-extension AppDataService {
-  func invalidatePendingFixture() { pendingUserStoreTask = nil }
 }
 
 actor CoverLoadProbe {
@@ -197,43 +149,6 @@ actor CoverLoadProbe {
 
 // Policy tests with an injected identity and local in-memory store, not a CloudKit
 // account-switch or two-device test. No network requests are made by this fixture.
-actor SyncAccountProbe {
-  var accounts: [String?] = ["A"]
-  var configurations: [Bool] = []
-  var failNextCloud = false
-  let store: UserDataStore
-  init(_ store: UserDataStore) { self.store = store }
-  func set(_ values: [String?]) { accounts = values }
-  func identity() -> String? { accounts.count > 1 ? accounts.removeFirst() : accounts.first ?? nil }
-  func fail() { failNextCloud = true }
-  func make(_ cloud: Bool) throws -> UserDataStore {
-    configurations.append(cloud)
-    if cloud && failNextCloud {
-      failNextCloud = false
-      throw CocoaError(.fileWriteUnknown)
-    }
-    return store
-  }
-}
-class CloudAccountFixture: XCTestCase {
-  func fixture(available: Bool = true) throws -> (
-    AppDataService, CloudSyncCoordinator, SyncAccountProbe, String
-  ) {
-    let suite = "CloudAccount-\(UUID().uuidString)"
-    let config = ModelConfiguration(
-      schema: UserDataStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-    let probe = SyncAccountProbe(
-      UserDataStore(
-        modelContainer: try ModelContainer(for: UserDataStore.schema, configurations: [config])))
-    let service = AppDataService(
-      sourceDefaultsSuite: suite, userStoreFactory: { _, cloud in try await probe.make(cloud) })
-    let coordinator = CloudSyncCoordinator(
-      service: service, available: available, observeEvents: false,
-      account: { await probe.identity() })
-    return (service, coordinator, probe, suite)
-  }
-}
-
 extension UserDataFixture {
   func syncJSON(_ text: String, _ change: (inout [String: Any]) -> Void) throws -> String {
     var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])

@@ -14,17 +14,18 @@ final class LibraryModel {
     private let layoutKey: String
     @ObservationIgnored private let defaults: UserDefaults
     /// Recents kept on the home page: the resume card plus a scrollable cover row in the grid.
-    static let homeRecentLimit = 10
+    let recentReading: RecentReadingStore
     var home = HomeSnapshot()
-    @ObservationIgnored var homeIndex = HomeSnapshot()
     @ObservationIgnored var libraryStructure: [SourceFileLocation]?
     var shelves: [LibraryShelf] { home.shelves }
-    var recents: [LibraryEntry] { home.recents }
+    var recents: [LibraryEntry] {
+        recentReading.value?.recentReading.prefix(Int(RecentReadingStore.homeLimit)).compactMap { try? $0.libraryEntry() } ?? []
+    }
     var homeReady = false
     var hasUserImportedBooks = false
     var showsImportTip: Bool { Onboarding.shared.enabled && !Onboarding.shared.imported && !hasUserImportedBooks && homeReady && (builtinDiscovery == .notRequired || adoptedDiscoveryRevision == discoveryRevision) }
     var homeRequest = UUID()
-    @ObservationIgnored var homeCovers: [CoverSubscription] = []
+    private(set) var changingUserScope = false
     var automaticRefreshDeferred = false
     var error: String?
     /// A reader that closed with an error reports it here, after its position is saved.
@@ -116,7 +117,7 @@ final class LibraryModel {
     var explicitFileWork: Bool { fileWork != nil }
     var runningFileBatch: Bool { fileWork?.kind == .commands }
     var processingFiles: Bool { if case .running = fileWork?.stage { true } else { false } }
-    var canAcceptFileWork: Bool { fileWork == nil }
+    var canAcceptFileWork: Bool { !changingUserScope && fileWork == nil }
     var afterSheetDismiss: (() -> Void)?
     var pendingDecision: LibraryPendingDecision? {
         if case .awaitingDecision(let decision) = fileWork?.stage { decision } else { nil }
@@ -201,6 +202,7 @@ final class LibraryModel {
             try await service.adoptCloudDiscovery(items)
         }
         self.service = service
+        recentReading = RecentReadingStore(service: service)
         self.fullIndex = fullIndex ?? .shared
         self.dataManagement = DataManagementModel(service: service)
         self.lookupDropEntry = lookupDropEntry ?? { try await service.libraryEntry($0) }
@@ -233,6 +235,30 @@ final class LibraryModel {
     /// Bind before local publication. Account changes invalidate every in-flight snapshot.
     var refreshWork: Task<Void, Never>?
     var refreshAgain = false
+    func prepareUserScopeChange() async throws {
+        changingUserScope = true
+        try await systemReading.prepareForUserScopeChange()
+        try Task.checkCancellation()
+        for request in systemImports { request.files.forEach { $0.finish() } }
+        systemImports.removeAll()
+        cancelFilePicker(); cancelFileWork()
+        if fullIndex.shelfID != nil { fullIndex.cancel() }
+        await MetadataExchangeModel.shared.prepareUserScopeChange()
+        await waitForFileWork()
+        await fullIndex.waitForCompletion()
+        homeRequest = UUID()
+    }
+
+    func finishUserScopeChange(rebound: Bool) {
+        if rebound {
+            libraryPath = []; statisticsPath = []; searchPath = []; settingsNavigation.path = []
+            sheet = nil; indexPrompt = nil; deferredIndexPrompt = nil
+            releaseImportFailures()
+            MetadataExchangeModel.shared.invalidateUserScope()
+        }
+        changingUserScope = false
+        systemReading.finishUserScopeChange()
+    }
     func chooseFiles(_ picker: LibraryFilePicker) {
         guard canAcceptFileWork else { _ = rejectFileWork(); return }
         filePicker = picker; filePickerPresented = true

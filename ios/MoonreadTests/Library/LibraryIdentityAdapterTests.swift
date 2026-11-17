@@ -22,12 +22,12 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
     let source = local.appendingPathComponent("book.txt")
     let moved = local.appendingPathComponent("moved.txt")
     try Data("第一章 合成\n原始正文甲。".utf8).write(to: source)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
     let first = try XCTUnwrap(
-      core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin").first)
+      core.catalogue("builtin", grouping: .name).entries.first)
     guard case .book(let row) = first.item, case .unidentified = row.resolution else {
       return XCTFail("A new file is still a book before its text identity is resolved")
     }
@@ -44,7 +44,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
     try await service.refreshLibraryShelf("builtin")
     XCTAssertThrowsError(try core.sourceFileLocation(fileId: first.id))
     let renamed = try XCTUnwrap(
-      core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin").first)
+      core.catalogue("builtin", grouping: .name).entries.first)
     XCTAssertNil(renamed.bookId)
     let reopened = try await service.aiPrepare(renamed.source)
     let same = try await service.snapshot(reopened.id).book
@@ -122,11 +122,11 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
       try "Chapter 1\nThe same story in two folders.\n".write(
         to: parent.appendingPathComponent("story.txt"), atomically: true, encoding: .utf8)
     }
-    let core = try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: directory.appendingPathComponent("db"))
     let service = AppDataService(core: core, libraryDirectory: root, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.refreshLibrary()
-    let entries = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
+    let entries = try core.catalogue("builtin", grouping: .name).entries
     let first = try XCTUnwrap(entries.first { $0.relativePath == "a/story.txt" })
     let second = try XCTUnwrap(entries.first { $0.relativePath == "b/story.txt" })
     func waitForComplete(_ id: String) async throws {
@@ -144,8 +144,10 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
     try await waitForComplete(restarted.id)
     try await service.savePosition(bookID: restarted.id, offset: 20)
     let snapshot = try await service.snapshot(restarted.id)
-    XCTAssertEqual(
-      defaults.string(forKey: "Moonread.preferredFile." + snapshot.book.fixtureSHA256), second.id)
+    let preference = try core.session.readUsers(core.lease) {
+      try LocalReadingRows.preferredFile($0, book: snapshot.book.fixtureSHA256)
+    }
+    XCTAssertEqual(preference, second.id)
     let recent = try await service.recentLibrary()
     XCTAssertEqual(recent.count, 1)
     XCTAssertEqual(recent.first?.id, second.id)
@@ -165,7 +167,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
       try? FileManager.default.removeItem(at: directory)
       defaults.removePersistentDomain(forName: suite)
     }
-    let core = try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: directory.appendingPathComponent("db"))
     let service = AppDataService(
       core: core, libraryDirectory: directory.appendingPathComponent("books"),
       sourceDefaultsSuite: suite)
@@ -197,14 +199,15 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
       XCTAssertNil(defaults.data(forKey: "Moonread.importSource.library.\(id)"))
       XCTAssertNil(defaults.string(forKey: "Moonread.sourceDraft.library.\(entry.id)"))
       XCTAssertTrue(try core.reclaimCompletedImports(retainedBookIds: []).isEmpty)
-      XCTAssertEqual(try core.querySnapshot(json: "{}").recentReadings().count, 1)
+      let recentlyOpened = try await service.recentLibrary()
+      XCTAssertEqual(recentlyOpened.count, 1)
       XCTAssertEqual(
-        try core.querySnapshot(json: "{}").libraryEntry(fileId: entry.id).bookId, canonical)
+        try core.sourceFileLocation(fileId: entry.id).bookId, canonical)
       let bookmarkedCanonical = try await service.hasBookmark(
         try XCTUnwrap(canonical), at: position)
       XCTAssertTrue(bookmarkedCanonical)
       if index > 0 {
-        XCTAssertThrowsError(try core.querySnapshot(json: "{}").readingSnapshot(bookId: id))
+        XCTAssertThrowsError(try core.readerSnapshot(id))
       }
     }
     // Simulate termination after the DB transaction, before defaults cleanup.
