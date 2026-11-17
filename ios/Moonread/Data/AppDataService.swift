@@ -206,7 +206,7 @@ actor AppDataService {
             return AppDataService(libraryDirectory: directory, sourceDefaultsSuite: suite)
         }
         #endif
-        return AppDataService()
+        return AppDataService(readingCloudEnvironment: CloudConfiguration.readingEnvironment ?? .production)
     }()
     var systemCatalog: SystemReadingCatalog?
     var systemReadingBatches = Set<UUID>()
@@ -243,6 +243,7 @@ actor AppDataService {
     var injectedLegacyReadFailure = false
     #endif
     let userDirectoryName: String
+    let readingCloudEnvironment: DataScope.Environment
     var readingSourceIDs: [String: String] = [:]
     let dataManagementWriter: StatisticsWriter?
     var activeBackupExport: URL?
@@ -277,6 +278,7 @@ actor AppDataService {
     let libraryDeletion: @Sendable (URL, Bool) throws -> Void
     let libraryScan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])?
     init(core: ReaderIndex? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, dataManagementWriter: StatisticsWriter? = nil,
+         readingCloudEnvironment: DataScope.Environment = .production,
          libraryDeletion: @escaping @Sendable (URL, Bool) throws -> Void = { url, permanently in
              if permanently { try FileManager.default.removeItem(at: url) }
              else { try FileManager.default.trashItem(at: url, resultingItemURL: nil) }
@@ -285,6 +287,7 @@ actor AppDataService {
         self.core = core; dataSession = core?.session; libraryDirectoryOverride = libraryDirectory
         self.libraryDeletion = libraryDeletion; self.libraryScan = libraryScan
         self.dataManagementWriter = dataManagementWriter
+        self.readingCloudEnvironment = readingCloudEnvironment
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let sessionIndex = arguments.firstIndex(of: "--ui-test-session")
@@ -300,7 +303,7 @@ actor AppDataService {
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("Moonread.importUserPaused.v1.") {
             defaults.removeObject(forKey: key)
         }
-        cloudSyncIntent = CloudSyncIntent(defaults: defaults)
+        cloudSyncIntent = CloudSyncIntent(defaults: defaults, environment: readingCloudEnvironment)
         settingsCache = ReaderSettingsCache(defaults: defaults)
     }
     deinit { for observer in libraryObservers.values { observer.stop() } }
@@ -707,7 +710,7 @@ actor AppDataService {
         if let dataSession { session = dataSession }
         else {
             let legacy = try publishedUserSource()
-            session = try DataSession(layout: DataLayout(applicationSupport: directory),
+            session = try DataSession(layout: DataLayout(applicationSupport: directory, environment: readingCloudEnvironment),
                                       confirmedLegacyOwner: legacy.scope == .local ? nil : legacy.scope)
             dataSession = session
         }

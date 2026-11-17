@@ -8,6 +8,7 @@
     </dict></array>
     <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>MoonreadCloudEnabled</key><string>$(MOONREAD_CLOUD_ENABLED)</string>
+    <key>MoonreadReadingCloudEnvironment</key><string>$(MOONREAD_READING_CLOUD_ENVIRONMENT)</string>
     <key>NSUbiquitousContainers</key><dict>
         <key>iCloud.dev.moonread.Moonread</key><dict>
             <key>NSUbiquitousContainerName</key><string>月读</string>

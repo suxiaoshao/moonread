@@ -65,7 +65,12 @@ struct DataScopeSelection: Equatable, Sendable {
 
 struct DataLayout: Sendable {
     let root: URL
-    init(applicationSupport: URL) { root = applicationSupport.appending(path: "Data/v2", directoryHint: .isDirectory) }
+    init(applicationSupport: URL, environment: DataScope.Environment = .production) {
+        let base = applicationSupport.appending(path: "Data/v2", directoryHint: .isDirectory)
+        // Each environment imports the same released source once, with its
+        // own ownership, index, pending import tasks and checkpoints.
+        root = environment == .development ? base.appending(path: "development", directoryHint: .isDirectory) : base
+    }
 
     var index: URL { root.appending(path: "index.sqlite") }
     var ownerState: URL { root.appending(path: "owner-state") }

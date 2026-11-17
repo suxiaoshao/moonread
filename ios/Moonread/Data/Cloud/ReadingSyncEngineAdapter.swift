@@ -34,12 +34,13 @@ enum ReadingCloudLookup {
     }
 }
 
-/// The first integration uses a separately attributed test account library
-/// and the dedicated Development test container. No caller in the App's
-/// production lifecycle constructs this adapter yet.
+/// One engine for the approved account's prepared library. The app and the
+/// separately signed test host have fixed, distinct container entry points.
 @MainActor
 final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTransport {
+    #if DEBUG || os(macOS)
     static let testContainer = "iCloud.dev.moonread.SyncProbe"
+    #endif
     static let ownZone = CKRecordZone.ID(zoneName: ReadingHistoryTransport.zone, ownerName: CKCurrentUserDefaultName)
     nonisolated static let attachmentLimit = 16 * 1024 * 1024
 
@@ -57,6 +58,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private let database: CKDatabase
     private let account: CKRecord.ID
     private let installation: UUID
+    private let subscriptionID: String
+    private let receivedChanges: @Sendable () -> Void
     private let staging: URL
     private let zone: CKRecordZone.ID
     private var engine: CKSyncEngine?
@@ -73,15 +76,58 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private var offered: [CKRecord.ID: Offered] = [:]
 
     private init(journal: CloudCallbackJournal, database: CKDatabase, account: CKRecord.ID, staging: URL,
-                 zone: CKRecordZone.ID, installation: UUID, initialSignInAllowed: Bool) {
+                 zone: CKRecordZone.ID, installation: UUID, subscriptionID: String, initialSignInAllowed: Bool,
+                 receivedChanges: @escaping @Sendable () -> Void) {
         self.journal = journal; self.database = database; self.account = account; self.staging = staging
-        self.zone = zone; self.installation = installation; self.initialSignInAllowed = initialSignInAllowed
+        self.zone = zone; self.installation = installation; self.subscriptionID = subscriptionID
+        self.initialSignInAllowed = initialSignInAllowed
+        self.receivedChanges = receivedChanges
     }
 
     /// Bind to a library prepared by the test host. The scope key includes
     /// this literal container and Development; a production lease cannot pass.
+    #if DEBUG || os(macOS)
     static func openTestContainer(session: DataSession, lease: DataSessionLease) async throws -> ReadingSyncEngineAdapter {
         let (container, account) = try await verifiedTestContainer(session: session, lease: lease)
+        return try await open(session: session, lease: lease, container: container, account: account,
+                              subscriptionID: "Moonread-SyncProbe-v2")
+    }
+    #endif
+
+    #if os(iOS)
+    static func openAppContainer(session: DataSession, lease: DataSessionLease, account: CloudSyncCoordinator.Account,
+                                 environment: DataScope.Environment) async throws -> ReadingSyncEngineAdapter {
+        let (container, current) = try await verifiedAppContainer(lease: lease, account: account, environment: environment)
+        return try await open(session: session, lease: lease, container: container, account: current,
+                              subscriptionID: "Moonread-Reading-v2", receivedChanges: {
+            NotificationCenter.default.post(name: .cloudDataReceived, object: nil)
+        })
+    }
+
+    static func probeAppZone(lease: DataSessionLease, account: CloudSyncCoordinator.Account,
+                             environment: DataScope.Environment) async throws -> CloudAccountZoneRecovery.Presence {
+        let (container, _) = try await verifiedAppContainer(lease: lease, account: account, environment: environment)
+        return try await probeZone(in: container.privateCloudDatabase)
+    }
+
+    private static func verifiedAppContainer(lease: DataSessionLease, account: CloudSyncCoordinator.Account,
+                                             environment: DataScope.Environment) async throws -> (CKContainer, CKRecord.ID) {
+        try Task.checkCancellation()
+        guard CloudConfiguration.availableInBuild, CloudConfiguration.readingEnvironment == environment,
+              lease.scope == account.scope else { throw Failure.wrongIdentity }
+        let container = CKContainer(identifier: CloudConfiguration.containerID)
+        let current = try await container.userRecordID()
+        try Task.checkCancellation()
+        guard current.recordName == account.identity.recordName,
+              try DataScope.confirmed(container: CloudConfiguration.containerID, environment: environment,
+                                      recordName: current.recordName) == lease.scope else { throw Failure.accountChanged }
+        return (container, current)
+    }
+    #endif
+
+    private static func open(session: DataSession, lease: DataSessionLease, container: CKContainer,
+                             account: CKRecord.ID, subscriptionID: String,
+                             receivedChanges: @escaping @Sendable () -> Void = {}) async throws -> ReadingSyncEngineAdapter {
         let database = container.privateCloudDatabase
         let root = try session.layout.staging(lease.scope).appending(path: "ck-sandbox-" + UUID().uuidString, directoryHint: .isDirectory)
         let journal = try CloudCallbackJournal(session: session, lease: lease)
@@ -92,7 +138,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             guard let installation = UUID(uuidString: try session.readingInstallationID()) else { throw Failure.wrongIdentity }
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let adapter = ReadingSyncEngineAdapter(journal: journal, database: database, account: account, staging: root,
-                                                   zone: ownZone, installation: installation, initialSignInAllowed: bytes == nil)
+                                                   zone: ownZone, installation: installation, subscriptionID: subscriptionID,
+                                                   initialSignInAllowed: bytes == nil, receivedChanges: receivedChanges)
             adapter.engine = adapter.makeEngine(state)
             return adapter
         } catch {
@@ -105,13 +152,18 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private func makeEngine(_ state: CKSyncEngine.State.Serialization?) -> CKSyncEngine {
         var configuration = CKSyncEngine.Configuration(database: database, stateSerialization: state, delegate: self)
         configuration.automaticallySync = false
-        configuration.subscriptionID = "Moonread-SyncProbe-v2"
+        configuration.subscriptionID = subscriptionID
         return CKSyncEngine(configuration)
     }
 
+    #if DEBUG || os(macOS)
     static func probeTestZone(session: DataSession, lease: DataSessionLease) async throws -> CloudAccountZoneRecovery.Presence {
         let (container, _) = try await verifiedTestContainer(session: session, lease: lease)
-        let database = container.privateCloudDatabase
+        return try await probeZone(in: container.privateCloudDatabase)
+    }
+    #endif
+
+    private static func probeZone(in database: CKDatabase) async throws -> CloudAccountZoneRecovery.Presence {
         do {
             let found = try await fetchZone(database: database, id: ownZone)
             guard found.zoneID == ownZone else { throw Failure.wrongIdentity }
@@ -134,6 +186,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         }
     }
 
+    #if DEBUG || os(macOS)
     private static func verifiedTestContainer(session: DataSession, lease: DataSessionLease) async throws -> (CKContainer, CKRecord.ID) {
         let temporary = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
         let synthetic = session.layout.root.resolvingSymlinksInPath().path
@@ -146,6 +199,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         guard lease.scope == expected else { throw Failure.wrongIdentity }
         return (container, account)
     }
+    #endif
 
     nonisolated func retire() { journal.retire() }
 
@@ -326,7 +380,9 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             guard try ReadingCloudInitialization.Control.decode(record, in: zone) == ready,
                   let joiningCheckpoint else { throw ReadingCloudInitialization.Failure.inconsistentDecision }
             try await journal.finishJoiningBaseline(ready, checkpoint: joiningCheckpoint)
+            try checkActive(engine)
             interruptedBaseline = false
+            receivedChanges()
         } catch {
             if active, self.engine === engine, fatal == nil { try await journal.discardJoiningBaseline() }
             throw error
@@ -623,6 +679,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             try await journal.stageJoiningPage(joiningControl, records: records, deletions: deletions)
         } else {
             try await journal.applyOwnInbox(records: records, deletions: deletions)
+            try checkActive(engine)
+            receivedChanges()
         }
     }
 

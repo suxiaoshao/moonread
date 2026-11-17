@@ -132,6 +132,59 @@ struct DataV2MigrationTests {
         try UserSyncJSON.encode(StoredValue(updated: updated, token: token, value: UserSyncJSON.encode(value)), envelope: true)
     }
 
+    @Test func releasedOwnerImportsIndependentlyInEachCloudEnvironment() async throws {
+        let suite = "reading-environments-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.set("released-owner", forKey: "Moonread.userOwner")
+        let development = AppDataService(sourceDefaultsSuite: suite, readingCloudEnvironment: .development)
+        let production = AppDataService(sourceDefaultsSuite: suite, readingCloudEnvironment: .production)
+        let directory = try await development.dataDirectoryURL()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let book = String(repeating: "a", count: 64)
+        let key = "metadata/\(book)/author"
+        do {
+            let schema = Schema([UserValue.self, UserPosition.self, AnnotationOperation.self, ReadingFact.self,
+                                 StatisticsClear.self, UserCover.self])
+            let configuration = ModelConfiguration("UserData", schema: schema, url: directory.appending(path: "user-data.store"),
+                                                   cloudKitDatabase: .none)
+            let context = ModelContext(try ModelContainer(for: schema, configurations: [configuration]))
+            context.insert(UserValue(key: key, device: "fixture", payload: try stored("legacy")))
+            try context.save()
+        }
+        func author(_ index: ReaderIndex) throws -> String? {
+            try index.session.readUsers(index.lease) { db in
+                try String.fetchOne(db, sql: "SELECT value_text FROM usr.metadata_text_candidate WHERE logical_key=?",
+                                    arguments: [key])
+            }
+        }
+        let dev = try await development.relationalUserIndex()
+        let devScope = try DataScope.confirmed(container: CloudConfiguration.containerID, environment: .development,
+                                               recordName: "released-owner")
+        #expect(dev.lease.scope == devScope)
+        #expect(try author(dev) == "legacy")
+        #expect(await development.isReadingCloudApproved(devScope))
+        try dev.session.writeUsers(dev.lease) { db in
+            try UserValueRows.put(db, key: .init(key), value: UserSyncJSON.encode("only-development"),
+                                  device: "fixture", now: 42, scope: dev.lease.scope)
+        }
+        #expect(try author(dev) == "only-development")
+        development.cloudSyncIntent.approve(devScope)
+        let prod = try await production.relationalUserIndex()
+        let prodScope = try DataScope.confirmed(container: CloudConfiguration.containerID, environment: .production,
+                                                recordName: "released-owner")
+        #expect(prod.lease.scope == prodScope)
+        #expect(dev.lease.scope != prod.lease.scope)
+        #expect(dev.session.layout.index != prod.session.layout.index)
+        #expect(await production.isReadingCloudApproved(prodScope))
+        #expect(try author(prod) == "legacy")
+        try prod.session.close()
+        try dev.session.close()
+    }
+
     @Test func swiftDataRoutesAllModelFamiliesAndPreservesIsolation() async throws {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -383,7 +436,11 @@ struct DataV2MigrationTests {
         try owner.prepareIndex(legacyIndex, token: localA)
         #expect(throws: DataV2Error.migrationNotVerified) { _ = try CloudCallbackJournal(session: owner, lease: localA) }
         try owner.prepareUsers(localA) { nil }
+        // This case exercises an ordinary cursor after the upgrade, rather
+        // than the unresolved initial intake which may not save that cursor.
+        try owner.writeUsers(localA) { db in try UpgradeOrigins.finish(db) }
         let old = try CloudCallbackJournal(session: owner, lease: localA)
+        try await old.initializeZone(exists: true)
         try await old.persistCheckpoint(Data([1]))
 
         let (offline, selection) = try owner.activate(.unknown)

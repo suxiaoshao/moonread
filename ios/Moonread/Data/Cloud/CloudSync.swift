@@ -1,3 +1,4 @@
+import CloudKit
 import Foundation
 import Synchronization
 
@@ -9,6 +10,28 @@ enum CloudConfiguration {
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") { return false }
         #endif
         return Bundle.main.object(forInfoDictionaryKey: "MoonreadCloudEnabled") as? String == "YES"
+    }
+    static var readingEnvironment: DataScope.Environment? {
+        switch Bundle.main.object(forInfoDictionaryKey: "MoonreadReadingCloudEnvironment") as? String {
+        case "Development": .development
+        case "Production": .production
+        default: nil
+        }
+    }
+
+    static func readingAccount(environment: DataScope.Environment) async -> CloudSyncCoordinator.Identity {
+        let container = CKContainer(identifier: containerID)
+        do {
+            switch try await container.accountStatus() {
+            case .noAccount: return .signedOut
+            case .available:
+                let recordName = try await container.userRecordID().recordName
+                try Task.checkCancellation()
+                let scope = try DataScope.confirmed(container: containerID, environment: environment, recordName: recordName)
+                return .confirmed(.init(identity: .init(recordName: recordName), scope: scope))
+            default: return .unknown
+            }
+        } catch { return .unknown }
     }
 }
 extension Notification.Name {
@@ -47,13 +70,17 @@ struct CloudSyncStatus: Sendable {
 /// Device-local intent is a tiny thread-safe UserDefaults write, independent of
 /// account lookup, store activation, and either service actor's work queue.
 final class CloudSyncIntent: @unchecked Sendable {
-    private static let scopeKey = "Moonread.readingCloudApprovedScope.v1"
+    private let scopeKey: String
     private let defaults: UserDefaults
-    init(defaults: UserDefaults) { self.defaults = defaults }
+    init(defaults: UserDefaults, environment: DataScope.Environment) {
+        self.defaults = defaults
+        let base = "Moonread.readingCloudApprovedScope.v1"
+        scopeKey = environment == .development ? base + ".development" : base
+    }
     var requested: Bool { defaults.bool(forKey: "Moonread.userCloudEnabled") }
     func set(_ enabled: Bool) { defaults.set(enabled, forKey: "Moonread.userCloudEnabled") }
-    var approvedScopeKey: String? { defaults.string(forKey: Self.scopeKey) }
-    func approve(_ scope: DataScope) { defaults.set(scope.key, forKey: Self.scopeKey) }
+    var approvedScopeKey: String? { defaults.string(forKey: scopeKey) }
+    func approve(_ scope: DataScope) { defaults.set(scope.key, forKey: scopeKey) }
 }
 
 /// GRDB executes the commit check on its writer queue. Cancellation has to
@@ -79,7 +106,23 @@ protocol ReadingCloudTransport: Sendable {
 /// The coordinator is the only App owner of a running reading-data transport.
 /// The cutover binding is supplied separately from iCloud Drive discovery.
 actor CloudSyncCoordinator {
-    static let shared = CloudSyncCoordinator()
+    static let shared: CloudSyncCoordinator = {
+        let service = AppDataService.shared
+        guard CloudConfiguration.availableInBuild, let environment = CloudConfiguration.readingEnvironment else {
+            return CloudSyncCoordinator(service: service)
+        }
+        return CloudSyncCoordinator(service: service, runtime: .relational(
+            service: service,
+            lookup: { await CloudConfiguration.readingAccount(environment: environment) },
+            probeZone: { account, index in
+                try await ReadingSyncEngineAdapter.probeAppZone(lease: index.lease, account: account, environment: environment)
+            },
+            open: { account, index in
+                try await ReadingSyncEngineAdapter.openAppContainer(session: index.session, lease: index.lease,
+                                                                    account: account, environment: environment)
+            }
+        ))
+    }()
 
     struct Account: Equatable, Sendable {
         let identity: CloudConfiguration.VerifiedAccount
@@ -163,8 +206,7 @@ actor CloudSyncCoordinator {
         let mayAttempt: Bool
     }
 
-    // The App remains in trial mode until the account writer, old bridge
-    // and production cutover gates provide a runtime.
+    // No runtime for no-cloud builds or fixtures that don't inject one.
     init(service: AppDataService = .shared, runtime: Runtime? = nil) {
         self.service = service; self.runtime = runtime
     }
@@ -388,8 +430,8 @@ extension AppDataService {
     func isReadingCloudApproved(_ scope: DataScope) -> Bool {
         guard scope != .local else { return false }
         if let approved = cloudSyncIntent.approvedScopeKey { return scope.key == approved }
-        // The previous owner proves consent for exactly its released scope.
-        // Keep that provenance key intact for migration and the old bridge.
+        // The previous owner proves consent for the released source as
+        // attributed to this installation's environment.
         return (try? publishedUserSource().scope) == scope
     }
     func dataChanged() {

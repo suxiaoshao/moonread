@@ -244,12 +244,21 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         XCTAssertNil(rebuiltState.checkpoint)
         XCTAssertEqual(rebuiltState.formal, before.formal)
         XCTAssertEqual(rebuiltState.pending, before.pending)
-        XCTAssertEqual(rebuiltState.outbox, before.outbox)
+        XCTAssertGreaterThan(before.outbox, 0)
+        XCTAssertEqual(rebuiltState.outbox, 0)  // Old-zone intents do not carry into the replacement.
         let newEngine = try CloudCallbackJournal(session: index.session, lease: index.lease)
         let beforeCreation = try await newEngine.pendingInOwnZone()
         XCTAssertTrue(beforeCreation.isEmpty)
         let created = try await newEngine.confirmZoneCreation()
         XCTAssertTrue(created)
+        let afterCreation = try await newEngine.pendingInOwnZone()
+        XCTAssertTrue(afterCreation.isEmpty)  // A zone ACK is not the initialization election.
+        let installation = try XCTUnwrap(UUID(uuidString: index.session.readingInstallationID()))
+        let proposed = try await newEngine.proposeInitialization(installation: installation)
+        _ = try await newEngine.observeInitialization(proposed, installation: installation)
+        try await newEngine.beginFirstUpload(proposed)
+        let completion = try await newEngine.sealFirstUpload(proposed)
+        XCTAssertEqual(completion, .pending)
         let ready = try await newEngine.pendingInOwnZone()
         XCTAssertEqual(ready.count, before.outbox)
         newEngine.retire()
@@ -370,6 +379,8 @@ private struct ZoneRecoveryFixture: Sendable {
         let lease = try session.activate(.confirmed(account.scope, syncRequested: true)).0
         try session.prepareIndex(root.appending(path: "unused"), token: lease)
         try session.prepareUsers(lease) { nil }
+        // The trigger is loss of an established zone on an already upgraded device.
+        try session.writeUsers(lease) { db in try UpgradeOrigins.finish(db) }
         let index = ReaderIndex(session: session, lease: lease)
         let service = AppDataService(core: index, libraryDirectory: root, sourceDefaultsSuite: root.lastPathComponent)
         service.cloudSyncIntent.set(true)

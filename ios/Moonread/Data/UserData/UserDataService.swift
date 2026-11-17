@@ -25,9 +25,9 @@ enum UserAuthorityPreparationError: LocalizedError {
 
 extension AppDataService {
     var userValueClock: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
-    /// Attribute released stores using the owner's prior explicit consent;
-    /// never infer ownership from the current system sign-in. The compatible
-    /// source is the published Production store, with CloudKit disabled here.
+    /// The released on-device source has an owner, not a cloud environment.
+    /// Bind it to that owner in the current environment without using current
+    /// sign-in to guess the owner or importing another v2 environment's data.
     func publishedUserSource() throws -> (scope: DataScope, resumeNamespace: String) {
         guard let value = sourceDefaults.object(forKey: "Moonread.userOwner") else {
             return (.local, userDirectoryName + "/local")
@@ -35,7 +35,7 @@ extension AppDataService {
         guard let recordName = value as? String, !recordName.isEmpty else {
             throw DataV2Error.invalidOwnerState
         }
-        return (try .confirmed(container: CloudConfiguration.containerID, environment: .production, recordName: recordName),
+        return (try .confirmed(container: CloudConfiguration.containerID, environment: readingCloudEnvironment, recordName: recordName),
                 userDirectoryName + "/" + recordName)
     }
 
