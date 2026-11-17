@@ -13,7 +13,7 @@ import XCTest
 final class CloudAccountReaderIntegrationTests: ReaderIntegrationFixture {
   // S323: 当前账户发现失败不清空已知书架，旧账户/超时代次的晚到回调不得发布；两个确定事件顺序。
   @MainActor func testBuiltinDiscoveryFailureAndStaleAccountDoNotPublishEmpty() async throws {
-    let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+    let (root, service, _, _, _, _, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)

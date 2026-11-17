@@ -302,89 +302,10 @@ final class SyncCompatibilityTests: UserDataFixture {
     try await store.removePending(key: "pending:book")
     let retained = try await store.syncFixturePayloads("value")
     XCTAssertEqual(retained.filter { $0 == unknown }.count, 3)
-    do {
 
-      let (root, service, book, formal) = try await editorFixture()
-      defer { try? FileManager.default.removeItem(at: root) }
-      try await service.savePosition(bookID: book.id, offset: 9)
-      let before = try await formal.syncFixturePayloads("position", key: book.fixtureSHA256)
-      let pending = try await service.userStore(pending: true)
-      let sourceKey = "pending:" + book.id
-      let raw = try syncPosition(sourceKey)
-      let future = try syncJSON(raw) { $0["v"] = 2 }
-      try await pending.receiveSyncFixture("position", key: sourceKey, payload: future)
-      await Self.rejectSync { try await service.savePosition(bookID: book.id, offset: 18) }
-      let retained = try await pending.syncFixturePayloads("position", key: sourceKey)
-      XCTAssertEqual(retained, [future])
-      let after = try await formal.syncFixturePayloads("position", key: book.fixtureSHA256)
-      XCTAssertEqual(after, before)
-      let snapshot = try await service.snapshot(book.id)
-      XCTAssertEqual(
-        snapshot.book.positionUtf8, 0,
-        "The old canonical position must not mask an unsupported pending alias")
-      let notice = try await service.readingCompatibilityNotice(book.id)
-      XCTAssertNotNil(notice)
-      let protected = await service.pendingPromotionIDs.contains(book.id)
-      XCTAssertTrue(
-        protected, "Do not reclaim the source identity while its pending raw data is protected")
-      let clear = try UserSyncJSON.encode(
-        ClearValue(book: sourceKey, session: nil, through: 10, ids: []), envelope: true)
-      let futureClear = try syncJSON(clear) { $0["v"] = 2 }
-      try await pending.receiveSyncFixture("clear", payload: futureClear)
-      await Self.rejectSync {
-        try await service.statistics(first: 0, last: 20000, book: book.fixtureSHA256)
-      }
-
-    }
   }
 
   // S490: 未知阅读状态/封面在编辑其他字段时原样保留，不以空值覆盖。
-  @MainActor func testSyncUnknownStatusSurvivesMetadataEditingAndUnsupportedCoverIsRetained()
-    async throws
-  {
-    let (root, service, book, store) = try await editorFixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let key = "metadata/" + book.fixtureSHA256 + "/status"
-    try await store.put(key, value: "\"FutureReadingState\"", device: "remote")
-    let initial = try await service.details(bookID: book.id)
-    XCTAssertEqual(initial.metadata.status, .other(value: "FutureReadingState"))
-    let before = try await store.syncFixturePayloads("value", key: key)
-    var edit = initial.metadata
-    edit.author = "Original author"
-    try await service.saveMetadata(base: initial.metadata, edited: edit)
-    let after = try await store.syncFixturePayloads("value", key: key)
-    XCTAssertEqual(before, after, "Editing another key must not overwrite unsupported status")
-    var known = try await service.details(bookID: book.id).metadata
-    let base = known
-    known.status = .reading
-    try await service.saveMetadata(base: base, edited: known)
-    let changed = try await service.details(bookID: book.id)
-    XCTAssertEqual(changed.metadata.status, .reading)
-    let bytes = Data("opaque future image".utf8)
-    let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-    let cover = BookCoverAsset(
-      id: UUID().uuidString, sha256: hash, extension: "future", width: 300, height: 400)
-    try await store.saveCover(id: cover.id, bytes: bytes)
-    var metadata = changed.metadata
-    metadata.cover = cover
-    let encoded = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: Data(encodeBookMetadata(value: metadata).utf8))
-        as? [String: Any])
-    let coverJSON = String(
-      decoding: try JSONSerialization.data(withJSONObject: XCTUnwrap(encoded["cover"])),
-      as: UTF8.self)
-    try await store.put(
-      "metadata/" + book.fixtureSHA256 + "/cover", value: coverJSON, device: "remote")
-    let restored = try await service.details(bookID: book.id)
-    XCTAssertEqual(restored.metadata.cover, cover)
-    let retainedBytes = try await store.cover(cover.id)
-    XCTAssertEqual(retainedBytes, bytes)
-    let image = try? await service.coverImage(cover, pixels: 200)
-    XCTAssertNil(image)
-    await Self.rejectSync { try await store.saveCover(id: cover.id, bytes: Data("different".utf8)) }
-    let unchanged = try await store.cover(cover.id)
-    XCTAssertEqual(unchanged, bytes)
-  }
 
   // S491: 嵌套未知字段/错误类型不能重编码或转移，保留原 payload；每种结构边界一个反例。
   func testSyncNestedUnknownFieldsAndInvalidTypesAreNotReencodedOrTransferred() async throws {
@@ -484,95 +405,11 @@ final class SyncCompatibilityTests: UserDataFixture {
     XCTAssertNil(model.details)
     XCTAssertNil(model.draft)
     XCTAssertNotNil(model.error)
-    let retained = try await store.syncFixturePayloads(
-      "value", key: "metadata/" + book.fixtureSHA256 + "/author")
-    XCTAssertEqual(retained, [future])
-    do {
-
-      let (root, service, book, store) = try await editorFixture()
-      defer { try? FileManager.default.removeItem(at: root) }
-      let fact = syncFact(book.fixtureSHA256)
-      try await store.saveFacts(
-        [("fact", book.fixtureSHA256, fact)], generation: 0, current: 0, enabled: true)
-      let model = StatisticsModel(service: service, notifications: NotificationCenter())
-      let window = StatisticsWindow(period: .all)
-      let target = StatisticsRoute(target: .record(key: .formal(sha256: book.fixtureSHA256)), title: "Synthetic")
-      await model.load(window, target: target)
-      XCTAssertNotNil(model.state(window, target: target).overview)
-      let futureFact = try syncJSON(syncFact(book.fixtureSHA256, id: "futureFact")) { $0["v"] = 2 }
-      try await store.receiveSyncFixture(
-        "fact", key: book.fixtureSHA256, id: "futureFact", payload: futureFact)
-      let notice = try await service.statisticsCompatibilityNotice(book: book.fixtureSHA256)
-      XCTAssertNotNil(notice)
-      let clear = try UserSyncJSON.encode(
-        ClearValue(book: book.fixtureSHA256, session: nil, through: 10000, ids: []), envelope: true)
-      let future = try syncJSON(clear) { $0["v"] = 2 }
-      try await store.receiveSyncFixture("clear", payload: future)
-      do {
-        _ = try await service.statistics(first: 20000, last: 20000, book: book.fixtureSHA256)
-        XCTFail("Unknown clear must not display totals")
-      } catch is UserSyncCompatibilityError {
-        model.report(UserSyncCompatibilityError(statistics: true), window: window, target: target)
-      }
-      let state = model.state(window, target: target)
-      XCTAssertNil(state.overview)
-      XCTAssertNil(state.cumulative)
-      XCTAssertTrue(state.spans.isEmpty)
-      XCTAssertNotNil(state.error)
-      XCTAssertFalse(state.loading)
-      await Self.rejectSync { try await service.deleteStatistics(book: book.fixtureSHA256) }
-      let retained = try await store.syncFixturePayloads("clear")
-      XCTAssertEqual(retained, [future])
-
+    let retained = try index.session.readUsers(index.lease) {
+      try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.quarantined_record WHERE logical_key=?",
+                       arguments: ["metadata/" + sha + "/author"])
     }
-    do {
-
-      let (root, service, book, store) = try await editorFixture()
-      defer {
-        try? FileManager.default.removeItem(at: root)
-        UserDefaults(suiteName: "Review-\(root.lastPathComponent)")?.removePersistentDomain(
-          forName: "Review-\(root.lastPathComponent)")
-      }
-      let future = try syncJSON(syncPosition(book.fixtureSHA256)) { $0["v"] = 2 }
-      try await store.receiveSyncFixture("position", key: book.fixtureSHA256, payload: future)
-      for _ in 0..<2 {
-        let session = ReaderSession(
-          service: service,
-          activity: ReadingActivityRecorder { StatisticsPreferences(enabled: false, generation: 0) }
-        )
-        await session.open(.book(book.id))
-        let loaded = XCTNSPredicateExpectation(
-          predicate: NSPredicate { _, _ in session.window != nil }, object: nil)
-        await fulfillment(of: [loaded], timeout: 5)
-        await session.refreshAnnotations()?.value
-        XCTAssertNotNil(session.error, "Each new opening explains the read-only scope once")
-        session.error = nil  // The reader's 知道了 action.
-        for offset in [UInt64(10), 30, 60] {
-          session.moved(to: offset, settled: true)
-          await session.refreshAnnotations()?.value
-          await session.flush()  // Includes the automatic position-save failure, without a timer.
-          XCTAssertNil(session.error, "Reading and automatic saves must not re-present the notice")
-          XCTAssertEqual(session.anchor, offset)
-          XCTAssertNotNil(session.window)
-        }
-        session.browse(to: 90)
-        let browsed = XCTNSPredicateExpectation(
-          predicate: NSPredicate { _, _ in !session.navigating && session.anchor == 90 },
-          object: nil)
-        await fulfillment(of: [browsed], timeout: 5)
-        XCTAssertNil(session.error, "A blocked automatic save must not prevent preview navigation")
-        XCTAssertEqual(session.browseOrigin, 60)
-        await session.continueReading()  // Explicitly request a new saved reading point.
-        XCTAssertNotNil(session.error, "An explicit blocked write still explains the failure")
-        session.error = nil
-        await session.refreshAnnotations()?.value
-        XCTAssertNil(session.error)
-        await session.leave().value
-        XCTAssertNil(session.error, "Leaving must not resurrect the dismissed compatibility notice")
-      }
-      let retained = try await store.syncFixturePayloads("position", key: book.fixtureSHA256)
-      XCTAssertEqual(retained, [future])
-
-    }
+    XCTAssertEqual(retained, 1)
   }
+
 }

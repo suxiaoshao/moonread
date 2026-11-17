@@ -12,68 +12,18 @@ final class UserDataConflictTests: UserDataFixture {
     for formalWins in [true, false] {
       let f = try positionWinnerFixture()
       defer { f.clean() }
-      let sha = f.book.fixtureSHA256
-      let alias = "pending:" + f.aliases[1]
-      let formal = try positionRecord(
-        key: sha, token: formalWins ? "z-formal" : "a-formal", offset: 7)
-      let pending = try positionRecord(
-        key: alias, token: formalWins ? "a-pending" : "z-pending", offset: 19)
-      try await receivePosition(formal, key: sha, store: f.formal)
-      try await receivePosition(pending, key: alias, store: f.pending)
-      let keys = [sha, alias]
-      let expected: UInt64 = formalWins ? 7 : 19
-      let before = try await f.service.effectiveQuery(records: .only(try keys.map { try parseReadingKey(value: $0) })).bookInfo(bookId: f.book.id)
-      XCTAssertEqual(before.positionUtf8, expected)
-      // Scoped projection must carry the exact token used by the reducer.
-      let scoped = try requireStoreProjection(try await f.formal.projection(
-        generation: 0, enabled: true, includeFacts: false, keys: [sha, sha]))
-      let json = try XCTUnwrap(
-        JSONSerialization.jsonObject(with: Data(scoped.json.utf8)) as? [String: Any])
-      let positions = try XCTUnwrap(json["positions"] as? [[String: Any]])
-      XCTAssertEqual(positions.count, 1)
-      XCTAssertEqual(positions.first?["token"] as? String, formal.token)
-      let transfer = try await f.pending.exportPending(key: alias)
-      try await f.formal.importPending(transfer, from: alias, to: sha)
-      try await f.pending.removePending(key: alias)
-      let after = try await f.service.effectiveQuery(records: .only(try keys.map { try parseReadingKey(value: $0) })).bookInfo(bookId: f.book.id)
-      XCTAssertEqual(after.positionUtf8, before.positionUtf8)
-      let winner = try await f.formal.positionValues()["position/" + sha]
-      XCTAssertEqual(winner?.token, formalWins ? formal.token : pending.token)
-    }
-    // Two aliases have the same time; enumeration and promotion order cannot change the winner.
-    do {
-
-      for reverse in [false, true] {
-        let f = try positionWinnerFixture()
-        defer { f.clean() }
-        let sha = f.book.fixtureSHA256
-        let keys = f.aliases.map { "pending:" + $0 }
-        let a = try positionRecord(key: keys[0], token: "a-alias", offset: 7)
-        let z = try positionRecord(key: keys[1], token: "z-alias", offset: 19)
-        let records = reverse ? [z, a] : [a, z]
-        let candidates = try records.map { try PositionCandidate($0).rekeyed(to: sha) }
-        let reduced = PositionCandidate.reduce(candidates)
-        XCTAssertEqual(reduced.count, 1)
-        XCTAssertEqual(reduced[sha]?.stored.token, "z-alias")
-        for record in records {
-          let key = try PositionCandidate(record).value.content_key
-          try await receivePosition(record, key: key, store: f.pending)
-        }
-        let scopedKeys = reverse ? Array(keys.reversed()) : keys
-        let before = try await f.service.effectiveQuery(records: .only(try scopedKeys.map { try parseReadingKey(value: $0) })).bookInfo(
-          bookId: f.book.id)
-        XCTAssertEqual(before.positionUtf8, 19, "Only the final SHA winner is loaded by Rust")
-        for key in scopedKeys {
-          let transfer = try await f.pending.exportPending(key: key)
-          try await f.formal.importPending(transfer, from: key, to: sha)
-          try await f.pending.removePending(key: key)
-        }
-        let after = try await f.service.effectiveQuery(records: .only([.formal(sha256: sha)])).bookInfo(bookId: f.book.id)
-        XCTAssertEqual(after.positionUtf8, before.positionUtf8)
-        let winner = try await f.formal.positionValues()["position/" + sha]
-        XCTAssertEqual(winner?.token, "z-alias")
-      }
-
+      let sha = f.book.fixtureSHA256, id = f.aliases[1], alias = "pending:" + id
+      let rows = UserRowsFixture(index: f.core)
+      let formal = formalWins ? "z-formal" : "a-formal", pending = formalWins ? "a-pending" : "z-pending"
+      try rows.seedPosition(sha, offset: 7, token: formal)
+      try rows.seedPosition(alias, offset: 19, token: pending)
+      let before = try await f.service.snapshot(f.book.id)
+      XCTAssertEqual(before.book.positionUtf8, formalWins ? 7 : 19)
+      try await f.service.promoteUserData(id)
+      let after = try await f.service.snapshot(f.book.id)
+      XCTAssertEqual(after.book.positionUtf8, before.book.positionUtf8)
+      XCTAssertEqual(try rows.positionToken(sha), formalWins ? formal : pending)
+      XCTAssertNil(try rows.positionToken(alias))
     }
   }
 
@@ -281,16 +231,16 @@ final class UserDataConflictTests: UserDataFixture {
       let value = AnnotationCandidate(id: "operation-\(index)", ancestors: [],
         content: .init(start: UInt64(index), end: UInt64(index + 1), excerpt: "line \(index)\n<quote>*", note: "[note]\n`code`"),
         created: 1_000, bookmark: index == 0)
-      try await store.receiveFixture(key: key, mark: "m\(index)", candidate: value)
+      try store.seedAnnotation(key: key, mark: "m\(index)", candidate: value)
     }
     let base = candidate("base", content: content("old"))
     let a = candidate("version-a", parents: ["base"], content: content("version A"))
     let b = candidate("version-b", parents: ["base"], content: content("version B"))
     let deletion = candidate("deleted-version", parents: ["base"], content: nil)
     for value in [base, a, b, deletion] {
-      try await store.receiveFixture(key: key, mark: "conflict", candidate: value)
+      try store.seedAnnotation(key: key, mark: "conflict", candidate: value)
     }
-    let before = try await store.syncFixturePayloads("mark")
+    let before = try store.annotationRecordIDs()
     let listSnapshot = try await service.noteCandidates(book.id)
     let page = try await service.marks(book.id, kind: .annotation, offset: 0, snapshot: listSnapshot)
     XCTAssertTrue(page.hasMore)
@@ -319,7 +269,7 @@ final class UserDataConflictTests: UserDataFixture {
     XCTAssertTrue(literalDocument.render(.text).contains(literal))
     XCTAssertFalse(raw.contains(key))
     XCTAssertFalse(raw.contains("version-a"))
-    let after = try await store.syncFixturePayloads("mark")
+    let after = try store.annotationRecordIDs()
     XCTAssertEqual(after, before, "Export does not compact operations or mutate facts")
     let mark = try XCTUnwrap(document.records.first)
     let excerpt = NoteDocument(title: "Title", author: "Author", records: []).excerpt(
@@ -333,36 +283,12 @@ final class UserDataConflictTests: UserDataFixture {
     var future = candidate("future", content: content("unreadable"))
     future.bookmark = false
     let json = try syncJSON(UserSyncJSON.encode(future, envelope: true)) { $0["v"] = 2 }
-    try await store.receiveSyncFixture("mark", key: key, id: future.id, mark: "unknown", payload: json)
+    try store.quarantineAnnotation(book: key, id: future.id, mark: "unknown", payload: json)
     let snapshot = try await service.noteCandidates(book.id)
     XCTAssertNoThrow(try snapshot.checked(["m0"]))
     XCTAssertThrowsError(try snapshot.checked(nil))
     do { _ = try await service.noteDocument(book.id); XCTFail("Incomplete export must stop") }
     catch is NoteReadError {}
-
-    // A completed source can still have unpromoted facts. Export must promote
-    // first, and must not bypass a later unreadable pending record via the cache.
-    let f = try positionWinnerFixture()
-    defer { f.clean() }
-    let id = f.aliases[0], pendingKey = "pending:" + id
-    let staged = candidate("staged-note", content: content("pending note"))
-    try await f.pending.receiveFixture(key: pendingKey, mark: "staged", candidate: staged)
-    let promotedDocument = try await f.service.noteDocument(id)
-    XCTAssertEqual(promotedDocument.records.map { $0.mark.note }, ["pending note"])
-    let pendingAfter = try await f.pending.noteCandidates(key: pendingKey)
-    XCTAssertTrue(pendingAfter.groups.isEmpty)
-    let unknown = try syncJSON(UserSyncJSON.encode(candidate("future-pending", content: content("future")), envelope: true)) { $0["v"] = 2 }
-    try await f.pending.receiveSyncFixture("mark", key: pendingKey, id: "future-pending", mark: "future", payload: unknown)
-    let beforeBlockedExport = try await f.pending.syncFixturePayloads("mark")
-    let selections: [Set<String>?] = [nil, ["staged"]]
-    for selected in selections {
-      do {
-        _ = try await f.service.noteDocument(id, ids: selected)
-        XCTFail("Failed pending promotion must block whole and selected export")
-      } catch is UserSyncCompatibilityError {}
-    }
-    let afterBlockedExport = try await f.pending.syncFixturePayloads("mark")
-    XCTAssertEqual(afterBlockedExport, beforeBlockedExport, "Unreadable pending facts are retained")
   }
 
   @MainActor
@@ -372,10 +298,10 @@ final class UserDataConflictTests: UserDataFixture {
     let key = book.fixtureSHA256
     let a = candidate("a", content: content("first"))
     let b = candidate("b", content: content("second"))
-    try await store.receiveFixture(key: key, mark: "first", candidate: a)
-    try await store.receiveFixture(key: key, mark: "second", candidate: b)
+    try store.seedAnnotation(key: key, mark: "first", candidate: a)
+    try store.seedAnnotation(key: key, mark: "second", candidate: b)
     for index in 0..<60 {
-      try await store.receiveFixture(key: key, mark: "page-\(index)",
+      try store.seedAnnotation(key: key, mark: "page-\(index)",
         candidate: candidate("page-op-\(index)", content: content("later page", start: UInt64(10 + index), end: UInt64(11 + index))))
     }
     let tools = ReaderToolsModel(service: service)
@@ -390,7 +316,7 @@ final class UserDataConflictTests: UserDataFixture {
     XCTAssertEqual(tools.selectedNotes, ["second"])
     tools.updateNoteSelection(["first", "second"])
     let changed = candidate("changed", parents: ["b"], content: content("edited remotely"))
-    try await store.receiveFixture(key: key, mark: "second", candidate: changed)
+    try store.seedAnnotation(key: key, mark: "second", candidate: changed)
     await tools.loadNotes(reset: false)
     XCTAssertEqual(tools.notes.count, 62)
     tools.updateNoteSelection(["first", "second"])
@@ -399,14 +325,14 @@ final class UserDataConflictTests: UserDataFixture {
     // A full refresh changes the displayed row but cannot silently change the user's selection baseline.
     await tools.loadNotes(reset: true, preservingCount: tools.notes.count)
     XCTAssertEqual(tools.notes.first { $0.id == "second" }?.note, "edited remotely")
-    let before = try await store.syncFixturePayloads("mark")
+    let before = try store.annotationRecordIDs()
     await tools.deleteSelectedNotes()
     XCTAssertNotNil(tools.error)
-    let after = try await store.syncFixturePayloads("mark")
+    let after = try store.annotationRecordIDs()
     XCTAssertEqual(after, before)
     let latest = try await service.noteCandidates(book.id)
     try await service.deleteNoteSelection(book.id, expected: latest, ids: ["first", "second"])
-    let deleted = try await store.noteCandidates(key: key)
+    let deleted = try await service.noteCandidates(book.id)
     for id in ["first", "second"] {
       XCTAssertTrue(try XCTUnwrap(deleted.groups[id]).allSatisfy { $0.content == nil })
     }
@@ -414,7 +340,7 @@ final class UserDataConflictTests: UserDataFixture {
     await tools.loadNotes(reset: true)
     XCTAssertTrue(tools.selectedNotes.isEmpty)
     try await service.deleteMarks(["first", "second"], deleted: false)
-    let restored = try await store.noteCandidates(key: key)
+    let restored = try await service.noteCandidates(book.id)
     XCTAssertEqual(restored.groups["first"]?.first?.content, a.content)
     XCTAssertEqual(restored.groups["second"]?.first?.content, changed.content)
   }

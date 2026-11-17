@@ -157,7 +157,7 @@ final class AIProposalTests: BookAIFixture {
     let first = try await reader.ensureBookmark(book.id, at: 0)
     let again = try await reader.ensureBookmark(book.id, at: 0)
     XCTAssertEqual(first.id, again.id)
-    let heads = try await store.candidates(key: book.fixtureSHA256)
+    let heads = try store.annotationHeads( book.fixtureSHA256)
     XCTAssertEqual(heads[first.id]?.count, 1)
     let toggled = try await reader.toggleBookmark(book.id, at: 0)
     XCTAssertFalse(toggled)

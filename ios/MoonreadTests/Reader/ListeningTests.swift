@@ -115,13 +115,13 @@ import UIKit
     }
 
     func testReaderCheckpointsKeepAudioAnchorAcrossBrowsingWindowsAndStop() async throws {
-        let (root,service,core,_,_,_,_,suite) = try singleBookFixture()
+        let (root, service, core, _, _, _, suite) = try singleBookFixture()
         defer { try? FileManager.default.removeItem(at:root); UserDefaults.standard.removePersistentDomain(forName:suite) }
         let defaults = try XCTUnwrap(UserDefaults(suiteName:suite)); defaults.set("synthetic",forKey:"Moonread.listening.voice")
         let paragraph = "原创正文，春风照亮前路，夜色温柔。\n"
         let text = "第一章 合成\n" + String(repeating:paragraph,count:8000)
         let file = root.appendingPathComponent("listening.txt"); try text.write(to:file,atomically:true,encoding:.utf8)
-        let book = try core.importBook(filePath:file.path,title:"Synthetic")
+        let book = try importBookFixture(core, filePath:file.path,title:"Synthetic")
         let audio = FakeListeningAudio(), queued = expectation(description:"bounded units prepared")
         queued.expectedFulfillmentCount = 2; audio.enqueued = { queued.fulfill() }
         let reader = ReaderSession(service:service,makeListening:{ owner in
@@ -184,7 +184,7 @@ import UIKit
     }
 
     func testContinueReadingAfterListeningBrowseSavesManualPositionAcrossReopen() async throws {
-        let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+        let (root, service, _, _, book, _, suite) = try singleBookFixture()
         defer {
             try? FileManager.default.removeItem(at: root)
             UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -254,7 +254,7 @@ import UIKit
     }
 
     func testAcceptSyncedContinuationDuringListeningKeepsLaterManualPositionAcrossReopen() async throws {
-        let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+        let (root, service, _, _, book, _, suite) = try singleBookFixture()
         defer {
             try? FileManager.default.removeItem(at: root)
             UserDefaults.standard.removePersistentDomain(forName: suite)

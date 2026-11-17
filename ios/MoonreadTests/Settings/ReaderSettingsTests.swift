@@ -35,7 +35,7 @@ final class ReaderSettingsAppStorePrivacyTests: AppStorePrivacyFixture {
 final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
   // S343: 书内和设置页共用当前偏好；交错与连续编辑保留最后一次，持久化仍经过 Rust 校验。
   @MainActor func testSettingsMemoryCopyTracksValidatedPersistence() async throws {
-    let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+    let (root, service, _, _, _, _, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -64,7 +64,7 @@ final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
   }
 
   @MainActor func testImportedFontSelectionDeletionAndMissingResourceKeepDurableChoice() async throws {
-    let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+    let (root, service, _, _, _, _, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -192,8 +192,7 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     XCTAssertFalse(themeColorsReadable(c: template.colors))
     XCTAssertNil(validateThemePaletteDraft(name: template.name, colors: template.colors))
     let palette = try await service.savePalette(template, creating: true)
-    let rows = try await store.allValues(prefix: "palette/")
-    let json = try XCTUnwrap(rows["palette/\(palette.id)"])
+    let json = try encodeThemePalette(value: palette)
     let stored = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
     XCTAssertNil(stored["preferences"])
@@ -226,7 +225,7 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     XCTAssertEqual(AppDataService.paletteSaveIssue(in: full), .customLimit)
     let existing = try XCTUnwrap(full.palettes.last)
     XCTAssertNil(AppDataService.paletteSaveIssue(in: full, editing: existing), "The limit blocks creation, never editing")
-    for (key, value) in values { try await store.put(key, value: value, device: "fixture") }
+    for (key, value) in values { try store.seedValue(key, value: value) }
     do { _ = try await service.savePalette(template, creating: true); XCTFail("Enforce current storage capacity") }
     catch PaletteSaveIssue.customLimit { }
     var renamed = existing; renamed.name = "Edited at capacity"

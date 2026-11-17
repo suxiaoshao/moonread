@@ -210,7 +210,7 @@ final class LibraryFileWorkReaderIntegrationTests: ReaderIntegrationFixture {
     let cloud = root.appendingPathComponent("cloud")
     try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
     try Data("handoff actor probe".utf8).write(to: local.appendingPathComponent("book.txt"))
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     let service = AppDataService(core: core, libraryDirectory: local)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
@@ -289,7 +289,7 @@ final class LibraryFileWorkReaderIntegrationTests: ReaderIntegrationFixture {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let service = AppDataService(
-      core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
+      core: try makeReaderIndexFixture(at: directory.appendingPathComponent("db")),
       libraryDirectory: directory.appendingPathComponent("books"))
     try await service.prepareLibrary()
     let model = LibraryModel(service: service)
@@ -313,7 +313,7 @@ final class LibraryFileWorkReaderIntegrationTests: ReaderIntegrationFixture {
     defer { try? FileManager.default.removeItem(at: directory) }
     let root = directory.appendingPathComponent("books")
     let service = AppDataService(
-      core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
+      core: try makeReaderIndexFixture(at: directory.appendingPathComponent("db")),
       libraryDirectory: root)
     try await service.prepareLibrary()
     try await service.refreshLibrary()
@@ -349,7 +349,7 @@ final class LibraryFileWorkReaderIntegrationTests: ReaderIntegrationFixture {
     let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: temporary) }
-    let core = try ReaderCore(dataDirectory: temporary.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: temporary.appendingPathComponent("db"))
     let root = temporary.appendingPathComponent("books")
     let service = AppDataService(core: core, libraryDirectory: root)
     try await service.prepareLibrary()

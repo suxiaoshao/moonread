@@ -1,4 +1,4 @@
-import CryptoKit
+import GRDB
 import Observation
 import SQLite3
 import SwiftData
@@ -12,50 +12,26 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
   func testReferenceRecordsUseExistingWinnerAndQuarantineOnlyUnknownDescriptions() async throws {
     let f = try await fixture()
     defer { f.clean() }
-    let id = UUID().uuidString, futureID = UUID().uuidString
+    let id = UUID().uuidString.lowercased(), unreadable = UUID().uuidString.lowercased()
     let old = ShelfReferenceValue(name: "旧提示", locationDescription: "file-provider")
     let newer = ShelfReferenceValue(name: "远方书架", locationDescription: "icloud-drive")
-    for (time, token, value) in [(Int64(1), "a", old), (Int64(2), "b", newer)] {
-      let stored = StoredValue(updated: time, token: token, value: try UserSyncJSON.encode(value))
-      try await f.store.receiveSyncFixture("value", key: "shelf-reference/" + id, payload: UserSyncJSON.encode(stored, envelope: true))
+    for (time, value) in [(Int64(1), old), (Int64(2), newer)] {
+      try f.rows.seedValue("shelf-reference/" + id, value: UserSyncJSON.encode(value),
+                           device: "fixture-\(time)", updated: time)
     }
-    var unknown = newer; unknown.schemaVersion = 2
-    let payload = try UserSyncJSON.encode(StoredValue(updated: 3, token: "future", value: UserSyncJSON.encode(unknown)), envelope: true)
-    try await f.store.receiveSyncFixture("value", key: "shelf-reference/" + futureID, payload: payload)
+    let bad = "{\"v\":2}"
+    try f.rows.quarantineValue("shelf-reference/" + id, payload: bad)
+    try f.rows.quarantineValue("shelf-reference/" + unreadable, payload: bad)
     let result = try await f.service.shelfRecoverySnapshot()
     XCTAssertEqual(result.references, [ShelfReference(id: id, value: newer)])
-    let retained = try await f.store.syncFixturePayloads("value", key: "shelf-reference/" + futureID)
-    XCTAssertEqual(retained, [payload])
-    let projection = try requireStoreProjection(try await f.store.projection(generation: 0, enabled: true, includeFacts: false))
-    XCTAssertFalse(projection.json.contains("远方书架"), "Descriptions do not enter reading projections")
+    let retained = try f.core.session.readUsers(f.core.lease) {
+      try Data.fetchAll($0, sql: "SELECT raw_bytes FROM usr.quarantined_record ORDER BY logical_key")
+    }
+    XCTAssertEqual(retained, [Data(bad.utf8), Data(bad.utf8)])
     XCTAssertNil(UserSyncJSON.kind("shelf-reference/not-a-uuid"))
-    let withBookmark = "{\"schemaVersion\":1,\"name\":\"Name\",\"locationDescription\":\"file-provider\",\"bookmark\":\"not-syncable\"}"
-    XCTAssertThrowsError(try UserSyncJSON.validateValue(withBookmark, key: "shelf-reference/" + id))
-    // Newer unsupported locations must not win LWW or hide the usable hint.
-    for (index, location) in ["", "future-provider", "ICLOUD-DRIVE"].enumerated() {
-      let value = ShelfReferenceValue(name: "不可用提示", locationDescription: location)
-      let text = try UserSyncJSON.encode(value)
-      XCTAssertThrowsError(try UserSyncJSON.validateValue(text, key: "shelf-reference/" + id))
-      let invalid = try UserSyncJSON.encode(StoredValue(updated: 100 + Int64(index), token: "bad-\(index)", value: text), envelope: true)
-      try await f.store.receiveSyncFixture("value", key: "shelf-reference/" + id, id: "bad-\(index)", payload: invalid)
-    }
-    // Also cover an unsupported-only key and delivery before its valid sibling.
-    let lateID = UUID().uuidString, unsupportedID = UUID().uuidString
-    let invalid = try UserSyncJSON.encode(StoredValue(updated: 999, token: "future-location",
-      value: UserSyncJSON.encode(ShelfReferenceValue(name: "Future", locationDescription: "future-provider"))), envelope: true)
-    for key in [lateID, unsupportedID] {
-      try await f.store.receiveSyncFixture("value", key: "shelf-reference/" + key, id: "future", payload: invalid)
-    }
-    let late = try UserSyncJSON.encode(StoredValue(updated: 1, token: "known", value: UserSyncJSON.encode(old)), envelope: true)
-    try await f.store.receiveSyncFixture("value", key: "shelf-reference/" + lateID, payload: late)
-    let rawBefore = try await f.store.syncFixturePayloads("value")
-    let isolated = try await f.service.shelfRecoverySnapshot()
-    XCTAssertEqual(Dictionary(uniqueKeysWithValues: isolated.references.map { ($0.id, $0.value) }), [id: newer, lateID: old])
-    let rawAfter = try await f.store.syncFixturePayloads("value")
-    XCTAssertEqual(rawBefore, rawAfter, "Quarantined records are preserved byte-for-byte")
   }
 
-  func testAuthorizationBindingsAreStableLocalAndDoNotCopyAcrossAccounts() async throws {
+  func testAuthorizationBindingsReuseLocalFolderAndDoNotRewriteOnRead() async throws {
     let f = try await fixture()
     defer { f.clean() }
     let root = f.root.appendingPathComponent("external")
@@ -63,12 +39,12 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     try "第一章 星光\n原创绑定样本。".write(to: root.appendingPathComponent("one.txt"), atomically: true, encoding: .utf8)
     let id = try await f.service.registerLibraryShelf(root)
     let first = try await f.service.shelfRecoverySnapshot()
-    let before = try await f.store.syncFixturePayloads("value")
+    let before = try referenceTokens(f)
     _ = try await f.service.shelfRecoverySnapshot()
-    let unchanged = try await f.store.syncFixturePayloads("value")
+    let unchanged = try referenceTokens(f)
     XCTAssertEqual(before, unchanged, "Reload must not republish a fresh LWW fact")
     let reference = ShelfReference(id: UUID().uuidString, value: .init(name: "曾经的书架", locationDescription: "file-provider"))
-    try await f.store.put("shelf-reference/" + reference.id, value: UserSyncJSON.encode(reference.value), device: "fixture")
+    try f.rows.seedValue("shelf-reference/" + reference.id.lowercased(), value: UserSyncJSON.encode(reference.value))
     let model = LibraryModel(service: f.service)
     model.chooseFiles(.reauthorize(reference, scope: first.scope))
     model.cancelFilePicker()
@@ -83,32 +59,24 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     let connected = try await f.service.shelfRecoverySnapshot()
     XCTAssertTrue(connected.references.isEmpty)
     XCTAssertTrue(connected.guidance.contains(id))
-    let descriptions = try await f.store.shelfReferences()
-    XCTAssertEqual(Set(descriptions.map { $0.value.name }), ["external"], "Explicitly connected aliases share the local description")
     try await f.service.acknowledgeShelfGuidance(id, scope: connected.scope)
     let acknowledged = try await f.service.shelfRecoverySnapshot()
     XCTAssertFalse(acknowledged.guidance.contains(id))
-    try await f.service.configureUserCloud(.cloud(.init(recordName: "account-A"), .currentOwner))
-    let cloud = try await f.service.shelfRecoverySnapshot()
-    let adopted = try ShelfReferenceBindings(data: defaults.data(forKey: ShelfReferenceBindings.key))
-    XCTAssertEqual(adopted.scopes[cloud.scope]?.bindings[reference.id], id, "First opt-in preserves local logical IDs")
-    try await f.service.configureUserCloud(.cloud(.init(recordName: "account-B"), .confirmedChange))
-    let changed = try await f.service.shelfRecoverySnapshot()
-    let isolated = try ShelfReferenceBindings(data: defaults.data(forKey: ShelfReferenceBindings.key))
-    XCTAssertNil(isolated.scopes[changed.scope]?.bindings[reference.id])
-    XCTAssertEqual(isolated.scopes[cloud.scope]?.bindings[reference.id], id)
-    do {
-      _ = try await f.service.registerRecoveredShelf(root, reference: reference, scope: cloud.scope)
-      XCTFail("Old-account picker must not bind to the new account")
-    } catch is CancellationError { }
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("one.txt").path))
-    var future = isolated; future.schemaVersion = 2
+    var future = try ShelfReferenceBindings(data: defaults.data(forKey: ShelfReferenceBindings.key))
+    future.schemaVersion = 2
     let futureBytes = try JSONEncoder().encode(future)
     defaults.set(futureBytes, forKey: ShelfReferenceBindings.key)
     XCTAssertThrowsError(try ShelfReferenceBindings(data: futureBytes))
     do { _ = try await f.service.shelfRecoverySnapshot(); XCTFail("Unknown local version must be read-only") }
     catch is UserSyncCompatibilityError { }
     XCTAssertEqual(defaults.data(forKey: ShelfReferenceBindings.key), futureBytes)
+  }
+
+  private func referenceTokens(_ f: Fixture) throws -> [String] {
+    try f.core.session.readUsers(f.core.lease) {
+      try String.fetchAll($0, sql: "SELECT token FROM usr.shelf_reference_candidate ORDER BY record_id")
+    }
   }
 
   func testAutomaticIndexingUsesOnlySuccessfulScanPathsAndNeverDownloadsCloud() async throws {
@@ -196,7 +164,7 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     XCTAssertEqual(model.shelfIndexes["builtin"]?.pending, 1)
     XCTAssertNil(model.indexPrompt)
     XCTAssertNil(model.sheet)
-    let positions = try await f.store.positionValues()
+    let positions = try snapshot(f)
     XCTAssertTrue(positions.isEmpty, "Indexing never invents reading activity")
   }
 

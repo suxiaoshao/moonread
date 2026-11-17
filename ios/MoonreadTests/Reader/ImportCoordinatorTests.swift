@@ -19,7 +19,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
   @MainActor func testEncodingRestartAdmitsOnlyOneTaskAndKeepsFilePolicyConsistent() async throws {
 
     for outcome in ["success", "failure", "leave after allocation"] {
-      let (root, service, core, _, _, _, _, suite) = try singleBookFixture()
+      let (root, service, core, _, _, _, suite) = try singleBookFixture()
       defer {
         try? FileManager.default.removeItem(at: root)
         UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -70,7 +70,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "windows-1252", outcome)
         let settled = XCTNSPredicateExpectation(
           predicate: NSPredicate { _, _ in
-            (try? self.importJobIDs(root)) == [current]
+            (try? self.importJobIDs(core)) == [current]
           }, object: nil)
         await fulfillment(of: [settled], timeout: 5)
         await session.leave().value
@@ -80,7 +80,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         XCTAssertEqual(session.error != nil, outcome == "failure", outcome)
         let settled = XCTNSPredicateExpectation(
           predicate: NSPredicate { _, _ in
-            (try? self.importJobIDs(root)) == [previous]
+            (try? self.importJobIDs(core)) == [previous]
           }, object: nil)
         await fulfillment(of: [settled], timeout: 5)
         if outcome == "failure" { await session.leave().value }
@@ -93,7 +93,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
 
   // S341: 完成书改解码后保存明确选择，原内容阅读数据仍保留；以 Swift 用户事实持久化为断言，解码算法归 Rust。
   @MainActor func testCompletedBookEncodingChangeRestoresDataAndPersistsChoice() async throws {
-    let (root, service, core, formal, pending, _, _, suite) = try singleBookFixture()
+    let (root, service, core, _, _, _, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -139,8 +139,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "UTF-8")
     XCTAssertEqual(try Data(contentsOf: path), Data(original.utf8))
     let reopenedService = AppDataService(
-      core: core, libraryDirectory: root, sourceDefaultsSuite: suite,
-      userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
+      core: core, libraryDirectory: root, sourceDefaultsSuite: suite)
     let reopened = try await reopenedService.aiPrepare(entry.source)
     let result = try await reopenedService.snapshot(reopened.id)
     XCTAssertEqual(result.book.fixtureSHA256, initial.book.fixtureSHA256)
@@ -151,7 +150,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
   // S374: 系统中断重开自动续接；升级后旧主动暂停键统一退役，不保留运行时分支。
   @MainActor func testSystemInterruptedImportAutomaticallyResumesOnReopen() async throws {
     do {
-      let (root, _, _, source, id, defaults, suite) = try await Self.pausedSourceFixture()
+      let (root, _, original, source, id, defaults, suite) = try await Self.pausedSourceFixture()
       defer {
         defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
@@ -160,7 +159,9 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
       let obsolete = "Moonread.importUserPaused.v1.previous-session.orphan"
       defaults.set(true, forKey: legacy); defaults.set(true, forKey: obsolete)
       defaults.set("kept", forKey: "UnrelatedFixturePreference")
-      let restartedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+      try original.session.close()
+      let restartedCore = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
+      defer { try? restartedCore.session.close() }
       let restarted = AppDataService(
         core: restartedCore, libraryDirectory: root.appendingPathComponent("local"),
         sourceDefaultsSuite: suite)
@@ -200,7 +201,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     try Data("第一章\n正文".utf8).write(to: folder.appendingPathComponent("小说.txt"))
     let service = AppDataService(
-      core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
+      core: try makeReaderIndexFixture(at: directory.appendingPathComponent("db")),
       libraryDirectory: directory.appendingPathComponent("books"))
     try await service.prepareLibrary()
     let entered = expectation(description: "Scanning selected shelf")
@@ -248,7 +249,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     defer { try? FileManager.default.removeItem(at: directory) }
     let books = directory.appendingPathComponent("books")
     let service = AppDataService(
-      core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
+      core: try makeReaderIndexFixture(at: directory.appendingPathComponent("db")),
       libraryDirectory: books)
     try await service.prepareLibrary()
     let model = LibraryModel(service: service)
