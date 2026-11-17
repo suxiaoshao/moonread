@@ -703,6 +703,34 @@ private extension AppDataService {
 }
 
 final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
+  @MainActor func testSearchUsesEffectiveChapterHeadings() async throws {
+    let (root, service, core, suite) = try introductionFixture()
+    defer {
+      try? core.session.close()
+      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let firstHeading = "Chapter 1\n"
+    let firstSection = firstHeading + "marker one\n"
+    let secondSection = "Chapter 2\nmarker two\n"
+    let source = root.appendingPathComponent("search-fixture.txt")
+    try (firstSection + secondSection + "Manual section\nmarker three\n").write(to: source, atomically: true, encoding: .utf8)
+    let book = try importBookFixture(core, filePath: source.path, title: "Search fixture")
+    try await service.correctChapter(book.id, offset: 0, title: "Renamed", level: 1)
+    try await service.correctChapter(book.id, offset: UInt64(firstSection.utf8.count), title: "Chapter 2", level: 1, excluded: true)
+    try await service.correctChapter(book.id, offset: UInt64((firstSection + secondSection).utf8.count), title: "Manual", level: 1)
+
+    let job = try await service.search(book.id, query: "marker", regex: false, caseSensitive: true,
+      range: .init(startUtf8: UInt64(firstHeading.utf8.count), endUtf8: book.byteCount))
+    var hits: [SearchHit] = []
+    while true {
+      let batch = try job.nextBatch()
+      hits.append(contentsOf: batch.hits)
+      if batch.done { break }
+    }
+    XCTAssertEqual(hits.map(\.chapter), ["Renamed", "Renamed", "Manual"])
+  }
+
   @MainActor func testDirectoryCompletesWithPendingImportInFolderCover() async throws {
     let (root, service, core, _, _, _, suite) = try singleBookFixture()
     defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }

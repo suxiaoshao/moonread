@@ -885,7 +885,9 @@ actor AppDataService {
         try await userDeleteMarks(ids, deleted: deleted, expected: expected)
     }
     func search(_ id: String, query: String, regex: Bool, caseSensitive: Bool, range: SearchRange? = nil) async throws -> SearchJob {
-        try indexStore().startSearch(bookId: id, query: query, regularExpression: regex, caseSensitive: caseSensitive, range: range)
+        try await fixedReaderRead {
+            try $0.startSearch(bookId: id, query: query, regularExpression: regex, caseSensitive: caseSensitive, range: range)
+        }
     }
 
     func importSourceKey(_ id: String) -> String {

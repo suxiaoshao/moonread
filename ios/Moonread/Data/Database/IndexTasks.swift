@@ -15,11 +15,10 @@ extension ReaderIndex {
         return body
     }
 
-    /// Callers can supply headings assembled by the future direct reading query;
-    /// automatic headings are sufficient to exercise the 2b task boundary.
+    /// Freeze the searchable body and its effective headings in one read.
     func startSearch(bookId: String, query: String, regularExpression: Bool, caseSensitive: Bool,
-                     range: SearchRange?, headings: [ChapterInfo]? = nil) throws -> SearchJob {
-        let frozen = try read { db in
+                     range: SearchRange?) throws -> SearchJob {
+        let frozen = try session.readUsers(lease) { db in
             let body = try Self.body(db, id: bookId, scope: self.lease.scope.key)
             let area = range ?? SearchRange(startUtf8: 0, endUtf8: body.bytes)
             guard area.startUtf8 <= area.endUtf8, area.endUtf8 <= body.bytes else { throw ReaderError.InvalidRange }
@@ -30,9 +29,9 @@ extension ReaderIndex {
                       idx < chunk.text.utf8.endIndex, chunk.text.utf8[idx] & 0b1100_0000 != 0b1000_0000
                 else { throw ReaderError.InvalidRange }
             }
-            let chapters = try headings ?? Row.fetchAll(db, sql: """
-                SELECT start_utf8,title,level FROM main.import_chapters WHERE book_id=? ORDER BY start_utf8
-                """, arguments: [body.id]).map { ChapterInfo(title: $0["title"], startUtf8: $0["start_utf8"], level: $0["level"]) }
+            // A match at the start of a scoped search may already be inside
+            // a chapter whose heading precedes the search range.
+            let chapters = try ReaderChapterRead.inRange(db, body: body, range: .init(startUtf8: 0, endUtf8: area.endUtf8))
             return (body,area,chapters)
         }
         let partial = frozen.0.sha.hasPrefix("pending:")
