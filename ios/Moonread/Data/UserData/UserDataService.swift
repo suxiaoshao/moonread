@@ -46,8 +46,8 @@ extension AppDataService {
         return index
     }
 
-    func prepareUserIndex(_ index: ReaderIndex) throws {
-        try index.session.prepareUsers(index.lease) {
+    func prepareUserIndex(_ index: ReaderIndex, progress: (@Sendable (LegacyImportProgress) -> Void)? = nil) throws {
+        try index.session.prepareUsers(index.lease, progress: progress) {
             let source = try publishedUserSource()
             guard source.scope == index.lease.scope else { return nil }
             let deviceState: LegacyUserSnapshot.DeviceState
@@ -61,7 +61,8 @@ extension AppDataService {
                 }
                 #endif
                 deviceState = try .init(defaults: sourceDefaults, confirmedLegacyResumeScope: source.resumeNamespace)
-                snapshot = try LegacyUserSnapshot.open(directory: dataDirectoryURL(), scope: source.scope, deviceState: deviceState)
+                snapshot = try LegacyUserSnapshot.open(directory: dataDirectoryURL(), scope: source.scope,
+                                                       deviceState: deviceState, progress: progress)
             } catch { throw UserAuthorityPreparationError.unreadableSource }
             if snapshot.formal == nil, snapshot.pending == nil,
                deviceState.hidden.isEmpty, deviceState.preferred.isEmpty, deviceState.resume.isEmpty { return nil }
@@ -72,9 +73,9 @@ extension AppDataService {
     /// The root cannot mount normal reading, settings or import views before
     /// both authorities have prepared successfully. Retrying reuses the
     /// ordinary transaction and completion marker, never resets either store.
-    func prepareUserAuthorityForStartup() throws {
+    func prepareUserAuthorityForStartup(progress: (@Sendable (LegacyImportProgress) -> Void)? = nil) throws {
         try Task.checkCancellation()
-        do { _ = try relationalUserIndex() }
+        do { try prepareUserIndex(indexStore(), progress: progress) }
         catch let error as UserAuthorityPreparationError { throw error }
         catch DataV2Error.invalidOwnerState { throw UserAuthorityPreparationError.ownership }
         catch { throw UserAuthorityPreparationError.verification }

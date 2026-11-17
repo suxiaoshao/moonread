@@ -40,20 +40,30 @@ final class CloudAccountReaderIntegrationTests: ReaderIntegrationFixture {
 
 final class CloudAccountCloudAccountTests: XCTestCase {
   @MainActor func testSyncStatusPresentsExistingActivityAndRecoveryFacts() {
-    let cloud = CloudStore()
-    XCTAssertEqual(cloud.syncTitle, String(localized: "阅读数据同步已关闭"))
-    cloud.status = CloudSyncStatus(requested: true, activation: .awaitingAccountConfirmation(.init(recordName: "fixture"), revision: UUID(), message: "fixture"))
-    XCTAssertEqual(cloud.syncTitle, String(localized: "需要确认同步账户"))
-    cloud.status.activation = .unavailable("fixture")
-    XCTAssertEqual(cloud.syncTitle, String(localized: "阅读数据同步已暂停"))
-    cloud.status.activation = .enabled(.init(recordName: "fixture"), revision: UUID()); cloud.status.syncing = true; cloud.busy = true
-    XCTAssertEqual(cloud.syncTitle, String(localized: "正在处理并同步"))
-    cloud.busy = false
-    XCTAssertEqual(cloud.syncTitle, String(localized: "正在同步"))
-    cloud.status.syncing = false; cloud.status.transportMessage = "fixture error"
-    XCTAssertEqual(cloud.syncTitle, String(localized: "同步需要处理"))
-    cloud.status.transportMessage = nil
-    XCTAssertEqual(cloud.syncTitle, String(localized: "阅读数据同步已开启"))
+    let account = CloudConfiguration.VerifiedAccount(recordName: "fixture"), revision = UUID()
+    let counts = CloudInitialUploadProgress(processed: 3, total: 5)
+    var status = CloudSyncStatus(requested: true, activation: .enabled(account, revision: revision),
+                                 syncing: true, phase: .firstUpload(counts))
+    XCTAssertEqual(CloudSyncCard(status), .firstUpload(counts))
+    status.activation = .awaitingAccountConfirmation(account, revision: revision)
+    XCTAssertEqual(CloudSyncCard(status), .confirmAccount)
+    status.activation = .signedOut
+    XCTAssertEqual(CloudSyncCard(status), .signedOut)
+    status.activation = .unavailable(.unavailable)
+    XCTAssertEqual(CloudSyncCard(status), .unavailable(.unavailable))
+    status.requested = false
+    XCTAssertEqual(CloudSyncCard(status), .off)
+
+    status = CloudSyncStatus(requested: true, activation: .enabled(account, revision: revision))
+    XCTAssertEqual(CloudSyncCard(status), .waiting)
+    let last = Date(timeIntervalSince1970: 1)
+    status.lastSync = last
+    status.phase = .waitingForDevice
+    XCTAssertEqual(CloudSyncCard(status), .waitingForDevice)
+    status.transportIssue = .offline
+    XCTAssertEqual(CloudSyncCard(status), .error(.offline))
+    status.phase = nil; status.transportIssue = nil
+    XCTAssertEqual(CloudSyncCard(status), .synced(last))
   }
 
     private static func require(_ ok: Bool, _ message: String, file: StaticString = #filePath, line: UInt = #line) throws {
@@ -110,13 +120,13 @@ final class CloudAccountCloudAccountTests: XCTestCase {
                          "B must get its own data authority without waiting for A's old network round")
         await events.add("allow-close-A")
         await events.add("allow-turn-A")
-        guard case .awaitingAccountConfirmation(let b, let old, _) = await owner.currentStatus().activation,
+        guard case .awaitingAccountConfirmation(let b, let old) = await owner.currentStatus().activation,
               b.recordName == "B" else { throw NSError(domain: "B consent not offered", code: 1) }
         try Self.require(!order.contains("open-B"), "B is locally selected without starting a transport")
 
         await backend.move(.confirmed(backend.c))
         await owner.confirmAccount("B", revision: old)
-        guard case .awaitingAccountConfirmation(let c, let latest, _) = await owner.currentStatus().activation,
+        guard case .awaitingAccountConfirmation(let c, let latest) = await owner.currentStatus().activation,
               c.recordName == "C" else { throw NSError(domain: "C consent not offered", code: 1) }
         await owner.confirmAccount("C", revision: old)
         try Self.require(await !events.entries.contains("approve-C"), "stale revision cannot approve C")
@@ -261,8 +271,46 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         XCTAssertEqual(completion, .pending)
         let ready = try await newEngine.pendingInOwnZone()
         XCTAssertEqual(ready.count, before.outbox)
+        let initialProgress = try await newEngine.firstUploadProgress()
+        XCTAssertEqual(initialProgress, .init(processed: 0, total: ready.count))
+        let pending = try XCTUnwrap(ready.first)
+        let prepared = try await newEngine.prepareCausalChange(.position, id: pending.businessID)
+        let attempt = try XCTUnwrap(prepared?.attempt)
+        let acked = try await newEngine.acknowledge([.init(attempt: attempt, systemFields: Data([0]))])
+        XCTAssertEqual(acked, 1)
+        let progressed = try await newEngine.firstUploadProgress()
+        XCTAssertEqual(progressed, .init(processed: 1, total: ready.count))
+        let sealed = try await newEngine.sealFirstUpload(proposed)
+        XCTAssertEqual(sealed, .sealed)
+        let afterSeal = try await newEngine.firstUploadProgress()
+        XCTAssertNil(afterSeal, "Cleared members must not be displayed as an empty upload")
         newEngine.retire()
         try index.session.close()
+    }
+
+    func testJoiningProgressCountsUniqueStagedBusinessRecords() async throws {
+        let fixture = try ZoneRecoveryFixture()
+        defer { fixture.remove() }
+        let (index, _) = try fixture.open(resolved: false)
+        defer { try? index.session.close() }
+        let journal = try CloudCallbackJournal(session: index.session, lease: index.lease)
+        defer { journal.retire() }
+        try await journal.initializeZone(exists: true)
+        let ready = ReadingCloudInitialization.Control(id: UUID(), owner: UUID(), phase: .ready)
+        _ = try await journal.observeInitialization(ready, installation: UUID())
+        try await journal.beginJoiningBaseline(ready)
+        func record(_ name: String) -> CloudInboxRows.Record {
+            .init(type: "Fixture", name: name, id: name, logical: nil, device: nil, mark: nil, payload: nil,
+                  systemFields: Data(), archive: Data(), archiveComplete: true, assets: [])
+        }
+        try await journal.stageJoiningPage(ready, records: [record("a"), record("b")], deletions: [])
+        try await journal.stageJoiningPage(ready, records: [record("b"), record("c")],
+                                           deletions: [.init(type: "Fixture", name: "a")])
+        let received = try await journal.joiningReceivedCount()
+        XCTAssertEqual(received, 2)
+        try await journal.discardJoiningBaseline()
+        let afterDiscard = try await journal.joiningReceivedCount()
+        XCTAssertEqual(afterDiscard, 0)
     }
 
     func testZoneResetSurvivesRefusalRestartAndWrongAccountWithoutResending() async throws {
@@ -353,7 +401,7 @@ private actor ZoneOwnerTrace {
 private struct ZoneRecoveryTestTransport: ReadingCloudTransport {
     let id: Int
     let trace: ZoneOwnerTrace
-    func syncNow() async throws {
+    func syncNow(report: @escaping @Sendable (CloudSyncPhase?) async -> Void) async throws {
         await trace.record("send-\(id)")
         throw CloudZoneRecoverySignal.verificationRequired
     }
@@ -374,13 +422,13 @@ private struct ZoneRecoveryFixture: Sendable {
         account = .init(identity: .init(recordName: "fixture-A"),
             scope: try .confirmed(container: "fixture.invalid", environment: .development, recordName: "fixture-A"))
     }
-    func open() throws -> (ReaderIndex, AppDataService) {
+    func open(resolved: Bool = true) throws -> (ReaderIndex, AppDataService) {
         let session = try DataSession(layout: .init(applicationSupport: root), confirmedLegacyOwner: account.scope)
         let lease = try session.activate(.confirmed(account.scope, syncRequested: true)).0
         try session.prepareIndex(root.appending(path: "unused"), token: lease)
         try session.prepareUsers(lease) { nil }
         // The trigger is loss of an established zone on an already upgraded device.
-        try session.writeUsers(lease) { db in try UpgradeOrigins.finish(db) }
+        if resolved { try session.writeUsers(lease) { db in try UpgradeOrigins.finish(db) } }
         let index = ReaderIndex(session: session, lease: lease)
         let service = AppDataService(core: index, libraryDirectory: root, sourceDefaultsSuite: root.lastPathComponent)
         service.cloudSyncIntent.set(true)
@@ -426,7 +474,7 @@ private actor SyncLifecycleTransport: ReadingCloudTransport {
     let name: String
     let events: SyncLifecycleEvents
     init(_ name: String, _ events: SyncLifecycleEvents) { self.name = name; self.events = events }
-    func syncNow() async throws {
+    func syncNow(report: @escaping @Sendable (CloudSyncPhase?) async -> Void) async throws {
         await events.add("turn-" + name)
         if name == "A" { await events.wait("allow-turn-A") }
         await events.add("turn-ended-" + name)

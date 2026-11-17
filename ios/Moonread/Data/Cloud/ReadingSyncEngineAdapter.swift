@@ -65,6 +65,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private var engine: CKSyncEngine?
     private var active = true
     private var turn: Task<Void, any Error>?
+    private var reportPhase: (@Sendable (CloudSyncPhase?) async -> Void)?
+    private var reportingFirstUpload = false
     private var shutdown: Task<Void, Never>?
     private var initialSignInAllowed: Bool
     private var fatal: (any Error)?
@@ -221,13 +223,15 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         await shutdown.value
     }
 
-    func syncNow() async throws {
+    func syncNow(report: @escaping @Sendable (CloudSyncPhase?) async -> Void = { _ in }) async throws {
         guard let engine else { throw Failure.inactive }
         try checkActive(engine)
         guard turn == nil else { throw Failure.busy }
+        reportPhase = report
         let work = Task { try await self.runTurn(engine) }
         turn = work
         defer {
+            reportPhase = nil
             turn = nil
             // A failed baseline must never continue using the advanced SDK
             // cursor from a staging inbox that was just discarded.
@@ -279,9 +283,15 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
 
     private func uploadFirstInitialization(_ control: ReadingCloudInitialization.Control, engine: CKSyncEngine) async throws {
         try checkActive(engine)
+        reportingFirstUpload = true
+        defer { reportingFirstUpload = false }
+        await reportPhase?(.firstUpload(nil))
+        try checkActive(engine)
         try await journal.beginFirstUpload(control)
         var completion = try await journal.sealFirstUpload(control)
         if completion == .pending {
+            await reportUploadProgress()
+            try checkActive(engine)
             try await runBusinessTurn(engine)
             try checkActive(engine)
             completion = try await journal.sealFirstUpload(control)
@@ -291,10 +301,19 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         case .uncovered: throw ReadingCloudInitialization.Failure.incompleteFirstUpload
         case .sealed: break
         }
+        reportingFirstUpload = false
+        await reportPhase?(.finishing)
+        try checkActive(engine)
         let ready = if control.phase == .ready { control }
             else { try await publishFirstReady(control, engine: engine) }
         try checkActive(engine)
         try await journal.finishFirstUpload(ready)
+    }
+
+    private func reportUploadProgress() async {
+        guard reportingFirstUpload, let reportPhase else { return }
+        let progress = try? await journal.firstUploadProgress()
+        await reportPhase(.firstUpload(progress))
     }
 
     private func ready(_ engine: CKSyncEngine) async throws {
@@ -363,6 +382,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             joiningZoneFinished = false; ownZoneMissingDuringFetch = false
         }
         do {
+            await reportPhase?(.firstDownload(received: 0))
+            try checkActive(engine)
             repeat {
                 let previous = joiningCheckpoint
                 joiningZoneFinished = false; ownZoneMissingDuringFetch = false
@@ -382,6 +403,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             try await journal.finishJoiningBaseline(ready, checkpoint: joiningCheckpoint)
             try checkActive(engine)
             interruptedBaseline = false
+            await reportPhase?(nil)
             receivedChanges()
         } catch {
             if active, self.engine === engine, fatal == nil { try await journal.discardJoiningBaseline() }
@@ -660,6 +682,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                 }
             case .sentRecordZoneChanges(let event):
                 try await applySent(event, engine: syncEngine)
+                await reportUploadProgress()
             default: break
             }
         } catch {
@@ -677,9 +700,14 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         try checkActive(engine)
         if let joiningControl {
             try await journal.stageJoiningPage(joiningControl, records: records, deletions: deletions)
+            if let reportPhase {
+                let count = try? await journal.joiningReceivedCount()
+                await reportPhase(.firstDownload(received: count))
+            }
         } else {
             try await journal.applyOwnInbox(records: records, deletions: deletions)
             try checkActive(engine)
+            await reportUploadProgress()
             receivedChanges()
         }
     }

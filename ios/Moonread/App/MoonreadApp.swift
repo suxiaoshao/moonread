@@ -16,6 +16,7 @@ struct MoonreadApp: App {
         case preparing, failed(String), ready
     }
     @State private var startup = Startup.preparing
+    @State private var importProgress: LegacyImportProgress?
     @State private var startupAttempt = 0
     @State private var startupFiles: [LibraryImportFile] = []
     @State private var startupSystemRequest: SystemReadingRequest?
@@ -46,10 +47,13 @@ struct MoonreadApp: App {
             ZStack { configuredAppContent }
                 .sheet(isPresented: Binding(get: { upgradeNotice == .visible }, set: { _ in }),
                        onDismiss: { upgradeNotice = nil }) {
-                    ReadingDataUpgradeNotice {
-                        UserDefaults.standard.set(true, forKey: Self.upgradeNoticeKey)
-                        upgradeNotice = .dismissing
+                    StartupThemeHost(themes: themes) {
+                        ReadingDataUpgradeNotice {
+                            UserDefaults.standard.set(true, forKey: Self.upgradeNoticeKey)
+                            upgradeNotice = .dismissing
+                        }
                     }
+                    .presentationDetents([.medium, .large])
                     .interactiveDismissDisabled()
                 }
         }
@@ -66,18 +70,22 @@ struct MoonreadApp: App {
         Group {
             switch startup {
             case .preparing:
-                ProgressView("正在准备阅读数据…")
+                StartupThemeHost(themes: themes) {
+                    if let importProgress { LegacyImportPage(progress: importProgress) }
+                }
             case .failed(let reason):
-                ContentUnavailableView {
-                    Label("暂时无法准备阅读数据", systemImage: "externaldrive.badge.exclamationmark")
-                } description: {
-                    VStack(spacing: 8) {
-                        Text(verbatim: reason)
-                        Text("原有数据已保留。")
+                StartupThemeHost(themes: themes) {
+                    ContentUnavailableView {
+                        Label("暂时无法准备阅读数据", systemImage: "externaldrive.badge.exclamationmark")
+                    } description: {
+                        VStack(spacing: 8) {
+                            Text(verbatim: reason)
+                            Text("原有数据已保留。")
+                        }
+                    } actions: {
+                        Button("重试") { importProgress = nil; startup = .preparing; startupAttempt += 1 }
+                            .accessibilityIdentifier("retryUserMigration")
                     }
-                } actions: {
-                    Button("重试") { startup = .preparing; startupAttempt += 1 }
-                        .accessibilityIdentifier("retryUserMigration")
                 }
             case .ready:
                 appContent
@@ -85,8 +93,17 @@ struct MoonreadApp: App {
         }
         .task(id: startupAttempt) {
             guard case .preparing = startup else { return }
+            let (updates, source) = AsyncStream<LegacyImportProgress>.makeStream(bufferingPolicy: .bufferingNewest(1))
+            let service = library.service
+            let preparation = Task {
+                defer { source.finish() }
+                try await service.prepareUserAuthorityForStartup { _ = source.yield($0) }
+            }
+            defer { preparation.cancel() }
             do {
-                try await library.service.prepareUserAuthorityForStartup()
+                for await progress in updates { importProgress = progress }
+                try Task.checkCancellation()
+                try await preparation.value
                 await library.service.installUserScopePresentation(prepare: { [weak library] in
                     try await library?.prepareUserScopeChange()
                 }, finish: { [weak library, weak themes] rebound in
@@ -310,6 +327,58 @@ struct MoonreadApp: App {
 
 }
 
+private struct StartupThemeHost<Content: View>: View {
+    let themes: ThemeStore
+    @ViewBuilder let content: () -> Content
+    @Environment(\.colorScheme) private var systemScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        let plans = try! resolveThemes(value: themes.snapshot, system: systemScheme == .dark ? .dark : .light,
+                                       highContrast: contrast == .increased)
+        let theme = ThemeSurface(plan: plans.app)
+        NativeThemeHost(theme: theme) {
+            ZStack {
+                Color(uiColor: theme.canvas).ignoresSafeArea()
+                content()
+            }.themeScope(theme)
+        }
+    }
+}
+
+private struct LegacyImportPage: View {
+    let progress: LegacyImportProgress
+    @Environment(\.theme) private var theme
+    @ScaledMetric(relativeTo: .title2) private var iconSize = 60.0
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                VStack(spacing: 20) {
+                    Image(systemName: "tray.and.arrow.down")
+                        .font(.system(size: iconSize)).symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
+                    Text("正在导入阅读数据").font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                }
+                switch progress {
+                case .preparing:
+                    ProgressView("正在准备导入").controlSize(.small)
+                case .rows(let processed, let total):
+                    VStack(spacing: 12) {
+                        ProgressView(value: Double(processed), total: Double(total))
+                            .progressViewStyle(.linear).accessibilityHidden(true)
+                        Text("已处理 \(processed.formatted()) / \(total.formatted()) 条")
+                            .font(.footnote.monospacedDigit()).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                case .finishing:
+                    ProgressView("正在整理阅读数据").controlSize(.small)
+                }
+            }
+            .multilineTextAlignment(.center).frame(maxWidth: 360).padding(24).frame(maxWidth: .infinity)
+        }.defaultScrollAnchor(.center, for: .alignment)
+    }
+}
+
 private struct ReadingDataUpgradeNotice: View {
     let onContinue: () -> Void
 
@@ -320,17 +389,15 @@ private struct ReadingDataUpgradeNotice: View {
                     .font(.title.bold())
                     .accessibilityAddTraits(.isHeader)
                 Text("月读改进了阅读数据的保存和同步方式。请把其他设备上的月读也更新到这个版本，旧版本上新记的进度、批注和统计不会同步过来。")
+                Button(action: onContinue) {
+                    Text("onboarding.continue").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.top, 8)
             }
-            .padding()
+            .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .safeAreaInset(edge: .bottom) {
-            Button(action: onContinue) {
-                Text("onboarding.continue").frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .padding()
         }
     }
 }
