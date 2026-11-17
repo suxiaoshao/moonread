@@ -347,7 +347,7 @@ enum UpgradeOrigins {
         }
     }
 
-    private struct Version {
+    struct Version {
         let digest: String
         let book: String?
         let mark: String?
@@ -357,7 +357,7 @@ enum UpgradeOrigins {
         }
     }
 
-    private static func version(_ db: Database, _ key: Key, in store: Store = .users) throws -> Version {
+    static func version(_ db: Database, _ key: Key, in store: Store = .users) throws -> Version {
         let domain = key.domain
         guard let row = try Row.fetchOne(db, sql: """
             SELECT * FROM \(store.rawValue).\(domain.rawValue) WHERE partition=? AND \(domain.idColumn)=?
@@ -379,6 +379,14 @@ enum UpgradeOrigins {
         let book: String? = row.hasColumn("book_key") ? row["book_key"] : nil
         let mark: String? = row.hasColumn("mark_id") ? row["mark_id"] : nil
         return .init(digest: digest.finalize(), book: book, mark: mark)
+    }
+
+    static func seedVersion(_ db: Database, _ seed: Seed) throws -> Version? {
+        try Row.fetchOne(db, sql: """
+            SELECT digest,book_key,mark_id FROM usr.upgrade_seed
+            WHERE batch_id=? AND partition=? AND domain=? AND record_id=?
+            """, arguments: [seed.batch] + seed.key.arguments)
+            .map { .init(digest: $0["digest"], book: $0["book_key"], mark: $0["mark_id"]) }
     }
 
     private struct Digest {

@@ -86,7 +86,6 @@ enum CausalCloudRows {
             guard try !CloudTransportRows.deletionAwaitingSuccessor(db, key) else { return nil }
             payload = nil
         }
-        try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
         let systemFields = try payload == nil ? nil : CloudTransportRows.systemFields(db, key)
         return .init(attempt: attempt, material: payload, systemFields: systemFields)
     }

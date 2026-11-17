@@ -80,8 +80,8 @@ enum PendingUserPromotion {
             try requireFactsAndMarksReadable(db, book: book, partition: part)
         }
         try UpgradeOrigins.notePromotion(db, from: pending, to: formal)
-        try ReadingPositionRows.promote(db, from: pending, to: formal)
-        let movedMarks = try promoteMarks(db, from: pending, to: formal)
+        try ReadingPositionRows.promote(db, from: pending, to: formal, scope: scope)
+        let movedMarks = try promoteMarks(db, from: pending, to: formal, scope: scope)
         var history = ReadingHistoryRows.Changed()
         history.facts = try ReadingFactSettlement.affectedIDs(db, partition: 1, book: pending)
         history.segments = try ReadingSegmentRows.affected(db, partition: 1, book: pending)
@@ -134,7 +134,7 @@ enum PendingUserPromotion {
         "note", "merged_into",
     ]
 
-    private static func promoteMarks(_ db: Database, from pending: String, to formal: String) throws -> Set<String> {
+    private static func promoteMarks(_ db: Database, from pending: String, to formal: String, scope: DataScope) throws -> Set<String> {
         var after: String?
         let sourceKey = DataIdentity.canonical(pending)
         let formalKey = DataIdentity.canonical(formal)
@@ -156,14 +156,14 @@ enum PendingUserPromotion {
                 if original.hasPrefix(prefix), let suffix = original.split(separator: "/").last {
                     mark = "bookmark/" + formal + "/" + suffix
                 } else { mark = original }
-                try mergeMark(db, id: id, formalKey: formalKey, mark: mark)
+                try mergeMark(db, id: id, formalKey: formalKey, mark: mark, scope: scope)
                 marks.insert(mark)
                 after = id
             }
         }
     }
 
-    private static func mergeMark(_ db: Database, id: String, formalKey: String, mark: String) throws {
+    private static func mergeMark(_ db: Database, id: String, formalKey: String, mark: String, scope: DataScope) throws {
         let markKey = DataIdentity.canonical(mark)
         if try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM usr.quarantined_record
@@ -189,6 +189,9 @@ enum PendingUserPromotion {
         let source = UpgradeOrigins.Key(partition: 1, domain: .annotation, id: id)
         try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, source),
                                  to: .init(partition: 0, domain: .annotation, id: id), equivalent: conflicting != nil)
+        if conflicting == nil, scope != .local {
+            try CausalCloudRows.enqueueReplacement(db, .annotation, id: id, predecessors: [])
+        }
     }
 
     private static func mergeMarkRelation(_ db: Database, table: String, field: String, id: String, exists: Bool) throws {
@@ -376,6 +379,24 @@ extension ReaderIndex {
         "statistics_clear", "quarantined_record", "local_hidden_book", "local_preferred_file", "local_resume",
     ]
 
+    static func queueFormalBookDeletion(_ db: Database, book: String, scope: DataScope) throws {
+        let facts = try String.fetchAll(db, sql: "SELECT fact_id FROM usr.reading_fact WHERE partition=0 AND book_key=?",
+                                        arguments: [book])
+        for id in facts { try ReadingHistoryTransport.delete(db, type: .fact, id: id, scope: scope) }
+        let segments = try String.fetchAll(db, sql: """
+            SELECT segment_id FROM usr.reading_segment WHERE partition=0 AND book_key=? AND sealed=1
+            """, arguments: [book])
+        let clears = try String.fetchAll(db, sql: """
+            SELECT record_id FROM usr.statistics_clear WHERE partition=0 AND book_key=?
+            """, arguments: [book])
+        for id in segments { try ReadingHistoryTransport.delete(db, type: .segment, id: id, scope: scope) }
+        for id in clears { try ReadingHistoryTransport.delete(db, type: .clear, id: id, scope: scope) }
+        try ReadingHistoryTransport.deleteIsolatedBookRecords(db, book: book, scope: scope)
+        try FixedValueCloudRows.queueBookDeletion(db, book: book)
+        try CausalCloudRows.queueBookDeletion(db, book: book)
+        try CloudIsolationRows.queueBookDelete(db, book: book)
+    }
+
     func bookKeysForUserDeletion() throws -> Set<String> {
         try session.readUsers(lease) { db in
             let selects = Self.bookOwnedUserTables.map { "SELECT book_key FROM usr.\($0) WHERE book_key IS NOT NULL" }
@@ -447,22 +468,7 @@ extension ReaderIndex {
                 history.segments.formUnion(try ReadingSegmentRows.affected(db, book: key))
                 history.segments.formUnion(try ReadingSegmentRows.affectedIsolation(db, book: key))
                 if case .formal = try parseReadingKey(value: key), lease.scope != .local {
-                    let facts = try String.fetchCursor(db, sql: """
-                        SELECT fact_id FROM usr.reading_fact WHERE partition=0 AND book_key=?
-                        """, arguments: [key])
-                    while let id = try facts.next() { try ReadingHistoryTransport.delete(db, type: .fact, id: id, scope: lease.scope) }
-                    let segments = try String.fetchAll(db, sql: """
-                        SELECT segment_id FROM usr.reading_segment WHERE partition=0 AND book_key=? AND sealed=1
-                        """, arguments: [key])
-                    let clears = try String.fetchAll(db, sql: """
-                        SELECT record_id FROM usr.statistics_clear WHERE partition=0 AND book_key=?
-                        """, arguments: [key])
-                    for id in segments { try ReadingHistoryTransport.delete(db, type: .segment, id: id, scope: lease.scope) }
-                    for id in clears { try ReadingHistoryTransport.delete(db, type: .clear, id: id, scope: lease.scope) }
-                    try ReadingHistoryTransport.deleteIsolatedBookRecords(db, book: key, scope: lease.scope)
-                    try FixedValueCloudRows.queueBookDeletion(db, book: key)
-                    try CausalCloudRows.queueBookDeletion(db, book: key)
-                    try CloudIsolationRows.queueBookDelete(db, book: key)
+                    try Self.queueFormalBookDeletion(db, book: key, scope: lease.scope)
                 }
                 let assets = canReclaimCover ? try String.fetchAll(db, sql: """
                     SELECT DISTINCT asset_id FROM usr.cover_candidate WHERE book_key=? AND asset_id IS NOT NULL

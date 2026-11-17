@@ -64,6 +64,7 @@ enum CloudIsolationRows {
     }
 
     private static func packet(_ db: Database, row: Row) throws -> Packet? {
+        guard (row["source"] as String) != CloudBootstrapFold.heldSource else { return nil }
         let id: Int64 = row["quarantine_id"]
         let limit = ReadingSyncEngineAdapter.attachmentLimit
         let sizes = try Row.fetchOne(db, sql: """

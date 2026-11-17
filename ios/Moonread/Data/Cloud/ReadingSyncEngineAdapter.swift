@@ -274,7 +274,17 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                 case .waitingExisting: throw ReadingCloudInitialization.Failure.awaitingExistingUpload
                 case .joiningExisting:
                     try await fetchJoiningBaseline(decision.control, engine: engine)
-                    throw ReadingCloudInitialization.Failure.awaitingExistingBaseline
+                    try checkActive(engine)
+                    guard try await journal.finishJoiningBaseline(decision.control) else {
+                        throw ReadingCloudInitialization.Failure.awaitingExistingBaseline
+                    }
+                    // The covered state belongs to this engine's own-zone
+                    // fetch and was installed alongside the live records.
+                    // Catch up from that cut before the first ordinary send.
+                    try checkActive(engine)
+                    try await runBusinessTurn(engine)
+                    try checkActive(engine)
+                    return
                 case .claiming: throw ReadingCloudInitialization.Failure.inconsistentDecision
                 }
             }

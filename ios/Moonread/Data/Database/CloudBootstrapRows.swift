@@ -89,6 +89,18 @@ enum CloudBootstrapRows {
                        arguments: [bytes,covered])
     }
 
+    static func finish(_ db: Database, for ready: ReadingCloudInitialization.Control, scope: DataScope) throws -> Bool {
+        guard let progress = try progress(db, for: ready), progress.covered, let checkpoint = progress.checkpoint else { return false }
+        try Task.checkCancellation()
+        try CloudBootstrapFold.apply(db, scope: scope)
+        try UpgradeOrigins.finish(db)
+        try ReadingCloudInitialization.finishZoneRecovery(db)
+        try CloudTransportRows.storeCheckpoint(db, zone: ReadingHistoryTransport.zone, bytes: checkpoint)
+        try clear(db)
+        try Task.checkCancellation()
+        return true
+    }
+
     private static func requireBusinessKey(type: String, name: String) throws {
         guard !type.isEmpty, !name.isEmpty, type != ReadingCloudInitialization.recordType,
               name != ReadingCloudInitialization.recordName else {

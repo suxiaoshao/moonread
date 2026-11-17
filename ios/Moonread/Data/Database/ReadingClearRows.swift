@@ -280,8 +280,15 @@ enum ReadingHistoryTransport {
     /// checks the account lease and serializes this with its own metadata.
     /// A bad payload quarantines one ID; it must not cancel the fetched batch.
     static func applyFetched(_ db: Database, records: [Fetched], scope: DataScope) throws {
-        guard scope != .local else { throw DataV2Error.leaseExpired }
         var changed = ReadingHistoryRows.Changed()
+        try stageFetched(db, records: records, scope: scope, changed: &changed)
+        try changed.settle(db, scope: scope)
+        try withdrawBlockedFacts(db, ids: changed.facts)
+    }
+
+    static func stageFetched(_ db: Database, records: [Fetched], scope: DataScope,
+                             changed: inout ReadingHistoryRows.Changed) throws {
+        guard scope != .local else { throw DataV2Error.leaseExpired }
         let deletions = Set(records.filter { $0.body == nil }.map {
             CloudTransportRows.Key(zone: zone, type: $0.type.rawValue, name: $0.recordName)
         })
@@ -354,8 +361,10 @@ enum ReadingHistoryTransport {
                     """, arguments: [id])
             }
         }
-        try changed.settle(db, scope: scope)
-        for id in changed.facts where try ReadingFactSettlement.hasBlockingIsolation(db, id: id) {
+    }
+
+    static func withdrawBlockedFacts(_ db: Database, ids: Set<String>) throws {
+        for id in ids where try ReadingFactSettlement.hasBlockingIsolation(db, id: id) {
             try withdrawSave(db, type: .fact, id: id)
         }
     }

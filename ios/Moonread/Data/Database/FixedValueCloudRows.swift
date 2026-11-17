@@ -375,7 +375,6 @@ enum FixedValueCloudRows {
         case .save(let digest):
             if family == .cover, try !blocksSave(db, key: key), let missing = try missingCoverOffer(db, id: id),
                missing.digest == digest {
-                try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
                 return .init(attempt: attempt, logical: missing.logical, device: missing.device, payload: missing.payload,
                              systemFields: try CloudTransportRows.systemFields(db, key), attachment: nil)
             }
@@ -389,7 +388,6 @@ enum FixedValueCloudRows {
             prepared = .init(attempt: attempt, logical: value.logical, device: value.device, payload: value.payload,
                              systemFields: try CloudTransportRows.systemFields(db, key), attachment: attachment)
         }
-        try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
         return prepared
     }
 

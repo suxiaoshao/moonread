@@ -153,13 +153,6 @@ enum CloudTransportRows {
         return next
     }
 
-    /// A trial build may have queued rows without the shared counter. Before
-    /// handing one out, persist a floor that survives withdrawal of every row.
-    static func reserveGenerationFloor(_ db: Database, covering generation: Int64) throws {
-        if let stored = try storedGeneration(db), stored >= generation { return }
-        try storeGeneration(db, max(generation, largestPendingGeneration(db)))
-    }
-
     static func storedGeneration(_ db: Database) throws -> Int64? {
         guard let text = try String.fetchOne(db, sql: "SELECT value FROM usr.local_data_state WHERE state_key=?",
                                              arguments: [generationKey]) else { return nil }
@@ -366,53 +359,6 @@ enum CloudTransportRows {
         return next
     }
 
-    private struct LostTransportEvidence: Encodable {
-        let zone, recordType, recordName, businessID: String
-        let intent, digest, afterType, afterName, afterDigest, serverState: String?
-        let generation: Int64?
-
-        init(_ row: Row) {
-            zone = row["zone"]; recordType = row["record_type"]; recordName = row["record_name"]; businessID = row["business_id"]
-            intent = row["intent"]; digest = row["content_digest"]; generation = row["generation"]
-            afterType = row["after_type"]; afterName = row["after_name"]; afterDigest = row["after_digest"]
-            serverState = row["server_state"]
-        }
-    }
-
-    static func isolateUnsupportedTransportAfterLoss(_ db: Database, zone: String) throws {
-        let known = supportedTypes
-        let predicate = "zone=? AND record_type NOT IN (" + known.map { _ in "?" }.joined(separator: ",") + ")"
-        let rows = try Row.fetchCursor(db, sql: """
-            SELECT zone,record_type,record_name,business_id,intent,content_digest,generation,after_type,after_name,after_digest,
-                   NULL AS server_state
-              FROM usr.cloud_outbox WHERE \(predicate)
-            UNION ALL
-            SELECT zone,record_type,record_name,business_id,NULL,NULL,NULL,NULL,NULL,NULL,server_state
-              FROM usr.cloud_record_state WHERE \(predicate)
-            """, arguments: StatementArguments(([zone] + known) + ([zone] + known)))
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        while let row = try rows.next() {
-            let evidence = LostTransportEvidence(row)
-            let raw = try encoder.encode(evidence)
-            // Transport-only evidence is not a business payload. Keep its
-            // type in the archive without creating a known-domain barrier.
-            // Business rows and existing opaque payloads/assets remain in
-            // place; invalidated CK system fields cannot be a new send base.
-            try db.execute(sql: """
-                INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,raw_format,raw_bytes,
-                    digest,reason,completeness)
-                VALUES(0,'cloud-zone-loss',?,'cloud-transport',?,'zone-loss-transport-v1',?,?,'unsupported-zone-rebuild','incomplete')
-                ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
-                """, arguments: [evidence.recordName, evidence.businessID, raw, DataIdentity.sha(raw)])
-        }
-    }
-
-    static let localZoneLossDiagnosticSQL = """
-        source='cloud-zone-loss' AND source_type='cloud-transport'
-          AND raw_format='zone-loss-transport-v1' AND reason='unsupported-zone-rebuild'
-        """
-
     static func zoneStage(_ db: Database, zone: String) throws -> ZoneStage {
         guard let value = try String.fetchOne(db, sql: "SELECT region_state FROM usr.cloud_engine_state WHERE zone=?",
                                              arguments: [zone]) else { return .unverified }
@@ -468,19 +414,31 @@ enum CloudInboxRows {
     }
 
     static func apply(_ db: Database, records: [Record], deletions: [Deletion], scope: DataScope) throws {
+        var changed = ReadingHistoryRows.Changed()
+        try stage(db, records: records, deletions: deletions, scope: scope, changed: &changed)
+        try changed.settle(db, scope: scope)
+    }
+
+    static func stage(_ db: Database, records: [Record], deletions: [Deletion], scope: DataScope,
+                      changed: inout ReadingHistoryRows.Changed, completeBaseline: Bool = false) throws {
         let removed = Set(deletions)
         var history = [ReadingHistoryTransport.Fetched]()
-        var changed = ReadingHistoryRows.Changed()
         for record in records where !removed.contains(.init(type: record.type, name: record.name)) {
             if record.type == CloudIsolationRows.type {
                 do {
                     try CloudIsolationRows.receive(db, record, changed: &changed)
                 } catch is UserSyncCompatibilityError {
                     try isolate(db, record, trusted: nil, reason: "cloud-incompatible-isolation-evidence")
+                } catch CloudIsolationRows.Failure.attachmentNotCaptured where completeBaseline {
+                    // A wire packet without a captured asset has no verified
+                    // scope. Keep its envelope/evidence without inventing facts.
+                    try isolate(db, record, trusted: nil, reason: "unavailable-attachment")
                 }
             } else if let type = ReadingHistoryTransport.RecordType(rawValue: record.type) {
                 if record.payload == nil { try isolate(db, record, trusted: nil, reason: "cloud-missing-history-payload") }
-                history.append(.init(type: type, recordName: record.name, id: record.id, trustedBook: record.logical,
+                let routedBook = completeBaseline && record.id.map({ ReadingHistoryTransport.name(type, id: $0) }) != record.name
+                    ? nil : record.logical
+                history.append(.init(type: type, recordName: record.name, id: record.id, trustedBook: routedBook,
                                      body: record.payload ?? "{\"v\":0}", systemFields: record.systemFields))
             } else if let family = CausalCloudRows.Family(rawValue: record.type) {
                 try applyCausalOrIsolate(db, family, record)
@@ -503,8 +461,11 @@ enum CloudInboxRows {
                 try deleteOpaque(db, deletion)
             }
         }
-        try ReadingHistoryTransport.applyFetched(db, records: history, scope: scope)
-        try changed.settle(db, scope: scope)
+        if completeBaseline {
+            try ReadingHistoryTransport.stageFetched(db, records: history, scope: scope, changed: &changed)
+        } else {
+            try ReadingHistoryTransport.applyFetched(db, records: history, scope: scope)
+        }
     }
 
     private struct CausalRoute {
@@ -784,7 +745,6 @@ enum CloudAccountZoneRecovery {
     private static func resetForReplacement(_ db: Database, stage: CloudTransportRows.ZoneStage,
                                             keep control: ReadingCloudInitialization.Control?) throws {
         let zone = ReadingHistoryTransport.zone
-        try CloudTransportRows.isolateUnsupportedTransportAfterLoss(db, zone: zone)
         try CloudTransportRows.changeZoneAfterLoss(db, zone: zone, to: stage)
         // No business intent is replayed here. The same conditional control
         // as first launch elects the one writer allowed to rebuild from raw.
@@ -955,6 +915,11 @@ actor CloudCallbackJournal {
         try commit { try CloudBootstrapRows.checkpoint($0, for: ready, bytes: bytes, through: revision, covered: covered) }
     }
 
+    func finishJoiningBaseline(_ ready: ReadingCloudInitialization.Control) throws -> Bool {
+        let scope = lease.scope
+        return try commit { try CloudBootstrapRows.finish($0, for: ready, scope: scope) }
+    }
+
     func verificationRequests(after: CloudTransportRows.Key? = nil, limit: Int) throws -> [CloudSaveVerification.Ticket] {
         guard !failed else { throw Failure.restartRequired }
         return try session.readCloudChanges(binding) { db in
@@ -1044,14 +1009,12 @@ actor CloudCallbackJournal {
             else { return nil }
             switch attempt.intent {
             case .delete:
-                try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
                 return .init(attempt: attempt, material: nil, systemFields: nil)
             case .save(let digest):
                 guard try !CloudTransportRows.awaitingVerification(db, key),
                       let material = try CloudIsolationRows.current(db, name: name),
                       DataIdentity.sha(Data(material.payload.utf8)) == digest
                 else { return nil }
-                try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
                 try CloudTransportRows.noteInitialOffer(db, attempt)
                 return .init(attempt: attempt, material: material, systemFields: try CloudTransportRows.systemFields(db, key))
             }
@@ -1096,7 +1059,6 @@ actor CloudCallbackJournal {
             case .delete:
                 prepared = .init(attempt: attempt, payload: nil, logical: nil, systemFields: nil)
             }
-            try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
             try CloudTransportRows.noteInitialOffer(db, attempt)
             return prepared
         }

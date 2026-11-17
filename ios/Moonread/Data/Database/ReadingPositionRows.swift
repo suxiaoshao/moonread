@@ -341,7 +341,7 @@ enum ReadingPositionRows {
         try requireReadable(db, domain: .opened, book: book, partition: 0)
     }
 
-    static func promote(_ db: Database, from pending: String, to formal: String) throws {
+    static func promote(_ db: Database, from pending: String, to formal: String, scope: DataScope) throws {
         try requirePromotionReadable(db, book: pending, partition: 1)
         try requirePromotionReadable(db, book: formal, partition: 0)
         func positions(_ book: String, _ part: Int) throws -> [Position] {
@@ -365,6 +365,10 @@ enum ReadingPositionRows {
             if present.map({ older($0,candidate) }) ?? true {
                 try replacePosition(db, with: candidate, book: formal, partition: 0)
                 try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, sourceKey), to: targetKey)
+                if scope != .local {
+                    try CausalCloudRows.enqueueReplacement(db, .position, id: targetKey.id,
+                        predecessors: target.map { recordID(book: formal, token: $0.token) })
+                }
             } else if present?.token == candidate.token {
                 try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, sourceKey), to: targetKey, equivalent: true)
             }
@@ -399,10 +403,12 @@ enum ReadingPositionRows {
                 try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, sourceKey),
                     to: .init(partition: 0, domain: .opened, id: same.id), equivalent: true)
             } else if previous.map({ ($0.updated,$0.token) < (winner.updated,winner.token) }) ?? true {
+                let prior = try previous.flatMap { try FixedValueCloudRows.currentDigest(db, .opened, id: $0.id) }
                 let id = try putOpened(db, book: formal, partition: 0, device: slot,
                                        openedAt: winner.time, updated: winner.updated, token: winner.token)
                 try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, sourceKey),
                     to: .init(partition: 0, domain: .opened, id: id))
+                if scope != .local { try FixedValueCloudRows.enqueueLocalEdit(db, .opened, id: id, previousDigest: prior) }
             }
         }
     }

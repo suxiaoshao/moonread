@@ -57,7 +57,6 @@ enum ReadingCloudInitialization {
         enum Role: String, Codable, Sendable { case claiming, selectedFirst, waitingExisting, joiningExisting }
         let role: Role
         let control: Control
-        var confirmedReplacement: Bool? = nil
     }
 
     enum Failure: Error {
@@ -109,7 +108,7 @@ enum ReadingCloudInitialization {
 
     static func isCurrentReplacement(_ db: Database, _ control: Control) throws -> Bool {
         guard let active = try stored(db), active.role != .claiming,
-              try active.confirmedReplacement == true || isRecovering(db) else { return false }
+              try isRecovering(db) else { return false }
         return active.control.matches(control) && (active.control.phase != .ready || control.phase == .ready)
     }
 
@@ -130,15 +129,7 @@ enum ReadingCloudInitialization {
         }
     }
 
-    /// On successful upload or source fold, retain the identity of the
-    /// established replacement independently of the in-progress gate.
-    static func finishZoneRecovery(_ db: Database, confirmedReady: Control? = nil) throws {
-        if let confirmedReady, try isRecovering(db) {
-            guard var active = try stored(db), active.role != .claiming, active.control == confirmedReady,
-                  confirmedReady.phase == .ready else { throw Failure.inconsistentDecision }
-            active.confirmedReplacement = true
-            _ = try save(db, active)
-        }
+    static func finishZoneRecovery(_ db: Database) throws {
         try db.execute(sql: "DELETE FROM usr.local_data_state WHERE state_key=?", arguments: [recoveryKey])
     }
 
@@ -262,7 +253,7 @@ extension ReadingCloudInitialization {
                    CASE WHEN q.reason='unavailable-attachment' AND q.completeness='incomplete'
                         THEN 'missingAttachment' ELSE 'unrepresented' END,q.quarantine_id
             FROM usr.quarantined_record q WHERE q.partition=0
-              AND NOT (\(CloudTransportRows.localZoneLossDiagnosticSQL))
+              AND q.source<>'\(CloudBootstrapFold.heldSource)'
               AND NOT (COALESCE((\(FixedValueCloudRows.retainedMissingCoverSQL)),0))
               AND NOT (
                 q.source='swiftdata' AND q.source_type='UserCover' AND q.reason='unavailable-attachment'
@@ -435,7 +426,7 @@ extension ReadingCloudInitialization {
         else { throw Failure.inconsistentDecision }
         _ = try save(db, .init(role: .selectedFirst, control: ready))
         try UpgradeOrigins.finish(db)
-        try finishZoneRecovery(db, confirmedReady: ready)
+        try finishZoneRecovery(db)
         try db.execute(sql: "DELETE FROM usr.local_data_state WHERE state_key=?", arguments: [uploadKey])
     }
 }
