@@ -328,12 +328,7 @@ pub struct FactBatchSelection {
 #[derive(uniffi::Object)]
 pub struct PreparedReadingFacts {
     id: u64,
-    pub(super) selected: Vec<SelectedFact>,
-}
-
-pub(super) struct SelectedFact {
-    pub(super) content_key: String,
-    pub(super) fact: Arc<DecodedFact>,
+    selected: Vec<Arc<DecodedFact>>,
 }
 
 #[uniffi::export]
@@ -362,10 +357,7 @@ pub fn seal_prepared_facts(chunks: Vec<FactBatchSelection>) -> Result<Arc<Prepar
                 .ok_or(ReaderError::InvalidRange)?
                 .as_ref()
                 .map_err(|_| ReaderError::InvalidSettings)?;
-            selected.push(SelectedFact {
-                content_key: pick.content_key.clone(),
-                fact: fact.clone(),
-            });
+            selected.push(fact.clone());
         }
     }
     // Preserve the Swift caller's chosen store-local output order.
@@ -378,9 +370,7 @@ pub fn seal_prepared_facts(chunks: Vec<FactBatchSelection>) -> Result<Arc<Prepar
 #[uniffi::export]
 impl PreparedReadingFacts {
     pub fn first_title(&self) -> Option<String> {
-        self.selected
-            .first()
-            .map(|item| item.fact.data.title.clone())
+        self.selected.first().map(|fact| fact.data.title.clone())
     }
 
     pub fn prepared_id(&self) -> u64 {
@@ -395,33 +385,6 @@ pub struct FactQuerySelection {
     pub prepared: Arc<PreparedReadingFacts>,
     pub prepared_id: u64,
     pub indices: Option<Vec<u64>>,
-}
-
-impl FactQuerySelection {
-    pub(super) fn try_each<'a>(&'a self, mut visit: impl FnMut(&'a SelectedFact)) -> Result<()> {
-        if self.prepared.id != self.prepared_id {
-            return Err(ReaderError::InvalidRange);
-        }
-        if let Some(indices) = &self.indices {
-            let mut previous = None;
-            for &index in indices {
-                if previous.is_some_and(|previous| previous >= index) {
-                    return Err(ReaderError::InvalidRange);
-                }
-                previous = Some(index);
-                let item = usize::try_from(index)
-                    .ok()
-                    .and_then(|i| self.prepared.selected.get(i))
-                    .ok_or(ReaderError::InvalidRange)?;
-                visit(item);
-            }
-        } else {
-            for item in &self.prepared.selected {
-                visit(item);
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -580,27 +543,7 @@ pub(super) mod tests {
             Err(ReaderError::InvalidRange)
         ));
         let prepared = seal(vec![pick(&batch, 7, "row-key")])?;
-        let mut selected = Vec::new();
-        let mut query = FactQuerySelection {
-            prepared_id: prepared.id,
-            prepared,
-            indices: Some(vec![0]),
-        };
-        query.try_each(|row| selected.push(row.content_key.clone()))?;
-        assert_eq!(selected, ["row-key"]);
-        for indices in [vec![0, 0], vec![1]] {
-            query.indices = Some(indices);
-            assert!(matches!(
-                query.try_each(|_| ()),
-                Err(ReaderError::InvalidRange)
-            ));
-        }
-        query.indices = None;
-        query.prepared_id += 1;
-        assert!(matches!(
-            query.try_each(|_| ()),
-            Err(ReaderError::InvalidRange)
-        ));
+        assert_eq!(prepared.first_title().as_deref(), Some("Synthetic"));
         Ok(())
     }
 }

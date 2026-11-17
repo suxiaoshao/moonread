@@ -118,14 +118,3 @@ pub struct BookFilterOptions {
     pub authors: Vec<String>,
     pub tags: Vec<String>,
 }
-
-fn empty(sha: &str) -> BookMetadata {
-    BookMetadata {
-        sha: sha.into(),
-        author: String::new(),
-        synopsis: String::new(),
-        tags: vec![],
-        cover: None,
-        status: BookReadingStatus::Unread,
-    }
-}
