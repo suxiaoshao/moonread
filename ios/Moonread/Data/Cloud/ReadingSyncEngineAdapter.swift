@@ -34,93 +34,6 @@ enum ReadingCloudLookup {
     }
 }
 
-/// Proof carried by one explicit, scoped fetch. An opaque state event alone
-/// is never a fetch watermark. Each new inbox page invalidates an older state.
-struct OwnZoneFetchProof {
-    let floor: Int64
-    private(set) var began = false
-    private var ended = false
-    private var failed = false
-    private var endedTurn = false
-    private var deliveredPage = false
-    private var stateAfterPage: Data?
-
-    init(floor: Int64) { self.floor = floor }
-
-    mutating func beganZone() {
-        if began { failed = true }
-        began = true
-    }
-    mutating func committedPage() {
-        if !began || ended { failed = true }
-        deliveredPage = true
-        stateAfterPage = nil
-    }
-    mutating func updatedState(_ state: Data) {
-        if began { stateAfterPage = state }
-    }
-    mutating func endedZone(success: Bool) {
-        if !began || ended || !success { failed = true }
-        ended = true
-    }
-    mutating func finishedFetch() { endedTurn = true }
-
-    func coverage(previousCheckpoint: Data?, moreOwnChanges: Bool) -> Data? {
-        guard !moreOwnChanges else { return nil }
-        return resumePoint(previousCheckpoint: previousCheckpoint)
-    }
-
-    func resumePoint(previousCheckpoint: Data?) -> Data? {
-        guard began, ended, endedTurn, !failed else { return nil }
-        // A complete empty zone response with no new state has retained the
-        // prior durable cursor. A committed page always needs newer state.
-        return stateAfterPage ?? (deliveredPage ? nil : previousCheckpoint)
-    }
-}
-
-/// Network orchestration shared by the SDK delegate and the local fixture.
-/// Awaits below run outside CKSyncEngineDelegate.handleEvent.
-@MainActor
-enum ReadingSyncTurn {
-    static func run(fetch: () async throws -> Bool, verify: () async throws -> Bool,
-                    send: () async throws -> Void, needsCatchUp: () async throws -> Bool) async throws {
-        _ = try await fetch()
-        _ = try await verify()
-        try await send()
-        while true {
-            let covered: Bool
-            if try await needsCatchUp() { covered = try await fetch() }
-            else { covered = false }
-            let verified = try await verify()
-            // A nil/failed coverage doesn't release anything or spin.
-            guard covered || verified else { return }
-            // Rebuild SDK pending from the durable outbox every time, after
-            // the checkpoint transaction, including un-offered replacements.
-            try await send()
-        }
-    }
-}
-
-/// One scan makes forward progress by key, even when every earlier item
-/// fails. The boundary is per page; there is no persisted retry cursor.
-@MainActor
-enum CloudVerificationScan {
-    static func run(page: (CloudTransportRows.Key?, Int) async throws -> [CloudSaveVerification.Ticket],
-                    inspect: (CloudSaveVerification.Ticket) async throws -> Bool) async throws -> Bool {
-        let pageSize = 16
-        var after: CloudTransportRows.Key?
-        var progressed = false
-        while true {
-            let tickets = try await page(after, pageSize)
-            for ticket in tickets {
-                if try await inspect(ticket) { progressed = true }
-            }
-            guard tickets.count == pageSize else { return progressed }
-            after = tickets.last?.attempt.key
-        }
-    }
-}
-
 /// The first integration uses a separately attributed test account library
 /// and the dedicated Development test container. No caller in the App's
 /// production lifecycle constructs this adapter yet.
@@ -152,9 +65,10 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private var shutdown: Task<Void, Never>?
     private var initialSignInAllowed: Bool
     private var fatal: (any Error)?
-    private var proof: OwnZoneFetchProof?
     private var joiningControl: ReadingCloudInitialization.Control?
-    private var stagedJoiningRevision: Int64?
+    private var joiningCheckpoint: Data?
+    private var joiningZoneFinished = false
+    private var interruptedBaseline = false
     private var ownZoneMissingDuringFetch = false
     private var offered: [CKRecord.ID: Offered] = [:]
 
@@ -179,16 +93,20 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let adapter = ReadingSyncEngineAdapter(journal: journal, database: database, account: account, staging: root,
                                                    zone: ownZone, installation: installation, initialSignInAllowed: bytes == nil)
-            var configuration = CKSyncEngine.Configuration(database: database, stateSerialization: state, delegate: adapter)
-            configuration.automaticallySync = false
-            configuration.subscriptionID = "Moonread-SyncProbe-v2"
-            adapter.engine = CKSyncEngine(configuration)
+            adapter.engine = adapter.makeEngine(state)
             return adapter
         } catch {
             journal.retire()
             try? FileManager.default.removeItem(at: root)
             throw error
         }
+    }
+
+    private func makeEngine(_ state: CKSyncEngine.State.Serialization?) -> CKSyncEngine {
+        var configuration = CKSyncEngine.Configuration(database: database, stateSerialization: state, delegate: self)
+        configuration.automaticallySync = false
+        configuration.subscriptionID = "Moonread-SyncProbe-v2"
+        return CKSyncEngine(configuration)
     }
 
     static func probeTestZone(session: DataSession, lease: DataSessionLease) async throws -> CloudAccountZoneRecovery.Presence {
@@ -253,7 +171,15 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         guard turn == nil else { throw Failure.busy }
         let work = Task { try await self.runTurn(engine) }
         turn = work
-        defer { turn = nil }
+        defer {
+            turn = nil
+            // A failed baseline must never continue using the advanced SDK
+            // cursor from a staging inbox that was just discarded.
+            if interruptedBaseline, active, self.engine === engine, fatal == nil {
+                initialSignInAllowed = true
+                self.engine = makeEngine(nil)
+            }
+        }
         try await withTaskCancellationHandler {
             try await work.value
         } onCancel: {
@@ -262,7 +188,6 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     }
 
     private func runTurn(_ engine: CKSyncEngine) async throws {
-        defer { proof = nil }
         do {
             try await ready(engine)
             if try await journal.needsInitializationDecision() {
@@ -274,13 +199,6 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                 case .waitingExisting: throw ReadingCloudInitialization.Failure.awaitingExistingUpload
                 case .joiningExisting:
                     try await fetchJoiningBaseline(decision.control, engine: engine)
-                    try checkActive(engine)
-                    guard try await journal.finishJoiningBaseline(decision.control) else {
-                        throw ReadingCloudInitialization.Failure.awaitingExistingBaseline
-                    }
-                    // The covered state belongs to this engine's own-zone
-                    // fetch and was installed alongside the live records.
-                    // Catch up from that cut before the first ordinary send.
                     try checkActive(engine)
                     try await runBusinessTurn(engine)
                     try checkActive(engine)
@@ -298,10 +216,9 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     }
 
     private func runBusinessTurn(_ engine: CKSyncEngine) async throws {
-        try await ReadingSyncTurn.run(fetch: { try await self.fetchOwnZone(engine) },
-                                      verify: { try await self.verifyRecords(engine) },
-                                      send: { try await self.sendDurable(engine) },
-                                      needsCatchUp: { try await self.journal.requiresOwnZoneCatchUp() })
+        try await fetchOwnZone(engine)
+        try await verifyRecords(engine)
+        try await sendDurable(engine)
     }
 
     private func uploadFirstInitialization(_ control: ReadingCloudInitialization.Control, engine: CKSyncEngine) async throws {
@@ -371,50 +288,47 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         }
     }
 
-    private func fetchOwnZone(_ engine: CKSyncEngine) async throws -> Bool {
+    private func fetchOwnZone(_ engine: CKSyncEngine) async throws {
         try checkActive(engine)
-        let previous = try await journal.checkpoint()
-        let floor = try await journal.ownZoneFetchFloor()
-        try checkActive(engine)
-        proof = OwnZoneFetchProof(floor: floor)
         ownZoneMissingDuringFetch = false
-        defer { proof = nil; ownZoneMissingDuringFetch = false }
+        defer { ownZoneMissingDuringFetch = false }
         try await engine.fetchChanges(.init(scope: .zoneIDs([zone])))
         try checkActive(engine)
         if ownZoneMissingDuringFetch { throw CloudZoneRecoverySignal.verificationRequired }
-        guard let proof, let state = proof.coverage(previousCheckpoint: previous,
-            moreOwnChanges: engine.state.zoneIDsWithUnfetchedServerChanges.contains(zone)) else { return false }
-        try await journal.persistCheckpoint(state, confirmedOwnZoneThrough: proof.floor)
-        return true
     }
 
     private func fetchJoiningBaseline(_ ready: ReadingCloudInitialization.Control, engine: CKSyncEngine) async throws {
         try checkActive(engine)
-        let original = try await journal.beginJoiningBaseline(ready)
-        if original.covered { return }
-        try checkActive(engine)
+        try await journal.beginJoiningBaseline(ready)
+        interruptedBaseline = true
         joiningControl = ready
-        stagedJoiningRevision = original.revision
-        proof = OwnZoneFetchProof(floor: 0)
-        ownZoneMissingDuringFetch = false
-        defer { proof = nil; ownZoneMissingDuringFetch = false; joiningControl = nil; stagedJoiningRevision = nil }
-        try await engine.fetchChanges(.init(scope: .zoneIDs([zone])))
-        try checkActive(engine)
-        if ownZoneMissingDuringFetch { throw CloudZoneRecoverySignal.verificationRequired }
-        guard let proof, let state = proof.resumePoint(previousCheckpoint: original.checkpoint),
-              let revision = stagedJoiningRevision else { return }
-        let covered = !engine.state.zoneIDsWithUnfetchedServerChanges.contains(zone)
-        if covered {
-            // A ready point lookup before the fetch only selects the route.
-            // Check the exact control again after the covered own-zone fetch.
+        defer {
+            joiningControl = nil; joiningCheckpoint = nil
+            joiningZoneFinished = false; ownZoneMissingDuringFetch = false
+        }
+        do {
+            repeat {
+                let previous = joiningCheckpoint
+                joiningZoneFinished = false; ownZoneMissingDuringFetch = false
+                try await engine.fetchChanges(.init(scope: .zoneIDs([zone])))
+                try checkActive(engine)
+                if ownZoneMissingDuringFetch { throw CloudZoneRecoverySignal.verificationRequired }
+                guard joiningZoneFinished, joiningCheckpoint != nil,
+                      !engine.state.zoneIDsWithUnfetchedServerChanges.contains(zone) || joiningCheckpoint != previous else {
+                    throw ReadingCloudInitialization.Failure.awaitingExistingBaseline
+                }
+            } while engine.state.zoneIDsWithUnfetchedServerChanges.contains(zone)
             let id = CKRecord.ID(recordName: ReadingCloudInitialization.recordName, zoneID: zone)
             let record = try await fetchRecord(id)
             try checkActive(engine)
-            guard try ReadingCloudInitialization.Control.decode(record, in: zone) == ready else {
-                throw ReadingCloudInitialization.Failure.inconsistentDecision
-            }
+            guard try ReadingCloudInitialization.Control.decode(record, in: zone) == ready,
+                  let joiningCheckpoint else { throw ReadingCloudInitialization.Failure.inconsistentDecision }
+            try await journal.finishJoiningBaseline(ready, checkpoint: joiningCheckpoint)
+            interruptedBaseline = false
+        } catch {
+            if active, self.engine === engine, fatal == nil { try await journal.discardJoiningBaseline() }
+            throw error
         }
-        try await journal.checkpointJoining(ready, bytes: state, through: revision, covered: covered)
     }
 
     private func sendDurable(_ engine: CKSyncEngine) async throws {
@@ -444,32 +358,23 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         }
     }
 
-    private func verifyRecords(_ engine: CKSyncEngine) async throws -> Bool {
-        try await CloudVerificationScan.run(page: { after, limit in
-            try await self.journal.verificationRequests(after: after, limit: limit)
-        }) { ticket in
+    private func verifyRecords(_ engine: CKSyncEngine) async throws {
+        for ticket in try await journal.verificationRequests(limit: 16) {
             try checkActive(engine)
             let id = CKRecord.ID(recordName: ticket.attempt.key.name, zoneID: zone)
             let record: CKRecord
-            do { record = try await self.fetchRecord(id) }
+            do { record = try await fetchRecord(id) }
             catch let error as CKError {
                 try checkActive(engine)
-                switch error.code {
-                case .unknownItem:
-                    return try await journal.resolve(ticket, record: nil)
-                case .zoneNotFound:
-                    throw CloudZoneRecoverySignal.verificationRequired
-                default:
-                    // A transport error is not a proof of absence. Keep this
-                    // ID's durable hold, and allow other IDs in the same turn.
-                    return false
-                }
+                if error.code == .zoneNotFound { throw CloudZoneRecoverySignal.verificationRequired }
+                if error.code == .unknownItem { _ = try await journal.resolve(ticket, record: nil) }
+                continue
             }
             try checkActive(engine)
-            guard record.recordID == id, record.recordType == ticket.attempt.key.type else { return false }
+            guard record.recordID == id, record.recordType == ticket.attempt.key.type else { continue }
             let captured = try await Self.captureOffMain([record])
             try checkActive(engine)
-            return try await journal.resolve(ticket, record: captured[0])
+            _ = try await journal.resolve(ticket, record: captured[0])
         }
     }
 
@@ -646,19 +551,16 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                     fatal = Failure.accountChanged
                     journal.retire()
                 }
-            case .willFetchRecordZoneChanges(let event) where event.zoneID == zone:
-                proof?.beganZone()
             case .didFetchRecordZoneChanges(let event) where event.zoneID == zone:
-                proof?.endedZone(success: event.error == nil)
-                if (event.error as? CKError)?.code == .zoneNotFound { ownZoneMissingDuringFetch = true }
+                if joiningControl != nil { joiningZoneFinished = event.error == nil }
+                if event.error?.code == .zoneNotFound { ownZoneMissingDuringFetch = true }
             case .didFetchChanges:
                 initialSignInAllowed = false
-                proof?.finishedFetch()
             case .didSendChanges:
                 initialSignInAllowed = false
             case .stateUpdate(let update):
                 let bytes = try JSONEncoder().encode(update.stateSerialization)
-                if proof != nil { proof?.updatedState(bytes) }
+                if joiningControl != nil { joiningCheckpoint = bytes }
                 else { try await journal.persistCheckpoint(bytes) }
             case .fetchedRecordZoneChanges(let event):
                 let ownRecords = event.modifications.map(\.record).filter { $0.recordID.zoneID == zone }
@@ -677,8 +579,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                 let ownDeletes = ownDeletions
                     .map { CloudInboxRows.Deletion(type: $0.recordType, name: $0.recordID.recordName) }
                 if !businessRecords.isEmpty || !ownDeletes.isEmpty {
+                    if joiningControl != nil { joiningCheckpoint = nil }
                     try await capturePage(businessRecords, deletions: ownDeletes, engine: syncEngine)
-                    proof?.committedPage()
                 }
             case .sentDatabaseChanges(let event):
                 if event.savedZones.contains(where: { $0.zoneID == zone }) { _ = try await journal.confirmZoneCreation() }
@@ -708,34 +610,15 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     }
 
     private func capturePage(_ records: [CKRecord], deletions: [CloudInboxRows.Deletion], engine: CKSyncEngine) async throws {
-        // Preserve SDK order; each quarantine packet can consume a full
-        // attachment allowance. Only ordinary runs share the prior page cap.
-        let removed = Set(deletions)
-        var ordinary = [CKRecord]()
-        for record in records where !removed.contains(.init(type: record.recordType, name: record.recordID.recordName)) {
-            if record.recordType != CloudIsolationRows.type { ordinary.append(record); continue }
-            if !ordinary.isEmpty {
-                let captured = try await Self.captureOffMain(ordinary)
-                try checkActive(engine)
-                try await applyCapturedPage(captured, deletions: [], engine: engine)
-                ordinary.removeAll(keepingCapacity: true)
-            }
-            let captured = try await Self.captureOffMain([record])
-            try checkActive(engine)
-            try await applyCapturedPage(captured, deletions: [], engine: engine)
-        }
-        if !ordinary.isEmpty || !deletions.isEmpty {
-            let captured = try await Self.captureOffMain(ordinary)
-            try checkActive(engine)
-            try await applyCapturedPage(captured, deletions: deletions, engine: engine)
-        }
+        let captured = try await Self.captureOffMain(records)
+        try await applyCapturedPage(captured, deletions: deletions, engine: engine)
     }
 
     private func applyCapturedPage(_ records: [CloudInboxRows.Record], deletions: [CloudInboxRows.Deletion],
                                    engine: CKSyncEngine) async throws {
         try checkActive(engine)
         if let joiningControl {
-            stagedJoiningRevision = try await journal.stageJoiningPage(joiningControl, records: records, deletions: deletions)
+            try await journal.stageJoiningPage(joiningControl, records: records, deletions: deletions)
         } else {
             try await journal.applyOwnInbox(records: records, deletions: deletions)
         }
@@ -782,10 +665,6 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                   let value = try await journal.prepareCausalChange(family, id: item.businessID) {
             attempt = value.attempt; payload = value.material?.payload; fields = value.systemFields
             logical = value.material?.book; device = value.material?.device; mark = value.material?.mark; attachment = nil
-        } else if item.key.type == CloudIsolationRows.type,
-                  let value = try await journal.prepareIsolationChange(name: item.businessID) {
-            attempt = value.attempt; payload = value.material?.payload; fields = value.systemFields
-            logical = value.material?.book; device = nil; mark = nil; attachment = value.material?.attachment
         } else { return nil }
         guard attempt.key == item.key, item.isSave == (payload != nil) else { return nil }
         if let previous = offered[id] {

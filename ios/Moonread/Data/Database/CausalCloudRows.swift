@@ -68,7 +68,6 @@ enum CausalCloudRows {
         else { throw DataV2Error.migrationNotVerified }
         for prior in predecessors where prior != id {
             let predecessor = self.key(family, id: prior)
-            try CloudTransportRows.rememberCompactedBook(db, predecessor, businessID: prior, book: value.book)
             try CloudTransportRows.compactAfterSave(db, predecessor: predecessor, id: prior, successor: saved)
         }
     }
@@ -183,7 +182,6 @@ enum CausalCloudRows {
         for family in Family.allCases {
             let ids = try String.fetchAll(db, sql: """
                 SELECT record_id FROM usr.\(family.table) WHERE partition=0 AND book_key=?1
-                UNION SELECT business_id FROM usr.cloud_record_state WHERE book_key=?1 AND zone=?2 AND record_type=?3
                 UNION SELECT s.business_id FROM usr.cloud_record_state s JOIN usr.quarantined_record q
                   ON q.source_id=s.record_name AND q.record_id=s.business_id AND q.source_type=s.record_type
                 WHERE q.partition=0 AND q.source='cloud' AND q.book_key=?1 AND s.zone=?2 AND s.record_type=?3

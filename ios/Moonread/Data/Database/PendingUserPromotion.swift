@@ -394,7 +394,6 @@ extension ReaderIndex {
         try ReadingHistoryTransport.deleteIsolatedBookRecords(db, book: book, scope: scope)
         try FixedValueCloudRows.queueBookDeletion(db, book: book)
         try CausalCloudRows.queueBookDeletion(db, book: book)
-        try CloudIsolationRows.queueBookDelete(db, book: book)
     }
 
     func bookKeysForUserDeletion() throws -> Set<String> {

@@ -220,50 +220,56 @@ extension ReadingCloudInitialization {
         let zone = ReadingHistoryTransport.zone
         try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE zone=?", arguments: [zone])
         try db.execute(sql: "DELETE FROM usr.cloud_record_state WHERE zone=?", arguments: [zone])
-        // Freeze IDs, including those whose wire cannot yet be prepared.
-        // A later refresh can only revisit these members, never take a new cut.
-        for family in FixedValueCloudRows.Family.allCases {
-            try capture(db, table: family.table, id: "record_id", where: family.predicate) {
-                FixedValueCloudRows.key(family, id: $0)
+        try save(db, Upload(initialization: control.id, sealed: false))
+    }
+
+    /// Inspect the current formal records at the seal, rather than keeping a
+    /// second inventory of why each former member was unrepresentable.
+    private static func inspectCurrent(_ db: Database) throws -> Bool {
+        var attachmentUnavailable = false
+        func inspect(_ key: CloudTransportRows.Key, _ id: String) throws {
+            if try Bool.fetchOne(db, sql: """
+                SELECT confirmed FROM usr.cloud_initial_member WHERE (record_type,record_name)=(?,?)
+                """, arguments: [key.type,key.name]) == true { return }
+            if try CloudTransportRows.deletionPending(db, key) { return }
+            switch try coverage(db, key, id: id) {
+            case .save(let digest):
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO usr.cloud_initial_member(record_type,record_name,business_id) VALUES(?,?,?)
+                    """, arguments: [key.type,key.name,id])
+                try CloudTransportRows.enqueueSave(db, key, businessID: id, digest: digest)
+            case .blocked(.missingAttachment):
+                try CloudTransportRows.withdrawSave(db, key)
+                attachmentUnavailable = true
+            case .blocked(.unrepresented):
+                // Unreadable evidence is preserved by its local owner, not
+                // offered to the cloud as a separate record.
+                try CloudTransportRows.withdrawSave(db, key)
             }
         }
-        let retainedMissing = try String.fetchCursor(db, sql: """
-            SELECT DISTINCT record_id FROM usr.quarantined_record
-            WHERE partition=0 AND \(FixedValueCloudRows.retainedMissingCoverSQL)
-            """)
-        while let id = try retainedMissing.next() {
-            try captureMember(db, key: FixedValueCloudRows.key(.cover, id: id), id: id)
+        func visit(_ table: String, _ id: String, where filter: String = "",
+                   key: (String) -> CloudTransportRows.Key) throws {
+            let source = try String.fetchCursor(db, sql: "SELECT \(id) FROM usr.\(table) WHERE partition=0\(filter)")
+            while let businessID = try source.next() {
+                try inspect(key(businessID), businessID)
+            }
+        }
+
+        for family in FixedValueCloudRows.Family.allCases {
+            try visit(family.table, "record_id", where: family.predicate) { FixedValueCloudRows.key(family, id: $0) }
+        }
+        try visit("quarantined_record", "record_id", where: " AND " + FixedValueCloudRows.retainedMissingCoverSQL) {
+            FixedValueCloudRows.key(.cover, id: $0)
         }
         for family in CausalCloudRows.Family.allCases {
-            try capture(db, table: family.table, id: "record_id") { CausalCloudRows.key(family, id: $0) }
+            try visit(family.table, "record_id") { CausalCloudRows.key(family, id: $0) }
         }
-        try capture(db, table: "reading_fact", id: "fact_id") { ReadingHistoryTransport.key(.fact, id: $0) }
-        try capture(db, table: "reading_segment", id: "segment_id", where: " AND sealed=1") {
-            ReadingHistoryTransport.key(.segment, id: $0)
-        }
-        try capture(db, table: "statistics_clear", id: "record_id", where: " AND (book_key IS NULL OR substr(book_key,1,8)<>'pending:')") {
+        try visit("reading_fact", "fact_id") { ReadingHistoryTransport.key(.fact, id: $0) }
+        try visit("reading_segment", "segment_id", where: " AND sealed=1") { ReadingHistoryTransport.key(.segment, id: $0) }
+        try visit("statistics_clear", "record_id", where: " AND (book_key IS NULL OR substr(book_key,1,8)<>'pending:')") {
             ReadingHistoryTransport.key(.clear, id: $0)
         }
-        // A legacy nil cover marker for a known candidate is only its
-        // attachment dependency; the candidate itself already owns the gate.
-        // An opaque/unbound marker still needs its own disposition.
-        try db.execute(sql: """
-            INSERT INTO usr.cloud_initial_member(record_type,record_name,business_id,blocked_reason,quarantine_id)
-            SELECT '',CAST(q.quarantine_id AS TEXT),q.record_id,
-                   CASE WHEN q.reason='unavailable-attachment' AND q.completeness='incomplete'
-                        THEN 'missingAttachment' ELSE 'unrepresented' END,q.quarantine_id
-            FROM usr.quarantined_record q WHERE q.partition=0
-              AND q.source<>'\(CloudBootstrapFold.heldSource)'
-              AND NOT (COALESCE((\(FixedValueCloudRows.retainedMissingCoverSQL)),0))
-              AND NOT (
-                q.source='swiftdata' AND q.source_type='UserCover' AND q.reason='unavailable-attachment'
-                AND q.raw_format='legacy-cover-id' AND q.completeness='incomplete'
-                AND EXISTS(SELECT 1 FROM usr.cover_candidate c JOIN usr.cover_asset a ON a.asset_id=c.asset_id
-                    WHERE c.partition=0 AND c.schema_version=1 AND NOT c.is_empty
-                      AND CAST(a.legacy_cover_id AS BLOB)=q.raw_bytes)
-            )
-            """)
-        try save(db, Upload(initialization: control.id, sealed: false))
+        return attachmentUnavailable
     }
 
     enum Blocked: String {
@@ -272,22 +278,6 @@ extension ReadingCloudInitialization {
 
     enum Coverage {
         case save(String), blocked(Blocked)
-    }
-
-    private static func capture(_ db: Database, table: String, id: String, where filter: String = "",
-                                key: (String) -> CloudTransportRows.Key) throws {
-        let source = try String.fetchCursor(db, sql: "SELECT \(id) FROM usr.\(table) WHERE partition=0\(filter)")
-        while let businessID = try source.next() {
-            try captureMember(db, key: key(businessID), id: businessID)
-        }
-    }
-
-    private static func captureMember(_ db: Database, key: CloudTransportRows.Key, id: String) throws {
-        try db.execute(sql: """
-            INSERT INTO usr.cloud_initial_member(record_type,record_name,business_id,blocked_reason)
-            VALUES(?,?,?,'unrepresented') ON CONFLICT(record_type,record_name) DO NOTHING
-            """, arguments: [key.type,key.name,id])
-        if db.changesCount > 0 { try refresh(db, key, id: id) }
     }
 
     private static func coverage(_ db: Database, _ key: CloudTransportRows.Key, id: String) throws -> Coverage {
@@ -310,67 +300,19 @@ extension ReadingCloudInitialization {
         return .blocked(.unrepresented)
     }
 
-    private static func refresh(_ db: Database, _ key: CloudTransportRows.Key, id: String) throws {
-        if try CloudTransportRows.deletionPending(db, key) { return }
-        switch try coverage(db, key, id: id) {
-        case .save(let digest):
-            try CloudTransportRows.enqueueSave(db, key, businessID: id, digest: digest)
-            try db.execute(sql: """
-                UPDATE usr.cloud_initial_member SET blocked_reason=NULL WHERE (record_type,record_name)=(?,?)
-                """, arguments: [key.type,key.name])
-        case .blocked(let reason): try CloudTransportRows.withdrawSave(db, key, initialBlock: reason)
-        }
-    }
-
     static func attachedCover(_ db: Database, asset: String) throws {
         let rows = try Row.fetchAll(db, sql: """
             SELECT c.record_id FROM usr.cover_candidate c WHERE c.partition=0 AND c.asset_id=?1
-              AND (EXISTS(SELECT 1 FROM usr.cloud_initial_member m WHERE m.record_type=?2 AND m.business_id=c.record_id)
-                OR EXISTS(SELECT 1 FROM usr.cloud_record_state s WHERE s.zone=?3 AND s.record_type=?2
-                    AND s.business_id=c.record_id AND s.server_state='present'))
+              AND EXISTS(SELECT 1 FROM usr.cloud_record_state s WHERE s.zone=?3 AND s.record_type=?2
+                    AND s.business_id=c.record_id AND s.server_state='present')
             """, arguments: [asset,FixedValueCloudRows.Family.cover.rawValue,ReadingHistoryTransport.zone])
         for row in rows {
             let id: String = row["record_id"]
-            try refresh(db, FixedValueCloudRows.key(.cover, id: id), id: id)
+            let key = FixedValueCloudRows.key(.cover, id: id)
+            guard try !CloudTransportRows.deletionPending(db, key),
+                  case .save(let digest) = try coverage(db, key, id: id) else { continue }
+            try CloudTransportRows.enqueueSave(db, key, businessID: id, digest: digest)
         }
-    }
-
-    private static func refreshBlocked(_ db: Database) throws {
-        // Compatibility evidence can be removed by another domain's
-        // settlement. Only revisit blocked original keys, without re-freezing.
-        let rows = try Row.fetchAll(db, sql: """
-            SELECT record_type,record_name,business_id FROM usr.cloud_initial_member
-            WHERE quarantine_id IS NULL AND confirmed=0 AND blocked_reason IS NOT NULL
-            """)
-        for row in rows {
-            let type: String = row["record_type"], id: String = row["business_id"]
-            try refresh(db, .init(zone: ReadingHistoryTransport.zone, type: type, name: row["record_name"]), id: id)
-            if type == ReadingHistoryTransport.RecordType.fact.rawValue {
-                let key = ReadingHistoryTransport.key(.fact, id: id)
-                if try CloudTransportRows.pending(db, key) == nil {
-                    try CloudIsolationRows.gatherBlockedFact(db, id: id)
-                }
-            }
-        }
-        let isolated = try Int64.fetchAll(db, sql: """
-            SELECT quarantine_id FROM usr.cloud_initial_member WHERE record_type IN ('',?)
-              AND quarantine_id IS NOT NULL AND blocked_reason IS NOT NULL
-            """, arguments: [CloudIsolationRows.type])
-        for id in isolated { try CloudIsolationRows.stageInitial(db, quarantineID: id, refreshing: true) }
-    }
-
-    private static func hasUncovered(_ db: Database) throws -> Bool {
-        // Do not waive a reason bit. A genuine missing reference gets a
-        // concrete SAVE (fixed cover or original isolation), and must ACK
-        // through the same membership check as the complete alternatives.
-        let rows = try Row.fetchCursor(db, sql: """
-            SELECT record_type,business_id FROM usr.cloud_initial_member WHERE confirmed=0 AND blocked_reason IS NOT NULL
-            """)
-        while let row = try rows.next() {
-            guard (row["record_type"] as String) == ReadingHistoryTransport.RecordType.fact.rawValue,
-                  try CloudIsolationRows.coveredBlockedFact(db, id: row["business_id"]) else { return true }
-        }
-        return false
     }
 
     enum Traffic: Equatable {
@@ -409,11 +351,13 @@ extension ReadingCloudInitialization {
         try requireFirst(db, control: control)
         guard var boundary = try upload(db), boundary.initialization == control.id else { throw Failure.inconsistentDecision }
         if boundary.sealed { return .sealed }
-        try refreshBlocked(db)
+        let attachmentUnavailable = try inspectCurrent(db)
         if try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(SELECT 1 FROM usr.cloud_initial_member WHERE confirmed=0 AND blocked_reason IS NULL)
-            """) == true { return .pending }
-        if try hasUncovered(db) { return .uncovered }
+            SELECT EXISTS(SELECT 1 FROM usr.cloud_initial_member m JOIN usr.cloud_outbox o
+              ON o.record_type=m.record_type AND o.record_name=m.record_name
+              WHERE o.zone=? AND m.confirmed=0)
+            """, arguments: [ReadingHistoryTransport.zone]) == true { return .pending }
+        if attachmentUnavailable { return .uncovered }
         boundary.sealed = true
         try save(db, boundary)
         try db.execute(sql: "DELETE FROM usr.cloud_initial_member")

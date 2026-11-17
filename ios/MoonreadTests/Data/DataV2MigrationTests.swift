@@ -65,14 +65,13 @@ struct DataV2MigrationTests {
             let text = try String.fetchOne(db, sql: "SELECT text FROM main.chunks WHERE book_id='reading'")
             let bookmark = try Data.fetchOne(db, sql: "SELECT bookmark FROM main.library_shelves")
             let job = try Row.fetchOne(db, sql: "SELECT purpose,generation,pending_owner FROM main.import_jobs")
-            let raw = try Bool.fetchOne(db, sql: "SELECT raw_sha256 IS NULL FROM main.source_decoding_migration")
-            let work = try String.fetchOne(db, sql: "SELECT relative_path FROM main.source_decoding_migration")
-            return (text, bookmark, job?["purpose"] as String?, job?["generation"] as Int?, job?["pending_owner"] as String?, raw, work)
+            let work = try Int.fetchOne(db, sql: "SELECT count(*) FROM main.source_decoding_migration")
+            return (text, bookmark, job?["purpose"] as String?, job?["generation"] as Int?, job?["pending_owner"] as String?, work)
         }
         #expect(result.0 == "a界")
         #expect(result.1 == Data([1,2,3,0]))
         #expect(result.2 == "reading" && result.3 == 17 && result.4 == "local")
-        #expect(result.5 == true && result.6 == "folder/a.txt")
+        #expect(result.5 == 0)
         await #expect(throws: DataV2Error.migrationAlreadyComplete) { try await owner.importLegacyIndex(oldURL, token: lease) }
         try await owner.close()
         let check = try DatabaseQueue(path: oldURL.path)
@@ -81,7 +80,7 @@ struct DataV2MigrationTests {
         try check.close()
     }
 
-    @Test func copiesVersion23WorkAsIsAndRejectsFutureTarget() async throws {
+    @Test func copiesKnownVersion23WorkAndRejectsFutureTarget() async throws {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
@@ -96,7 +95,8 @@ struct DataV2MigrationTests {
                 PRAGMA user_version=23;
                 INSERT INTO source_identities VALUES('raw','Big5','sha','Big5',99,77);
                 INSERT INTO library_identities VALUES('future-file','raw','Big5',99,17);
-                INSERT INTO source_decoding_migration VALUES('old-file','s','manual.txt',99,17,'Big5','raw');
+                INSERT INTO source_decoding_migration VALUES('old-file','s','manual.txt',99,17,'Big5','raw'),
+                  ('unresolved','s','offline.txt',99,17,'Big5',NULL);
                 INSERT INTO library_shelves VALUES('s','Fixture',X'AB','local',0,NULL);
                 INSERT INTO library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,decoding)
                 VALUES ('already-consumed','s','other.txt','','other.txt',0,7,18,1,'Big5');
@@ -112,13 +112,14 @@ struct DataV2MigrationTests {
         }
         #expect(copied.0 == ["old-file"] && copied.1 == "raw")
         try await owner.close()
+        let futureVersion = DataV2Schema.userVersion + 1
         let future = try DatabaseQueue(path: layout.user(.local).path)
-        try await future.write { try $0.execute(sql: "PRAGMA user_version=7") }
+        try await future.write { try $0.execute(sql: "PRAGMA user_version=\(futureVersion)") }
         try future.close()
-        await #expect(throws: DataV2Error.unsupportedSchema("usr", 7)) { _ = try await owner.activate(.unknown) }
+        await #expect(throws: DataV2Error.unsupportedSchema("usr", futureVersion)) { _ = try await owner.activate(.unknown) }
         let check = try DatabaseQueue(path: layout.user(.local).path)
         let version = try await check.read { try DataV2Schema.version($0, in: "main") }
-        #expect(version == 7)
+        #expect(version == futureVersion)
         try check.close()
     }
 

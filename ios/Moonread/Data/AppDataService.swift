@@ -969,7 +969,7 @@ actor AppDataService {
         if let progress { try await simulateSourceDownload(progress) }
         let raw = try await read.read(bookmark: root, relativePath: entry.relativePath, progress: progress)
         try confirmSourceLocation(entry, shelf: shelf, configuration: configuration, core: core)
-        let decoding = try await prepareSourceDecoding(raw: raw, fileID: file.id)
+        let decoding = try await prepareSourceDecoding(raw: raw)
         try confirmSourceLocation(entry, shelf: shelf, configuration: configuration, core: core)
         if try core.setSourceFileAvailability(file: entry, needsDownload: false) { publishLibraryIndexChange() }
         let encoding = decoding == "auto" ? nil : decoding
@@ -1205,7 +1205,7 @@ actor AppDataService {
         var descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
         let configuration = userCloudConfigurationRevision
         let raw = try await SourceDecodingRead().read(bookmark: descriptor.rootBookmark, relativePath: descriptor.relativePath)
-        let decoding = try await prepareSourceDecoding(raw: raw, fileID: descriptor.fileID, selection: encoding ?? "auto")
+        let decoding = try await prepareSourceDecoding(raw: raw, selection: encoding ?? "auto")
         try Task.checkCancellation()
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         descriptor.expectedRawSHA = raw.sha

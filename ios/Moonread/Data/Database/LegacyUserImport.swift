@@ -125,11 +125,6 @@ enum LegacyUserImport {
             }
             for id in resolved.subtracting(ambiguous) {
                 for marker in markers[id, default: []] {
-                    if let name = try String.fetchOne(db, sql: """
-                        SELECT cloud_isolation_name FROM usr.quarantined_record WHERE quarantine_id=?
-                        """, arguments: [marker]) {
-                        try CloudIsolationRows.queueRemoval(db, name: name)
-                    }
                     try db.execute(sql: "DELETE FROM usr.quarantined_record WHERE quarantine_id=?", arguments: [marker])
                 }
             }

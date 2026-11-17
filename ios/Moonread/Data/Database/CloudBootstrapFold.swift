@@ -194,7 +194,7 @@ enum CloudBootstrapFold {
                 let id = domain == .isolation ? String(row[domain.idColumn] as Int64) : row[domain.idColumn] as String
                 let key = Key(partition: 0, domain: domain, id: id)
                 let source = try UpgradeOrigins.provenance(db, key)
-                if case .seed = source { continue }
+                if case .seed = source, domain != .isolation { continue }
                 let evidence = try UpgradeOrigins.version(db, key)
                 var children: [(String,[Row])] = []
                 for relation in domain.relations {
@@ -235,7 +235,7 @@ enum CloudBootstrapFold {
         let peer = version.key.domain == .isolation ? nil : try current(db, key: version.key)
         let peerVersion = peer == nil ? nil : try UpgradeOrigins.version(db, version.key)
         switch version.source {
-        case .seed: return .drop
+        case .seed: return version.key.domain == .isolation ? .hold : .drop
         case .unknown: return .hold
         case .local(let lineage):
             if let book = version.book, !present.contains(book), seedBooks.contains(book) {
@@ -328,19 +328,17 @@ enum CloudBootstrapFold {
     }
 
     private static func insert(_ db: Database, table: String, row: Row,
-                               replacing: [String: DatabaseValue] = [:]) throws {
+                               replacing: [String: DatabaseValue] = [:], ignoringDuplicate: Bool = false) throws {
         let fields = Array(row)
-        try db.execute(sql: "INSERT INTO usr.\(table)(\(fields.map(\.0).joined(separator: ","))) VALUES(\(Array(repeating: "?", count: fields.count).joined(separator: ",")))",
+        try db.execute(sql: "INSERT \(ignoringDuplicate ? "OR IGNORE " : "")INTO usr.\(table)(\(fields.map(\.0).joined(separator: ","))) VALUES(\(Array(repeating: "?", count: fields.count).joined(separator: ",")))",
                        arguments: StatementArguments(fields.map { replacing[$0.0] ?? $0.1 }))
     }
 
     private static func hold(_ db: Database, _ version: LocalVersion) throws {
-        if version.key.domain == .isolation, (version.row["source"] as String) == heldSource {
-            // Carry a previous local-only archive through another replacement
-            // without layering a new archive around it or keeping its rowid.
+        if version.key.domain == .isolation {
             try insert(db, table: Domain.isolation.rawValue, row: version.row,
-                       replacing: ["quarantine_id": .null, "cloud_isolation_name": .null])
-            try version.captureAsset(db, quarantine: db.lastInsertedRowID)
+                       replacing: ["quarantine_id": .null], ignoringDuplicate: true)
+            if db.changesCount > 0 { try version.captureAsset(db, quarantine: db.lastInsertedRowID) }
             return
         }
         func fields(_ row: Row) -> [String: Any] {

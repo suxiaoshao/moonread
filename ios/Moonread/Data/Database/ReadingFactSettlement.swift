@@ -138,7 +138,7 @@ enum ReadingFactSettlement {
             """, arguments: [h.partition,origin.source,origin.id,h.id,h.book,h.session,evidence.device,bytes,DataIdentity.sha(bytes),reason])
         let original = UpgradeOrigins.Key(partition: h.partition, domain: .fact, id: h.id)
         try origin.recordIsolation(db, partition: h.partition, inheriting: origin.source == "relational" ? original : nil)
-        try CloudTransportRows.isolateInitialMember(db, ReadingHistoryTransport.key(.fact, id: h.id), reason: .unrepresented)
+        try CloudTransportRows.withdrawInitialSave(db, ReadingHistoryTransport.key(.fact, id: h.id))
     }
 
     private static func evidence(_ db: Database, id: String, partitions: Int? = nil) throws -> [Evidence] {
@@ -170,15 +170,6 @@ enum ReadingFactSettlement {
             return try Evidence(row).wire()
         } catch is DecodingError { return nil }
         catch is ReaderError { return nil }
-    }
-
-    /// Preserve the otherwise blocked original as opaque evidence, not as
-    /// an active ReadingFact. This is the same typed archive as conflicts.
-    static func initialIsolationWitness(_ db: Database, id: String) throws -> Data? {
-        guard let original = try evidence(db, id: id, partitions: 0).first else { return nil }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        return try encoder.encode(original)
     }
 
     /// A cloud DELETE authorizes the formal fact. An identical, verified

@@ -55,7 +55,7 @@ private final class IdentityFileWork: @unchecked Sendable {
                 }
                 let raw = try await read.hash(at: url)
                 guard raw.size == file.size, raw.modifiedMilliseconds == file.modified else { throw ReaderError.SourceChanged }
-                let decoding = try await service.prepareSourceDecoding(raw: raw, fileID: file.id)
+                let decoding = try await service.prepareSourceDecoding(raw: raw)
                 let identity = try await read.identify(at: url, raw: raw, decoding: decoding)
                 try read.checkCancellation()
                 var resolved = file; resolved.decoding = decoding

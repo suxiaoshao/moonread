@@ -97,7 +97,7 @@ final class RecentRestorationWork: @unchecked Sendable {
         if availability.isUbiquitousItem == true, availability.ubiquitousItemDownloadingStatus != .current, !mayDownload { throw ReaderError.NotFound }
         let raw = try await read.hash(at: file)
         guard raw.size == candidate.file.size, raw.modifiedMilliseconds == candidate.file.modified else { throw ReaderError.SourceChanged }
-        let decoding = try await service.prepareSourceDecoding(raw: raw, fileID: candidate.file.id)
+        let decoding = try await service.prepareSourceDecoding(raw: raw)
         let identity = try await read.identify(at: file, raw: raw, decoding: decoding)
         guard identity.contentSha256 == contentKey else { throw ReaderError.NotFound }
         return try await read.coordinate(at: file) { [self] url in

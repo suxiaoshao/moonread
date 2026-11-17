@@ -99,6 +99,9 @@ enum LegacyIndexImport {
                     }
                     try db.execute(sql: String(sql[insert.lowerBound...]))
                 }
+                // A later download cannot prove the raw identity of the
+                // released choice. Keep only mappings known at migration.
+                try db.execute(sql: "DELETE FROM main.source_decoding_migration WHERE raw_sha256 IS NULL")
                 guard try Row.fetchOne(db, sql: "PRAGMA main.foreign_key_check") == nil else {
                     throw DataV2Error.incompatibleSource("legacy index relationships")
                 }

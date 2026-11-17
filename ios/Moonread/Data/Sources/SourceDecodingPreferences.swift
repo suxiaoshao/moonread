@@ -114,7 +114,7 @@ extension AppDataService {
             try core.setSourceDecoding(fileId: file.fileId, decoding: decoding)
         }
     }
-    func prepareSourceDecoding(raw: RawSourceIdentity, fileID: String?, selection: String? = nil) async throws -> String {
+    func prepareSourceDecoding(raw: RawSourceIdentity, selection: String? = nil) async throws -> String {
         try Task.checkCancellation()
         let configuration = userCloudConfigurationRevision
         let core = try relationalUserIndex()
@@ -123,8 +123,7 @@ extension AppDataService {
         try Task.checkCancellation()
         let pending = try core.sourceDecodingMigrations()
         for old in pending {
-            let matches = old.rawSha256 == raw.sha || (old.rawSha256 == nil && old.fileId == fileID && old.size == raw.size && old.modified == raw.modifiedMilliseconds)
-            guard matches else { continue }
+            guard old.rawSha256 == raw.sha else { continue }
             try mergeSourceDecodingEpoch(rawSHA: raw.sha, decoding: old.decoding, index: core)
             guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
             try core.finishSourceDecodingMigration(fileId: old.fileId)
@@ -161,9 +160,8 @@ extension AppDataService {
     private func mergeSourceDecodingEpoch(rawSHA: String, decoding: String, index: ReaderIndex) throws {
         try Task.checkCancellation()
         try index.session.writeUsers(index.lease) { db in
-            // This is released data, even if the raw identity was discovered
-            // after upgrading. Once the source fold closes, a remaining index
-            // entry is consumed without reintroducing its old choice.
+            // A choice with a raw identity verified by the released index is
+            // legacy seed data, never a later local edit.
             guard try UpgradeOrigins.phase(db) != nil, try !ReadingCloudInitialization.isRecovering(db) else { return }
             let input = try sourceDecodingEpoch(rawSHA: rawSHA, decoding: decoding)
             let key = try UserValueRows.Key(input.key)

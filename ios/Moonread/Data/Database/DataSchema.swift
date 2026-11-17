@@ -81,14 +81,7 @@ enum DataV2Schema {
         if user < 2 {
             try writer.write { db in
                 if user == 0 { try db.execute(sql: sql("UserSchemaV1", in: bundle)) }
-                // Compacting a candidate may remove its last business row
-                // before CloudKit confirms deletion of the exact record.
-                try db.execute(sql: """
-                    ALTER TABLE usr.cloud_record_state ADD COLUMN book_key TEXT;
-                    CREATE INDEX usr.cloud_record_book ON cloud_record_state(zone,book_key,record_type)
-                      WHERE book_key IS NOT NULL;
-                    PRAGMA usr.user_version=2;
-                    """)
+                try db.execute(sql: "PRAGMA usr.user_version=2")
             }
         }
         if user < 4 {
@@ -138,21 +131,9 @@ enum DataV2Schema {
                         business_id TEXT NOT NULL,
                         confirmed INTEGER NOT NULL DEFAULT 0 CHECK(confirmed IN (0,1)),
                         offered INTEGER NOT NULL DEFAULT 0 CHECK(offered IN (0,1)),
-                        blocked_reason TEXT,
-                        quarantine_id INTEGER REFERENCES quarantined_record(quarantine_id) ON DELETE CASCADE,
                         PRIMARY KEY(record_type,record_name)
                     );
                     PRAGMA usr.user_version=5;
-                    """)
-            }
-        }
-        if user < 6 {
-            try writer.write { db in
-                try db.execute(sql: """
-                    ALTER TABLE usr.quarantined_record ADD COLUMN cloud_isolation_name TEXT;
-                    CREATE UNIQUE INDEX usr.quarantine_cloud_isolation ON quarantined_record(cloud_isolation_name)
-                        WHERE cloud_isolation_name IS NOT NULL;
-                    PRAGMA usr.user_version=6;
                     """)
             }
         }
@@ -161,10 +142,7 @@ enum DataV2Schema {
                 try db.execute(sql: """
                     CREATE TABLE usr.cloud_bootstrap_state(
                         singleton INTEGER PRIMARY KEY CHECK(singleton=1),
-                        initialization_id TEXT NOT NULL, installation_id TEXT NOT NULL,
-                        revision INTEGER NOT NULL CHECK(revision>=0),
-                        checkpoint BLOB, covered INTEGER NOT NULL CHECK(covered IN (0,1)),
-                        CHECK(covered=0 OR checkpoint IS NOT NULL)
+                        initialization_id TEXT NOT NULL, installation_id TEXT NOT NULL
                     );
                     CREATE TABLE usr.cloud_bootstrap_record(
                         record_type TEXT NOT NULL, record_name TEXT NOT NULL, data BLOB,

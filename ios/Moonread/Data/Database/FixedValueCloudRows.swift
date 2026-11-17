@@ -65,7 +65,7 @@ enum FixedValueCloudRows {
         }
     }
 
-    private static let receiptPrefix = "x2-delete-acked:"
+    private static let deletionReceipt = "x2-delete-acked"
     private static let waitingPrefix = "x2-await-delete:"
     private static let freshPrefix = "x2-unpublished:"
     private static let verifyStatus = CloudTransportRows.missingSaveStatus
@@ -106,7 +106,7 @@ enum FixedValueCloudRows {
         if let book = key.book, case .pending = try parseReadingKey(value: book) { throw UserSyncCompatibilityError() }
         let head = try UserSyncJSON.storedValue(value.payload, key: key.logical)
         if try CloudTransportRows.deletionPending(db, transport) { return }
-        if !verifying, try blocksSave(db, key: transport) { return }
+        if !verifying, try CloudTransportRows.awaitingVerification(db, transport) { return }
         if value.family == .cover {
             if let prior = try missingCoverBarrier(db, name: value.name, id: value.id, logical: key.logical),
                blocks(head, behind: prior) { return }
@@ -233,7 +233,7 @@ enum FixedValueCloudRows {
               (try? parseSha256(value: cover.sha256)) == cover.sha256 else { throw UserSyncCompatibilityError() }
         let route = key(.cover, id: id)
         if try CloudTransportRows.deletionPending(db, route) { return true }
-        if !verifying, try blocksSave(db, key: route) { return true }
+        if !verifying, try CloudTransportRows.awaitingVerification(db, route) { return true }
         if let prior = try missingCoverBarrier(db, name: record.name, id: id, logical: logical),
            blocks(head, behind: prior) { return true }
         // The sender already has this incomplete candidate in its durable
@@ -296,12 +296,11 @@ enum FixedValueCloudRows {
             }
             return
         }
-        let fence = if previousDigest == nil && value.creationValue { parseFence(status, prefix: receiptPrefix) }
-            else if let previousDigest, let status, status.hasSuffix(":" + previousDigest) { parseFence(status, prefix: freshPrefix) }
-            else { nil as Int64? }
+        let explicitlyNew = (previousDigest == nil && value.creationValue && status == deletionReceipt)
+            || previousDigest.map { status == freshPrefix + $0 } == true
         try CloudTransportRows.enqueueSave(db, key, businessID: id, digest: digest)
-        if let fence {
-            try setControl(db, key, id, freshPrefix + String(fence) + ":" + digest)
+        if explicitlyNew {
+            try setControl(db, key, id, freshPrefix + digest)
         } else if status?.hasPrefix(freshPrefix) == true {
             // An intake that replaced the candidate cannot inherit explicit
             // recreation evidence. Keep this ID closed until verified.
@@ -326,43 +325,13 @@ enum FixedValueCloudRows {
 
     static func didConfirmDeletion(_ db: Database, _ family: Family, sent: CloudTransportRows.Attempt) throws {
         let status = try CloudTransportRows.recordStatus(db, sent.key)
-        // A fetch that started before this ACK cannot close its echo window.
-        let generation = try CloudTransportRows.allocateGeneration(db)
         if let value = try material(db, family, id: sent.businessID),
            status == waitingPrefix + String(sent.generation) + ":" + value.digest {
             try CloudTransportRows.enqueueSave(db, sent.key, businessID: sent.businessID, digest: value.digest)
-            try setControl(db, sent.key, sent.businessID, freshPrefix + String(generation) + ":" + value.digest)
+            try setControl(db, sent.key, sent.businessID, freshPrefix + value.digest)
         } else {
-            try setControl(db, sent.key, sent.businessID, receiptPrefix + String(generation))
+            try setControl(db, sent.key, sent.businessID, deletionReceipt)
         }
-    }
-
-    static func expireReceipts(_ db: Database, through generation: Int64) throws {
-        let owned = Family.allCases.map { _ in "?" }.joined(separator: ",")
-        let rows = try Row.fetchAll(db, sql: """
-            SELECT record_type,record_name,server_state FROM usr.cloud_record_state
-            WHERE zone=? AND record_type IN (\(owned)) AND (server_state LIKE 'x2-delete-acked:%' OR server_state LIKE 'x2-unpublished:%')
-            """, arguments: StatementArguments([ReadingHistoryTransport.zone] + Family.allCases.map(\.rawValue)))
-        for row in rows {
-            let status: String = row["server_state"]
-            guard let fence = parseFence(status, prefix: receiptPrefix) ?? parseFence(status, prefix: freshPrefix),
-                  fence <= generation else { continue }
-            try CloudTransportRows.forgetServerRecord(db, .init(zone: ReadingHistoryTransport.zone, type: row["record_type"], name: row["record_name"]))
-        }
-    }
-
-    private static func parseFence(_ status: String?, prefix: String) -> Int64? {
-        guard let status, status.hasPrefix(prefix) else { return nil }
-        return status.dropFirst(prefix.count).split(separator: ":", maxSplits: 1).first.flatMap { Int64($0) }
-    }
-
-    /// A SAVE for a replacement cannot be offered or ACKed before a committed
-    /// own-zone catch-up covers its DELETE. The engine cannot reorder that
-    /// replacement's SAVE ACK ahead of the old echo.
-    static func blocksSave(_ db: Database, key: CloudTransportRows.Key) throws -> Bool {
-        let status = try CloudTransportRows.recordStatus(db, key)
-        return status == verifyStatus || status?.hasPrefix(freshPrefix) == true ||
-               status?.hasPrefix(receiptPrefix) == true || status?.hasPrefix(waitingPrefix) == true
     }
 
     static func prepare(_ db: Database, _ family: Family, id: String) throws -> Prepared? {
@@ -373,12 +342,12 @@ enum FixedValueCloudRows {
         case .delete:
             prepared = .init(attempt: attempt, logical: nil, device: nil, payload: nil, systemFields: nil, attachment: nil)
         case .save(let digest):
-            if family == .cover, try !blocksSave(db, key: key), let missing = try missingCoverOffer(db, id: id),
+            if family == .cover, try !CloudTransportRows.awaitingVerification(db, key), let missing = try missingCoverOffer(db, id: id),
                missing.digest == digest {
                 return .init(attempt: attempt, logical: missing.logical, device: missing.device, payload: missing.payload,
                              systemFields: try CloudTransportRows.systemFields(db, key), attachment: nil)
             }
-            guard try !blocksSave(db, key: key), let value = try material(db, family, id: id), value.digest == digest,
+            guard try !CloudTransportRows.awaitingVerification(db, key), let value = try material(db, family, id: id), value.digest == digest,
                   try readable(db, value) else { return nil }
             var attachment: Data?
             if let cover = value.cover {
@@ -408,14 +377,16 @@ enum FixedValueCloudRows {
             if pending.intent == .delete, status == waitingPrefix + String(pending.generation) + ":" + digest {
                 return .keptLocalCreation
             }
-            if case .save = pending.intent, status != "present", status?.hasPrefix(receiptPrefix) != true {
-                if pending.intent == .save(digest: digest), status?.hasPrefix(freshPrefix) == true,
-                   status?.hasSuffix(":" + digest) == true { return .keptLocalCreation }
+            if case .save = pending.intent, status != "present", status != deletionReceipt {
+                if pending.intent == .save(digest: digest), status == freshPrefix + digest { return .keptLocalCreation }
                 try setControl(db, key, id, verifyStatus)
                 return .verify
             }
         }
-        if status?.hasPrefix(receiptPrefix) == true, digest == nil { return .ignored }
+        if status == deletionReceipt, digest == nil {
+            try CloudTransportRows.forgetServerRecord(db, key)
+            return .ignored
+        }
 
         var logical = Set(try String.fetchAll(db, sql: """
             SELECT logical_key FROM usr.\(family.table) WHERE partition=0 AND record_id=?\(family.predicate)

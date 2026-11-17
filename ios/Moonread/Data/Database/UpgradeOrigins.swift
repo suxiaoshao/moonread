@@ -365,7 +365,7 @@ enum UpgradeOrigins {
         var digest = Digest()
         digest.add("upgrade-version-v1")
         digest.add(domain.rawValue)
-        digest.add(row, ignoring: ["local_unsealed_owner","quarantine_id","completeness","cloud_isolation_name"])
+        digest.add(row, ignoring: ["local_unsealed_owner","quarantine_id","completeness"])
         for relation in domain.relations {
             let rows = try Row.fetchCursor(db, sql: """
                 SELECT * FROM \(store.rawValue).\(relation.table) WHERE partition=? AND \(relation.parent)=? ORDER BY \(relation.order)
