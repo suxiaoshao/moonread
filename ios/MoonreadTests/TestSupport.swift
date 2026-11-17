@@ -244,10 +244,11 @@ func makeInMemoryUserStore() throws -> UserDataStore {
 }
 
 /// Run tests through the same attached writer and schema as the app.
-func makeReaderIndexFixture(at directory: URL) throws -> ReaderIndex {
+func makeReaderIndexFixture(at directory: URL, account: DataScope? = nil) throws -> ReaderIndex {
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-  let session = try DataSession(layout: .init(applicationSupport: directory))
-  let lease = try session.activate(.signedOut).0
+  let session = try DataSession(layout: .init(applicationSupport: directory), confirmedLegacyOwner: account)
+  let status: DataIdentityStatus = account.map { .confirmed($0, syncRequested: false) } ?? .signedOut
+  let lease = try session.activate(status).0
   try session.prepareIndex(directory.appending(path: "reader.sqlite3"), token: lease)
   try session.prepareUsers(lease) { nil }
   return ReaderIndex(session: session, lease: lease)

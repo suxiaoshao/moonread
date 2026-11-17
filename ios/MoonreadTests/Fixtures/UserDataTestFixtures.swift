@@ -109,12 +109,12 @@ class UserDataFixture: XCTestCase {
     AnnotationCandidate(id: id, ancestors: parents, content: content, created: 1, bookmark: false)
   }
 
-  @MainActor func editorFixture() async throws -> (URL, AppDataService, BookInfo, UserRowsFixture) {
+  @MainActor func editorFixture(account: DataScope? = nil) async throws -> (URL, AppDataService, BookInfo, UserRowsFixture) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let file = root.appendingPathComponent("book.txt")
     try Data(String(repeating: "0123456789", count: 20).utf8).write(to: file)
-    let index = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
+    let index = try makeReaderIndexFixture(at: root.appendingPathComponent("db"), account: account)
     let book = try importBookFixture(index, filePath: file.path, title: "Fixture")
     let service = AppDataService(core: index, sourceDefaultsSuite: "Review-\(root.lastPathComponent)")
     return (root, service, try await service.book(book.id), UserRowsFixture(index: index))

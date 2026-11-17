@@ -10,9 +10,14 @@ import XCTest
         try await scan(f)
         let first = try importBookFixture(f.core, filePath: f.directory.appendingPathComponent("a.txt").path, title: "A")
         let second = try importBookFixture(f.core, filePath: f.directory.appendingPathComponent("b.txt").path, title: "B")
+        // The low-level import fixture stops before the service's normal
+        // promotion and cleanup. Test eviction of settled, unleased bodies.
+        try await f.service.promoteUserData(first.id)
+        try await f.service.promoteUserData(second.id)
+        try await f.service.reclaimImports(f.core)
         for file in try f.core.sourceFileSnapshots(fileId: nil) {
             let identity = try SourceIdentityProbe().identify(filePath: f.directory.appendingPathComponent(file.relativePath).path, decoding: "auto")
-            _ = try f.core.publishSourceIdentity(file: file, identity: identity)
+            XCTAssertTrue(try f.core.publishSourceIdentity(file: file, identity: identity))
         }
         let image = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 12)).pngData {
             UIColor.blue.setFill()

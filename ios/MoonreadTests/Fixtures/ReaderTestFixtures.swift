@@ -139,10 +139,6 @@ class ReaderIntegrationFixture: XCTestCase {
     return (root, service, core, suite)
   }
 
-  func importJobIDs(_ index: ReaderIndex) throws -> [String] {
-    try index.read { try String.fetchAll($0, sql: "SELECT book_id FROM main.import_jobs ORDER BY book_id") }
-  }
-
   /// The reader chooses a list before showing it: the first frame has the target title and
   /// never rows of the other mark kind; a new book no longer falls back to chapters.
 

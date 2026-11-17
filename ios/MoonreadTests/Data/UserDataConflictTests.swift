@@ -224,7 +224,10 @@ final class UserDataConflictTests: UserDataFixture {
   }
   @MainActor
   func testNoteExportUsesWholeReadOnlySnapshotAndPreservesVersions() async throws {
-    let (root, service, book, store) = try await editorFixture()
+    // The future-version fixture enters through cloud intake, which never
+    // applies remote records to the unassigned local library.
+    let account = try DataScope.confirmed(container: "test.invalid", environment: .production, recordName: "note-export")
+    let (root, service, book, store) = try await editorFixture(account: account)
     defer { try? FileManager.default.removeItem(at: root) }
     let key = book.fixtureSHA256
     for index in 0..<62 {
@@ -275,10 +278,12 @@ final class UserDataConflictTests: UserDataFixture {
     let excerpt = NoteDocument(title: "Title", author: "Author", records: []).excerpt(
       .init(id: mark.id, mark: mark.mark, chapter: "Chapter", percentage: 42, version: nil, deletionVersion: false))
     XCTAssertEqual(excerpt, mark.mark.excerpt + "\n\n——《Title》 · Author · Chapter · 42%")
-    let payload = try NoteSharePayload(document: document, format: .text)
-    let url = try XCTUnwrap(payload.url)
+    var payload: NoteSharePayload? = try NoteSharePayload(document: document, format: .text)
+    let url = try XCTUnwrap(payload?.url)
     XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), raw)
-    payload.clean()
+    // Dropping the share owner cleans the staging directory. Don't also
+    // explicitly clean that directory before releasing the owner.
+    payload = nil
     XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     var future = candidate("future", content: content("unreadable"))
     future.bookmark = false

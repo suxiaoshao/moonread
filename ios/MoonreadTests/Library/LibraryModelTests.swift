@@ -173,8 +173,8 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
 }
 
 final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
-  // S333: 首页快照一次发布一致的文件/最近列表，替换同一文件不产生两个入口；不锁无变化刷新通知次数。
-  @MainActor func testHomeSnapshotPublishesAtomicallyAndIgnoresInvisibleReloadChanges() async throws
+  // S333: 书架结构与可见页面的最近阅读分别发布，替换同一文件不产生两个入口。
+  @MainActor func testHomeAndRecentReadingFollowVisibleChanges() async throws
   {
     let (root, service, _, _, book, _, suite) = try singleBookFixture()
     defer {
@@ -185,6 +185,8 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     let model = LibraryModel(service: service, prepareLibrary: {}, refreshLibrary: {})
     XCTAssertTrue(model.shelves.isEmpty)
     XCTAssertTrue(model.recents.isEmpty)
+    let recentUse = model.recentReading.use(limit: RecentReadingStore.homeLimit)
+    defer { withExtendedLifetime(recentUse) {} }
     let committed = expectation(description: "atomic home")
     withObservationTracking {
       _ = model.home
@@ -196,6 +198,7 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     await fulfillment(of: [committed], timeout: 2)
     XCTAssertTrue(model.homeReady)
     XCTAssertEqual(model.shelves.count, 1)
+    await awaitState { model.recents.first?.positionUtf8 == 20 }
     XCTAssertEqual(model.recents.count, 1)
     let first = model.home
     let revision = model.revision
@@ -203,7 +206,7 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(model.home, first)
     XCTAssertEqual(model.revision, revision)
     try await service.savePosition(bookID: book.id, offset: 44)
-    await model.reloadBook(.book(book.id))
+    await awaitState { model.recents.first?.positionUtf8 == 44 }
     XCTAssertEqual(model.recents.first?.positionUtf8, 44)
     XCTAssertEqual(model.revision, revision)
     try FileManager.default.moveItem(
@@ -227,14 +230,18 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
       }
       try await service.savePosition(bookID: book.id, offset: 20)
       let model = LibraryModel(service: service, prepareLibrary: {}, refreshLibrary: {})
+      let recentUse = model.recentReading.use(limit: RecentReadingStore.homeLimit)
+      defer { withExtendedLifetime(recentUse) {} }
       let loaded = await model.load()
       XCTAssertTrue(loaded)
+      await awaitState { model.recents.first?.positionUtf8 == 20 }
       let old = try XCTUnwrap(model.recents.first)
       try Data("第三章 替换\n只用于增量最近阅读回归的新正文。\n".utf8).write(to: root.appendingPathComponent("a.txt"))
       let replacement = try importBookFixture(core, filePath: root.appendingPathComponent("a.txt").path, title: "替换内容")
+      try await service.scanLibraryShelf("builtin")
       try core.linkLibraryFile(fileId: old.id, bookId: replacement.id)
       try await service.savePosition(bookID: replacement.id, offset: 6)
-      await model.reloadBook(.source(old.source))
+      await awaitState { model.recents.first?.readingKey == replacement.fixtureSHA256 }
       XCTAssertEqual(model.recents.filter { $0.id == old.id }.count, 1)
       XCTAssertFalse(model.recents.contains { $0.readingKey == book.fixtureSHA256 })
       XCTAssertEqual(model.recents.first?.readingKey, replacement.fixtureSHA256)

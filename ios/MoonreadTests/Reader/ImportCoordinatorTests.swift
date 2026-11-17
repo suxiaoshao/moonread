@@ -15,17 +15,19 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     XCTAssertTrue(condition())
   }
 
-  // S337: 编码重试同一时刻只有一个任务，失败/离开后清理准入，晚到结果不能生成孤儿导入。
+  // S337: 编码重试同一时刻只有一个任务；晚到的租约不接管已离开的阅读页。
   @MainActor func testEncodingRestartAdmitsOnlyOneTaskAndKeepsFilePolicyConsistent() async throws {
 
     for outcome in ["success", "failure", "leave after allocation"] {
-      let (root, service, core, _, _, _, suite) = try singleBookFixture()
+      let (root, service, core, suite) = try introductionFixture()
       defer {
+        try? core.session.close()
         try? FileManager.default.removeItem(at: root)
         UserDefaults.standard.removePersistentDomain(forName: suite)
       }
       try Data("Chapter 1\nUn caf\u{e9} original sample.\n".utf8).write(
-        to: root.appendingPathComponent("a.txt"))
+        to: root.appendingPathComponent("library/a.txt"))
+      try await service.scanLibraryShelf("builtin")
       let file = try XCTUnwrap(
         core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
       let entered = expectation(description: outcome)
@@ -52,41 +54,44 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
       let previous = try XCTUnwrap(session.readingID)
       session.restart(encoding: "windows-1252")
       XCTAssertTrue(session.restartingEncoding, outcome)
+      let restart = try XCTUnwrap(session.restartTask)
       session.restart(encoding: "UTF-8")
       await fulfillment(of: [entered], timeout: 2)
       if outcome == "leave after allocation" { await session.leave().value }
       await gate.release()
-      let finished = XCTNSPredicateExpectation(
-        predicate: NSPredicate { _, _ in
-          !session.restartingEncoding
-            && (outcome != "success" || session.snapshot?.preparation.isComplete == true)
-        }, object: nil)
-      await fulfillment(of: [finished], timeout: 5)
+      await restart.value
+      try await service.waitForImportsIdle()
+      XCTAssertFalse(session.restartingEncoding)
+      let created = await probe.createdIDs
+      XCTAssertEqual(created.count, outcome == "failure" ? 0 : 1, outcome)
+
+      let source = try core.sourceFileLocation(fileId: file.id)
+      let policy = try core.sourceDecoding(fileId: file.id)
       if outcome == "success" {
         let current = try XCTUnwrap(session.readingID)
         XCTAssertNotEqual(current, previous, outcome)
         XCTAssertEqual(session.decodingPolicy, "windows-1252", outcome)
-        XCTAssertEqual(try core.sourceFileLocation(fileId: file.id).bookId, current, outcome)
-        XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "windows-1252", outcome)
-        let settled = XCTNSPredicateExpectation(
-          predicate: NSPredicate { _, _ in
-            (try? self.importJobIDs(core)) == [current]
-          }, object: nil)
-        await fulfillment(of: [settled], timeout: 5)
-        await session.leave().value
+        XCTAssertEqual(source.bookId, current, outcome)
+        XCTAssertEqual(policy, "windows-1252", outcome)
+        let currentSnapshot = try await service.snapshot(current)
+        XCTAssertTrue(currentSnapshot.preparation.isComplete)
       } else {
         XCTAssertEqual(session.readingID, previous, outcome)
         XCTAssertEqual(session.decodingPolicy, "auto", outcome)
         XCTAssertEqual(session.error != nil, outcome == "failure", outcome)
-        let settled = XCTNSPredicateExpectation(
-          predicate: NSPredicate { _, _ in
-            (try? self.importJobIDs(core)) == [previous]
-          }, object: nil)
-        await fulfillment(of: [settled], timeout: 5)
-        if outcome == "failure" { await session.leave().value }
+        if outcome == "failure" {
+          XCTAssertEqual(source.bookId, previous, outcome)
+          XCTAssertEqual(policy, "auto", outcome)
+        } else {
+          // A worker already admitted for this file can finish after the page
+          // closes. It stays attached to the file without taking over the page.
+          let completed = try XCTUnwrap(created.first)
+          XCTAssertEqual(source.bookId, completed, outcome)
+          XCTAssertEqual(policy, "windows-1252", outcome)
+          XCTAssertEqual(try core.importStatus(bookId: completed).phase, .complete)
+        }
       }
-      let created = await probe.createdIDs
-      XCTAssertEqual(created.count, outcome == "failure" ? 0 : 1, outcome)
+      await session.leave().value
     }
 
   }

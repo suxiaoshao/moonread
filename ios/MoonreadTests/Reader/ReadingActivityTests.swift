@@ -152,9 +152,12 @@ final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
 final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
   // S311: 取消/离开/失败前后的晚到 activity lease 必须释放且不回填可见前时长；两个受控时序。
   @MainActor func testActivityStartCancellationAndStopReleaseLateLease() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let service = AppDataService(core: try makeReaderIndexFixture(at: root))
+    let (root, service, core, _, book, _, suite) = try singleBookFixture()
+    defer {
+      try? core.session.close()
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
     let entered = expectation(description: "preferences suspended")
     let gate = SourceReadinessGate(entered: entered)
     let recorder = ReadingActivityRecorder {
@@ -163,7 +166,7 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
     }
     let token = UUID()
     recorder.prepareStart(token)
-    var lease: ReadingLease? = ReadingLease(id: "cancelled", service: service)
+    var lease: ReadingLease? = try await service.openReading(book.id)
     weak var retained = lease
     let task = Task { [lease = lease!] in
       await recorder.start(lease: lease, viewport: ReadingViewportAccess(), attempt: token)
@@ -185,9 +188,14 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
 
   // S312: 旧开始请求晚到不得替换新会话计时 owner，两个确定 gate。
   @MainActor func testActivityOldAttemptCannotOverwriteNewClock() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let service = AppDataService(core: try makeReaderIndexFixture(at: root))
+    let (root, service, core, _, first, second, suite) = try singleBookFixture()
+    defer {
+      try? core.session.close()
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let firstLease = try await service.openReading(first.id)
+    let secondLease = try await service.openReading(second.id)
     let entered = expectation(description: "old preferences")
     let gate = SourceReadinessGate(entered: entered)
     var calls = 0
@@ -200,20 +208,20 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
     recorder.prepareStart(old)
     let task = Task {
       await recorder.start(
-        lease: ReadingLease(id: "old", service: service), viewport: ReadingViewportAccess(),
+        lease: firstLease, viewport: ReadingViewportAccess(),
         attempt: old)
     }
     await fulfillment(of: [entered], timeout: 2)
     let fresh = UUID()
     recorder.prepareStart(fresh)
     await recorder.start(
-      lease: ReadingLease(id: "new", service: service), viewport: ReadingViewportAccess(),
+      lease: secondLease, viewport: ReadingViewportAccess(),
       attempt: fresh)
-    XCTAssertEqual(recorder.recordingBookID, "new")
+    XCTAssertEqual(recorder.recordingBookID, second.id)
     recorder.update(visibility: .init(body: false), preview: false)  // Background state remains authoritative during a late start.
     await gate.release()
     await task.value
-    XCTAssertEqual(recorder.recordingBookID, "new")
+    XCTAssertEqual(recorder.recordingBookID, second.id)
     XCTAssertTrue(recorder.hasSamplingTimer)
     recorder.stop()
   }

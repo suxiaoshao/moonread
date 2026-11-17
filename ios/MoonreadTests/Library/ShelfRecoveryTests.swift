@@ -44,7 +44,7 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     let unchanged = try referenceTokens(f)
     XCTAssertEqual(before, unchanged, "Reload must not republish a fresh LWW fact")
     let reference = ShelfReference(id: UUID().uuidString, value: .init(name: "曾经的书架", locationDescription: "file-provider"))
-    try f.rows.seedValue("shelf-reference/" + reference.id.lowercased(), value: UserSyncJSON.encode(reference.value))
+    try f.rows.seedValue("shelf-reference/" + reference.id, value: UserSyncJSON.encode(reference.value))
     let model = LibraryModel(service: f.service)
     model.chooseFiles(.reauthorize(reference, scope: first.scope))
     model.cancelFilePicker()
