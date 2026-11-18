@@ -6,9 +6,8 @@ struct ReaderChapterRow<Actions: View>: View {
     let chapter: ChapterEntry
     let current: Bool
     var showsCoverage = true
-    let viewportHeight: CGFloat
+    let indented: Bool
     let select: () -> Void
-    let visibilityChanged: (Bool) -> Void
     @ViewBuilder let actions: () -> Actions
     @Environment(\.theme) private var theme
 
@@ -28,42 +27,54 @@ struct ReaderChapterRow<Actions: View>: View {
                     title.lineLimit(2)
                     metadata(meta)
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.contentShape(.rect)
+            }
+            .padding(.leading, indented ? LayoutTokens.content : 0)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .contextMenu { actions() }
-        .listRowBackground(Color(uiColor: theme.surface))
-        .listRowSeparatorTint(Color(uiColor: theme.separator))
-        .modifier(ReaderChapterVisibility(current: current, viewportHeight: viewportHeight, changed: visibilityChanged))
         .accessibilityLabel(Text(verbatim: chapter.title))
         .accessibilityValue(accessibilitySummary)
         .accessibilityAddTraits(current ? .isSelected : [])
         .accessibilityIdentifier("chapter-\(chapter.startUtf8)")
     }
     private var title: some View {
-        Text(verbatim: chapter.title).font(chapter.level == 0 ? .headline : .body)
-            .foregroundStyle(Color(uiColor: current ? theme.accent : theme.ink))
+        ReaderChapterTitle(chapter: chapter, current: current)
     }
     private func metadata(_ text: String) -> some View {
         Text(verbatim: text).font(.caption).monospacedDigit()
-            .foregroundStyle(Color(uiColor: current ? theme.accent : theme.secondary))
+            .foregroundStyle(Color(uiColor: theme.secondary))
     }
 }
 
-/// Observe the current label/row only, never a whole expanded volume's bounds.
-struct ReaderChapterVisibility: ViewModifier {
+struct ReaderChapterTitle: View {
+    let chapter: ChapterEntry
     let current: Bool
-    let viewportHeight: CGFloat
-    let changed: (Bool) -> Void
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: LayoutTokens.compact) {
+            if current {
+                Image(systemName: "book.fill").font(.footnote)
+                    .foregroundStyle(Color(uiColor: theme.accent))
+                    .accessibilityHidden(true)
+            }
+            Text(verbatim: chapter.title).font(chapter.level == 0 ? .headline : .body)
+                .fontWeight(current ? .semibold : nil)
+                .foregroundStyle(Color(uiColor: theme.ink))
+        }
+    }
+}
+
+struct ReaderChapterFrame: ViewModifier {
+    let tracked: Bool
+    let changed: (CGRect?) -> Void
 
     func body(content: Content) -> some View {
         content
-        .onGeometryChange(for: Bool.self) { geometry in
-            guard current else { return false }
-            let frame = geometry.frame(in: .named("chapterListViewport"))
-            let visible = min(frame.maxY, viewportHeight) - max(frame.minY, 0)
-            return frame.height > 0 && visible >= frame.height * 0.6
-        } action: { changed($0) }
-        .onDisappear { changed(false) }
+            .onGeometryChange(for: CGRect?.self) { geometry in
+                tracked ? geometry.frame(in: .named("chapterListViewport")) : nil
+            } action: { changed($0) }
+            .onDisappear { if tracked { changed(nil) } }
     }
 }
