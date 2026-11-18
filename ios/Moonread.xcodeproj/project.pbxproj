@@ -255,7 +255,6 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         AC1000000000000000000002 = {isa = PBXBuildFile; fileRef = AC2000000000000000000002; };
         AC1000000000000000000003 = {isa = PBXBuildFile; fileRef = AC2000000000000000000003; };
         AC1000000000000000000004 = {isa = PBXBuildFile; fileRef = AC2000000000000000000004; };
-        AC1000000000000000000005 = {isa = PBXBuildFile; fileRef = AC2000000000000000000005; };
         AC1000000000000000000006 = {isa = PBXBuildFile; fileRef = AC2000000000000000000006; };
 		A10000000000000000000001 /* MoonreadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MoonreadApp.swift */; };
 		A10000000000000000000002 /* AppDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppDataService.swift */; };
@@ -771,7 +770,6 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         AC2000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonView.swift; sourceTree = "<group>"; };
         AC2000000000000000000077 /* MoonCharacter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonCharacter.swift; sourceTree = "<group>"; };
         AC2000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-        AC2000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
         AC2000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputFocus.swift; sourceTree = "<group>"; };
 		A20000000000000000000001 /* MoonreadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* AppDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataService.swift; sourceTree = "<group>"; };
@@ -1084,7 +1082,6 @@ D35000000000000000000001,
 9F6D1A66493346438625C489 /* AI */,
                 AF2000000000000000000001,
                 AC2000000000000000000004,
-                AC2000000000000000000005,
                 FC3100000000000000000001,
                 AB2000000000000000000002,
 				A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */,
@@ -2193,7 +2190,6 @@ E51000000000000000000009,D41000000000000000000001,
                 AF1000000000000000000001,
 				A10000000000000000000008 /* ../assets/icon/Moonread.icon in Resources */,
                 AC1000000000000000000004,
-                AC1000000000000000000005,
                 AB1000000000000000000002,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2822,7 +2818,6 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "月读";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -2854,7 +2849,6 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "月读";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;

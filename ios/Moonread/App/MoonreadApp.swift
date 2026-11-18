@@ -20,9 +20,8 @@ struct MoonreadApp: App {
     @State private var startupAttempt = 0
     @State private var startupFiles: [LibraryImportFile] = []
     @State private var startupSystemRequest: SystemReadingRequest?
-    private enum UpgradeNotice { case visible, dismissing }
     private static let upgradeNoticeKey = "Moonread.readingDataUpgradeNotice.v1"
-    @State private var upgradeNotice: UpgradeNotice?
+    @State private var showsUpgradeNotice = false
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -35,7 +34,7 @@ struct MoonreadApp: App {
             FileManager.default.fileExists(atPath: directory.appending(path: $0).path)
         }
         if onboarding.hasCompletedIntroduction || hasReleasedStore {
-            _upgradeNotice = State(initialValue: .visible)
+            _showsUpgradeNotice = State(initialValue: true)
         } else {
             // A new install won't become eligible after it completes the introduction.
             defaults.set(true, forKey: Self.upgradeNoticeKey)
@@ -45,16 +44,12 @@ struct MoonreadApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack { configuredAppContent }
-                .sheet(isPresented: Binding(get: { upgradeNotice == .visible }, set: { _ in }),
-                       onDismiss: { upgradeNotice = nil }) {
-                    StartupThemeHost(themes: themes) {
-                        ReadingDataUpgradeNotice {
-                            UserDefaults.standard.set(true, forKey: Self.upgradeNoticeKey)
-                            upgradeNotice = .dismissing
-                        }
+                .alert("阅读数据已更新", isPresented: $showsUpgradeNotice) {
+                    Button("onboarding.continue") {
+                        UserDefaults.standard.set(true, forKey: Self.upgradeNoticeKey)
                     }
-                    .presentationDetents([.medium, .large])
-                    .interactiveDismissDisabled()
+                } message: {
+                    Text("月读改进了阅读数据的保存和同步方式。请把其他设备上的月读也更新到这个版本，旧版本上新记的进度、批注和统计不会同步过来。")
                 }
         }
     }
@@ -73,6 +68,7 @@ struct MoonreadApp: App {
                 StartupThemeHost(themes: themes) {
                     if let importProgress { LegacyImportPage(progress: importProgress) }
                 }
+                .ignoresSafeArea(.container)
             case .failed(let reason):
                 StartupThemeHost(themes: themes) {
                     ContentUnavailableView {
@@ -87,6 +83,7 @@ struct MoonreadApp: App {
                             .accessibilityIdentifier("retryUserMigration")
                     }
                 }
+                .ignoresSafeArea(.container)
             case .ready:
                 appContent
             }
@@ -143,7 +140,7 @@ struct MoonreadApp: App {
         else { startupSystemRequest = request }
     }
     private var indexedAppContent: some View {
-        MoonreadRoot(library: library, themes: themes, defersIntroduction: upgradeNotice != nil)
+        MoonreadRoot(library: library, themes: themes, defersIntroduction: showsUpgradeNotice)
             .environment(cloud).environment(ai).environment(tipJar).environment(readerSettings)
             .task { await tipJar.listenForTransactions() }
             .task { await ai.load() }
@@ -379,29 +376,6 @@ private struct LegacyImportPage: View {
     }
 }
 
-private struct ReadingDataUpgradeNotice: View {
-    let onContinue: () -> Void
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("阅读数据已更新")
-                    .font(.title.bold())
-                    .accessibilityAddTraits(.isHeader)
-                Text("月读改进了阅读数据的保存和同步方式。请把其他设备上的月读也更新到这个版本，旧版本上新记的进度、批注和统计不会同步过来。")
-                Button(action: onContinue) {
-                    Text("onboarding.continue").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding(.top, 8)
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
 private struct MoonreadRoot: View {
     @Environment(ReaderSettingsStore.self) private var readerSettings
     @Environment(AIService.self) private var ai
@@ -457,7 +431,10 @@ private struct MoonreadRoot: View {
         }
         .ignoresSafeArea()
         .overlay {
-            MoonLaunchCover(ready: localDeadlineReached || ((themes.loaded || themes.error != nil) && (library.homeReady || library.error != nil)))
+            MoonLaunchCover(
+                canvas: Color(uiColor: appTheme.canvas),
+                ready: localDeadlineReached || ((themes.loaded || themes.error != nil) && (library.homeReady || library.error != nil))
+            )
                 .environment(\.moonreadReduceMotion, reduceMotion)
                 .ignoresSafeArea()
         }
@@ -555,9 +532,9 @@ struct LibraryDestination: View {
     }
 }
 
-/// Continue the system's static launch artwork in the first app frame. Keep
-/// this outside the themed host so its initial colors match the launch screen.
+/// Continue the system's launch artwork over the resolved app canvas.
 private struct MoonLaunchCover: View {
+    let canvas: Color
     let ready: Bool
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @State private var departing = false
@@ -567,9 +544,7 @@ private struct MoonLaunchCover: View {
         ZStack {
             if !finished {
                 ZStack {
-                    Color("LaunchBackground")
-                    // The rendered app icon at 120pt, exactly as in the storyboard,
-                    // so opening the app continues from the icon that was tapped.
+                    canvas
                     Image("LaunchSeal").resizable().scaledToFit()
                         .frame(width: 120, height: 120)
                 }

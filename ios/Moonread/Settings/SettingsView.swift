@@ -210,21 +210,14 @@ private struct SettingsEntry: View {
     @Environment(\.theme) private var theme
     @ScaledMetric(relativeTo: .body) private var iconSize = 20.0
     var body: some View {
+        let titleColor = Color(uiColor: selected ? theme.onAccent : theme.ink)
+        let detailColor = Color(uiColor: selected ? theme.onAccent : theme.secondary)
         HStack(spacing: 12) {
-            if selected {
-                Image(systemName: symbol).font(.system(size: iconSize))
-                    .frame(width: iconSize + 6).foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                LabeledContent { Text(verbatim: summary).foregroundStyle(.secondary) } label: {
-                    Text(title).foregroundStyle(.primary)
-                }
-            } else {
-                Image(systemName: symbol).font(.system(size: iconSize))
-                    .frame(width: iconSize + 6).foregroundStyle(Color(uiColor: theme.secondary))
-                    .accessibilityHidden(true)
-                LabeledContent { Text(verbatim: summary).foregroundStyle(Color(uiColor: theme.secondary)) } label: {
-                    Text(title).foregroundStyle(Color(uiColor: theme.ink))
-                }
+            Image(systemName: symbol).font(.system(size: iconSize))
+                .frame(width: iconSize + 6).foregroundStyle(detailColor)
+                .accessibilityHidden(true)
+            LabeledContent { Text(verbatim: summary).foregroundStyle(detailColor) } label: {
+                Text(title).foregroundStyle(titleColor)
             }
         }
     }
