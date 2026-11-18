@@ -111,35 +111,30 @@ struct DataManagementView: View {
         }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("exportAllReadingData")
     }
 
-    @ViewBuilder private var backupExportStatus: some View {
-        if model.backupExport.phase != .idle {
-            HStack {
-                switch model.backupExport.phase {
-                case .running:
-                    Text("正在生成备份", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
-                case .completed:
-                    Text("备份已生成", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.success))
-                default:
-                    Text(model.backupExport.phase.title, tableName: "MetadataExchange").foregroundStyle(Color(uiColor: theme.secondary))
-                }
-                Spacer()
-                Button { showingBackupExport = true } label: {
-                    Text(model.backupExport.phase == .running ? "查看" : "查看结果", tableName: "MetadataExchange")
-                }
-            }.font(.subheadline)
+    private var backupExportStatus: some View {
+        let export = model.backupExport
+        return ExportTaskSummary(task: export,
+                                 runningDetail: export.stopping ? nil : Text("正在生成备份", tableName: "DataManagement"),
+                                 open: { showingBackupExport = true }) { _ in
+            Text("备份已生成", tableName: "DataManagement")
         }
     }
 }
 
 private struct BackupExportView: View {
     let model: DataManagementModel
+    @Environment(\.dismiss) private var dismiss
     @State private var sharing: LibraryExport?
     @State private var sharingError: String?
     @State private var preparingShare = false
     private var task: ExportTask<Void, URL> { model.backupExport }
 
     var body: some View {
-        ExportTaskSheet(title: task.phase == .running ? Text("导出阅读数据备份", tableName: "DataManagement") : Text("导出结果", tableName: "MetadataExchange")) {
+        ExportTaskSheet(title: task.phase == .running ? Text("导出阅读数据备份", tableName: "DataManagement") : Text("导出结果", tableName: "MetadataExchange"),
+                        sharing: $sharing, onShared: { [output = task.output] in
+                            guard let output, task.output == output else { return }
+                            task.clear()
+                        }) {
             switch task.phase {
             case .idle: Color.clear
             case .running:
@@ -151,10 +146,10 @@ private struct BackupExportView: View {
             case .completed:
                 MetadataStatusView(symbol: task.phase.symbol, title: String(localized: "备份已生成", table: "DataManagement"),
                                    message: task.output?.lastPathComponent)
-            case .stopped, .failed:
+            case .failed:
                 MetadataStatusView(symbol: task.phase.symbol,
-                                   title: String(localized: task.phase == .stopped ? "导出已停止" : "导出失败", table: "MetadataExchange"),
-                                   message: task.phase == .stopped ? task.stopMessage : task.error)
+                                   title: String(localized: "导出失败", table: "MetadataExchange"),
+                                   message: task.error)
             }
         } footer: {
             footer
@@ -165,8 +160,8 @@ private struct BackupExportView: View {
         } message: {
             if let sharingError { Text(verbatim: sharingError) }
         }
-        .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
-            if let sharing { LibraryShareSheet(files: sharing) }
+        .onChange(of: task.phase) { _, phase in
+            if phase == .idle { dismiss() }
         }
     }
 
@@ -186,17 +181,21 @@ private struct BackupExportView: View {
                         Text("分享或存储", tableName: "MetadataExchange").frame(maxWidth: .infinity)
                     }.buttonStyle(MetadataActionButtonStyle(prominent: true)).disabled(preparingShare)
                         .accessibilityIdentifier("shareReadingBackup")
-                    Button { task.clear(); task.start(()) } label: {
-                        Text("重新导出", tableName: "DataManagement").frame(maxWidth: .infinity)
-                    }.buttonStyle(MetadataActionButtonStyle()).disabled(preparingShare)
-                case .stopped, .failed:
+                    finishButton(Text("完成", tableName: "MetadataExchange"))
+                case .failed:
                     Button { task.retry() } label: {
                         Text("重试", tableName: "MetadataExchange").frame(maxWidth: .infinity)
                     }.buttonStyle(MetadataActionButtonStyle(prominent: true))
+                    finishButton(Text("关闭"))
                 }
             }.frame(maxWidth: 460).padding(.horizontal, 20).padding(.vertical, 12)
                 .frame(maxWidth: .infinity)
         }
+    }
+
+    private func finishButton(_ title: Text) -> some View {
+        Button { task.clear() } label: { title.frame(maxWidth: .infinity) }
+            .buttonStyle(MetadataActionButtonStyle()).disabled(preparingShare)
     }
 
     private func share() {

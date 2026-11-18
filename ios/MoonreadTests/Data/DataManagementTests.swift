@@ -20,10 +20,19 @@ import XCTest
 
         let exporter = DataManagementModel(service: source).backupExport
         exporter.start(())
+        exporter.cancel()
+        await exporter.waitForStop()
+        XCTAssertEqual(exporter.phase, .idle)
+        XCTAssertNil(exporter.output)
+
+        exporter.start(())
         await exporter.waitForStop()
         XCTAssertEqual(exporter.phase, .completed)
         let archive = try XCTUnwrap(exporter.output)
         defer { try? FileManager.default.removeItem(at: archive.deletingLastPathComponent()) }
+        exporter.clear()
+        XCTAssertEqual(exporter.phase, .idle)
+        XCTAssertNil(exporter.output)
         let preview = try await target.previewReadingBackup(archive)
         defer { try? FileManager.default.removeItem(at: preview.staging.ownedRoot) }
         try await target.importReadingBackup(preview)

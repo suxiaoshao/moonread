@@ -615,14 +615,13 @@ import BackgroundTasks
 
 @MainActor @Observable final class ExportTask<Request: Sendable, Output: Sendable> {
     enum Phase {
-        case idle, running, completed, stopped, failed
+        case idle, running, completed, failed
 
         var title: LocalizedStringKey {
             switch self {
             case .idle: "导出小说信息"
             case .running: "正在导出"
             case .completed: "导出完成"
-            case .stopped: "导出已停止"
             case .failed: "导出失败"
             }
         }
@@ -631,7 +630,6 @@ import BackgroundTasks
             switch self {
             case .idle, .running: "square.and.arrow.up"
             case .completed: "checkmark.circle"
-            case .stopped: "stop.circle"
             case .failed: "exclamationmark.circle"
             }
         }
@@ -651,23 +649,13 @@ import BackgroundTasks
     private(set) var total: Int?
     private(set) var output: Output?
     private(set) var error: String?
-    private(set) var stopReason: MetadataExchangeModel.PauseReason?
+    private var stopReason: MetadataExchangeModel.PauseReason?
     private(set) var stopping = false
     var progressText: LocalizedStringKey {
         if stopping { return "正在停止导出。" }
         if let total, completed < total { return "正在导出 \(completed) / \(total) 本" }
         if total != nil { return "正在生成导出文件。" }
         return "正在准备导出…"
-    }
-    var stopMessage: String {
-        switch stopReason {
-        case .unavailable:
-            String(localized: "系统未提供后台执行资格。返回后可以重试导出。", table: "MetadataExchange")
-        case .expired:
-            String(localized: "系统后台执行时间已结束。返回后可以重试导出。", table: "MetadataExchange")
-        case nil:
-            String(localized: "未生成可分享的文件。", table: "MetadataExchange")
-        }
     }
 
     init(service: AppDataService, usesSystemExecution: Bool, kind: String, title: String, subtitle: String,
@@ -686,7 +674,7 @@ import BackgroundTasks
     }
 
     func retry() {
-        guard work == nil, (phase == .stopped || phase == .failed), let request else { return }
+        guard work == nil, phase == .failed, let request else { return }
         launch(request)
     }
 
@@ -698,6 +686,10 @@ import BackgroundTasks
 
     func clear() {
         guard work == nil, phase != .running else { return }
+        reset()
+    }
+
+    private func reset() {
         output = nil; error = nil; request = nil; stopReason = nil
         completed = 0; total = nil; phase = .idle
     }
@@ -727,6 +719,7 @@ import BackgroundTasks
             defer {
                 systemExecution.finish(success: phase == .completed)
                 work = nil
+                if stopping && stopReason == nil { reset() }
                 stopping = false
             }
             do {
@@ -738,12 +731,16 @@ import BackgroundTasks
                 output = result
                 phase = .completed
             } catch {
-                if Task.isCancelled || error is CancellationError {
-                    phase = .stopped
-                } else {
+                switch stopReason {
+                case .unavailable:
+                    self.error = String(localized: "系统未提供后台执行资格。返回后可以重试导出。", table: "MetadataExchange")
+                case .expired:
+                    self.error = String(localized: "系统后台执行时间已结束。返回后可以重试导出。", table: "MetadataExchange")
+                case nil:
+                    if stopping { return }
                     self.error = ReaderMessages.error(error)
-                    phase = .failed
                 }
+                phase = .failed
             }
         }
     }

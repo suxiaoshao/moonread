@@ -570,12 +570,12 @@ private struct BookSynopsis: View {
         VStack(alignment: .leading, spacing: 4) {
             if overflows {
                 DisclosureGroup(isExpanded: $expanded) {
-                    synopsisText()
+                    EmptyView()
                 } label: {
                     Text("简介").frame(minHeight: LayoutTokens.hit, alignment: .leading)
                 }
             }
-            if !overflows || !expanded { synopsisText(limit: 3) }
+            synopsisText(limit: overflows && expanded ? nil : 3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(alignment: .topLeading) {
