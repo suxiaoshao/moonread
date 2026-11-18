@@ -13,9 +13,11 @@ struct ReaderChapterList: View {
     let refreshOutline: () async -> Void
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
-    @State private var viewportHeight: CGFloat = 0
+    @State private var visibility = ChapterVisibility()
 
     var body: some View {
+        let currentParent = !editingOutline && model.chapterFilter.isEmpty
+            ? model.chapterSnapshot.first(where: isCurrent)?.parentUtf8 : nil
         ScrollViewReader { proxy in
             List {
                 if session.incomplete {
@@ -28,44 +30,26 @@ struct ReaderChapterList: View {
                     }.font(.caption).listRowBackground(Color(uiColor: theme.surface))
                 }
                 if model.chapterFilter.isEmpty {
-                    Button {
-                        chapterFilterFocused = false
-                        navigate(0, nil, .cover)
-                    } label: {
-                        Label("封面", systemImage: "book.closed")
-                            .foregroundStyle(Color(uiColor: session.showingCover ? theme.accent : theme.ink))
-                    }
-                    .id("reader-cover")
-                    .accessibilityIdentifier("showBookCover")
-                    .accessibilityAddTraits(session.showingCover ? .isSelected : [])
-                    .listRowBackground(Color(uiColor: theme.surface))
-                    .listRowSeparatorTint(Color(uiColor: theme.separator))
-                    ForEach(outlineGroups) { group in
+                    let groups = outlineGroups
+                    let firstGroup = groups.first
+                    if firstGroup == nil || firstGroup?.volume != nil {
                         Section {
-                            if let volume = group.volume {
-                                if editingOutline {
-                                    chapterRow(volume)
-                                    ForEach(group.chapters, id: \.startUtf8) { chapter in
-                                        chapterRow(chapter)
-                                    }
-                                }
-                                else {
-                                    DisclosureGroup(isExpanded: volumeExpanded(volume.startUtf8)) {
-                                        ForEach(group.chapters, id: \.startUtf8) { chapter in
-                                            chapterRow(chapter)
-                                        }
-                                    } label: { volumeTitle(volume) }
-                                    .id(volume.startUtf8)
-                                    .contextMenu { chapterActions(volume) }
-                                    .listRowBackground(Color(uiColor: theme.surface))
-                                    .listRowSeparatorTint(Color(uiColor: theme.separator))
-                                    .accessibilityAddTraits(isCurrent(volume) ? .isSelected : [])
-                                    .accessibilityIdentifier("volume-\(volume.startUtf8)")
-                                }
-                            } else {
-                                ForEach(group.chapters, id: \.startUtf8) { chapter in
-                                    chapterRow(chapter)
-                                }
+                            coverRow
+                        }
+                        .listSectionSpacing(0)
+                    }
+                    ForEach(groups) { group in
+                        Section {
+                            if group.volume == nil, group.id == firstGroup?.id {
+                                coverRow
+                            }
+                            if editingOutline, let volume = group.volume { chapterRow(volume) }
+                            ForEach(group.chapters, id: \.startUtf8) { chapter in
+                                chapterRow(chapter, indented: group.volume != nil && !editingOutline)
+                            }
+                        } header: {
+                            if !editingOutline, let volume = group.volume {
+                                volumeHeader(volume, occludesCurrent: volume.startUtf8 == currentParent)
                             }
                         }
                     }
@@ -76,11 +60,14 @@ struct ReaderChapterList: View {
                 }
             }
             .listStyle(.plain)
+            .listSectionSpacing(.custom(LayoutTokens.compact))
             .scrollContentBackground(.hidden)
             .background(Color(uiColor: theme.surface))
             .coordinateSpace(name: "chapterListViewport")
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                viewportHeight = $0; chapterVisibilityKnown = $0 > 0
+                visibility.viewportHeight = $0
+                chapterVisibilityKnown = $0 > 0
+                publishVisibility()
             }
             .scrollDismissesKeyboard(.interactively)
             .searchable(text: Binding(get: { model.chapterFilter }, set: model.filterChapters),
@@ -136,6 +123,36 @@ struct ReaderChapterList: View {
         }
     }
 
+    private var coverRow: some View {
+        let current = session.showingCover
+        return Button {
+            chapterFilterFocused = false
+            navigate(0, nil, .cover)
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: current ? "book.closed.fill" : "book.closed")
+                    .font(.footnote)
+                    .foregroundStyle(Color(uiColor: current ? theme.accent : theme.secondary))
+                    .accessibilityHidden(true)
+                Text("封面")
+                    .font(.body)
+                    .fontWeight(current ? .semibold : nil)
+                    .foregroundStyle(Color(uiColor: theme.ink))
+            }
+            .padding(.bottom, 3)
+            .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .bottomLeading)
+            .padding(.horizontal, LayoutTokens.content)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .id("reader-cover")
+        .accessibilityIdentifier("showBookCover")
+        .accessibilityAddTraits(current ? .isSelected : [])
+        .listRowBackground(Color(uiColor: theme.surface))
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets())
+    }
+
     private struct OutlineGroup: Identifiable {
         let id: UInt64
         let volume: ChapterEntry?
@@ -154,11 +171,6 @@ struct ReaderChapterList: View {
             }
         }
         return groups
-    }
-    private func volumeExpanded(_ offset: UInt64) -> Binding<Bool> {
-        Binding(get: { !model.collapsedVolumes.contains(offset) }, set: { expanded in
-            if expanded != !model.collapsedVolumes.contains(offset) { model.toggleVolume(offset) }
-        })
     }
     private var returnTarget: UInt64? {
         guard !chapterFilterFocused, chapterVisibilityKnown, !session.showingCover,
@@ -181,33 +193,98 @@ struct ReaderChapterList: View {
             Button("从目录移除", systemImage: "trash", role: .destructive) { removeChapter(chapter) }
         }
     }
-    private func chapterRow(_ chapter: ChapterEntry) -> some View {
+    private func chapterRow(_ chapter: ChapterEntry, indented: Bool = false) -> some View {
         let current = isCurrent(chapter)
-        return ReaderChapterRow(chapter: model.chapterWithCoverage(chapter), current: current, showsCoverage: model.chapterCoverageReady, viewportHeight: viewportHeight) {
+        return ReaderChapterRow(chapter: model.chapterWithCoverage(chapter), current: current,
+                                showsCoverage: model.chapterCoverageReady, indented: indented) {
             chapterFilterFocused = false
             if editingOutline { editChapter(ChapterEditDraft(start: chapter.startUtf8, title: chapter.title, level: chapter.level)) }
             else if chapter.level == 0 { model.toggleVolume(chapter.startUtf8) }
             else { navigate(chapter.startUtf8, nil, .start) }
-        } visibilityChanged: { visible in
-            reportVisibility(visible, for: chapter)
         } actions: { chapterActions(chapter) }
+        .modifier(ReaderChapterFrame(tracked: current) { frame in
+            reportChapterFrame(frame, for: chapter, occludingParent: indented ? chapter.parentUtf8 : nil)
+        })
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color(uiColor: theme.surface))
+        .listRowSeparator(.hidden)
     }
+
     private func isCurrent(_ chapter: ChapterEntry) -> Bool {
         !session.showingCover && session.chapter?.startUtf8 == chapter.startUtf8
     }
-    private func reportVisibility(_ visible: Bool, for chapter: ChapterEntry) {
-        guard isCurrent(chapter) else { return }
-        let next: Set<UInt64> = visible ? [chapter.startUtf8] : []
+
+    private func volumeHeader(_ volume: ChapterEntry, occludesCurrent: Bool) -> some View {
+        let current = isCurrent(volume)
+        let expanded = !model.collapsedVolumes.contains(volume.startUtf8)
+        return Button {
+            model.toggleVolume(volume.startUtf8)
+        } label: {
+            HStack(spacing: LayoutTokens.control) {
+                ReaderChapterLabel(title: Text(verbatim: volume.title), titleFont: .headline, current: current)
+                Spacer(minLength: LayoutTokens.control)
+                Image(systemName: expanded ? "chevron.down" : "chevron.forward")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: theme.secondary))
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, LayoutTokens.content)
+            .frame(minHeight: LayoutTokens.hit).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .textCase(nil)
+        .id(volume.startUtf8)
+        .contextMenu { chapterActions(volume) }
+        .accessibilityLabel(Text(verbatim: volume.title))
+        .accessibilityValue(expanded ? Text("已展开") : Text("已收起"))
+        .accessibilityAddTraits(current ? [.isHeader, .isSelected] : .isHeader)
+        .accessibilityIdentifier("volume-\(volume.startUtf8)")
+        .modifier(ReaderChapterFrame(tracked: current || occludesCurrent) { frame in
+            if current { reportChapterFrame(frame, for: volume, occludingParent: nil) }
+            if occludesCurrent || visibility.header?.offset == volume.startUtf8 {
+                visibility.header = frame.map { .init(offset: volume.startUtf8, rect: $0) }
+                publishVisibility()
+            }
+        })
+        .listRowInsets(EdgeInsets())
+    }
+
+    // Only the current item and its own header report frames. Publish to the
+    // sheet only when the result changes, so scrolling does not rebuild the list.
+    private final class ChapterVisibility {
+        struct Frame {
+            let offset: UInt64
+            let rect: CGRect
+        }
+
+        var viewportHeight: CGFloat = 0
+        var item: Frame?
+        var parent: UInt64?
+        var header: Frame?
+    }
+
+    private func reportChapterFrame(_ frame: CGRect?, for chapter: ChapterEntry, occludingParent: UInt64?) {
+        if let frame {
+            guard isCurrent(chapter) else { return }
+            visibility.item = .init(offset: chapter.startUtf8, rect: frame)
+            visibility.parent = occludingParent
+        } else if visibility.item?.offset == chapter.startUtf8 {
+            visibility.item = nil
+        }
+        publishVisibility()
+    }
+
+    private func publishVisibility() {
+        var next: Set<UInt64> = []
+        if !session.showingCover, let item = visibility.item, item.offset == session.chapter?.startUtf8 {
+            let top = max(item.rect.minY, 0)
+            let bottom = min(item.rect.maxY, visibility.viewportHeight)
+            let covered = visibility.header.flatMap { header in
+                header.offset == visibility.parent
+                    ? max(0, min(bottom, header.rect.maxY) - max(top, header.rect.minY)) : nil
+            } ?? 0
+            if item.rect.height > 0, bottom - top - covered >= item.rect.height * 0.6 { next.insert(item.offset) }
+        }
         if next != visibleChapters { visibleChapters = next }
-    }
-    private func volumeTitle(_ volume: ChapterEntry) -> some View {
-        chapterTitle(volume, current: isCurrent(volume))
-            .modifier(ReaderChapterVisibility(current: isCurrent(volume), viewportHeight: viewportHeight) {
-                reportVisibility($0, for: volume)
-            })
-    }
-    private func chapterTitle(_ chapter: ChapterEntry, current: Bool) -> some View {
-        Text(verbatim: chapter.title).font(chapter.level == 0 ? .headline : .body)
-            .foregroundStyle(Color(uiColor: current ? theme.accent : theme.ink))
     }
 }
