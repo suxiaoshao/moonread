@@ -19,7 +19,7 @@ Available in Moonread 1.5. This exchanges book information; use **Reading data b
 
 ### 1. Start with a manifest or TXT files
 
-**Existing Moonread information:** go to Settings → Data management → Novel information → Export. Choose all shelves or one shelf and save a JSONL/JSON manifest; custom covers are packaged in `.moonread-metadata`. Edit a copy, preserving existing identities and references. Unindexed books are skipped and counted; indexed iCloud books need not be downloaded to export their information.
+**Existing Moonread information:** go to Settings → Data management → Novel information → Export. Choose all shelves or one shelf and select JSONL or JSON. Once the export starts, you can close the sheet and return to Data management to view, share, or save the result. Moonread packages custom covers in `.moonread-metadata`. Edit a copy, preserving existing identities and references. Moonread skips and counts unindexed books. Indexed iCloud books can be exported without downloading the TXT files.
 
 **No manifest yet:** give a local agent the paths to your TXT files. It can calculate text identities using the public normalization-v1 algorithm below and create JSONL/JSON directly. A Moonread export is not required. `reference` can be omitted or contain known titles, authors and relative paths; do not invent shelf details. Add these TXT files to Moonread and index them before importing metadata, so they can be matched.
 
