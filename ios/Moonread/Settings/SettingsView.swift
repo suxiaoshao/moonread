@@ -94,7 +94,7 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(selected ? Color(uiColor: theme.accent) : .clear, in: .rect(cornerRadius: 10))
+                    .background(selected ? Color(uiColor: theme.accentSurface) : .clear, in: .rect(cornerRadius: 10))
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -226,14 +226,12 @@ private struct SettingsEntry: View {
     @Environment(\.theme) private var theme
     @ScaledMetric(relativeTo: .body) private var iconSize = 20.0
     var body: some View {
-        let titleColor = Color(uiColor: selected ? theme.onAccent : theme.ink)
-        let detailColor = Color(uiColor: selected ? theme.onAccent : theme.secondary)
         HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: iconSize))
-                .frame(width: iconSize + 6).foregroundStyle(detailColor)
+                .frame(width: iconSize + 6).foregroundStyle(Color(uiColor: selected ? theme.ink : theme.secondary))
                 .accessibilityHidden(true)
-            LabeledContent { Text(verbatim: summary).foregroundStyle(detailColor) } label: {
-                Text(title).foregroundStyle(titleColor)
+            LabeledContent { Text(verbatim: summary).foregroundStyle(Color(uiColor: theme.secondary)) } label: {
+                Text(title).fontWeight(selected ? .semibold : nil).foregroundStyle(Color(uiColor: theme.ink))
             }
         }
     }
