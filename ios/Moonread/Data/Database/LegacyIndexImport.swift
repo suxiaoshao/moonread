@@ -105,7 +105,7 @@ enum LegacyIndexImport {
                 guard try Row.fetchOne(db, sql: "PRAGMA main.foreign_key_check") == nil else {
                     throw DataV2Error.incompatibleSource("legacy index relationships")
                 }
-                try IndexImport.migrateLocalState(db, defaults: defaults)
+                try IndexImport.migrateLocalState(db, defaults: defaults, legacyUserScope: owner)
                 try db.execute(sql: "INSERT INTO main.index_import_state VALUES(1,?)", arguments: [version])
                 return .commit
             }

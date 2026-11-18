@@ -86,7 +86,8 @@ enum DataV2Schema {
 
                     CREATE TABLE library_device_state(
                         id INTEGER PRIMARY KEY CHECK(id=1), author TEXT NOT NULL,
-                        cloud_documents_owner TEXT, legacy_cleanup_done INTEGER NOT NULL CHECK(legacy_cleanup_done IN (0,1))
+                        cloud_documents_owner TEXT, legacy_user_scope TEXT NOT NULL,
+                        legacy_cleanup_done INTEGER NOT NULL CHECK(legacy_cleanup_done IN (0,1))
                     );
                     ALTER TABLE library_files ADD COLUMN seeded_example INTEGER NOT NULL DEFAULT 0;
                     CREATE TABLE full_index_request(

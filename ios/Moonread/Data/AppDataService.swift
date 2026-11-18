@@ -708,6 +708,18 @@ actor AppDataService {
         return sourceDefaults.persistentDomain(forName: domain) ?? [:]
     }
 
+    /// The released stores retain their original scope across account changes.
+    func publishedUserSource() throws -> DataScope {
+        guard let dataSession else { throw DataV2Error.migrationNotVerified }
+        return try dataSession.legacyUserScope()
+    }
+
+    private func legacyBootstrapScope() throws -> DataScope? {
+        guard let value = sourceDefaults.object(forKey: "Moonread.userOwner") else { return nil }
+        guard let name = value as? String, !name.isEmpty else { throw DataV2Error.invalidOwnerState }
+        return try .confirmed(container: CloudConfiguration.containerID, environment: readingCloudEnvironment, recordName: name)
+    }
+
     func indexStore() throws -> ReaderIndex {
         guard !changingUserScope else { throw CancellationError() }
         if let core {
@@ -718,9 +730,8 @@ actor AppDataService {
         let session: DataSession
         if let dataSession { session = dataSession }
         else {
-            let legacy = try publishedUserSource()
             session = try DataSession(layout: DataLayout(applicationSupport: directory, environment: readingCloudEnvironment),
-                                      confirmedLegacyOwner: legacy.scope == .local ? nil : legacy.scope)
+                                      confirmedLegacyOwner: try legacyBootstrapScope())
             dataSession = session
         }
         let (lease, _) = try session.activate(.unknown)

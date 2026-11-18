@@ -150,10 +150,10 @@ final class DataSession: @unchecked Sendable {
     /// The optional bootstrap owner is accepted only before any v2 owner
     /// decision exists. It comes from a positively attributed legacy store,
     /// not simply from the system's current login.
-    init(layout: DataLayout, bundle: Bundle = .main, confirmedLegacyOwner: DataScope? = nil) throws {
+    init(layout: DataLayout, bundle: Bundle = .main, confirmedLegacyOwner: @autoclosure () throws -> DataScope? = nil) throws {
         self.layout = layout; self.bundle = bundle
         var state = try DataOwnerState.load(at: layout.ownerState)
-        if let confirmedLegacyOwner, !FileManager.default.fileExists(atPath: layout.ownerState.path) {
+        if !FileManager.default.fileExists(atPath: layout.ownerState.path), let confirmedLegacyOwner = try confirmedLegacyOwner() {
             guard confirmedLegacyOwner.valid, confirmedLegacyOwner != .local else { throw DataV2Error.invalidOwnerState }
             state.current = confirmedLegacyOwner
             state.lastConfirmed = confirmedLegacyOwner
@@ -312,7 +312,7 @@ final class DataSession: @unchecked Sendable {
                 try importLegacyIndexLocked(legacyFile, token: token, defaults: legacyDefaults)
             } else {
                 try writer.write { db in
-                    try IndexImport.migrateLocalState(db, defaults: legacyDefaults, cleanupDone: true)
+                    try IndexImport.migrateLocalState(db, defaults: legacyDefaults, legacyUserScope: token.scope.key, cleanupDone: true)
                     try db.execute(sql: "INSERT INTO main.index_import_state VALUES(1,0)")
                 }
             }
@@ -330,6 +330,17 @@ final class DataSession: @unchecked Sendable {
             let writer = try active(token)
             guard indexReady else { throw DataV2Error.migrationNotVerified }
             return try writer.write(body)
+        }
+    }
+
+    func legacyUserScope() throws -> DataScope {
+        try readDeviceTask { db in
+            guard let key = try String.fetchOne(db, sql: "SELECT legacy_user_scope FROM main.library_device_state WHERE id=1") else {
+                throw DataV2Error.migrationNotVerified
+            }
+            let scope: DataScope = key == "local" ? .local : .account(key)
+            guard scope.valid else { throw DataV2Error.invalidOwnerState }
+            return scope
         }
     }
 

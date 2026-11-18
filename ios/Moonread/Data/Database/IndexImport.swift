@@ -47,7 +47,7 @@ enum IndexImport {
     static let legacySourcePrefix = "Moonread.importSource.library."
     static let legacyDraftPrefix = "Moonread.sourceDraft.library."
 
-    static func migrateLocalState(_ db: Database, defaults: [String: Any], cleanupDone: Bool = false) throws {
+    static func migrateLocalState(_ db: Database, defaults: [String: Any], legacyUserScope: String, cleanupDone: Bool = false) throws {
         for (key, value) in defaults where key.hasPrefix(legacySourcePrefix) {
             let id = String(key.dropFirst(legacySourcePrefix.count))
             guard let bytes = value as? Data, let source = try? JSONDecoder().decode(ImportSource.self, from: bytes),
@@ -81,10 +81,11 @@ enum IndexImport {
         try db.execute(sql: "UPDATE main.library_files SET seeded_example=1 WHERE id=? AND directory=0",
                        arguments: [defaults["Moonread.seededExampleFileID"] as? String])
         try db.execute(sql: """
-            INSERT INTO main.library_device_state(id,author,cloud_documents_owner,legacy_cleanup_done) VALUES(1,?,?,?)
+            INSERT INTO main.library_device_state(id,author,cloud_documents_owner,legacy_user_scope,legacy_cleanup_done)
+            VALUES(1,?,?,?,?)
             """,
                        arguments: [defaults["Moonread.userDevice"] as? String ?? UUID().uuidString,
-                                   defaults["Moonread.cloudLibraryOwner"] as? String,cleanupDone])
+                                   defaults["Moonread.cloudLibraryOwner"] as? String,legacyUserScope,cleanupDone])
     }
 
     static func availableText(_ db: Database, id: String, scope: String) throws -> ImportText {

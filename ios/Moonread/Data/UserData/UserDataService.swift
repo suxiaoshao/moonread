@@ -25,20 +25,6 @@ enum UserAuthorityPreparationError: LocalizedError {
 
 extension AppDataService {
     var userValueClock: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
-    /// The released on-device source has an owner, not a cloud environment.
-    /// Bind it to that owner in the current environment without using current
-    /// sign-in to guess the owner or importing another v2 environment's data.
-    func publishedUserSource() throws -> (scope: DataScope, resumeNamespace: String) {
-        guard let value = sourceDefaults.object(forKey: "Moonread.userOwner") else {
-            return (.local, userDirectoryName + "/local")
-        }
-        guard let recordName = value as? String, !recordName.isEmpty else {
-            throw DataV2Error.invalidOwnerState
-        }
-        return (try .confirmed(container: CloudConfiguration.containerID, environment: readingCloudEnvironment, recordName: recordName),
-                userDirectoryName + "/" + recordName)
-    }
-
     /// The relational writer and fixed reads must use this prepared capability.
     func relationalUserIndex() throws -> ReaderIndex {
         let index = try indexStore()
@@ -49,7 +35,7 @@ extension AppDataService {
     func prepareUserIndex(_ index: ReaderIndex, progress: (@Sendable (LegacyImportProgress) -> Void)? = nil) throws {
         try index.session.prepareUsers(index.lease, progress: progress) {
             let source = try publishedUserSource()
-            guard source.scope == index.lease.scope else { return nil }
+            guard source == index.lease.scope else { return nil }
             let deviceState: LegacyUserSnapshot.DeviceState
             let snapshot: LegacyUserSnapshot
             do {
@@ -60,8 +46,11 @@ extension AppDataService {
                     throw CocoaError(.fileReadNoPermission)
                 }
                 #endif
-                deviceState = try .init(defaults: sourceDefaults, confirmedLegacyResumeScope: source.resumeNamespace)
-                snapshot = try LegacyUserSnapshot.open(directory: dataDirectoryURL(), scope: source.scope,
+                // Defaults still holds the old suffix for these two migration inputs.
+                // The database scope above is the authority for reading the source.
+                let suffix = source == .local ? "local" : sourceDefaults.string(forKey: "Moonread.userOwner")
+                deviceState = try .init(defaults: sourceDefaults, confirmedLegacyResumeScope: suffix.map { userDirectoryName + "/" + $0 })
+                snapshot = try LegacyUserSnapshot.open(directory: dataDirectoryURL(), scope: source,
                                                        deviceState: deviceState, progress: progress)
             } catch { throw UserAuthorityPreparationError.unreadableSource }
             if snapshot.formal == nil, snapshot.pending == nil,
@@ -97,8 +86,8 @@ extension AppDataService {
         do { try FileManager.default.removeItem(at: handoff) }
         catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {}
         let source = try publishedUserSource()
-        if source.scope != .local, cloudSyncIntent.approvedScopeKey == nil {
-            cloudSyncIntent.approve(source.scope)
+        if source != .local, cloudSyncIntent.approvedScopeKey == nil {
+            cloudSyncIntent.approve(source)
         }
         Self.removeLegacyLocalDefaults(sourceDefaults, domain: domain)
         try index.write { try $0.execute(sql: "UPDATE main.library_device_state SET legacy_cleanup_done=1 WHERE id=1") }

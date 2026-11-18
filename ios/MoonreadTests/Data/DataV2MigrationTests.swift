@@ -240,6 +240,12 @@ struct DataV2MigrationTests {
         #expect(dev.session.layout.index != prod.session.layout.index)
         #expect(await production.isReadingCloudApproved(prodScope))
         #expect(try author(prod) == "legacy")
+        AppDataService.removeLegacyLocalDefaults(defaults, domain: suite)
+        #expect(await production.isReadingCloudApproved(prodScope))
+        _ = try await production.selectReadingCloudScope(.signedOut, approval: nil, lookup: { .signedOut })
+        let local = try await production.relationalUserIndex()
+        #expect(local.lease.scope == .local)
+        #expect(try author(local) == nil)
         try prod.session.close()
         try dev.session.close()
     }

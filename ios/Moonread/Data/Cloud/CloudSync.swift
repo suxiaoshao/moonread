@@ -461,14 +461,15 @@ extension AppDataService {
     func cloudSyncRequested() -> Bool { cloudSyncIntent.requested }
     func setCloudSyncRequested(_ requested: Bool) { cloudSyncIntent.set(requested) }
     func hasPreviouslyApprovedReadingAccount() -> Bool {
-        cloudSyncIntent.approvedScopeKey != nil || sourceDefaults.string(forKey: "Moonread.userOwner") != nil
+        if cloudSyncIntent.approvedScopeKey != nil { return true }
+        return if case .account = try? publishedUserSource() { true } else { false }
     }
     func isReadingCloudApproved(_ scope: DataScope) -> Bool {
         guard scope != .local else { return false }
         if let approved = cloudSyncIntent.approvedScopeKey { return scope.key == approved }
         // The previous owner proves consent for the released source as
         // attributed to this installation's environment.
-        return (try? publishedUserSource().scope) == scope
+        return (try? publishedUserSource()) == scope
     }
     func dataChanged() {
         NotificationCenter.default.post(name: .readingDataChanged, object: nil)
