@@ -61,6 +61,7 @@ struct ReaderChapterList: View {
                 }
             }
             .listStyle(.plain)
+            .listSectionSpacing(.custom(LayoutTokens.compact))
             .scrollContentBackground(.hidden)
             .background(Color(uiColor: theme.surface))
             .coordinateSpace(name: "chapterListViewport")
@@ -175,8 +176,9 @@ struct ReaderChapterList: View {
         .modifier(ReaderChapterFrame(tracked: current) { frame in
             reportChapterFrame(frame, for: chapter, occludingParent: indented ? chapter.parentUtf8 : nil)
         })
+        .listRowInsets(EdgeInsets())
         .listRowBackground(Color(uiColor: theme.surface))
-        .listRowSeparatorTint(Color(uiColor: theme.separator))
+        .listRowSeparator(.hidden)
     }
 
     private func isCurrent(_ chapter: ChapterEntry) -> Bool {
@@ -190,7 +192,7 @@ struct ReaderChapterList: View {
             model.toggleVolume(volume.startUtf8)
         } label: {
             HStack(spacing: LayoutTokens.control) {
-                ReaderChapterTitle(chapter: volume, current: current)
+                ReaderChapterLabel(chapter: volume, current: current)
                 Spacer(minLength: LayoutTokens.control)
                 Image(systemName: expanded ? "chevron.down" : "chevron.forward")
                     .font(.caption.weight(.semibold))
@@ -202,7 +204,6 @@ struct ReaderChapterList: View {
         }
         .buttonStyle(.plain)
         .textCase(nil)
-        .listRowInsets(EdgeInsets())
         .background(Color(uiColor: theme.surface))
         .id(volume.startUtf8)
         .contextMenu { chapterActions(volume) }
@@ -217,6 +218,7 @@ struct ReaderChapterList: View {
                 publishVisibility()
             }
         })
+        .listRowInsets(EdgeInsets())
     }
 
     // Only the current item and its own header report frames. Publish to the
