@@ -85,7 +85,8 @@ enum DataV2Schema {
                     CREATE INDEX file_import_draft_job ON file_import_draft(job_id);
 
                     CREATE TABLE library_device_state(
-                        id INTEGER PRIMARY KEY CHECK(id=1), author TEXT NOT NULL, cloud_documents_owner TEXT, system_reset_done INTEGER NOT NULL DEFAULT 0
+                        id INTEGER PRIMARY KEY CHECK(id=1), author TEXT NOT NULL,
+                        cloud_documents_owner TEXT, legacy_cleanup_done INTEGER NOT NULL CHECK(legacy_cleanup_done IN (0,1))
                     );
                     ALTER TABLE library_files ADD COLUMN seeded_example INTEGER NOT NULL DEFAULT 0;
                     CREATE TABLE full_index_request(

@@ -87,17 +87,12 @@ extension AppDataService {
 
     private func cleanLegacyLocalState(_ index: ReaderIndex) async throws {
         guard libraryDirectoryOverride == nil, testSession == nil, let domain = Bundle.main.bundleIdentifier else { return }
-        let needsSystemReset = try index.read { db in
-            try Bool.fetchOne(db, sql: """
-                SELECT system_reset_done=0 AND EXISTS(SELECT 1 FROM main.index_import_state WHERE legacy_version>0)
-                FROM main.library_device_state WHERE id=1
-                """) == true
+        let needsCleanup = try index.read { db in
+            try Bool.fetchOne(db, sql: "SELECT legacy_cleanup_done=0 FROM main.library_device_state WHERE id=1") == true
         }
-        if needsSystemReset {
-            try await clearLegacySpotlight()
-            try await clearLegacyDonations()
-            try index.write { try $0.execute(sql: "UPDATE main.library_device_state SET system_reset_done=1 WHERE id=1") }
-        }
+        guard needsCleanup else { return }
+        try await clearLegacySpotlight()
+        try await clearLegacyDonations()
         let handoff = try dataDirectoryURL().appending(path: "CloudHandoff", directoryHint: .isDirectory)
         do { try FileManager.default.removeItem(at: handoff) }
         catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {}
@@ -106,6 +101,7 @@ extension AppDataService {
             cloudSyncIntent.approve(source.scope)
         }
         Self.removeLegacyLocalDefaults(sourceDefaults, domain: domain)
+        try index.write { try $0.execute(sql: "UPDATE main.library_device_state SET legacy_cleanup_done=1 WHERE id=1") }
     }
 
     static func removeLegacyLocalDefaults(_ defaults: UserDefaults, domain: String) {

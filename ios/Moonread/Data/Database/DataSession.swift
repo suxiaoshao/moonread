@@ -312,7 +312,7 @@ final class DataSession: @unchecked Sendable {
                 try importLegacyIndexLocked(legacyFile, token: token, defaults: legacyDefaults)
             } else {
                 try writer.write { db in
-                    try IndexImport.migrateLocalState(db, defaults: legacyDefaults)
+                    try IndexImport.migrateLocalState(db, defaults: legacyDefaults, cleanupDone: true)
                     try db.execute(sql: "INSERT INTO main.index_import_state VALUES(1,0)")
                 }
             }
