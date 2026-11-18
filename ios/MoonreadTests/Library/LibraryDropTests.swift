@@ -298,7 +298,7 @@ final class LibraryDropTests: LibraryDropFixture {
     XCTAssertTrue(model.busy)
     await model.waitForFileWork()
     XCTAssertNil(model.error)
-    XCTAssertTrue(model.path.isEmpty)
+    XCTAssertTrue(model.shell.path.isEmpty)
     XCTAssertTrue(
       FileManager.default.fileExists(atPath: f.books.appendingPathComponent("after.txt").path))
     XCTAssertFalse(

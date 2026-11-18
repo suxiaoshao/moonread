@@ -60,7 +60,7 @@ extension LibraryModel {
             if !scan.errors.isEmpty { error = scan.errors.joined(separator: "\n") }
             guard !files.isEmpty else { return }
             enqueuedSharedBatches.formUnion(batches.map(\.directory))
-            selectedTab = .library
+            shell.selectedTab = .library
             let skipped = batches.flatMap { $0.manifest.skippedNames }
             startImport(files, at: .init(shelfID: "builtin"), completion: files.count + skipped.count == 1 ? .openSingle : .showFolder,
                         shared: true, skippedNames: skipped)

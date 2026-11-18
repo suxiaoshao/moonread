@@ -272,7 +272,7 @@ struct StatisticsView: View {
 
     @ViewBuilder private var deletionSection: some View {
         if let target, !target.fromReader, let details = information.details {
-            BookReadingDataClearSection(book: information, target: target, key: details.metadata.sha, manager: library.dataManagement)
+            BookReadingDataClearSection(book: information, target: target, key: details.metadata.sha, manager: library.shell.dataManagement)
         }
     }
 
@@ -283,7 +283,7 @@ struct StatisticsView: View {
                 HStack {
                     if !overview.preferences.enabled { Label("阅读统计已暂停", systemImage: "pause.circle") }
                     Spacer()
-                    Button("统计设置") { library.openSettings(target: .statistics) }
+                    Button("统计设置") { library.shell.openSettings(target: .statistics) }
                 }
                 if statisticsState.compatibilityNotice != nil || StatisticsWriter.shared.error != nil {
                     DisclosureGroup {
@@ -325,7 +325,7 @@ struct StatisticsView: View {
                 Button("分析阅读", systemImage: "sparkles") { aiRequest = statisticsRequest }
                     .disabled(statisticsRequest == nil).accessibilityIdentifier("analyzeReading")
             }
-            Button("统计设置", systemImage: "gearshape") { library.openSettings(target: .statistics) }
+            Button("统计设置", systemImage: "gearshape") { library.shell.openSettings(target: .statistics) }
             if target != nil {
                 Button("清除本书统计", systemImage: "trash", role: .destructive) { deleteBook = true }
             }

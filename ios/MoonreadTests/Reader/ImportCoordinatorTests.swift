@@ -210,8 +210,8 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         await gate.wait()
         try await service.scanLibraryShelf(id)
       })
-    model.selectedTab = .library
-    model.path = [.manage]
+    model.shell.selectedTab = .library
+    model.shell.path = [.manage]
     model.chooseFiles(.folder(nil))
     // Match the system order: presentation ends before the result arrives.
     model.filePickerPresented = false
@@ -220,7 +220,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     await fulfillment(of: [entered], timeout: 2)
     let shelf = try XCTUnwrap(model.shelves.first { $0.name == "selected" })
     let location = LibraryLocation(shelfID: shelf.id)
-    XCTAssertEqual(model.path, [.manage, .folder(location)])
+    XCTAssertEqual(model.shell.path, [.manage, .folder(location)])
     XCTAssertNotNil(model.shelfScans[shelf.id])
     XCTAssertFalse(model.processingFiles, "The destination owns scan feedback after registration")
     let before = try await service.libraryEntries(location)
@@ -230,13 +230,13 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     try await waitForLibraryState { model.shelfScans.isEmpty }
     let entries = try await service.libraryEntries(location)
     XCTAssertEqual(entries.map(\.name), ["小说.txt"])
-    model.path = [.manage]
+    model.shell.path = [.manage]
     model.chooseFiles(.folder(nil))
     model.cancelFilePicker()
     model.sheetDidDismiss()
     model.completeFilePicker(.success([folder]))
     await Task.yield()
-    XCTAssertEqual(model.path, [.manage], "Cancellation cannot resume an earlier selection")
+    XCTAssertEqual(model.shell.path, [.manage], "Cancellation cannot resume an earlier selection")
     XCTAssertNil(model.filePicker)
     XCTAssertFalse(model.processingFiles)
   }
@@ -271,6 +271,6 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         FileManager.default.fileExists(
           atPath: books.appendingPathComponent(file.lastPathComponent).path))
     }
-    XCTAssertEqual(model.path, [.folder(destination)])
+    XCTAssertEqual(model.shell.path, [.folder(destination)])
   }
 }

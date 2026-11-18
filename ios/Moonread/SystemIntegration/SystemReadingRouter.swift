@@ -142,7 +142,7 @@ final class SystemReadingRouter {
         await session.leave().value
         // Cleanup still runs after cancellation, but can only remove the old
         // destination. A newer handoff's reader must not be popped by this task.
-        if let navigationID { library.removeReaderDestination(navigationID) }
+        if let navigationID { library.shell.removeReaderDestination(navigationID) }
     }
     func prepareForUserScopeChange() async throws {
         changingUserScope = true
@@ -161,8 +161,8 @@ final class SystemReadingRouter {
         return true
     }
     private func publishEntry(_ entry: LibraryEntry, expectedSHA: String?, in library: LibraryModel) {
-        library.selectedTab = .library
-        library.libraryPath = Array(library.libraryPath.prefix { !$0.isReader })
+        library.shell.selectedTab = .library
+        library.shell.libraryPath = Array(library.shell.libraryPath.prefix { !$0.isReader })
         library.open(entry, expectedContentSHA: expectedSHA)
     }
     private func openEntry(_ entry: LibraryEntry, expectedSHA: String?,
@@ -215,13 +215,13 @@ final class SystemReadingRouter {
                     await finishReader(in: library)
                     guard sceneActive, requestID == current, !Task.isCancelled else { return }
                     switch request {
-                    case .showStatistics: library.selectedTab = .statistics; library.statisticsPath = []
-                    case .showRecent: library.selectedTab = .library; library.libraryPath = [.recent]
+                    case .showStatistics: library.shell.selectedTab = .statistics; library.shell.statisticsPath = []
+                    case .showRecent: library.shell.selectedTab = .library; library.shell.libraryPath = [.recent]
                     case .showLibrary:
-                        library.selectedTab = .library; library.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
+                        library.shell.selectedTab = .library; library.shell.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
                     case .searchBooks(let query):
-                        library.search.query = query; library.search.configuration = BookSearchConfiguration(); library.searchPath = []
-                        library.selectedTab = .search; library.setSearchPresented(true)
+                        library.shell.search.query = query; library.shell.search.configuration = BookSearchConfiguration(); library.shell.searchPath = []
+                        library.shell.selectedTab = .search; library.shell.setSearchPresented(true)
                     default: break
                     }
                     handoff = .idle(current)

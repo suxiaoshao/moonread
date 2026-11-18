@@ -13,7 +13,7 @@ struct RecentLibraryView: View {
                     .alignmentGuide(.listRowSeparatorLeading) { _ in 56 } // 44-point cover + 12-point gap
                     .contextMenu {
                         Button("小说详情", systemImage: "info.circle") {
-                            model.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title)))
+                            model.shell.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title)))
                         }
                         Button("从最近移除", systemImage: "minus.circle") { Task { await model.hideRecent(entry) } }
                     }.listRowBackground(Color.clear)

@@ -346,7 +346,7 @@ private struct FolderOverview: View {
                 Text(verbatim: error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
             }
             if location.path.isEmpty {
-                Button { model.path.append(.allBooks(location.shelfID)) } label: {
+                Button { model.shell.path.append(.allBooks(location.shelfID)) } label: {
                     HStack(spacing: LayoutTokens.compact) {
                         Label("全部小说", systemImage: "books.vertical").font(.subheadline.weight(.medium)).foregroundStyle(Color(uiColor: theme.accent))
                         Spacer()

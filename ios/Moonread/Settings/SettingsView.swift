@@ -262,7 +262,7 @@ struct SettingsTaskContent: View {
         case .statistics: StatisticsSettingsView()
         case .system: SystemIntegrationSettingsView(library: library)
         case .library: LibraryManagementView(model: library)
-        case .data: DataManagementView(model: library.dataManagement).navigationBarTitleDisplayMode(.large)
+        case .data: DataManagementView(model: library.shell.dataManagement).navigationBarTitleDisplayMode(.large)
         case .cloud: CloudSettingsView()
         case .ai: if ai.availability.isAvailable { AISettingsView() }
         case .appearance: AppThemePreferencesView()

@@ -63,7 +63,7 @@ extension LibraryModel {
         readingInputRevision &+= 1
     }
     func returnedToLibrary() {
-        if automaticRefreshDeferred, !path.contains(where: \.isReader) { automaticRefreshDeferred = false; scheduleRefresh() }
+        if automaticRefreshDeferred, !shell.path.contains(where: \.isReader) { automaticRefreshDeferred = false; scheduleRefresh() }
     }
     /// One library refresh at a time. A caller arriving while one runs asks for
     /// another pass and waits for the shared work, so a pull's spinner ends with it.
@@ -73,7 +73,7 @@ extension LibraryModel {
             await service.scheduleRecentRestoration(retry: true)
         }
         guard !busy else { return }
-        if !userInitiated, path.contains(where: \.isReader) { automaticRefreshDeferred = true; return }
+        if !userInitiated, shell.path.contains(where: \.isReader) { automaticRefreshDeferred = true; return }
         guard initialized else { _ = await load(); return }
         if !showIndicator || !userInitiated { nativeRefreshing = true }
         if userInitiated { explicitRefresh = true }

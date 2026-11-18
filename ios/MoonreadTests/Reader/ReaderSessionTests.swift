@@ -77,8 +77,8 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     }
     let entry = try core.catalogue("builtin", grouping: .name).entries[1]
     let model = LibraryModel(service: service)
-    model.path = [.folder(.init(shelfID: "builtin"))]
-    let origin = model.path
+    model.shell.path = [.folder(.init(shelfID: "builtin"))]
+    let origin = model.shell.path
     let pushed = expectation(description: "Context host receives actual source route")
     var route: LibraryRoute?
     model.open(
@@ -88,12 +88,12 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
         pushed.fulfill()
       })
     await fulfillment(of: [pushed], timeout: 3)
-    XCTAssertEqual(model.path, origin)
+    XCTAssertEqual(model.shell.path, origin)
     guard case .reader(let request) = route else { return XCTFail("Missing source reader route") }
     XCTAssertEqual(request.target, .source(entry.source))
     let previousLayout = model.layout
     model.layout = .list
-    XCTAssertEqual(model.path, origin)
+    XCTAssertEqual(model.shell.path, origin)
     model.layout = previousLayout
   }
 
@@ -198,12 +198,12 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     let first = try XCTUnwrap(entries.first), next = try XCTUnwrap(entries.dropFirst().first)
     let model = LibraryModel(service: service)
     model.open(first)
-    let firstPath = model.path
+    let firstPath = model.shell.path
     model.open(first)
-    XCTAssertEqual(model.path, firstPath, "A repeat tap must not push another reader")
+    XCTAssertEqual(model.shell.path, firstPath, "A repeat tap must not push another reader")
     model.open(next, expectedContentSHA: book.fixtureSHA256)
-    XCTAssertEqual(model.path.count, 1, "A later tap must replace the in-flight destination")
-    guard case .reader(let opening) = model.path.last else { return XCTFail("Reader route was not submitted synchronously") }
+    XCTAssertEqual(model.shell.path.count, 1, "A later tap must replace the in-flight destination")
+    guard case .reader(let opening) = model.shell.path.last else { return XCTFail("Reader route was not submitted synchronously") }
     XCTAssertEqual(opening.target, .source(next.source))
     XCTAssertEqual(opening.expectedContentSHA, book.fixtureSHA256)
 
@@ -220,14 +220,14 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     await awaitState { session.sourceProgress == 0.25 }
     XCTAssertTrue(session.isFetchingSource)
     XCTAssertNil(session.readingLease)
-    model.path.removeLast()
+    model.shell.path.removeLast()
     let leaving = session.leave()
     await gate.release()
     await work.value
     await leaving.value
     XCTAssertNil(session.readingLease)
     XCTAssertNil(session.sourceProgress, "Cancelled progress must not return from a late callback")
-    XCTAssertTrue(model.path.isEmpty)
+    XCTAssertTrue(model.shell.path.isEmpty)
 
     let loading = LoadingState()
     let superseded = loading.begin()

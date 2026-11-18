@@ -173,7 +173,7 @@ final class ShareInboxTests: ShareInboxFixture {
     XCTAssertNotNil(model.sharedImportResult)
     XCTAssertTrue(model.sharedImportResult?.contains("skip.pdf") == true)
     XCTAssertFalse(
-      model.libraryPath.contains { $0.isReader }, "Multiple input files do not open a reader")
+      model.shell.libraryPath.contains { $0.isReader }, "Multiple input files do not open a reader")
     XCTAssertEqual(try Data(contentsOf: first), bytes)
   }
 

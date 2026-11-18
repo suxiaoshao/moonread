@@ -72,7 +72,7 @@
 
 结果 `data={bookRef,outlineComplete:bool,items:[{chapterRef,title,level:0|1,parentChapterRef?,range:{startUtf8,endUtf8},wordCount,countComplete,estimatedCoveredCharacters?}]}`。
 
-依据：`AppDataService.chapters` → `ReaderQuery.chapterOutline`。章节结束用下一有效条目起点/正文终点计算；卷条目与章条目可能层级重叠，不能声称每项互不相交。返回用户更正后的目录，删除的标题不出现；分页前统一解析有效目录。未完整准备先进入下方确认流程。
+依据：`AppDataService.chapters` （实现见 `Data/Queries/ReaderChapterQuery.swift`）。章节结束用下一有效条目起点/正文终点计算；卷条目与章条目可能层级重叠，不能声称每项互不相交。返回用户更正后的目录，删除的标题不出现；分页前统一解析有效目录。未完整准备先进入下方确认流程。
 
 ### 5. `read` — 有界正文读取
 

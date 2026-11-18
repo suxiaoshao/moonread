@@ -65,7 +65,7 @@ struct LibraryFolderView: View {
                         Button("新建文件夹", systemImage: "folder.badge.plus") { model.sheet = .create(location) }
                         if location.shelfID == "builtin" { Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(location)) } }
                         if ai.availability.isAvailable {
-                            Button("整理…", systemImage: "folder.badge.gearshape") { model.aiRequest = .folder(location, title: title) }
+                            Button("整理…", systemImage: "folder.badge.gearshape") { model.shell.aiRequest = .folder(location, title: title) }
                                 .accessibilityIdentifier("organizeFolder")
                         }
                         Divider()
@@ -82,7 +82,7 @@ struct LibraryFolderView: View {
                         Button { metadataExporting = true } label: {
                             Label { Text("导出本书架信息", tableName: "MetadataExchange") } icon: { Image(systemName: "doc.text") }
                         }
-                        Button("在此书架中搜索", systemImage: "magnifyingglass") { model.path.append(.search(AppSearchScope(seeds: [.shelf(location.shelfID)]))) }
+                        Button("在此书架中搜索", systemImage: "magnifyingglass") { model.shell.path.append(.search(AppSearchScope(seeds: [.shelf(location.shelfID)]))) }
                             .accessibilityIdentifier("searchShelf")
                     } label: { Label("文件夹操作", systemImage: "ellipsis") }.menuOrder(.fixed).toolbarGlyph().accessibilityIdentifier("folderActions").disabled(fileActionsDisabled)
                 }
@@ -110,9 +110,9 @@ struct LibraryFolderView: View {
                         .disabled(selection.isEmpty || fileActionsDisabled)
                     if ai.availability.isAvailable {
                         Menu {
-                            Button("完善资料", systemImage: "sparkles") { model.aiRequest = .library(selectedEntries, family: .metadata) }
+                            Button("完善资料", systemImage: "sparkles") { model.shell.aiRequest = .library(selectedEntries, family: .metadata) }
                                 .disabled(!selectedEntries.contains { !$0.directory })
-                            Button("整理所选", systemImage: "folder.badge.gearshape") { model.aiRequest = .library(selectedEntries, family: .organization) }
+                            Button("整理所选", systemImage: "folder.badge.gearshape") { model.shell.aiRequest = .library(selectedEntries, family: .organization) }
                                 .disabled(!selectedEntries.contains { !$0.directory })
                         } label: { Label("AI 助手", systemImage: "sparkles") }
                             .disabled(selection.isEmpty || fileActionsDisabled).accessibilityIdentifier("libraryAISelection")

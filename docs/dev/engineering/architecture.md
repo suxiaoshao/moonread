@@ -10,10 +10,10 @@
 | --- | --- |
 | Rust 文本核心 | `crates/moonread-core`：`encoding_rs` 解码、规范化、字素分块、SHA-256、章节扫描、`regex` 单书搜索 |
 | Swift 索引与任务 | `DataSession` 的 GRDB 池保存正文、自动章节、来源索引与导入任务；Rust 接收有界值并计算，不打开正文索引库 |
-| Swift 用户数据 | `UserDataStore` ModelActor：用户事实、完整批注候选、小说信息、配色及正式位置；自动 CloudKit，设备偏好独立 |
+| Swift 用户数据 | 当前账户 user.sqlite 保存事实、批注候选、小说信息、配色及正式位置，通过 CKSyncEngine 同步。设备偏好独立 |
 | Swift 关系库迁入 | `Data/Database/DataSession.swift`：`Data/v2` 的版本化正文索引与独立本机/账户用户文件，由一个 GRDB 池挂载；完成正文和用户迁入后才挂载正常 App 根界面；页面与备份使用同一权威；Development 使用独立子目录，两个环境分别只读迁入同一旧源 |
 | Swift 平台适配 | `Data/AppDataService.swift`、`Library/Sources/LibraryService.swift`：目录授权、bookmark、协调扫描与真实文件操作、目录变动通知、生命周期和异步工作调度 |
-| 页面状态 | `Library/LibraryModel/LibraryModel.swift` 与同类型领域扩展保存书架状态、来源路由及唯一设置会话 `SettingsNavigation`（任务路径、配色草稿/预览）；`Reader/Session/ReaderSession/ReaderSession.swift` 与同类型领域扩展保存现有阅读会话状态与任务 |
+| 页面状态 | `Library/LibraryModel/LibraryModel.swift` 与领域扩展保存书架和文件任务；`App/AppShellModel.swift` 保存各标签导航栈、搜索和唯一设置会话（任务路径、配色草稿与预览）；`Reader/Session/ReaderSession/ReaderSession.swift` 与同类型领域扩展保存现有阅读会话状态与任务 |
 | SwiftUI 页面 | `Library/Browsing/LibraryView.swift`、`Reader/UI/ReaderScreen/ReaderScreen.swift`、`Reader/UI/Presentation/ReaderLibrarySheet.swift` / `ReaderSearchContent.swift` / `NoteEditor.swift`：书架、阅读、工具面板与编辑器呈现 |
 | 原生正文 | `Reader/Rendering/ReadingView.swift` 适配原 UIKit 控制器，`ReadingPagination.swift` / `ReadingTextDecorations.swift` 使用 TextKit 1；`Reader/Rendering/Text/TextCoordinates.swift` 映射 UTF-8 / UTF-16，处理局部滚动、分页与选字 |
 | Swift AI | Providers / Agent / Data / Tools / UI 分层；Swift AI SDK 承担协议与工具循环，本机 SwiftData 保存对话；读取工具经 AppDataService 读取不可变投影，书目匹配由 Swift LibraryQueryRules 统一 |
@@ -41,6 +41,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 正文几何、叶页分组、活动叶及原文选区恢复 | Swift `Reader/Rendering/ReadingController` / `PageController` / `ReadingViewport` | 原生字体度量与硬件保留区归平台；一个 pager、一份统计输入，源范围用 Rust UTF-8 坐标。`ReadingContainerRegions` 单源拆分保留区；`ReadingTypography.prepare` 单源装配 `PreparedReadingText`（映射、富文本与当次版本），分页/滚动/预览只消费及派生配套结果，不新增缓存；TextCoordinates 和 Rust 语义不变。正文占满本阅读窗口，sheet/键盘/工具路径不参与几何，不为工具让位；真实窗口或排版改变才按锚点排版。宽>高且每叶满足最小行宽自动双页，保留无效 canvas 与转场检查；几何变化不写阅读事实。正文滚动文本已有固定头部，创建时关闭系统额外顶部滚动边缘模糊，避免交互返回取消残层遮挡首行 | 平台排版 |
 | 阅读呈现意图与原生占用 | Swift `Reader/UI/ReaderScreen/ReaderScreen.swift` 保留私有 State、生命周期与来源导航，`ReaderScreen+Content.swift` / `+Controls.swift` 只组合原内容；`ReaderPresentationState` / `ReaderPresentationProjection` / `ReaderPresentationHost`；`ReaderToolSession` 保留编辑对象引用，批注权威仍为 `ReaderSession` | selection、有类型 path、exposure 与栏显隐单源；所有尺寸用同一手机工具 sheet/原生任务导航，无 inspector、容量投影或手画页头。完整设置/详情直接绑定同一逻辑路径并在来源栈 push，原生 sheet 释放后交接；系统返回直接生效，不等待原生完成或校验工具代次。工具 sheet 的 opening/token/代次仍隔离旧回调，退出内容仅保留渲染引用。阅读模块在原生返回手势资格通过后、开始前临时显示自身导航栏并完成公开布局，显示意图与 controlsVisible 分离；完成/取消清除临时状态；取消与正文点击共用关闭工具入口；源页不设置恢复条件。系统子模态保留父链，窗口变化不改路径/草稿或写偏好 | 单一 owner |
 | 系统通知进入界面隔离域 | Swift `Shared/Concurrency/MainActorNotifications.swift` | 非隔离 Sendable 接收入口先安全接住通知，带载荷时在原队列提取 Sendable 值（如 keys/reset）后再调用 MainActor 客户端（后台异步切主、已在主线程即时交付；Combine 则先 receive(on:)）；不可依赖继承 MainActor 的回调体内再检查线程。已有显式主队列 onReceive 与 actor 内 AsyncSequence 维持原交付；锁保护的同步缓存不迁到主线程 | 平台线程边界 |
+| App 标签、导航栈、搜索与设置会话 | Swift `AppShellModel` | 根视图绑定外壳状态，书架和系统入口通过同一模型提交导航 | 单源 |
 | 书架状态、来源导航与文件任务协调 | Swift `Library/LibraryModel/LibraryModel.swift` 及 `+Navigation.swift` / `+Discovery.swift` / `+Reload.swift` / `+Imports.swift` / `+FileWork.swift` | 同一 MainActor model、同一存储和 generation；书架点击直接提交阅读目标，同一位置的快速连点不叠加阅读页；FileWork 统一拥有执行、等决定、等开书与结束四个阶段，任务与文件选择器各自保持原资源寿命 | 单一 owner |
 | 单书会话、窗口与位置/lease 生命周期 | Swift `Reader/Session/ReaderSession/ReaderSession.swift` 及 `+Loading.swift` / `+Position.swift` / `+Preparation.swift` / `+Browsing.swift` / `+Continuation.swift` / `+Annotations.swift` | 导航后由会话拥有文件准备、进度、失败、重试及取消；AppDataService 协调并校验来源、交付 lease，旧请求不得接收迟到进度或 lease。开书请求、lease、窗口、离页进度由会话阶段配对；扉页与正文 0 分离；正文 frame 与来源、版本、范围及可用边缘配对。听书的播放与跟随独立，采用新位置仍走同一写入交还入口 | 单一 owner |
 | AI 单会话执行、审批/取消与顺序持久化 | Swift `AI/Agent/AIAgentRuntime/AIAgentRuntime.swift` 及 `+Run.swift` / `+Persistence.swift` / `+Tools.swift` / `+Context.swift` | 同一 MainActor runtime 以事件游标、当前输出及独立发布阶段归并原 task、generation、审批与 persistenceTail；共享等待、推理和停止仍可与持久化交错，durable head 编码与提交顺序不变 | 单一执行 owner |
@@ -49,14 +50,14 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `reading/input/text.rs`、`identity/source.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
 | fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Swift `Data/Database/ReaderIndex.swift`、`IndexSources.swift`；Rust `identity/content.rs` 只校验 wire 键 | 当前作用域的导入别名、正文缓存及匹配文件版本的索引身份由同一 writer 维护；页面范围与完整副本裁决留 2c | 2b 写入与任务取数 |
 | 待索引集合与书架索引 inventory | Swift `Data/Database/IndexSources.swift` | 同一库快照返回总量/pending；有效关系只认路径索引行当前编码、大小与修改时间 | 单一索引池 |
-| 书架同步描述、本机授权绑定和扫描后准入 | Swift `ShelfRecovery.swift`、`UserSyncJSON.swift`、`FullIndex.swift` | SwiftData 裁决描述，本机 schemaVersion 1 绑定按账户隔离；平台扫描成功范围限制自动任务，不复制 Rust 查询 | 平台边界 |
+| 书架同步描述、本机授权绑定和扫描后准入 | Swift `ShelfRecovery.swift`、`UserSyncJSON.swift`、`FullIndex.swift` | 用户库裁决同步描述，local_shelf_recovery 按账户保存本机绑定；平台扫描成功范围限制自动任务，不复制 Rust 查询 | 平台边界 |
 | SHA 格式 | Rust `identity/content.rs::parse_sha256` | 身份及资产校验共享严格语法，语义字段仍区分 | 单源 |
 | 最近阅读与首页继续阅读 | Swift `RecentReadingRead` 固定查询 / `RecentReadingStore`；Apollo 只生成结果类型 | 同一 main＋usr 快照先读 current、已验证别名和本机偏好并定副本，再读入选书的卡片与章名；首页与完整列表共享观察，页面持有期间保留上一结果，最后一个释放时停读；首页按钮直接打开卡片显示的来源 | 移除最近阅读旧投影入口；单书正文与章节路径另行切换 |
 | 页面查询输入与失效 | Swift `Data/Queries` 固定查询、`DataSession` 同池观察 | 读入口明确声明所需列和书键。领域写者在同一事务结算 current；页面按账户和参数持有观察、拒绝迟到的结果，不再拼接 SwiftData 投影或用 TEMP 做候选裁决 | 旧 SwiftData 仅由只读迁入打开 |
 | 明确书目标后的正文首帧、当前位置标题与章结构 | Swift `Data/Queries/ReaderOpeningQuery.swift`、`ReaderWindowRead.swift`、`ReaderChapterQuery.swift`；Rust `reading/window_payload.rs` 和 `reading/layout.rs` 做显示计算 | 同一索引/用户快照内按已确定书 ID、当前位置引用、已发布正文与章修正读取；标题、目录与最近卡片共用章修正组合。Swift 只取有界正文和已证实空白，Rust 切片、标记段落，不开库。结构与覆盖分开；覆盖在第 5 步另接 | 阅读会话持有窗口，工具页持有目录结果 |
 | 最近打开与后台恢复 | Swift `ReaderSession.bodyDidDisplay`、`ReadingPositionRows`、`RecentReadingRestoration` | 正文真正显示后记录 opened，和位置独立；最近排序与副本归 `RecentReadingRead`。后台只按同一用户库里已提交的正式位置取恢复限额，隐藏在排名前排除，文件准备后复核旧票据；恢复不写 opened/位置或计时 | 同一用户数据权威 |
 | 封面资源与静默替换 | Swift `Books/BookMetadata.swift` 的 `CoverResourceLoader`、`CoverImageLoader`、`BookCoverDisplay` | 独立资源 actor 统一 UI/Widget/Spotlight I/O 与派生；按作用域/资源/尺寸合并并有界缓存，ready 不随订阅销毁。同书旧图等新图成功，删除/换书/换账号立即清；系统文字更新复用图像输入版本 | 单一资源 owner |
-| 默认阅读中状态 | 2c 固定查询待接 | 保留按正式 SHA 的位置事实（含无本机正文的已索引书）及显式状态优先规则 | 旧 Rust 查询已移除 |
+| 默认阅读中状态 | Swift `Data/Queries` 书架固定查询 | 保留按正式 SHA 的位置事实（含无本机正文的已索引书）及显式状态优先规则 | 旧 Rust 查询已移除 |
 | 文件夹列表、计数与封面候选 | Swift `Data/Queries/FolderQuery.swift` / `FolderStore.swift`；Rust `library/order.rs` 保留原自然行序 | 直系成员和子树在单个读快照中计算；活动和最多四张预览按有效位置时间，不读 opened 时间。经已核实别名合并位置，直接书卡定点补位置/章/作者/封面，只补入选预览的作者/封面。移动选择器按原顺序单次读取文件夹，不补书卡或封面 | 页面各自观察；单次查询不建观察 |
 | 书目、名称与标签分组 | Swift `Data/Queries/CatalogueQuery.swift` / `CatalogueStore.swift`；Rust `library/order.rs` / `catalogue_cards.rs` | 与目录共用已核实身份、位置和窄卡读取；名称模式不读标签，标签模式同快照定点取可见成员。自然顺序和特殊分组沿发布规则，标签通过文件 ID 引用单份卡片，实体副本不合并。换分组保留已显示结果直到新值到达 | 本页观察；目录、名称和标签共用卡片规则 |
 | 单书详情、来源与阅读状态 | Swift `Data/Queries/BookInformationQuery.swift` / `BookInformationModel`，来源行序沿用 Rust `library/order.rs` | 从明确书键读取已结算资料、有效位置与正文/章概况；未读副本按修改时间，已读副本按自然名称、路径、ID，显式文件优先。正式资料隔离禁用编辑并随观察重验；详情不读事实或覆盖，统计仍独立取数 | 页面各自观察；准备编辑和单次消费者复用固定读 |
@@ -64,29 +65,29 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | AI 工具输入/schema/输出契约与执行 | Swift `AI/Tools/Reading/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 只拆契约、执行和 `AppDataService+AIReading.swift` 平台适配的物理文件；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
 | AI b: 引用协议 | Swift `AI/Tools/Reading/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验。外部字符串解码为书或文件引用，准备权限独立；共享准备由 AppDataService 持有，最后一个等待者释放工作 | 共享引用解析 |
 | v2 导入、搜索、重建及计时纯计算 | Rust `reading/compute.rs`、`reading/input/text.rs`、`library/tools/search_compute.rs`、`user/statistics/mod.rs` | 每步消费前态。导入共享发布规范化与原文／正文 SHA；搜索按显式范围每步最多 50 条；章节复用发布扫描器。计时新接口拒绝单步超过一天；生产采集调用连续段接口，旧切片入口仅供历史数据和 DEBUG 夹具 | 正文三项已由 Swift 用显式票据调用 |
-| v2 文件归属、连接池与本机归户 | Swift `Data/Database/DataSession.swift`、`LocalScopeImport.swift` | 唯一会话 owner 决定 `index.sqlite` 和所挂 `usr`；失去账户确认时仍可本机读写、不同步；明确登出使用 local。首次确认启用时冻结后合并目标证据，由目标同事务结算非事实当前值并写完成标记，成功后独立清理源；旧会话代次不得访问另一账户 | 本机归户和非事实结算已接；事实结算与运行时同步待接 |
+| v2 文件归属、连接池与本机归户 | Swift `Data/Database/DataSession.swift`、`LocalScopeImport.swift` | 唯一会话 owner 决定 `index.sqlite` 和所挂 `usr`；失去账户确认时仍可本机读写、不同步；明确登出使用 local。首次确认启用时冻结后合并目标证据，由目标同事务结算非事实当前值并写完成标记，成功后独立清理源；旧会话代次不得访问另一账户 | 归户后由当前用户库接入同步 |
 | 本机书籍与任务记录迁入 | Swift `LegacyIndexImport`、`LegacyUserImport` 和启动准备 | 1.6 的导入来源、明确草稿指针、示例标记及设备作者随索引提交。续读、隐藏、首选文件与书架恢复只迁可确定的用户域。坏记录逐条丢弃，提交后清理发布版旧键 | 单一迁入入口 |
 | 本机任务持久化 | Swift `ReaderIndex` 与 `DataSession` 的索引库写入边界 | 导入、全库索引、文件交接、系统提交和小说信息任务不参加阅读数据同步。产品读取只使用最终表 | 单一存储 |
-| v2 pending 晋升与索引别名 | Swift `Data/Database/PendingUserPromotion.swift`，位置、打开和批注沿用各领域结算 | 同一 writer 核对当前作用域的已完成导入及可读 SHA。只写 `usr`，候选晋升、重结当前位置/打开和批注 heads、pending 源删除同事务。合并提交后才能独立回收；重启重验仍有完成任务的索引 | 启动、导入收尾及索引回收已接；事实晋升仍走原 clear/证据路径，有效事实结算与同步待接 |
+| v2 pending 晋升与索引别名 | Swift `Data/Database/PendingUserPromotion.swift`，位置、打开和批注沿用各领域结算 | 同一 writer 核对当前作用域的已完成导入及可读 SHA。只写 `usr`，候选晋升、重结当前位置/打开和批注 heads、pending 源删除同事务。合并提交后才能独立回收；重启重验仍有完成任务的索引 | 启动恢复与导入收尾共用晋升路径 |
 | v2 本机整书删除 | Swift `PendingUserPromotion.swift`、`ReadingDataManagement.swift`、`CacheManagement.swift` | 正式 SHA 与已核实别名只写 `usr` 一次；单删 pending 不扩为整书。身份未确认的其他导入继续运行；其后产生的阅读数据按正常别名晋升。保留全局清除、不明归属记录与源文件；封面只回收可证明无剩余引用的目标资产。提交后独立回收安全别名、按选中的正式 SHA 尝试清理设备正文；保留活跃和任务保护，缓存未清不回滚用户删除。云端删除及出站裁决另接 | 晋升与打开/位置接入；其他 writer 随切换接入 |
 | v2 打开、位置与本机续读基线 | Swift `ReadingPositionRows.swift`、`LocalReadingRows.swift`、`UserDataService.swift` | 阅读会话保留当前用户库令牌；写入闸门复核账户归属，writer 在同事务按索引解析当前书键。打开与位置是独立事实；位置沿用 UTF-8 边界，位置与本机基线同事务。隐藏和首选副本随相关动作更新；位置写者同事务维护跨分区位置和正式分区自己的胜出引用；续读定点取本机基线与正式引用，pending 更新或隔离不改变正式引用 | 位置/打开写入、阅读窗口与续读导航均使用新表 |
-| v2 批注与书签因果写入 | Swift `AnnotationRows.swift`、`UserDataValues.swift::AnnotationReduction` | 编辑包按重叠范围与合并关联扩展；普通写入只取代原基线，显式解冲突或批量选中删除重验候选 ID。候选、祖先、关联及旧内容压缩同事务，读取不改库。撤销基于自己的删除候选；未知候选按已知书/标记范围隔离；书签按书/偏移确定键。编辑、选择和撤销保留原用户库归属，进入写者时复核 | 批注读写接关系库；正文摘录固定查询、页面观察与云同步待接 |
+| v2 批注与书签因果写入 | Swift `AnnotationRows.swift`、`UserDataValues.swift::AnnotationReduction` | 编辑包按重叠范围与合并关联扩展；普通写入只取代原基线，显式解冲突或批量选中删除重验候选 ID。候选、祖先、关联及旧内容压缩同事务，读取不改库。撤销基于自己的删除候选；未知候选按已知书/标记范围隔离；书签按书/偏移确定键。编辑、选择和撤销保留原用户库归属，进入写者时复核 | 本机与入站写入都重算有效候选 |
 | v2 发布库结构迁入 | Swift `LegacyIndexImport`、`LegacyUserImport`；Rust `user/reading_fact.rs` 提供已解析事实列 | 用唯一 Swift pool 读旧索引 v20–23，校验后把完成标记写入副本；不读取私有 SwiftData SQLite schema。旧用户模型导入两个分区后结算非事实当前值，与证据及完成标记同事务 | 事实和书日量一起结算；迁入失败保留旧库、阻止挂载正常 App，重试走原事务 |
-| 阅读事实 wire 与查询计算 | Rust `user/reading_fact.rs`（serde）、`user/statistics/`；Swift `UserSyncJSON.bindFact`、`ReadingFactSettlement`、`ReadingHistoryTransport` | 旧库、备份和独立新区 `ReadingFact` 类型共用 Rust 解析及编码；按已存语义身份保留曝光与清除关系，物理删除重结原有 current/day。限制发送为正式可读原始证据，清除掉的贡献不等于物理删除。未知或冲突隔离，不合成为新段 | 已接旧事实的仓储/传输；首次全集回执、ready 与失区控制记录待接 |
+| 阅读事实 wire 与查询计算 | Rust `user/reading_fact.rs`（serde）、`user/statistics/`；Swift `UserSyncJSON.bindFact`、`ReadingFactSettlement`、`ReadingHistoryTransport` | 旧库、备份和独立新区 `ReadingFact` 类型共用 Rust 解析及编码；按已存语义身份保留曝光与清除关系，物理删除重结原有 current/day。限制发送为正式可读原始证据，清除掉的贡献不等于物理删除。未知或冲突隔离，不合成为新段 | 传输回执与新区初始化分别见下方规则 |
 | v2 阅读事实写入与统计清除入口 | Swift `ReadingSegmentRows.swift`、`ReadingClearRows.swift`、`Statistics/ReadingStatistics.swift` | 采集入口保留开页用户库归属和统计开关代次，进 writer 之前重验；书键在 writer 内解析。旧 fact 清除按范围时间或明确 ID，captured 只用明确成员；新段清除保留独立的已发生前缀证据。两者使用各自身份，不把旧事实合成新段 | 等待已接手的采集写入后，最后快照、clear 和日量同事务；成功才切采集代次 |
-| v2 业务当前状态 | Swift `ReadingPositionRows.settleCurrent`、`CurrentUserRows`、`AnnotationRows.settleHeads` | 在证据的同一事务结算受影响的键；领域各自决定隔离范围和来源。位置保持跨分区未知阻断，打开只略过不可读分区；章节按分区裁决后由有效 pending 覆盖；解码、配色和书架引用只读 formal，坏引用不阻断正常提示。资料与标签采用同一胜出对象来源，批注复用因果 reduction 并保留并发及删除 head。整书删除同步清本书当前引用；候选引用在提交时检查 | 迁入、归户、位置/打开、批注、pending 晋升和整书删除已接；其他本机写入和 current 消费者待切换 |
+| v2 业务当前状态 | Swift `ReadingPositionRows.settleCurrent`、`CurrentUserRows`、`AnnotationRows.settleHeads` | 在证据的同一事务结算受影响的键；领域各自决定隔离范围和来源。位置保持跨分区未知阻断，打开只略过不可读分区；章节按分区裁决后由有效 pending 覆盖；解码、配色和书架引用只读 formal，坏引用不阻断正常提示。资料与标签采用同一胜出对象来源，批注复用因果 reduction 并保留并发及删除 head。整书删除同步清本书当前引用；候选引用在提交时检查 | 供固定查询与观察读取 |
 | 连续段采集与载荷 | Rust `user/statistics/segments.rs`，两套采集共用 `ReadingTiming` 计费 | Swift 提供时间、ID 种子及采集作者，Rust 消耗前态，独立返回本步计费和累计快照；15 秒检查点不换 ID，真正边界才封段。Rust 校验载荷版本、精确裁剪并按上次快照补封。Swift 只让本机 owner 续写；备份 active 只作静态快照，按同作者的更新版本替换，不取得补封资格 | 生产采集走快照 writer；本机补封只看当前合法库中实际拥有的遗留行；出站只登记封段/正式记录 |
 | v2 同步传输持久化 | Swift `CloudTransportRows`、`CloudCallbackJournal`、`DataSession` | 业务写入在同一账户库事务登记待发；记录名、意图、内容摘要及不可重用代次匹配回执。系统字段不是业务时钟。用户库就绪且账户允许同步后，单个引擎才能取得独立回调权限；同账户暂停不关闭普通读写，撤销的回调权限不会因重新启用而复活。领域入站失败后该引擎会话不得继续保存检查点 | App 和独立测试适配器使用同一入口，各自固定容器 |
 | v2 App 同步启停与换户顺序 | Swift `CloudSyncCoordinator`、`ReadingSyncEngineAdapter`、`AppDataService` | 换户先撤旧引擎回调的写权限并取消旧轮次，独立收尾网络；草稿走页面原有离开流程。App 收尾旧阅读与导入、撤系统快照，在原 DataSession 换绑并重接观察。明确归户在开始写入时核对批准的当前账户；普通后台暂停不撤已确认快照。iCloud Drive 发现独立 | App 从签名对应的构建环境核对月读容器身份，获准后开实际引擎；Development 与 Production 不共享新库或账户确认 |
 | v2 云区清除与意外失区 | Swift `ReadingSyncEngineAdapter`、`CloudSyncCoordinator`、`AppDataService`、`CloudAccountZoneRecovery`；领域结算沿原 owner | 同账户只记录自己的区事件，冻结检查点。旧引擎退出且账户复核后，主动清除/加密重置只清该账户正式同步证据，不重传；明确删区事件加精确缺失才允许重建；固定初始化记录与全新升级端条件竞争，胜者从本机权威按首批回执重排，跟随端等待完整新区基线。已出现不同控制的替换区可跟随；旧控制或单记录失败不作失区证明 | 已接 App 恢复、控制竞争及证据重排；签名 SyncProbe 已复验三种升级路径，真实月读容器待试用 |
 | v2 整书删除 | Swift `ReaderIndex.deleteUserBooks`、各领域结算 | 核对正式 SHA、已证实别名和活跃阅读，在一个 usr 事务内删除和重结当前值并登记新区删除；设备正文缓存独立清理 | 不读写旧云区或旧本机库 |
-| 已发布用户库存储迁入与升级说明 | Swift `LegacyUserSnapshot`、`LegacyUserImport`、`DataSession`；说明由 `MoonreadApp` 持有 | 本机 SwiftData 按已确认归属只读打开正式与 pending，禁用 CloudKit；一次迁入证据与用户数据同事务落库。升级说明由设备记一次，独立于迁入、G3 重试与 iCloud 开关 | 新区初始化及后升级端裁决待接 |
-| 一次迁入的已提交内容来源 | Swift `UpgradeOrigins`，由旧源和各业务 writer 在现有事务内登记 | 摘要包含原始版本及所属关系，封面按候选引用而非附件到达决定来源。压缩保留 seed 依赖、批注关联组；隔离条目使用内容身份。D1 保留正式数据来源，已证实的 pending 晋升按普通本机新写同步；整书删除有一次性本机范围 | 来源 writer 已接；新区初始化和来源裁决待接，未决的普通出入站不生效 |
+| 已发布用户库存储迁入与升级说明 | Swift `LegacyUserSnapshot`、`LegacyUserImport`、`DataSession`；说明由 `MoonreadApp` 持有 | 本机 SwiftData 按已确认归属只读打开正式与 pending，禁用 CloudKit；一次迁入证据与用户数据同事务落库。升级说明由设备记一次，独立于迁入、G3 重试与 iCloud 开关 | 云区初始化另见下方规则 |
+| 一次迁入的已提交内容来源 | Swift `UpgradeOrigins`，由旧源和各业务 writer 在现有事务内登记 | 摘要包含原始版本及所属关系，封面按候选引用而非附件到达决定来源。压缩保留 seed 依赖、批注关联组；隔离条目使用内容身份。D1 保留正式数据来源，已证实的 pending 晋升按普通本机新写同步；整书删除有一次性本机范围 | 新区初始化与跟随端基线折叠见下方规则 |
 | 新区一次初始化的首台资格和完成门槛 | Swift `ReadingCloudInitialization`、`CloudCallbackJournal`、`ReadingSyncEngineAdapter` | 定点缺失且新区为空才提案条件创建；经同一安装和初始化 ID 核实才选首台。完成前直接核对当前正式集合与精确回执，关闭边界后按原 change tag 条件写 ready。真正缺封面以原键表示；隔离原文只留本机 | 后升级端见 ready 只进入完整基线阶段，控制记录不参加业务归属 |
 | 后升级端基线暂存与正式来源折叠 | Swift `CloudBootstrapRows`、`CloudBootstrapFold`、`CloudCallbackJournal`、`ReadingSyncEngineAdapter` | 只使用同一账户、同一 ready 控制及覆盖全区的一次暂存。唯一 writer 比对当前提交内容来源与批注因果，把云候选、准入本机写入、领域结算与普通游标一起提交；中断保留原本机内容并丢弃暂存，普通网络从成功提交的游标继续。W2 跟随以替换区为准，不为旧区差异保留本机专用档案 | 未确认 SHA 的 pending 留在本机，不阻塞正式折叠；验证正文后由原晋升 writer 登记普通待发 |
-| v2 固定 ID 候选与删除回送 | Swift `UserValueRows`、`ReadingPositionRows`（opened）、`FixedValueCloudRows`、`CloudCallbackJournal` | 领域持有校验和 current，传输按类型、设备候选和实际内容准备意图。X2 判断与删除共用 writer；明确新建的新 SAVE 等自身 DELETE ACK 后即可发送。已知旧候选仍按 W2-a 删除，歧义只暂停该 ID。封面送出前校验引用和字节；配色子表随候选，物理封面回收先核引用 | 本机固定 ID 写、准备、回执、删除及失区重排已接；真实引擎、逐记录核对与 CKAsset 往返待接 |
+| v2 固定 ID 候选与删除回送 | Swift `UserValueRows`、`ReadingPositionRows`（opened）、`FixedValueCloudRows`、`CloudCallbackJournal` | 领域持有校验和 current，传输按类型、设备候选和实际内容准备意图。X2 判断与删除共用 writer；明确新建的新 SAVE 等自身 DELETE ACK 后即可发送。已知旧候选仍按 W2-a 删除，歧义只暂停该 ID。封面送出前校验引用和字节；配色子表随候选，物理封面回收先核引用 | 逐记录查证与资产收发由同步适配器负责 |
 | v2 同步引擎、逐记录查证与入站 | Swift `ReadingSyncEngineAdapter`、`CloudInboxRows`；领域仍归原 writer | 回调串行记录证据，网络调度在回调外；只接受本区完整 ID，普通状态在既有 checkpoint writer 落盘。固定值与因果候选需查证时在每轮限量按 ID 请求，回来同事务复核候选和 Attempt。CKAsset 先脱离 SDK 临时文件，再交数据库；未知记录局部隔离 | App 与测试工厂容器分开；App 入站提交后通知读取层，测试工厂不发 App 通知 |
-| v2 token 位置与因果批注同步 | Swift `ReadingPositionRows`、`AnnotationRows`、`CausalCloudRows`、`CloudTransportRows` | 不按每设备固定字段重建身份。新位置或批注候选与其待发同事务，压缩删除绑定精确的前序 SAVE ACK，连续替换只改绑尚未授权的链；对端移除未确认新候选撤销相应压缩意图。同一 writer 从已提交的位置/token 和批注原候选重结，正常入站不改本机基线或回声上传 | 本机 SDK 对象夹具；一次导入与非显式来源待接；接线后复验签名宿主 |
+| v2 token 位置与因果批注同步 | Swift `ReadingPositionRows`、`AnnotationRows`、`CausalCloudRows`、`CloudTransportRows` | 不按每设备固定字段重建身份。新位置或批注候选与其待发同事务，压缩删除绑定精确的前序 SAVE ACK，连续替换只改绑尚未授权的链；对端移除未确认新候选撤销相应压缩意图。同一 writer 从已提交的位置/token 和批注原候选重结，正常入站不改本机基线或回声上传 | 真实云端验证见同步设计 |
 | v2 有效阅读事实与书日量 | Swift `ReadingHistoryRows`、`ReadingFactSettlement`、`ReadingSegmentRows`、`ReadingDayRows`；Rust 计算事实时长和段有效头 | 候选归属、隔离和来源清除在确定当前贡献前判断；历史 fact 和新段分别引用对应证据。书日量只用一套有检查的 UInt64 差额；极值只回查相应桶内两类窄头，封段状态变化不重复计时；覆盖按需计算 | 每批每个 typed ID 只结算提交前后；统计固定读见下表 |
 | 相对路径语法、组件边界匹配、名称合法性 | Rust `storage/validation.rs`，bookshelf 委托 | 索引和真实操作都需要相同底线；具名 profile 保留入口差异 | 共享路径校验 |
 | 表单 TXT 后缀补全、AI stem trim/保留扩展名 | Swift `LibraryActions.swift`、`AI/Data/Proposals/AIProposals.swift`，分别为两条不同规则 | 各自单源、不同输入契约，不为统一语言迁移 | 原位保留，只调用合法性 owner |
@@ -102,8 +103,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 文件自然比较、目录/全书/标签自然排序 | Rust `library/order.rs`（从 bookshelf 提取） | 已服务 SQL 查询和目录；按完整快照一次计算 | Swift 搜索使用批量 ordinal 和同名分档，不复制自然 comparator |
 | 搜索排名组合、AI 名称字典序/recent 平手顺序 | Swift `LibraryQueryRules.swift` | 与匹配结果一同完成，AI 原生字符串比较不迁语言 | 单源组合排序 |
 | 拼音 key、字母分组及组内 localized collation | Swift `LibraryPresentation.swift::LibraryNameGroup` | 唯一实现且依赖 Foundation；不是原文件自然序副本 | 原位保留 |
-| 多标签分组/未标注/未索引分区 | 2c 固定查询待接 | 按同一个索引身份分组，每个文件可属于多个标签 | 旧 Rust 查询已移除 |
-| 目录四封面选择 | 2c 固定查询待接 | 独立 top-4 策略，不等于目录列表顺序 | 旧 Rust 查询已移除 |
+| 多标签分组/未标注/未索引分区 | Swift `Data/Queries` 书架固定查询 | 按同一个索引身份分组，每个文件可属于多个标签 | 旧 Rust 查询已移除 |
+| 目录四封面选择 | Swift `Data/Queries` 书架固定查询 | 独立 top-4 策略，不等于目录列表顺序 | 旧 Rust 查询已移除 |
 | 字数定义与 UTF-8 前缀累计字数 | Rust 文本计数共用 helper（后续）；当前 reading/chapters、identity/source、reading/navigation 和 user/coverage | 与导入字数、章节/覆盖分母一致 | 不在 #66 改写；旧报告第8项仍待收敛 |
 | 字节位置→进度比例、百分比跳转 | Rust `reading/navigation.rs::reading_percentage`，阅读数据通过 `identity/content.rs::reading_data_percentage` 查询可信全文长度 | 阅读数据与跳转共用比例/边界计算；Swift 只本地化格式化 | 其余旧报告第9项 Swift 比例副本仍待处理 |
 | 有效章节/位置归属 | Swift `IndexTasks.swift` 持有自动章节重建；2c 负责有效章节查询 | 同一书的手动目录覆盖须对导航、查找和统计一致；搜索计算接收冻结标题 | 旧 Rust SQL 已移除 |
@@ -123,8 +124,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 目录/临时跳转与正式续读保存 | Swift `ReaderSession`、`ReaderToolsModel` / Rust `ReadingFrame` | 目录断 visit 并 enqueue，不等统计 writer drain、不预读笔记；跳转 frame/章节标题在 Rust 同一读取事务中返回并一起发布；临时原点只在会话内存，原已接受保存走现有 saveTask；明确采用浏览位置或同步进度共用位置交还，结束听书后提交新位置，旧 flush 不得回写旧位置 | 不改正式位置格式 |
 | 统计范围、观察与时段展示 | Swift `Statistics/StatisticsModels.swift::StatisticsModel`、`StatisticsSpan` | 同池观察按用途选列并合并已通知更新；保留上一范围并明示日期，不把旧数当新范围。账户变化和相交未知清除撤下旧数。单书先发布期间统计，再用同一快照复核期间并补齐累计、最近七个有记录日的时段。展示按原相邻条件合段，用类型和记录 ID 作行身份、用结算时长 checked 相加 | 每页独立观察，关闭页面取消读取；日界、时区和回前台重核参数 |
 | Widget 统计摘要与连续日 | Swift `StatisticsHistoryRead.widget`；`SystemWidgetPublishing` 管日期窗口与发布 | 读已结算的自然日；今天无正时长则截至昨天，沿日期索引查到断日，不限七天。扩展只消费快照 | 独立调度和统计文件；不重建书目 |
-| 同步位置领先阈值、有效章节与百分比 | Rust `reading/navigation.rs` / `ReaderQuery` | Swift 只持有冷启动本机基线与提示状态，不重算领先裁决；见[同步设计](../data/sync.md#13-同步进度与编码) | 单源 |
-| 手选编码 LWW 与升级 epoch 候选 | Swift `UserValueRows` / `UserSyncJSON`，`SourceDecodingPreferences` 编排 | rawSHA 和编码规范调用 Rust；formal 候选与 current 同提交，旧索引迁入任务在用户提交成功后才另行确认。开书、索引与 AI 读取 current 与同域隔离，无旧本机回退 | 本机事实裁决；CKSyncEngine 待接 |
+| 同步位置领先阈值、有效章节与百分比 | Rust `reading/navigation.rs` | Swift 只持有冷启动本机基线与提示状态，不重算领先裁决；见[同步设计](../data/sync.md#13-同步进度与编码) | 单源 |
+| 手选编码 LWW 与升级 epoch 候选 | Swift `UserValueRows` / `UserSyncJSON`，`SourceDecodingPreferences` 编排 | rawSHA 和编码规范调用 Rust；formal 候选与 current 同提交，旧索引迁入任务在用户提交成功后才另行确认。开书、索引与 AI 读取 current 与同域隔离，无旧本机回退 | 按原始 SHA 同步编码值 |
 | 章节修正、配色与书架引用写入 | Swift `UserValueRows`、`CurrentUserRows` | 章节编辑按原正文行边界校验，撤回保留候选；配色与其颜色关系、完整当前 Ref 同提交；书架引用只发布描述，与本机授权分离。三个全局域的 formal 读取仍按各自隔离规则 | 已接本机 writer；章节结构消费者另批切换 |
 | 统计事实保存/去重裁决、日历展示桶/连续行视觉合并、显示格式 | Swift `ReadingStatistics.swift`、`StatisticsView.swift`，按各自职责单源 | 写入/界面组织与 Rust 数值汇总是不同规则；展示合并应消费已算 duration | 保持平台/状态规则，数值副本后续删除 |
 | 备份 ZIP 布局、受限解包、路径/摘要与正文缓存 SQL 驱逐 | Rust `storage/maintenance/backup_archive.rs` 管 ZIP；Swift `ReaderIndex` 管缓存驱逐 | 缓存驱逐使用同一个 GRDB 池，保留索引/授权/任务 | 单源 |
@@ -151,7 +152,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | `identity/` | content 阅读键与文件关联、source 原件探测/解码策略、sha |
 | `reading/` | `input/` 汇集 ingest 事务正文导入与 text 解码/分块；chapters 扫描、navigation、layout、cover_page、book_details 保留独立入口 |
 | `reading/progressive/` | 任务类型与状态入口；tasks 生命周期、stream 前缀分块、recovery 恢复/回收、query 不可变读取、原有测试 |
-| `user/` | `reading_fact.rs` 负责阅读事实载荷校验和编解码，`projection.rs` 负责查询投影；`statistics/` 保留计时/聚合入口和 coverage；`themes/` 中 models、preferences、textures、palettes、resolve 分别保留类型、偏好迁移、正式图案、配色/对比度及校验解析，父模块重导出原 API；v2 用户表是阅读事实权威 |
+| `user/` | `reading_fact.rs` 负责阅读事实载荷校验和编解码，`projection.rs` 编解码排版设置与书籍元信息；`statistics/` 保留计时/聚合入口和 coverage；`themes/` 中 models、preferences、textures、palettes、resolve 分别保留类型、偏好迁移、正式图案、配色/对比度及校验解析，父模块重导出原 API；v2 用户表是阅读事实权威 |
 | `storage/` | 原 schema.sql、migrations、validation、rows 正文缓存 SQL 行映射；`maintenance/` 汇集 backup_archive 与 cache_management，父模块重导出原 API |
 
 SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `include_str!` 路径。章节和渐进准备的既有测试随实现移动，不复制测试或规则。
@@ -224,9 +225,9 @@ Swift 关系库是本机用户数据权威；旧阅读 SwiftData 库仅以只读
 
 从 1.0.0 发布基线开始，SQLite、SwiftData/CloudKit、UserDefaults、Keychain、同步 payload 与缓存的格式变更必须保持已有数据可读。持久化枚举只增加、不删除或更改已有 raw value；退役功能可停止展示，不能用未知值使整个集合读取失败。新增字段使用可选值或明确默认值；结构调整须带版本、升级路径与迁移测试（旧数据、重复打开、失败回滚、降级拒绝），不能以删除重装代替升级。内部非持久化接口仍可直接整理，不要求保留无用的重复实现。
 
-SQLite 以 `user_version=20` 为首次支持基线，`storage/migrations.rs` 按有序步骤升级。新库先事务创建 v20，再与已有库一样逐级升级；v21 为导入任务增加目的字段，既有任务默认 reading，恢复专用任务为 restoration；v22 增加全量索引数据；v23 一次登记旧手选编码待迁项，原件未就绪时保留，SwiftData epoch 候选保存后才确认完成。当前版本为23。每步成功后更新版本，失败回滚该步。高于当前版本明确提示更新应用；低于 20 的开发库无升级路径，保留原库并报不支持，不自动删除或重建。哪些是可重建派生数据、哪些必须保留，见[数据存储](../data/README.md#当前实际存储)。
+1.6 的旧索引采用 SQLite user_version 20–23。v21 增加导入任务目的，v22 增加全量索引，v23 登记手选编码迁移输入。1.7 启动迁入规则如下。
 
-`Data/v2` 的 `index.sqlite` 和 `user.sqlite` 独立版本化，当前分别为 v2 和 v7；遇到不支持的版本不覆盖。发布升级只保证 1.6 到最终 1.7，不迁移 1.7 开发中的表结构。位置 token／批注操作仍在后继 SAVE 精确回执后放行前驱 DELETE；撤回压缩删除时不额外保留前驱归属。索引迁入器只读接入旧 v20–23 的文件、保留旧源，复用发布 SQL 形状并在目标事务内核对行键、关系及字节；只迁入升级时已确认 raw SHA 的旧编码映射。用户数据迁入通过 SwiftData 发布模型读取，结构迁入完成标记不等于已满足云附件和切换门槛。账户 local 并入先提交目标用户文件，续做需要的索引任务归属更新，再清冻结源；三个文件写入各自提交，不依赖 ATTACH/WAL 跨库原子性。应用一版合并切换运行时权威前，不启动 v2 页面读取、双写或新同步。
+`Data/v2` 的 `index.sqlite` 和 `user.sqlite` 独立版本化，当前分别为 v2 和 v7；遇到不支持的版本不覆盖。发布升级只保证 1.6 到最终 1.7，不迁移 1.7 开发中的表结构。位置 token／批注操作仍在后继 SAVE 精确回执后放行前驱 DELETE；撤回压缩删除时不额外保留前驱归属。索引迁入器只读接入旧 v20–23 的文件、保留旧源，复用发布 SQL 形状并在目标事务内核对行键、关系及字节；只迁入升级时已确认 raw SHA 的旧编码映射。用户数据迁入通过 SwiftData 发布模型读取，结构迁入完成标记不等于已满足云附件和切换门槛。账户 local 并入先提交目标用户文件，续做需要的索引任务归属更新，再清冻结源；三个文件写入各自提交，不依赖 ATTACH/WAL 跨库原子性。
 
 AI 连接、共享授权、用途默认值逐条解码，失败条目跳过并记录不含正文/凭据的日志；会话列表逐行容错，存储读取错误仍向上抛出。读取不修复、不回写。显式保存时按稳定 ID/用途键更新可识别项，保留不可识别的原始 JSON 元素与未知对象字段；用户可删除可识别项，不能顺带删掉未知项。JSON 整体损坏时拒绝覆盖并报告失败。用途字典既读取此前 Codable 的键值交替数组，也读取对象，显式保存统一为字符串键对象。授权撤销另更新连接 generation，保留的未知授权不能绕过该边界；日志只记录集合键和序号。同步 payload 采用独立的版本/隔离契约，见[同步专题](../data/sync.md#同步-payload-的-v1-边界与隔离)。
 
@@ -236,7 +237,7 @@ AI 连接、共享授权、用途默认值逐条解码，失败条目跳过并�
 
 1.6 的最近打开复用既有 UserValue v1 envelope 和 LWW，新增可缺省的 `opened/<reading-key>` 值（JSON Int64 毫秒）；缺失不伪造，排序回退已发布 1.5 的位置时间。既有 SwiftData 模型、CloudKit schema、位置和备份容器格式不变；完整备份包含此值，pending 晋升和按书删除沿原入口处理。旧版可保留未知键，1.6 能读取原有 1.5 数据；没有开发中间态迁移。
 
-SwiftData 变更使用可验证的 schema 演进/迁移。1.0.0 的阅读数据库与 AI 会话库没有使用 `VersionedSchema`。1.0.0 之后第一次修改任一库的模型（包括只加可选字段的轻量变更）时引入版本化：1.0.0 的现有模型原样作为 `SchemaV1`，新模型为 `SchemaV2`，加 `SchemaMigrationPlan` 与旧库升级测试；此后每个发布过的 schema 都保留一个版本，轻量变更用 lightweight stage，不能只登记首尾两端。CloudKit 生产 schema 只增加字段/记录类型，不删改既有类型及字段语义。UserDefaults/Keychain 的键名与凭据编码属于数据契约，变更需迁移且不得落入日志。阅读事实 payload 由 Rust 类型化校验，其他同步 payload 由 Swift 校验；Swift 存储边界按作用域隔离未知内容，不能靠 JSON 字段保留代替 LWW 并发设计；详见同步专题。
+已发布的 SwiftData 模型按其发布版本识别。仍使用 SwiftData 的 AI 会话库遵循以下演进规则。1.0.0 的阅读数据库与 AI 会话库没有使用 `VersionedSchema`。1.0.0 之后第一次修改任一库的模型（包括只加可选字段的轻量变更）时引入版本化：1.0.0 的现有模型原样作为 `SchemaV1`，新模型为 `SchemaV2`，加 `SchemaMigrationPlan` 与旧库升级测试；此后每个发布过的 schema 都保留一个版本，轻量变更用 lightweight stage，不能只登记首尾两端。CloudKit 生产 schema 只增加字段/记录类型，不删改既有类型及字段语义。UserDefaults/Keychain 的键名与凭据编码属于数据契约，变更需迁移且不得落入日志。阅读事实 payload 由 Rust 类型化校验，其他同步 payload 由 Swift 校验；Swift 存储边界按作用域隔离未知内容，不能靠 JSON 字段保留代替 LWW 并发设计；详见同步专题。
 
 重置仅限当轮明确授权的开发数据，不是发布后错误恢复方式；不得删除用户的外部或 iCloud 小说原件。上述约定不改变[iOS 版本和 API 兼容策略](ios-support.md)。
 
@@ -255,6 +256,6 @@ SwiftData 变更使用可验证的 schema 演进/迁移。1.0.0 的阅读数据�
 
 2c 的用户库准备先由 writer 校验两个版本、配置 `usr` 的 WAL，再开放连接池的读侧，以便已存在的索引能安全换绑新账户。迁入已知归属的旧用户源时禁写、禁 CloudKit；成功写入完成标记后才开放新关系表。关系表的打开记录和位置是不同事实，按领域、书键和分区复用隔离屏障；位置可与隐藏、首选副本和续读基线同事务提交。含 `usr` 的 GRDB 观察在 writer 上串行读取初值并注册，因为连接池并发观察只比较 `main` 的 WAL；重取也占 writer，耗时计算留在查询闭包外。store 仍需在参数或账户变化时取消并丢弃迟到结果。
 
-2c 接 B 固定直查函数与本机用户数据写入。既有 SwiftData 选择规则、章节覆盖、统计日期范围、目录自然顺序及缓存失效语义是该批兼容约束；分支中间态的页面不构成可运行或可发布承诺。
+1.7 的固定查询直接读取 GRDB 表。选择有效位置、章节覆盖、统计日期范围和目录自然顺序仍遵循发布语义。
 
-SHA-256 是规范正文身份，原始 SHA 加解码策略仅作快开和字节校验，UUID file id 只定位副本。路径、mtime、平台 generation 与 xattr 均不构成内容身份；不在小说原件写扩展属性是已确认边界。SwiftData 用户事实只有一个权威写入口，不与 Rust 用户表或 CKSyncEngine 双写；Automerge 原型未进入依赖，不并行引入第二套 CRDT。框架限制若影响既定体验，先取得可复现证据再决定是否换存储。
+SHA-256 是规范正文身份，原始 SHA 加解码策略仅作快开和字节校验，UUID file id 只定位副本。路径、mtime、平台 generation 与 xattr 均不构成内容身份；不在小说原件写扩展属性是已确认边界。用户库事务同时写入阅读事实及其出站意图，CKSyncEngine 负责传输；Automerge 原型未进入依赖，不并行引入第二套 CRDT。框架限制若影响既定体验，先取得可复现证据再决定是否换存储。

@@ -42,7 +42,7 @@ struct LibraryView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if model.showsImportTip, themes.loaded, model.libraryPath.isEmpty, model.selectedTab == .library {
+            if model.showsImportTip, themes.loaded, model.shell.libraryPath.isEmpty, model.shell.selectedTab == .library {
                 TipView(Onboarding.shared.imports).tipViewStyle(ThemedTipStyle()).padding(.horizontal)
                     .accessibilityIdentifier("libraryImportTip")
             }
@@ -140,7 +140,7 @@ struct LibraryView: View {
     }
 
     @ViewBuilder private func recentMenu(_ entry: LibraryEntry) -> some View {
-        Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))) }
+        Button("小说详情", systemImage: "info.circle") { model.shell.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))) }
         Button("从最近移除", systemImage: "minus.circle") { Task { await model.hideRecent(entry) } }
     }
 }

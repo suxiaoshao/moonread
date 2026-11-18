@@ -448,7 +448,7 @@ struct BookInformationSections: View {
             } label: { Text(entry.lastRead == 0 ? "开始阅读" : "继续阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         } else if let book = model.readableBook, let library {
-            Button { library.path.append(.reader(OpeningRequest(target: .book(book.id)))) } label: { Text("继续阅读").frame(maxWidth: .infinity) }
+            Button { library.shell.path.append(.reader(OpeningRequest(target: .book(book.id)))) } label: { Text("继续阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         }
     }
@@ -456,7 +456,7 @@ struct BookInformationSections: View {
     private func search(_ token: AppSearchSeed) {
         guard let library else { return }
         let scope = AppSearchScope(seeds: [token])
-        if target.fromReader { readerSearch = scope } else { library.path.append(.search(scope)) }
+        if target.fromReader { readerSearch = scope } else { library.shell.path.append(.search(scope)) }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {

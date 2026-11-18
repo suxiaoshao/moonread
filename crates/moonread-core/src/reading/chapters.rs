@@ -384,5 +384,3 @@ mod chapter_tests {
         }
     }
 }
-
-// Business projections are exported only by ReaderQuery.

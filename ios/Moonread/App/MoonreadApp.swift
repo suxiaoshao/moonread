@@ -252,7 +252,7 @@ struct MoonreadApp: App {
                 if phase == .background {
                     Task { await cloud.scene(active: false) }
                     MetadataExchangeModel.shared.sceneDidEnterBackground()
-                    library.dataManagement.backupExport.sceneDidEnterBackground()
+                    library.shell.dataManagement.backupExport.sceneDidEnterBackground()
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences(); await readerSettings.flush() }
                     Task { await AppDataService.shared.pauseImports() }
                 }
@@ -277,14 +277,14 @@ struct MoonreadApp: App {
         if let scene = StoreShotScene.requested {
             do {
                 switch scene {
-                case .shelf: library.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
-                case .backup: library.openSettings(target: .data)
-                case .statistics: library.selectedTab = .statistics
+                case .shelf: library.shell.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
+                case .backup: library.shell.openSettings(target: .data)
+                case .statistics: library.shell.selectedTab = .statistics
                 case .recap:
                     let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                     await ai.load()
                     try await ai.seedStoreShotRecap(fixture)
-                    library.selectedTab = .conversations
+                    library.shell.selectedTab = .conversations
                 case .widget: break
                 default:
                     let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
@@ -296,17 +296,17 @@ struct MoonreadApp: App {
             return
         }
         guard let page = StoreShotPage.requested else { return }
-        library.selectedTab = page == .settings ? .settings : .library
+        library.shell.selectedTab = page == .settings ? .settings : .library
         do {
             switch page {
             case .settings, .libraryHome: break
-            case .readerSettings: library.libraryPath = [.screenshotReaderSettings]
+            case .readerSettings: library.shell.libraryPath = [.screenshotReaderSettings]
             case .bookDetails, .reader:
                 let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                 guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
                     .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
                 if page == .bookDetails {
-                    library.libraryPath = [.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))]
+                    library.shell.libraryPath = [.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))]
                 } else { library.open(entry) }
             }
         } catch { library.error = ReaderMessages.error(error) }
@@ -318,10 +318,10 @@ struct MoonreadApp: App {
         Task {
             defer { access.finish() }
             guard await library.load() else { return }
-            library.selectedTab = .library
+            library.shell.selectedTab = .library
             if url.pathExtension.lowercased() == "moonread-backup" {
-                library.openSettings(target: .data)
-                await library.dataManagement.prepareImport(url)
+                library.shell.openSettings(target: .data)
+                await library.shell.dataManagement.prepareImport(url)
             } else { library.receiveSystemURLs([url]) }
         }
     }
@@ -407,7 +407,7 @@ private struct MoonreadRoot: View {
         // Observe outside the UIKit host's content closure. The app navigation
         // stays mounted while the full-screen introduction is presented.
         let introductionCompleted = Onboarding.shared.completed
-        NativeThemeHost(theme: library.path.last?.isReader == true ? readerTheme : appTheme) {
+        NativeThemeHost(theme: library.shell.path.last?.isReader == true ? readerTheme : appTheme) {
             tabs
             .disabled(library.changingUserScope)
             .modifier(ReadingReviewAfterReading(library: library))
@@ -420,7 +420,7 @@ private struct MoonreadRoot: View {
             .environment(\.systemReadingRouter, library.systemReading)
             .environment(\.moonreadReduceMotion, reduceMotion)
             .environment(\.readerTheme, readerTheme)
-            .onChange(of: library.libraryPath) { _, _ in library.returnedToLibrary() }
+            .onChange(of: library.shell.libraryPath) { _, _ in library.returnedToLibrary() }
             .onReceive(NotificationCenter.default.publisher(for: .libraryFilesChanged).receive(on: DispatchQueue.main)) { _ in library.retryPendingCloudDiscovery(); library.scheduleRefresh() }
             .alert("暂时无法完成", isPresented: Binding(get: { themes.error != nil }, set: { if !$0 { themes.error = nil } })) {
                 Button("知道了", role: .cancel) { themes.error = nil }
@@ -429,9 +429,9 @@ private struct MoonreadRoot: View {
             .alert("字体需要下载", isPresented: Binding(get: { readerSettings.fontNotice != nil }, set: { if !$0 { readerSettings.fontNotice = nil } })) {
                 Button("知道了", role: .cancel) { readerSettings.fontNotice = nil }
             } message: { Text(readerSettings.fontNotice ?? "") }
-            .alert("阅读遇到问题", isPresented: Binding(get: { library.readerExitError != nil }, set: { if !$0 { library.readerExitError = nil } })) {
-                Button("知道了", role: .cancel) { library.readerExitError = nil }
-            } message: { Text(library.readerExitError ?? "") }
+            .alert("阅读遇到问题", isPresented: Binding(get: { library.shell.readerExitError != nil }, set: { if !$0 { library.shell.readerExitError = nil } })) {
+                Button("知道了", role: .cancel) { library.shell.readerExitError = nil }
+            } message: { Text(library.shell.readerExitError ?? "") }
         }
         .ignoresSafeArea()
         .overlay {
@@ -458,13 +458,14 @@ private struct MoonreadRoot: View {
         switch Onboarding.shared.takeDestination() {
         case .importBook: library.chooseFiles(.novels(LibraryLocation(shelfID: "builtin")))
         case .story(let entry): library.open(entry)
-        case .library: library.libraryPath.append(.folder(LibraryLocation(shelfID: "builtin")))
+        case .library: library.shell.libraryPath.append(.folder(LibraryLocation(shelfID: "builtin")))
         case nil: break
         }
     }
 
     private var tabs: some View {
-        TabView(selection: $library.selectedTab) {
+        @Bindable var shell = library.shell
+        return TabView(selection: $shell.selectedTab) {
             Tab("书架", systemImage: "books.vertical", value: AppTab.library) { libraryStack }
             if ai.availability.isAvailable {
                 Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { AIConversationsView() }
@@ -475,27 +476,30 @@ private struct MoonreadRoot: View {
         }
         .modifier(AppSearchActivation())
         .onChange(of: ai.availability.isAvailable, initial: true) { _, available in
-            library.updateAvailableTabs(aiAvailable: available)
+            library.shell.updateAvailableTabs(aiAvailable: available)
         }
     }
     private var libraryStack: some View {
-        NavigationStack(path: $library.libraryPath) {
+        @Bindable var shell = library.shell
+        return NavigationStack(path: $shell.libraryPath) {
             LibraryView(model: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(LibrarySourceTabVisibility(path: library.libraryPath))
+        }.modifier(LibrarySourceTabVisibility(path: library.shell.libraryPath))
     }
     private var statisticsStack: some View {
-        NavigationStack(path: $library.statisticsPath) {
+        @Bindable var shell = library.shell
+        return NavigationStack(path: $shell.statisticsPath) {
             StatisticsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(LibrarySourceTabVisibility(path: library.statisticsPath))
+        }.modifier(LibrarySourceTabVisibility(path: library.shell.statisticsPath))
     }
     private var searchStack: some View {
-        NavigationStack(path: $library.searchPath) {
-            AppSearchView(model: library, search: library.search).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(LibrarySourceTabVisibility(path: library.searchPath))
-        .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
+        @Bindable var shell = library.shell
+        return NavigationStack(path: $shell.searchPath) {
+            AppSearchView(model: library, search: library.shell.search).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
+        }.modifier(LibrarySourceTabVisibility(path: library.shell.searchPath))
+        .modifier(AppSearchField(model: library, search: library.shell.search, quickEntry: true))
     }
     private var settingsStack: some View {
-        SettingsView(library: library, navigation: library.settingsNavigation)
+        SettingsView(library: library, navigation: library.shell.settingsNavigation)
     }
 
 
@@ -513,8 +517,8 @@ struct LibraryDestination: View {
         switch route {
         case .reader(let reader):
             ReaderScreen(route: reader.target, openingRequest: reader) { error, milliseconds in
-                library.readerExitError = error
-                if error == nil { library.reviewCandidate = ReadingReviewCandidate(milliseconds: milliseconds) }
+                library.shell.readerExitError = error
+                if error == nil { library.shell.reviewCandidate = ReadingReviewCandidate(milliseconds: milliseconds) }
                 // The reader calls back after its final position is saved.
                 // A destination's onAppear can run before that write finishes.
                 Task { await library.reloadBook(reader.target) }

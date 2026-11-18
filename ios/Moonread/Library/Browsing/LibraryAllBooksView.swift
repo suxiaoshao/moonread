@@ -203,7 +203,7 @@ struct LibraryAllBooksView: View {
     @ViewBuilder private func tagHeading(_ group: CatalogueTagSection) -> some View {
         if group.kind == .tag {
             Button {
-                model.path.append(.search(AppSearchScope(seeds: [.shelf(shownShelfID), .tag(group.tag)])))
+                model.shell.path.append(.search(AppSearchScope(seeds: [.shelf(shownShelfID), .tag(group.tag)])))
             } label: {
                 tagHeadingLabel(group)
             }.buttonStyle(.plain).accessibilityIdentifier("library-tag-\(group.tag)")
