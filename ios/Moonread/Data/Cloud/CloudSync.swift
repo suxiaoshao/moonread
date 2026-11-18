@@ -29,9 +29,10 @@ enum CloudConfiguration {
                 try Task.checkCancellation()
                 let scope = try DataScope.confirmed(container: containerID, environment: environment, recordName: recordName)
                 return .confirmed(.init(identity: .init(recordName: recordName), scope: scope))
+            case .restricted: return .unavailable(.restricted)
             default: return .unknown
             }
-        } catch { return .unknown }
+        } catch { return .unavailable(.connection(error)) }
     }
 }
 extension Notification.Name {
@@ -43,28 +44,45 @@ extension Notification.Name {
 enum CloudActivation: Sendable {
     case local
     case checking(revision: UUID)
-    case awaitingAccountConfirmation(CloudConfiguration.VerifiedAccount, revision: UUID, message: String)
+    case awaitingAccountConfirmation(CloudConfiguration.VerifiedAccount, revision: UUID)
     case enabled(CloudConfiguration.VerifiedAccount, revision: UUID)
-    case unavailable(String)
+    case signedOut
+    case unavailable(CloudSyncIssue)
 }
+
+enum CloudSyncIssue: Equatable, Sendable {
+    case offline, quota, unavailable, restricted, unsupportedBuild, paused, incomplete
+
+    static func connection(_ error: any Error) -> Self {
+        if (error as? CKError)?.code == .networkUnavailable
+            || (error as? URLError)?.code == .notConnectedToInternet { return .offline }
+        if (error as? CKError)?.code == .quotaExceeded { return .quota }
+        return .unavailable
+    }
+}
+
+struct CloudInitialUploadProgress: Equatable, Sendable {
+    let processed: Int
+    let total: Int
+}
+
+enum CloudSyncPhase: Equatable, Sendable {
+    case firstUpload(CloudInitialUploadProgress?)
+    case firstDownload(received: Int?)
+    case finishing
+    case waitingForDevice
+}
+
 struct CloudSyncStatus: Sendable {
     var requested = false
     var activation = CloudActivation.local
     var syncing = false
     var lastSync: Date?
-    var transportMessage: String?
+    var phase: CloudSyncPhase?
+    var transportIssue: CloudSyncIssue?
     var canRetry = false
 
     var enabled: Bool { if case .enabled = activation { true } else { false } }
-    var accountToConfirm: String? {
-        if case .awaitingAccountConfirmation(let account, _, _) = activation { account.recordName } else { nil }
-    }
-    var message: String? {
-        switch activation {
-        case .awaitingAccountConfirmation(_, _, let message), .unavailable(let message): message
-        default: transportMessage
-        }
-    }
 }
 
 /// Device-local intent is a tiny thread-safe UserDefaults write, independent of
@@ -95,7 +113,7 @@ final class CloudScopeCancellation: Sendable {
 }
 
 protocol ReadingCloudTransport: Sendable {
-    func syncNow() async throws
+    func syncNow(report: @escaping @Sendable (CloudSyncPhase?) async -> Void) async throws
     /// Revoke the old writer before a different account can be selected.
     func retire()
     /// Cleanup can finish without holding up the new account.
@@ -129,7 +147,7 @@ actor CloudSyncCoordinator {
         let scope: DataScope
     }
     enum Identity: Sendable {
-        case unknown, signedOut, confirmed(Account)
+        case unknown, unavailable(CloudSyncIssue), signedOut, confirmed(Account)
     }
     struct Runtime: Sendable {
         struct ZoneRecovery: Sendable {
@@ -194,7 +212,7 @@ actor CloudSyncCoordinator {
     private var foreground = true
     private var revision = UUID()
     private var transition: Task<Void, Never>?
-    private var transport: (account: Account, handle: any ReadingCloudTransport)?
+    private var transport: (account: Account, handle: any ReadingCloudTransport, binding: UUID)?
     private var turn: Task<Void, Never>?
     private var dirty = false
     private var restartPending = false
@@ -240,7 +258,7 @@ actor CloudSyncCoordinator {
 
     func confirmAccount(_ target: String, revision displayed: UUID) async {
         guard foreground, service.cloudSyncIntent.requested,
-              case .awaitingAccountConfirmation(let pending, let revision, _) = status.activation,
+              case .awaitingAccountConfirmation(let pending, let revision) = status.activation,
               revision == displayed, pending.recordName == target, let candidate = confirmationCandidate else { return }
         await enqueue(restart: true, approval: candidate)
     }
@@ -274,9 +292,7 @@ actor CloudSyncCoordinator {
         status.requested = service.cloudSyncIntent.requested
         guard let runtime else {
             restartPending = false
-            status.activation = status.requested
-                ? .unavailable(String(localized: "此版本暂不进行阅读数据 iCloud 同步，已保存的数据仍可在本机使用。"))
-                : .local
+            status.activation = status.requested ? .unavailable(.unsupportedBuild) : .local
             await service.refreshOfflineSystemReadingPolicy()
             if current(token) { publish() }
             return
@@ -294,7 +310,7 @@ actor CloudSyncCoordinator {
             let identity = foreground ? await runtime.lookup() : .unknown
             guard current(token) else { return }
             switch identity {
-            case .unknown, .signedOut:
+            case .unknown, .unavailable, .signedOut:
                 stop()
                 guard current(token) else { return }
                 let input: DataIdentityStatus
@@ -304,8 +320,10 @@ actor CloudSyncCoordinator {
                 _ = try await runtime.select(input, nil)
                 guard current(token) else { return }
                 if case .signedOut = input { identityNeedsVerification = false }
-                status.activation = status.requested
-                    ? .unavailable(String(localized: "暂时无法连接 iCloud，阅读数据同步未完成。")) : .local
+                status.activation = if !status.requested { .local }
+                    else if case .signedOut = identity { .signedOut }
+                    else if case .unavailable(let issue) = identity { .unavailable(issue) }
+                    else { .unavailable(.unavailable) }
             case .confirmed(let account):
                 let explicitlyApproved = approval == account
                 let approvedBefore = await runtime.isApproved(account)
@@ -321,8 +339,7 @@ actor CloudSyncCoordinator {
                 guard requested else { status.activation = .local; publish(); return }
                 guard enabled, selected.maySync, selected.scope == account.scope else {
                     confirmationCandidate = account
-                    status.activation = .awaitingAccountConfirmation(account.identity, revision: token,
-                        message: String(localized: "需要确认同步账户"))
+                    status.activation = .awaitingAccountConfirmation(account.identity, revision: token)
                     publish()
                     return
                 }
@@ -343,10 +360,9 @@ actor CloudSyncCoordinator {
                         Task { await handle.close() }
                         return
                     }
-                    transport = (account, handle)
+                    transport = (account, handle, token)
                 }
                 status.activation = .enabled(account.identity, revision: token)
-                status.transportMessage = nil
                 startTurn(allowRecovery: repair == nil)
             }
             publish()
@@ -358,7 +374,7 @@ actor CloudSyncCoordinator {
                 pauseForZone()
                 return
             } else {
-                status.activation = .unavailable(String(localized: "暂时无法连接 iCloud，阅读数据同步未完成。"))
+                status.activation = .unavailable(.connection(error))
             }
             publish()
         }
@@ -372,18 +388,26 @@ actor CloudSyncCoordinator {
         guard let transport, foreground, !restartPending, status.enabled, service.cloudSyncIntent.requested else { return }
         dirty = true
         guard turn == nil else { return }
-        status.syncing = true; publish()
-        turn = Task { await drive(transport.handle, account: transport.account, allowRecovery: allowRecovery) }
+        status.syncing = true; status.phase = nil; status.transportIssue = nil; publish()
+        turn = Task { await drive(transport.handle, account: transport.account, binding: transport.binding,
+                                  allowRecovery: allowRecovery) }
     }
 
-    private func drive(_ handle: any ReadingCloudTransport, account: Account, allowRecovery: Bool) async {
+    private func recordPhase(_ phase: CloudSyncPhase?, binding: UUID) {
+        guard transport?.binding == binding, status.syncing, status.phase != phase else { return }
+        status.phase = phase
+        publish()
+    }
+
+    private func drive(_ handle: any ReadingCloudTransport, account: Account, binding: UUID, allowRecovery: Bool) async {
         while dirty, !Task.isCancelled {
             dirty = false
             do {
-                try await handle.syncNow()
+                try await handle.syncNow { [weak self] phase in await self?.recordPhase(phase, binding: binding) }
                 guard !Task.isCancelled else { return }
                 status.lastSync = .now
-                status.transportMessage = nil
+                status.phase = nil
+                status.transportIssue = nil
             } catch {
                 guard !Task.isCancelled else { return }
                 if case .accountChanged? = error as? ReadingSyncEngineAdapter.Failure {
@@ -398,7 +422,17 @@ actor CloudSyncCoordinator {
                     await enqueue(restart: true, recovery: .init(account: account, signal: signal, mayAttempt: allowRecovery))
                     return
                 }
-                status.transportMessage = String(localized: "暂时无法连接 iCloud，阅读数据同步未完成。")
+                if case .awaitingExistingUpload? = error as? ReadingCloudInitialization.Failure {
+                    status.phase = .waitingForDevice
+                } else {
+                    status.phase = nil
+                    switch error as? ReadingCloudInitialization.Failure {
+                    case .awaitingFirstUpload?, .incompleteFirstUpload?, .awaitingExistingBaseline?:
+                        status.transportIssue = .incomplete
+                    default:
+                        status.transportIssue = .connection(error)
+                    }
+                }
                 break  // retry on a real foreground/write/identity event
             }
         }
@@ -408,7 +442,7 @@ actor CloudSyncCoordinator {
     }
 
     private func pauseForZone() {
-        status.activation = .unavailable(String(localized: "阅读数据同步已暂停"))
+        status.activation = .unavailable(.paused)
         publish()
     }
 
@@ -417,7 +451,7 @@ actor CloudSyncCoordinator {
         old?.handle.retire()
         turn?.cancel()
         transport = nil; turn = nil; dirty = false
-        status.syncing = false; status.lastSync = nil; status.transportMessage = nil
+        status.syncing = false; status.lastSync = nil; status.phase = nil; status.transportIssue = nil
         if let old { Task { await old.handle.close() } }
     }
 

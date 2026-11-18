@@ -32,6 +32,10 @@
     </dict></array>
     <key>LSSupportsOpeningDocumentsInPlace</key><true/>
     <key>UIFileSharingEnabled</key><true/>
+    <key>UILaunchScreen</key><dict>
+        <key>UIImageName</key><string>LaunchSeal</string>
+        <key>UIImageRespectsSafeAreaInsets</key><false/>
+    </dict>
     <key>UTExportedTypeDeclarations</key><array><dict>
         <key>UTTypeIdentifier</key><string>dev.moonread.library-item</string>
         <key>UTTypeDescription</key><string>Moonread Library Item Reference</string>

@@ -84,12 +84,12 @@ NN/g 与 IBM Carbon 均强调按等待场景选择反馈，短任务的循环动
 
 这里的启动页指点开 App 时的第一屏，与目录、搜索等空白加载页分开。系统 Launch Screen 只能静态显示，运动由 App 的第一帧接续；不增加固定等待时间。[Apple Launching](https://developer.apple.com/design/human-interface-guidelines/launching)、[启动画面配置](https://developer.apple.com/documentation/xcode/specifying-your-apps-launch-screen/)
 
-1. **系统 Launch Screen**：使用浅深 `LaunchBackground` 与静态 `LaunchSeal`，以全屏中心定位。图片为 120pt 的桌面图标本身：用 `ictool` 从 `assets/icon/Moonread.icon` 以 Default 外观导出 1x/2x/3x（120/240/360px）PNG，打开应用时从刚点按的图标接续；无文字、转圈或虚假进度。App 首帧使用同一资源。[启动屏调试说明](https://developer.apple.com/documentation/technotes/tn3118-debugging-your-apps-launch-screen)
-2. **App 首帧**：独立 `MoonLaunchCover` 使用同一资产、尺寸、位置和系统浅深背景，放在 App 主题容器外，避免交接时换成另一种图形。读取主题的同时准备本地 HomeSnapshot，二者就绪或错误、或根等待到 1s 上限后，底色和图标一起原地淡出；封面预热共享 150ms 子预算。具体边界见[首页](library.md#本地首屏与后台刷新)。启动衔接立即显示，不延长真实准备时间；错误时退出覆盖层并显示重试。返回首页或后台回前台不重播。后续目录刷新按上述内容可用性规则显示 loading，不清空已有书目。
+1. **系统 Launch Screen**：`UILaunchScreen` 使用系统背景与静态 `LaunchSeal`。图片为 120pt 的桌面图标本身，由 `ictool` 从 `assets/icon/Moonread.icon` 以 Default 外观导出 1x/2x/3x（120/240/360px）PNG。App 首帧使用同一资源。[启动屏调试说明](https://developer.apple.com/documentation/technotes/tn3118-debugging-your-apps-launch-screen)
+2. **App 首帧**：独立 `MoonLaunchCover` 居中绘制同一张 120pt 图标，底色使用主题缓存解析出的 App `canvas`。读取主题的同时准备本地 HomeSnapshot，二者就绪或错误、或根等待到 1s 上限后，底色和图标一起原地淡出；封面预热共享 150ms 子预算。具体边界见[首页](library.md#本地首屏与后台刷新)。启动衔接立即显示，不延长真实准备时间；错误时退出覆盖层并显示重试。返回首页或后台回前台不重播。后续目录刷新按上述内容可用性规则显示 loading，不清空已有书目。
 3. **开书准备**：背景从一开始使用解析后的阅读纸色，复用带书名和品牌图标的扉页；底部准备状态使用原生进度条或转圈，配必要暂停/重试动作。快开直接显示，不出扉页、不淡入；push 完成且本地准备满 300ms 才显示扉页，满 800ms 才显示进度和暂停，仅已经展示扉页后就绪才局部淡入 200ms，减弱动态直接替换。计时及取消见[开书流程](../reader/import.md#慢开书展示与会话契约)。后续准备继续后台进行。
 4. **已可阅读**：后台索引不常驻整页等待。只有读到准备边缘或展开准备工具时显示低干扰状态，保持现有最大正文空间。
 
-系统启动页无法运行 Rust、读取任意自定义主题并执行动画。启动覆盖层跟随系统浅深，下面的首页从可丢弃的主题快照恢复上次配色，再由核心设置校正；选择了与系统不同的主题时，通过覆盖层淡出衔接。系统可能保留旧启动快照，仍需分别检查冷启动、热启动与系统切换；不得使用固定等待时长掩盖主线程阻塞。
+系统启动页使用设备外观。启动覆盖层与首页从可丢弃的主题快照恢复上次配色，再由核心设置校正。系统可能保留旧启动快照，仍需分别检查冷启动、热启动与系统切换；不得使用固定等待时长掩盖主线程阻塞。
 
 ## 验收重点
 

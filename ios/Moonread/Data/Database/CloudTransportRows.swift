@@ -830,6 +830,14 @@ actor CloudCallbackJournal {
         }
     }
 
+    func joiningReceivedCount() throws -> Int {
+        try session.readCloudChanges(binding) { db in
+            // A repeated record replaces its staging key. Tombstones and the
+            // separately handled initialization control are not received rows.
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.cloud_bootstrap_record WHERE data IS NOT NULL") ?? 0
+        }
+    }
+
     func discardJoiningBaseline() throws {
         try commit { try CloudBootstrapRows.clear($0) }
     }
@@ -899,6 +907,16 @@ actor CloudCallbackJournal {
 
     func sealFirstUpload(_ control: ReadingCloudInitialization.Control) throws -> ReadingCloudInitialization.Completion {
         try commit { try ReadingCloudInitialization.sealFirstUpload($0, control: control) }
+    }
+
+    func firstUploadProgress() throws -> CloudInitialUploadProgress? {
+        try session.readCloudChanges(binding) { db in
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT count(*) AS total, count(CASE WHEN confirmed=1 THEN 1 END) AS processed
+                FROM usr.cloud_initial_member
+                """), (row["total"] as Int) > 0 else { return nil }
+            return .init(processed: row["processed"], total: row["total"])
+        }
     }
 
     func finishFirstUpload(_ ready: ReadingCloudInitialization.Control) throws {

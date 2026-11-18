@@ -4,37 +4,29 @@ struct CloudSettingsView: View {
     @Environment(CloudStore.self) private var cloud
     @Environment(\.theme) private var theme
     @State private var replacing: String?
+    @State private var showingSyncInfo = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("阅读数据 iCloud 同步", isOn: Binding(get: { cloud.status.requested }, set: cloud.setEnabled))
                         .font(.headline).disabled(cloud.busy).accessibilityIdentifier("readingDataSyncToggle")
-                    ThemedDivider()
-                    HStack(alignment: .top, spacing: 12) {
-                        if cloud.busy || cloud.status.syncing { ProgressView().accessibilityLabel(cloud.syncTitle) }
-                        else { Image(systemName: cloud.status.message != nil || cloud.status.accountToConfirm != nil ? "exclamationmark.icloud" : "icloud").foregroundStyle(Color(uiColor: theme.secondary)) }
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(verbatim: cloud.syncTitle).font(.headline).accessibilityIdentifier("cloudSyncStatus")
-                            if let date = cloud.status.lastSync {
-                                HStack { Text("上次同步"); Text(date, style: .relative) }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                            }
-                            if let message = cloud.status.message { Text(verbatim: message).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
-                            if cloud.status.accountToConfirm != nil {
-                                Button("确认同步到此账户") { cloud.requestConfirmation() }
-                                    .buttonStyle(ThemedProminentButtonStyle()).disabled(cloud.busy)
-                                    .accessibilityIdentifier("confirmCloudAccount")
-                            } else if cloud.status.canRetry && cloud.status.requested && cloud.status.message != nil {
-                                Button("重试阅读数据同步") { cloud.retry() }
-                                    .buttonStyle(ThemedProminentButtonStyle()).disabled(cloud.busy)
-                            }
-                        }
+                    if cloud.syncCard != .off {
+                        ThemedDivider()
+                        CloudSyncStatusRow(card: cloud.syncCard, canRetry: cloud.status.canRetry, busy: cloud.busy,
+                                           retry: cloud.retry, confirm: cloud.requestConfirmation)
                     }
                 }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("同步进度、书签、批注、小说信息、配色方案、手选编码和阅读统计。显示与阅读偏好留在此设备；此开关不控制小说文件。")
-                    if cloud.status.enabled { Text("系统会自动同步已保存的数据。") }
+                HStack(spacing: 8) {
+                    Text("同步阅读进度、批注、统计等数据，不包括小说文件。")
+                    Button {
+                        showingSyncInfo = true
+                    } label: {
+                        Image(systemName: "info.circle").font(.body)
+                            .foregroundStyle(Color(uiColor: theme.accent))
+                            .frame(minWidth: 44, minHeight: 44).contentShape(.rect)
+                    }.buttonStyle(.plain).accessibilityLabel("同步说明")
                 }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)).padding(.horizontal, 4)
                 VStack(alignment: .leading, spacing: 16) {
                     Label("我的书架文件", systemImage: "folder").font(.headline)
@@ -69,6 +61,23 @@ struct CloudSettingsView: View {
             }.padding([.horizontal, .top], 20).padding(.bottom).frame(maxWidth: 680).frame(maxWidth: .infinity)
         }
         .themedPage().navigationTitle("iCloud").navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingSyncInfo) {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("阅读进度、书签、批注、小说信息、配色方案、手选编码和阅读统计会通过 iCloud 同步。")
+                        Text("显示与阅读偏好留在本机。")
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
+                }
+                .themedPage().navigationTitle("同步说明").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("完成") { showingSyncInfo = false } }
+                }
+            }
+            .themeScope(theme)
+            .presentationBackground(Color(uiColor: theme.canvas))
+            .presentationDetents([.medium, .large])
+        }
         .task { await cloud.updateStatus() }
         .alert("是否将本机阅读数据同步到此账户？",
                isPresented: Binding(get: { cloud.confirmationAccount != nil }, set: { if !$0 { cloud.confirmationAccount = nil } }),
@@ -83,5 +92,86 @@ struct CloudSettingsView: View {
         .alert("暂时无法完成", isPresented: Binding(get: { cloud.error != nil }, set: { if !$0 { cloud.error = nil } })) {
             Button("知道了", role: .cancel) { cloud.error = nil }
         } message: { Text(cloud.error ?? "") }
+    }
+}
+
+private struct CloudSyncStatusRow: View {
+    let card: CloudSyncCard
+    let canRetry: Bool
+    let busy: Bool
+    let retry: () -> Void
+    let confirm: () -> Void
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        switch card {
+        case .off: EmptyView()
+        case .checking: line(Text("正在处理"), spinning: true)
+        case .confirmAccount:
+            line(Text("需要确认同步账户"), symbol: "icloud") {
+                Button("确认同步到此账户", action: confirm)
+                    .buttonStyle(ThemedProminentButtonStyle()).disabled(busy)
+                    .accessibilityIdentifier("confirmCloudAccount")
+            }
+        case .signedOut: line(Text("登录 iCloud 后才能同步"), symbol: "icloud")
+        case .unavailable(let issue), .error(let issue):
+            line(Text(issue.title), symbol: "exclamationmark.icloud") {
+                if canRetry { action("重试") }
+            }
+        case .syncing: line(Text("正在同步"), spinning: true)
+        case .firstUpload(let progress):
+            line(Text("正在上传阅读数据"), spinning: progress == nil) {
+                if let progress {
+                    ProgressView(value: Double(progress.processed), total: Double(progress.total))
+                        .progressViewStyle(.linear).accessibilityHidden(true)
+                    count(Text("\(progress.processed.formatted()) / \(progress.total.formatted()) 项已处理"))
+                }
+            }
+        case .firstDownload(let received):
+            line(Text("正在下载阅读数据"), spinning: true) {
+                if let received { count(Text("已接收 \(received.formatted()) 条")) }
+            }
+        case .finishing: line(Text("正在完成同步"), spinning: true)
+        case .waitingForDevice:
+            line(Text("等待另一台设备完成同步"), symbol: "icloud") { action("检查同步状态") }
+        case .waiting: line(Text("等待同步"), symbol: "icloud")
+        case .synced(let time):
+            let relative = Text(TimeDataSource<Date>.currentDate, format: .reference(to: time, maxFieldCount: 1))
+            line(Text("上次同步：\(relative)"), symbol: "icloud")
+        }
+    }
+
+    private func line(_ title: Text, symbol: String? = nil, spinning: Bool = false,
+                      @ViewBuilder details: () -> some View = { EmptyView() }) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            if spinning { ProgressView().controlSize(.small).accessibilityHidden(true) }
+            else if let symbol {
+                Image(systemName: symbol).foregroundStyle(Color(uiColor: theme.secondary)).accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                title.font(.headline).accessibilityIdentifier("cloudSyncStatus")
+                details()
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+    private func action(_ label: LocalizedStringKey) -> some View {
+        Button(label, action: retry).font(.subheadline).buttonStyle(.borderless).disabled(busy)
+    }
+    private func count(_ text: Text) -> some View {
+        text.font(.footnote.monospacedDigit()).foregroundStyle(Color(uiColor: theme.secondary))
+    }
+}
+
+private extension CloudSyncIssue {
+    var title: LocalizedStringResource {
+        switch self {
+        case .offline: "网络连接已断开"
+        case .quota: "iCloud 空间不足"
+        case .unavailable: "暂时无法连接 iCloud"
+        case .restricted: "此设备的 iCloud 访问受限"
+        case .unsupportedBuild: "此版本不支持阅读数据 iCloud 同步"
+        case .paused: "阅读数据同步已暂停"
+        case .incomplete: "阅读数据同步尚未完成"
+        }
     }
 }

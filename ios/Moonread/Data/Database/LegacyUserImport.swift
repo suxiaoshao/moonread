@@ -2,6 +2,12 @@ import Foundation
 import GRDB
 import SwiftData
 
+enum LegacyImportProgress: Equatable, Sendable {
+    case preparing
+    case rows(processed: Int, total: Int)
+    case finishing
+}
+
 /// Existing released containers, opened and frozen by the handoff owner. The
 /// source remains intact. A nil/uncertain scope must never be guessed as local.
 struct LegacyUserSnapshot: Sendable {
@@ -16,7 +22,8 @@ struct LegacyUserSnapshot: Sendable {
     /// The identity decision belongs to startup. This only opens the
     /// published files, with saves and CloudKit disabled. An unreadable file
     /// throws; only a confirmed missing file is represented by nil.
-    static func open(directory: URL, scope: DataScope, deviceState: DeviceState) throws -> Self {
+    static func open(directory: URL, scope: DataScope, deviceState: DeviceState,
+                     progress: (@Sendable (LegacyImportProgress) -> Void)? = nil) throws -> Self {
         let schema = Schema([UserPosition.self, UserValue.self, AnnotationOperation.self,
                              ReadingFact.self, StatisticsClear.self, UserCover.self])
         func openStore(_ filename: String) throws -> ModelContainer? {
@@ -25,6 +32,7 @@ struct LegacyUserSnapshot: Sendable {
             catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
                 return nil
             }
+            progress?(.preparing)
             let configuration = ModelConfiguration("UserData", schema: schema, url: file,
                                                    allowsSave: false, cloudKitDatabase: .none)
             return try ModelContainer(for: schema, configurations: [configuration])
@@ -70,17 +78,29 @@ enum LegacyUserImport {
         var reason: String
     }
     private struct Version: Decodable { var v: Int64? }
-    static func run(_ db: Database, snapshot: LegacyUserSnapshot) throws {
+    static func run(_ db: Database, snapshot: LegacyUserSnapshot,
+                    progress: (@Sendable (LegacyImportProgress) -> Void)? = nil) throws {
         guard let scope = snapshot.scope else { throw DataV2Error.incompatibleSource("legacy users have no confirmed owner") }
         guard try !completed(db) else { throw DataV2Error.migrationAlreadyComplete }
         try UpgradeOrigins.begin(db)
         let batch = UUID().uuidString
-        if let formal = snapshot.formal {
-            try read(ModelContext(formal), db: db, partition: 0, source: scope.key, coverDirectory: snapshot.coverDirectory, batch: batch)
+        let stores = [snapshot.formal, snapshot.pending].enumerated().compactMap { part, store in
+            store.map { (part, $0) }
         }
-        if let pending = snapshot.pending {
-            try read(ModelContext(pending), db: db, partition: 1, source: scope.key, coverDirectory: snapshot.coverDirectory, batch: batch)
+        // Count only when the startup page needs progress, using the same
+        // frozen stores. Failure to count does not gate the actual import.
+        let display = stores.isEmpty ? nil : progress
+        let total = display == nil ? nil : (try? stores.reduce(0) { try $0 + sourceCount(ModelContext($1.1)) })
+        var processed = 0
+        if let total, total > 0 { display?(.rows(processed: 0, total: total)) }
+        for (partition, store) in stores {
+            try read(ModelContext(store), db: db, partition: partition, source: scope.key,
+                     coverDirectory: snapshot.coverDirectory, batch: batch) { count in
+                processed += count
+                if let total, processed < total { display?(.rows(processed: processed, total: total)) }
+            }
         }
+        display?(.finishing)
         try reconcileCoverCompleteness(db, source: scope.key)
         try putDeviceState(snapshot.deviceState, db: db)
         try CurrentUserRows.settleImported(db)
@@ -158,8 +178,17 @@ enum LegacyUserImport {
         try db.execute(sql: "INSERT INTO usr.local_data_state VALUES ('legacy-user-import','absent-v1')")
     }
 
+    private static func sourceCount(_ context: ModelContext) throws -> Int {
+        try context.fetchCount(FetchDescriptor<UserCover>())
+            + context.fetchCount(FetchDescriptor<UserValue>())
+            + context.fetchCount(FetchDescriptor<UserPosition>())
+            + context.fetchCount(FetchDescriptor<AnnotationOperation>())
+            + context.fetchCount(FetchDescriptor<ReadingFact>())
+            + context.fetchCount(FetchDescriptor<StatisticsClear>())
+    }
+
     private static func read(_ context: ModelContext, db: Database, partition: Int, source: String,
-                             coverDirectory: URL?, batch: String) throws {
+                             coverDirectory: URL?, batch: String, didProcess: (Int) -> Void) throws {
         let importer = Importer(db: db, partition: partition, source: source, coverDirectory: coverDirectory, batch: batch)
         // Each pass uses the already-frozen SwiftData store; one batch of model
         // references is live at a time. Covers may be individually large.
@@ -175,6 +204,7 @@ enum LegacyUserImport {
                 if rows.isEmpty { break }
                 for row in rows { try consume(row) }
                 count += rows.count
+                didProcess(rows.count)
                 if rows.count < size { break }
             }
             let incomplete = try Bool.fetchOne(db, sql: """

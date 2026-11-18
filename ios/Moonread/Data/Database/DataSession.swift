@@ -344,7 +344,8 @@ final class DataSession: @unchecked Sendable {
     /// Prepare one local user authority. The caller resolves the old store's
     /// provenance; nil means this scope has no legacy source, not that opening
     /// or attributing a source failed.
-    func prepareUsers(_ token: DataSessionLease, legacy: () throws -> LegacyUserSnapshot?) throws {
+    func prepareUsers(_ token: DataSessionLease, progress: (@Sendable (LegacyImportProgress) -> Void)? = nil,
+                      legacy: () throws -> LegacyUserSnapshot?) throws {
         let needsSource = try lifecycle.withLock {
             let writer = try active(token)
             guard indexReady else { throw DataV2Error.migrationNotVerified }
@@ -364,7 +365,7 @@ final class DataSession: @unchecked Sendable {
                         guard snapshot.scope == token.scope else {
                             throw DataV2Error.incompatibleSource("unconfirmed legacy user ownership")
                         }
-                        try LegacyUserImport.run(db, snapshot: snapshot)
+                        try LegacyUserImport.run(db, snapshot: snapshot, progress: progress)
                     } else {
                         try LegacyUserImport.recordAbsentSource(db)
                     }

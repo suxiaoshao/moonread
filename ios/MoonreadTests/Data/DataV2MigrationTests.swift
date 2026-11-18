@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 import SwiftData
+import Synchronization
 import Testing
 @testable import Moonread
 
@@ -244,7 +245,18 @@ struct DataV2MigrationTests {
         }
         source.scope = .local
         source.deviceState.resume[key] = .init(offset: .max, lastLocalWriteToken: nil)
-        try await owner.importLegacyUsers(source, token: lease)
+        let events = Mutex([LegacyImportProgress]())
+        try owner.prepareIndex(root.appending(path: "unused-reader.sqlite3"), token: lease)
+        try owner.prepareUsers(lease, progress: { event in events.withLock { $0.append(event) } }) { source }
+        let reported = events.withLock { $0 }
+        let expected = try #require(owner.readUsers(lease) { try Int.fetchOne($0, sql: "SELECT sum(imported_count) FROM usr.legacy_import_state") })
+        #expect(reported.first == .rows(processed: 0, total: expected))
+        #expect(reported.last == .finishing)
+        #expect(reported.contains { if case .rows(let done, let total) = $0 { return done > 0 && done < total }; return false })
+        try owner.prepareUsers(lease, progress: { _ in Issue.record("Completed import emitted more progress") }) {
+            Issue.record("Completed import reopened the old source")
+            return nil
+        }
         try await owner.read(lease) { db throws -> Void in
             try #expect(Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usr.metadata_text_candidate") == 3)
             try #expect(Bool.fetchOne(db, sql: "SELECT is_deleted FROM usr.tag_candidate") == true)
