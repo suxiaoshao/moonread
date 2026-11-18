@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import GRDB
 import CryptoKit
 
 struct CloudDocumentItem: Sendable, Equatable {
@@ -98,7 +99,7 @@ struct HandoffAssociation: Codable, Sendable {
 }
 
 struct CloudHandoffReceipt: Codable, Sendable {
-    enum Stage: Equatable, Sendable { case intent, copied, published, invalidLegacy }
+    enum Stage: String, Codable, Sendable { case intent, copied, published }
     private(set) var stage: Stage
     let bytesHash: String
     var association: HandoffAssociation?
@@ -112,37 +113,16 @@ struct CloudHandoffReceipt: Codable, Sendable {
         switch stage {
         case .intent: stage = .copied
         case .copied, .published: break
-        case .invalidLegacy: throw ReaderError.SourceChanged
         }
     }
     mutating func recordPublication() throws {
         switch stage {
         case .copied: stage = .published
         case .published: break
-        case .intent, .invalidLegacy: throw ReaderError.SourceChanged
+        case .intent: throw ReaderError.SourceChanged
         }
     }
-    private enum CodingKeys: String, CodingKey { case copied, bytesHash, association, published }
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        bytesHash = try container.decode(String.self, forKey: .bytesHash)
-        association = try container.decodeIfPresent(HandoffAssociation.self, forKey: .association)
-        let copied = try container.decodeIfPresent(Bool.self, forKey: .copied) ?? false
-        let published = try container.decodeIfPresent(Bool.self, forKey: .published) ?? false
-        switch (copied, published) {
-        case (false, false): stage = .intent
-        case (true, false): stage = .copied
-        case (true, true): stage = .published
-        case (false, true): stage = .invalidLegacy
-        }
-    }
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(copied, forKey: .copied)
-        try container.encode(published || stage == .invalidLegacy, forKey: .published)
-        try container.encode(bytesHash, forKey: .bytesHash)
-        try container.encodeIfPresent(association, forKey: .association)
-    }
+
 }
 
 /// Durable evidence belongs to this one-time handoff, not a folder mirror.
@@ -225,7 +205,7 @@ enum CloudDocumentHandoff {
                 result = Result {
                     let digest = try bytesHash(from)
                     if var saved = receipts[relative], !replacing.contains(relative) {
-                        guard saved.stage != .invalidLegacy, saved.bytesHash == digest else { throw ReaderError.SourceChanged }
+                        guard saved.bytesHash == digest else { throw ReaderError.SourceChanged }
                         if saved.copied {
                             try verifyBytes(to, expectedHash: saved.bytesHash)
                             return
@@ -329,6 +309,28 @@ enum CloudDocumentHandoff {
     }
 }
 
+extension ReaderIndex {
+    func cloudHandoffReceipts(owner: String) throws -> [String: CloudHandoffReceipt] {
+        try read { db in
+            Dictionary(uniqueKeysWithValues: try Row.fetchAll(db, sql: """
+                SELECT relative_path,receipt FROM main.cloud_file_handoff WHERE owner=?
+                """, arguments: [owner]).map {
+                    ($0["relative_path"], try JSONDecoder().decode(CloudHandoffReceipt.self, from: $0["receipt"]))
+                })
+        }
+    }
+
+    func saveCloudHandoffReceipts(_ receipts: [String: CloudHandoffReceipt], owner: String) throws {
+        try write { db in
+            try db.execute(sql: "DELETE FROM main.cloud_file_handoff WHERE owner=?", arguments: [owner])
+            for (path, receipt) in receipts {
+                try db.execute(sql: "INSERT INTO main.cloud_file_handoff VALUES(?,?,?)",
+                               arguments: [owner,path,try JSONEncoder().encode(receipt)])
+            }
+        }
+    }
+}
+
 extension AppDataService {
     func cloudDiscoveryRoot() -> URL? { cloudLibraryRoot }
     func adoptCloudDiscovery(_ items: [CloudDocumentItem]) async throws {
@@ -352,7 +354,7 @@ extension AppDataService {
         // Activation is persisted before local originals are removed. Leftovers
         // can be interrupted cleanup and must never override the committed root.
         // Resolve the bookmark without requiring a fresh container lookup.
-        guard let owner, sourceDefaults.string(forKey: "Moonread.cloudLibraryOwner") == owner,
+        guard let owner, (try? indexStore().cloudDocumentsOwner()) == owner,
               let shelf = try? shelves().first(where: { $0.builtin && $0.location == "icloud" }) else { cloudLibraryRoot = nil; return }
         var stale = false
         guard let cloud = try? URL(resolvingBookmarkData: Data(shelf.bookmark), options: .withoutUI, bookmarkDataIsStale: &stale) else { cloudLibraryRoot = nil; return }
@@ -393,7 +395,7 @@ extension AppDataService {
         }
         let identity = try NSKeyedArchiver.archivedData(withRootObject: token, requiringSecureCoding: false)
         let owner = SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
-        if let previous = sourceDefaults.string(forKey: "Moonread.cloudLibraryOwner"), previous != owner {
+        if let previous = try indexStore().cloudDocumentsOwner(), previous != owner {
             cloudLibraryRoot = nil; cloudLibraryCheckNeeded = true
             cloudLibraryReplacements = []
             cloudLibraryMessage = String(localized: "iCloud 账户已变化，原账户的本机文件不会自动上传。")
@@ -407,9 +409,7 @@ extension AppDataService {
             let fm = FileManager.default
             guard let container = fm.url(forUbiquityContainerIdentifier: CloudConfiguration.containerID) else { throw CocoaError(.fileNoSuchFile) }
             let local = try fm.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            let support = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            return CloudLibraryRoots(local: local, cloud: container.appendingPathComponent("Documents", isDirectory: true),
-                journal: support.appendingPathComponent("Moonread/CloudHandoff/" + owner + ".json"), owner: owner)
+            return CloudLibraryRoots(local: local, cloud: container.appendingPathComponent("Documents", isDirectory: true), owner: owner)
         }
         try await updateCloudLibrary(roots: roots, replacing: replacing, validateIdentity: {
             guard let current = FileManager.default.ubiquityIdentityToken,
@@ -430,12 +430,13 @@ extension AppDataService {
         defer { ReaderOpenDiagnostics.background("cloudHandoff.return") }
         if let replacing { cloudLibraryReplacements.insert(replacing) }
         let replacements = cloudLibraryReplacements
+        let core = try indexStore()
+        let persisted = try core.cloudHandoffReceipts(owner: roots.owner)
         let initial = try await CloudHandoffWork.run {
-            let fm = FileManager.default
-            let receipts = fm.fileExists(atPath: roots.journal.path)
-                ? try JSONDecoder().decode([String: CloudHandoffReceipt].self, from: Data(contentsOf: roots.journal)) : [:]
-            let files = try CloudDocumentHandoff.localFiles(roots.local)
-            return (receipts, files)
+            (persisted, try CloudDocumentHandoff.localFiles(roots.local))
+        }
+        let persist: @Sendable ([String: CloudHandoffReceipt]) throws -> Void = {
+            try core.saveCloudHandoffReceipts($0, owner: roots.owner)
         }
         let newFiles = initial.1.contains { initial.0[$0] == nil }
         cloudLibraryRetryAfterImport = newFiles || initial.0.values.contains { !$0.published }
@@ -445,34 +446,32 @@ extension AppDataService {
         if cloudLibraryRoot == roots.cloud, initial.0.isEmpty, initial.1.isEmpty, replacements.isEmpty {
             cloudLibraryCheckNeeded = false; ReaderOpenDiagnostics.background("cloudHandoff.noop"); return
         }
-        sourceDefaults.set(roots.owner, forKey: "Moonread.cloudLibraryOwner")
+        try core.saveCloudDocumentsOwner(roots.owner)
         cloudLibraryConflict = nil
-        let core = try indexStore()
         let files = Dictionary(uniqueKeysWithValues: try core.sourceFiles(shelfId: "builtin").filter { !$0.directory }.map { ($0.relativePath, $0.id) })
         do {
             var receipts = try await CloudHandoffWork.run {
                 let fm = FileManager.default
                 try fm.createDirectory(at: roots.cloud, withIntermediateDirectories: true)
-                try fm.createDirectory(at: roots.journal.deletingLastPathComponent(), withIntermediateDirectories: true)
                 var receipts = initial.0
                 try CloudDocumentHandoff.transfer(local: roots.local, cloud: roots.cloud, receipts: &receipts,
                     replacing: replacements, removeOriginals: false,
                     capture: { path, _ in
                         guard let id = files[path] else { return nil }
                         return HandoffAssociation(fileID: id, bookID: try core.sourceFileLocation(fileId: id).bookId, decoding: try core.sourceDecoding(fileId: id))
-                    }, persist: { try JSONEncoder().encode($0).write(to: roots.journal, options: .atomic) }, makeUbiquitous: makeUbiquitous)
+                    }, persist: persist, makeUbiquitous: makeUbiquitous)
                 return receipts
             }
             try validateIdentity()
             guard !hasRunningImports else { cloudLibraryRetryAfterImport = true; return }
             try await publishCloudHandoff(local: roots.local, cloud: roots.cloud, receipts: &receipts,
-                persist: { try JSONEncoder().encode($0).write(to: roots.journal, options: .atomic) }, validateIdentity: validateIdentity, requireIdleImports: true)
+                persist: persist, validateIdentity: validateIdentity, requireIdleImports: true)
             let committed = receipts
             try await CloudHandoffWork.run {
                 try validateIdentity()
                 var receipts = committed
                 try CloudDocumentHandoff.cleanup(local: roots.local, cloud: roots.cloud, receipts: &receipts,
-                    persist: { try JSONEncoder().encode($0).write(to: roots.journal, options: .atomic) })
+                    persist: persist)
             }
             cloudLibraryReplacements = []
             cloudLibraryRetryAfterImport = false; cloudLibraryCheckNeeded = false
@@ -492,7 +491,7 @@ extension AppDataService {
         libraryScans["builtin"] = UUID()
         cloudLibraryPublicationCount += 1
         let core = try indexStore(), initial = receipts, previousRoot = cloudLibraryRoot
-        let sources = importSourceSnapshot(), cloudItems = cloudDocumentItems
+        let sources = try core.importSourceSnapshot(), cloudItems = cloudDocumentItems
         let outcome = try await CloudHandoffWork.run { [self] in
             ReaderOpenDiagnostics.background("cloudPublication.coordination.begin")
             defer { ReaderOpenDiagnostics.background("cloudPublication.coordination.return") }
@@ -529,33 +528,25 @@ extension AppDataService {
     }
 
     private func commitCloudHandoff(core: ReaderIndex, cloud: URL, previousRoot: URL?, bookmark: Data,
-        files: [LibraryHandoffFile], items: [ScannedLibraryItem], sources: [String: Data], updates: [String: Data],
+        files: [LibraryHandoffFile], items: [ScannedLibraryItem], sources: [String: ImportSource], updates: [String: ImportSource],
         requireIdleImports: Bool, validateIdentity: @Sendable () throws -> Void) throws {
         try validateIdentity()
-        guard cloudLibraryRoot == previousRoot, importSourceSnapshot() == sources,
+        guard cloudLibraryRoot == previousRoot, try indexStore().lease == core.lease, try core.importSourceSnapshot() == sources,
               !requireIdleImports || !hasRunningImports else { throw ReaderError.SourceChanged }
-        try core.publishLibraryHandoff(bookmark: bookmark, files: files)
+        try core.publishLibraryHandoff(bookmark: bookmark, files: files, origins: updates)
         cloudLibraryRoot = cloud
-        for (key, bytes) in updates { sourceDefaults.set(bytes, forKey: key) }
         try applyLibraryScan("builtin", root: cloud, items: items, observe: false)
         cloudLibraryMessage = nil
     }
 
-    private func importSourceSnapshot() -> [String: Data] {
-        sourceDefaults.dictionaryRepresentation().reduce(into: [:]) { result, item in
-            if item.key.hasPrefix(importSourceKey("")), let data = item.value as? Data { result[item.key] = data }
-        }
-    }
-    nonisolated private static func importSourceRebindings(_ values: [String: Data], from local: URL, to cloud: URL, bookmark: Data) throws -> [String: Data] {
-        var updates: [String: Data] = [:]
-        for (key, bytes) in values {
-            let source = try JSONDecoder().decode(ImportSource.self, from: bytes)
+    nonisolated private static func importSourceRebindings(_ values: [String: ImportSource], from local: URL, to cloud: URL, bookmark: Data) throws -> [String: ImportSource] {
+        var updates: [String: ImportSource] = [:]
+        for (key, source) in values where source.fileID == nil {
             var stale = false
             let root = try URL(resolvingBookmarkData: source.rootBookmark, options: .withoutUI, bookmarkDataIsStale: &stale)
             if root.standardizedFileURL == local.standardizedFileURL {
-                let moved = ImportSource(rootBookmark: bookmark, relativePath: source.relativePath,
-                    encoding: source.encoding, sourceKey: source.sourceKey, fileID: source.fileID, expectedRawSHA: source.expectedRawSHA)
-                updates[key] = try JSONEncoder().encode(moved)
+                updates[key] = ImportSource(rootBookmark: bookmark, relativePath: source.relativePath,
+                    encoding: source.encoding, fileID: source.fileID, expectedRawSHA: source.expectedRawSHA)
             }
         }
         return updates
@@ -569,7 +560,7 @@ extension AppDataService {
 
 private struct CKAccountChange: Error {}
 
-struct CloudLibraryRoots: Sendable { let local: URL; let cloud: URL; let journal: URL; let owner: String }
+struct CloudLibraryRoots: Sendable { let local: URL; let cloud: URL; let owner: String }
 private struct CloudHandoffOutcome: Sendable { let receipts: [String: CloudHandoffReceipt]; let result: Result<Void, Error> }
 
 /// Blocking provider coordination stays on a GCD I/O queue, never a reader actor or cooperative pool thread.

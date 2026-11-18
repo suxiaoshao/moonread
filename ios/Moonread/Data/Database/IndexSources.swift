@@ -198,7 +198,7 @@ extension ReaderIndex {
         }
     }
 
-    func publishLibraryHandoff(bookmark: Data, files: [LibraryHandoffFile]) throws {
+    func publishLibraryHandoff(bookmark: Data, files: [LibraryHandoffFile], origins: [String: ImportSource] = [:]) throws {
         var ids = Set<String>()
         for file in files {
             try Self.validate(file.relativePath)
@@ -224,10 +224,17 @@ extension ReaderIndex {
                 try db.execute(sql: """
                     UPDATE main.library_files SET shelf_id='builtin',relative_path=?,parent_path=?,name=?,book_id=? WHERE id=?
                     """, arguments: [file.relativePath,parent,name,associated,file.fileId])
+                try db.execute(sql: """
+                    UPDATE main.import_origin SET root_bookmark=?,relative_path=?
+                    WHERE book_id IN (SELECT book_id FROM main.import_jobs WHERE library_file_id=?)
+                    """, arguments: [bookmark,file.relativePath,file.fileId])
             }
             try db.execute(sql: "UPDATE main.library_shelves SET bookmark=?,location='icloud',error=NULL WHERE id='builtin'",
                            arguments: [bookmark])
             guard db.changesCount == 1 else { throw ReaderError.NotFound }
+            for (id, source) in origins {
+                try Self.saveImportOrigin(db, id: id, source: source)
+            }
         }
     }
 
@@ -252,6 +259,10 @@ extension ReaderIndex {
                                arguments: [targetShelf,next,id])
                 try db.execute(sql: "UPDATE main.library_files SET shelf_id=?,relative_path=?,parent_path=?,name=? WHERE id=?",
                                arguments: [targetShelf,next,parent,name,id])
+                try db.execute(sql: """
+                    UPDATE main.import_origin SET relative_path=?, root_bookmark=(SELECT bookmark FROM main.library_shelves WHERE id=?)
+                    WHERE book_id IN (SELECT book_id FROM main.import_jobs WHERE library_file_id=?)
+                    """, arguments: [next,targetShelf,id])
             }
         }
     }

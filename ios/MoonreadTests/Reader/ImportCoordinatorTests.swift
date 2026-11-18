@@ -152,7 +152,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     withExtendedLifetime([first, changed, restored, reopened]) {}
   }
 
-  // S374: 系统中断重开自动续接；升级后旧主动暂停键统一退役，不保留运行时分支。
+  // S374: 系统中断重开时，从持久来源自动续接原任务。
   @MainActor func testSystemInterruptedImportAutomaticallyResumesOnReopen() async throws {
     do {
       let (root, _, original, source, id, defaults, suite) = try await Self.pausedSourceFixture()
@@ -160,23 +160,16 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
       }
-      let legacy = "Moonread.importUserPaused.v1.library." + id
-      let obsolete = "Moonread.importUserPaused.v1.previous-session.orphan"
-      defaults.set(true, forKey: legacy); defaults.set(true, forKey: obsolete)
-      defaults.set("kept", forKey: "UnrelatedFixturePreference")
       try original.session.close()
       let restartedCore = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
       defer { try? restartedCore.session.close() }
       let restarted = AppDataService(
         core: restartedCore, libraryDirectory: root.appendingPathComponent("local"),
         sourceDefaultsSuite: suite)
-      XCTAssertNil(defaults.object(forKey: legacy)); XCTAssertNil(defaults.object(forKey: obsolete))
-      XCTAssertEqual(defaults.string(forKey: "UnrelatedFixturePreference"), "kept")
       let lease = try await restarted.openSourceFile(source)
       XCTAssertEqual(lease.id, id)
       try await restarted.waitForImportFinish(id)
       XCTAssertEqual(try restartedCore.importStatus(bookId: id).phase, .complete)
-      XCTAssertNil(defaults.object(forKey: "Moonread.importUserPaused.v1.library." + id))
       withExtendedLifetime(lease) {}
     }
     do {

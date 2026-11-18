@@ -1,3 +1,4 @@
+import GRDB
 import CryptoKit
 import Observation
 import SQLite3
@@ -133,13 +134,17 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
       let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
       let controller = FullIndexController(
         defaults: defaults, service: f.service, registerTasks: false)
+      try controller.restoreTasks(f.core.session)
       controller.start("builtin", includeCloud: false, userInitiated: false)
       XCTAssertTrue(controller.running)
       XCTAssertEqual(controller.sheetAction("builtin", inventory: nil, includeCloud: false), .stop)
       controller.start(secondID, includeCloud: false, userInitiated: false)
-      let saved = try XCTUnwrap(defaults.data(forKey: "Moonread.fullIndex.request.v1"))
-      let request = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
-      XCTAssertEqual((request["queued"] as? [[String: Any]])?.first?["shelf"] as? String, secondID)
+      let queued = try f.core.read { db in
+        try Data.fetchOne(db, sql: "SELECT item FROM main.full_index_queue ORDER BY position LIMIT 1")
+      }
+      let item = try XCTUnwrap(queued)
+      let request = try XCTUnwrap(JSONSerialization.jsonObject(with: item) as? [String: Any])
+      XCTAssertEqual(request["shelf"] as? String, secondID)
       XCTAssertFalse(
         try f.core.pendingIdentityFiles(shelfId: "builtin").isEmpty,
         "foreground opening must block indexing")

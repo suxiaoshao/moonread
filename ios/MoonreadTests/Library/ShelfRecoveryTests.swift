@@ -48,9 +48,8 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     let model = LibraryModel(service: f.service)
     model.chooseFiles(.reauthorize(reference, scope: first.scope))
     model.cancelFilePicker()
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
-    let cancelled = try ShelfReferenceBindings(data: defaults.data(forKey: ShelfReferenceBindings.key))
-    XCTAssertNil(cancelled.scopes[first.scope]?.bindings[reference.id])
+    let cancelled = try f.core.session.readUsers(f.core.lease) { try ShelfReferenceBindings.read($0) }
+    XCTAssertNil(cancelled.bindings[reference.id])
     let reused = try await f.service.registerRecoveredShelf(root, reference: reference, scope: first.scope)
     XCTAssertEqual(reused, id)
     let shelves = try await f.service.shelves()
@@ -63,14 +62,7 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     let acknowledged = try await f.service.shelfRecoverySnapshot()
     XCTAssertFalse(acknowledged.guidance.contains(id))
     XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("one.txt").path))
-    var future = try ShelfReferenceBindings(data: defaults.data(forKey: ShelfReferenceBindings.key))
-    future.schemaVersion = 2
-    let futureBytes = try JSONEncoder().encode(future)
-    defaults.set(futureBytes, forKey: ShelfReferenceBindings.key)
-    XCTAssertThrowsError(try ShelfReferenceBindings(data: futureBytes))
-    do { _ = try await f.service.shelfRecoverySnapshot(); XCTFail("Unknown local version must be read-only") }
-    catch is UserSyncCompatibilityError { }
-    XCTAssertEqual(defaults.data(forKey: ShelfReferenceBindings.key), futureBytes)
+
   }
 
   private func referenceTokens(_ f: Fixture) throws -> [String] {
@@ -130,6 +122,7 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     try await scan(f)
     let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
     let controller = FullIndexController(defaults: defaults, service: f.service, registerTasks: false)
+    try controller.restoreTasks(f.core.session)
     let model = LibraryModel(service: f.service, fullIndex: controller, prepareLibrary: {}, refreshLibrary: {}, defaults: defaults, cloudDiscoveryRequired: false)
     let loaded = await model.load()
     XCTAssertTrue(loaded)
@@ -148,9 +141,12 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     let revisions = await f.service.indexScanRevisions
     let revision = try XCTUnwrap(revisions["builtin"])
     await model.indexScanCommitted(.init(shelfID: "builtin", revision: revision, files: ["first.txt", "second.txt"]))
-    let saved = try XCTUnwrap(defaults.data(forKey: "Moonread.fullIndex.request.v1"))
-    let request = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
-    XCTAssertEqual((request["queued"] as? [[String: Any]])?.first?["shelf"] as? String, "builtin")
+    let queued = try f.core.read { db in
+      try Data.fetchOne(db, sql: "SELECT item FROM main.full_index_queue ORDER BY position LIMIT 1")
+    }
+    let item = try XCTUnwrap(queued)
+    let request = try XCTUnwrap(JSONSerialization.jsonObject(with: item) as? [String: Any])
+    XCTAssertEqual(request["shelf"] as? String, "builtin")
     await release.release(); try await foreground.value
     await controller.waitForCompletion()
     XCTAssertTrue(try f.core.pendingIdentityFiles(shelfId: "builtin").isEmpty)
@@ -171,14 +167,14 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
   func testEmptyDiscoveryDoesNotConsumeRecoveryGuidance() async throws {
     let f = try await fixture()
     defer { f.clean() }
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
     let before = try await f.service.shelfRecoverySnapshot()
     XCTAssertTrue(before.guidance.isEmpty)
     try await scan(f)
     let empty = try await f.service.identityInventory("builtin")
     XCTAssertTrue(empty.pending.isEmpty)
     _ = try await f.service.shelfRecoverySnapshot()
-    XCTAssertNil(defaults.data(forKey: ShelfReferenceBindings.key))
+    let state = try f.core.session.readUsers(f.core.lease) { try ShelfReferenceBindings.read($0) }
+    XCTAssertTrue(state.guided.isEmpty)
     try "第一話 云端归来\n用于空快照后到达的原创文本。".write(to: f.directory.appendingPathComponent("arrived.txt"), atomically: true, encoding: .utf8)
     try await scan(f)
     let arrived = try await f.service.shelfRecoverySnapshot()

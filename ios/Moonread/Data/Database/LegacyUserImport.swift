@@ -47,14 +47,19 @@ struct LegacyUserSnapshot: Sendable {
         var hidden: [String] = []
         var preferred: [String: String] = [:]
         var resume: [String: LocalReadingResumeState.Entry] = [:]
+        var shelfRecovery: ShelfReferenceBindings.Scope?
 
         init() {}
 
         /// Legacy hidden/preferred keys had no separate account namespace.
         /// Only use them after the original owner of this store is known.
-        init(defaults: UserDefaults, confirmedLegacyResumeScope: String) throws {
-            let resumeState = try LocalReadingResumeState(data: defaults.data(forKey: LocalReadingResumeState.key))
-            resume = resumeState.scopes[confirmedLegacyResumeScope] ?? [:]
+        init(defaults: UserDefaults, confirmedLegacyResumeScope: String?) throws {
+            if let confirmedLegacyResumeScope {
+                let resumeState = try? LocalReadingResumeState(data: defaults.data(forKey: LocalReadingResumeState.key))
+                resume = resumeState?.scopes[confirmedLegacyResumeScope] ?? [:]
+                let shelfState = try? ShelfReferenceBindings(data: defaults.data(forKey: ShelfReferenceBindings.key))
+                shelfRecovery = shelfState?.scopes[confirmedLegacyResumeScope]
+            }
             hidden = defaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []
             for (key, value) in defaults.dictionaryRepresentation() where key.hasPrefix("Moonread.preferredFile.") {
                 if let file = value as? String { preferred[String(key.dropFirst("Moonread.preferredFile.".count))] = file }
@@ -229,6 +234,7 @@ enum LegacyUserImport {
     }
 
     private static func putDeviceState(_ state: LegacyUserSnapshot.DeviceState, db: Database) throws {
+        if let recovery = state.shelfRecovery { try ShelfReferenceBindings.write(db, scope: recovery) }
         for book in state.hidden {
             try db.execute(sql: "INSERT OR IGNORE INTO usr.local_hidden_book VALUES (?)",
                            arguments: [DataIdentity.canonical(book)])

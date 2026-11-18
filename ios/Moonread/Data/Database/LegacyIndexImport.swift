@@ -38,7 +38,7 @@ enum LegacyIndexImport {
     // The source is attached read-only on the same connection as the target.
     // Match every row by the frozen primary key in the same source snapshot.
     // Compare content bytes without sorting the entire text into a temp table.
-    static func run(_ db: Database, source: URL, owner: String, bundle: Bundle) throws {
+    static func run(_ db: Database, source: URL, owner: String, bundle: Bundle, defaults: [String: Any]) throws {
         guard source.isFileURL, FileManager.default.fileExists(atPath: source.path) else {
             throw DataV2Error.incompatibleSource("missing legacy index")
         }
@@ -105,6 +105,7 @@ enum LegacyIndexImport {
                 guard try Row.fetchOne(db, sql: "PRAGMA main.foreign_key_check") == nil else {
                     throw DataV2Error.incompatibleSource("legacy index relationships")
                 }
+                try IndexImport.migrateLocalState(db, defaults: defaults, legacyUserScope: owner)
                 try db.execute(sql: "INSERT INTO main.index_import_state VALUES(1,?)", arguments: [version])
                 return .commit
             }

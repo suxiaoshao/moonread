@@ -261,6 +261,7 @@ actor AppDataService {
     var shownCandidates: [String: MarkBaseline] = [:]
     var undoCandidates: [String: MarkUndo] = [:]
     let sourceDefaults: UserDefaults
+    private(set) var userDevice: String
     nonisolated let cloudSyncIntent: CloudSyncIntent
     var cloudLibraryRoot: URL?
     var cloudDocumentItems: [CloudDocumentItem] = []
@@ -298,11 +299,7 @@ actor AppDataService {
         #endif
         let defaults = sourceDefaultsSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
         sourceDefaults = defaults
-        // 1.2 could persist an explicit pause. Retire those keys together at
-        // startup; all remaining paused tasks are system interruptions.
-        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("Moonread.importUserPaused.v1.") {
-            defaults.removeObject(forKey: key)
-        }
+        userDevice = (try? core?.deviceAuthor()) ?? UUID().uuidString
         cloudSyncIntent = CloudSyncIntent(defaults: defaults, environment: readingCloudEnvironment)
         settingsCache = ReaderSettingsCache(defaults: defaults)
     }
@@ -699,6 +696,30 @@ actor AppDataService {
     }
     // Internal text/file capability. UI-facing user data comes from domain
     // queries below; index tasks never build shared user projections.
+    func persistSystemCatalogScope(_ scope: String) throws {
+        guard let dataSession else { throw DataV2Error.migrationNotVerified }
+        try dataSession.writeDeviceTask {
+            try $0.execute(sql: "UPDATE main.system_catalog_state SET scope=? WHERE id=1", arguments: [scope])
+        }
+    }
+
+    func legacyProductionDefaults() -> [String: Any] {
+        guard libraryDirectoryOverride == nil, testSession == nil, let domain = Bundle.main.bundleIdentifier else { return [:] }
+        return sourceDefaults.persistentDomain(forName: domain) ?? [:]
+    }
+
+    /// The released stores retain their original scope across account changes.
+    func publishedUserSource() throws -> DataScope {
+        guard let dataSession else { throw DataV2Error.migrationNotVerified }
+        return try dataSession.legacyUserScope()
+    }
+
+    private func legacyBootstrapScope() throws -> DataScope? {
+        guard let value = sourceDefaults.object(forKey: "Moonread.userOwner") else { return nil }
+        guard let name = value as? String, !name.isEmpty else { throw DataV2Error.invalidOwnerState }
+        return try .confirmed(container: CloudConfiguration.containerID, environment: readingCloudEnvironment, recordName: name)
+    }
+
     func indexStore() throws -> ReaderIndex {
         guard !changingUserScope else { throw CancellationError() }
         if let core {
@@ -709,14 +730,14 @@ actor AppDataService {
         let session: DataSession
         if let dataSession { session = dataSession }
         else {
-            let legacy = try publishedUserSource()
             session = try DataSession(layout: DataLayout(applicationSupport: directory, environment: readingCloudEnvironment),
-                                      confirmedLegacyOwner: legacy.scope == .local ? nil : legacy.scope)
+                                      confirmedLegacyOwner: try legacyBootstrapScope())
             dataSession = session
         }
         let (lease, _) = try session.activate(.unknown)
-        try session.prepareIndex(directory.appending(path: "reader.sqlite3"), token: lease)
+        try session.prepareIndex(directory.appending(path: "reader.sqlite3"), token: lease, legacyDefaults: legacyProductionDefaults())
         let value = ReaderIndex(session: session, lease: lease)
+        userDevice = try value.deviceAuthor()
         core = value
         return value
     }
@@ -890,9 +911,7 @@ actor AppDataService {
         }
     }
 
-    func importSourceKey(_ id: String) -> String {
-        "Moonread.importSource.\(testSession ?? "library").\(id)"
-    }
+
 
     /// Verify access for callers that need the original without opening a reader.
     func prepareSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void = { _ in }) async throws {
@@ -962,7 +981,6 @@ actor AppDataService {
         guard !entry.directory else { throw ReaderError.NotFound }
         let shelf = try libraryShelf(entry.shelfId)
         let root = Data(shelf.bookmark)
-        let key = "Moonread.sourceDraft.\(testSession ?? "library").\(file.id)"
         let configuration = userCloudConfigurationRevision
         let read = SourceDecodingRead()
         if let progress { try await simulateSourceDownload(progress) }
@@ -972,15 +990,10 @@ actor AppDataService {
         try confirmSourceLocation(entry, shelf: shelf, configuration: configuration, core: core)
         if try core.setSourceFileAvailability(file: entry, needsDownload: false) { publishLibraryIndexChange() }
         let encoding = decoding == "auto" ? nil : decoding
-        if let previous = sourceDefaults.string(forKey: key),
-           let state = try? indexStore().importStatus(bookId: previous), state.phase != .complete, entry.bookId == state.text.id {
-            if let data = sourceDefaults.data(forKey: importSourceKey(previous)),
-               let old = try? JSONDecoder().decode(ImportSource.self, from: data),
+        if let previous = try core.fileImportDraft(file.id) {
+            if let old = try core.importSource(previous),
                try normalizeSourceDecoding(decoding: old.encoding ?? "auto") == decoding,
                old.expectedRawSHA == nil || old.expectedRawSHA == raw.sha {
-                let moved = ImportSource(rootBookmark: root, relativePath: entry.relativePath,
-                    encoding: old.encoding, sourceKey: key, fileID: file.id, expectedRawSHA: old.expectedRawSHA)
-                sourceDefaults.set(try JSONEncoder().encode(moved), forKey: importSourceKey(previous))
                 try resumeSystemInterruptedImport(previous)
                 if trackReadingSource { readingSourceIDs[previous] = file.id }
                 return retainReading(previous, index: core)
@@ -988,7 +1001,7 @@ actor AppDataService {
             pauseImport(previous)
         }
         let descriptor = ImportSource(rootBookmark: root, relativePath: entry.relativePath, encoding: encoding,
-                                      sourceKey: key, fileID: file.id, expectedRawSHA: raw.sha)
+                                      fileID: file.id, expectedRawSHA: raw.sha)
         let id = try startImport(title: file.title, descriptor: descriptor, encoding: encoding)
         if trackReadingSource { readingSourceIDs[id] = file.id }
         return retainReading(id, index: core)
@@ -1024,9 +1037,6 @@ actor AppDataService {
         guard (try? core.reclaimCompletedImport(bookId: id, userPromotionCommitted: true)) == true else { ReaderOpenDiagnostics.worker(id, "reclaim.skip.coreRetainedOrError"); return }
         ReaderOpenDiagnostics.worker(id, "reclaim.success")
         promotedUserKeys.remove(id)
-        if let bytes = sourceDefaults.data(forKey: importSourceKey(id)), let source = try? JSONDecoder().decode(ImportSource.self, from: bytes),
-           let key = source.sourceKey, sourceDefaults.string(forKey: key) == id { sourceDefaults.removeObject(forKey: key) }
-        sourceDefaults.removeObject(forKey: importSourceKey(id))
         changeRevisions[id] = nil
     }
     func reclaimImports(_ core: ReaderIndex) throws {
@@ -1036,31 +1046,15 @@ actor AppDataService {
             promotedReadingBookIDs: promotedUserKeys))
         promotedUserKeys.formIntersection(remaining)
         for id in Array(changeRevisions.keys) where !remaining.contains(id) && readers[id] == nil && imports[id] == nil && changeWaiters[id] == nil { changeRevisions[id] = nil }
-        let sourcePrefix = importSourceKey("")
-        let draftPrefix = "Moonread.sourceDraft.\(testSession ?? "library")."
-        for (key, value) in sourceDefaults.dictionaryRepresentation() {
-            if key.hasPrefix(sourcePrefix), !remaining.contains(String(key.dropFirst(sourcePrefix.count))) {
-                sourceDefaults.removeObject(forKey: key)
-            } else if key.hasPrefix(draftPrefix), let id = value as? String, !remaining.contains(id) {
-                sourceDefaults.removeObject(forKey: key)
-            }
-        }
     }
 
     private func startImport(title: String, descriptor: ImportSource, encoding: String?) throws -> String {
         let core = try indexStore()
-        if let fileID = descriptor.fileID { try core.setSourceDecoding(fileId: fileID, decoding: encoding ?? "auto") }
-        let control = try core.createImport(title: title)
-        let id = control.bookId()
-        let source = ImportSource(rootBookmark: descriptor.rootBookmark, relativePath: descriptor.relativePath,
-                                  encoding: encoding, sourceKey: descriptor.sourceKey, fileID: descriptor.fileID, expectedRawSHA: descriptor.expectedRawSHA)
-        if let fileID = source.fileID { try core.linkLibraryFile(fileId: fileID, bookId: id) }
-        sourceDefaults.set(try JSONEncoder().encode(source), forKey: importSourceKey(id))
-        // Reopening the same file after an explicit encoding/version restart
-        // must reach the new session, not the preserved failed prefix.
-        if let key = source.sourceKey { sourceDefaults.set(id, forKey: key) }
+        var source = descriptor
+        source.encoding = encoding
+        let control = try core.createImport(title: title, source: source)
         launchImport(core: core, control: control, descriptor: source, encoding: encoding)
-        return id
+        return control.bookId()
     }
 
     private func launchImport(core: ReaderIndex, control: ImportControl, descriptor: ImportSource, encoding: String?) {
@@ -1111,16 +1105,7 @@ actor AppDataService {
         let entry = try indexStore().sourceFileLocation(fileId: fileID)
         let shelf = try libraryShelf(entry.shelfId)
         return ImportSource(rootBookmark: Data(shelf.bookmark), relativePath: entry.relativePath,
-                            encoding: source.encoding, sourceKey: source.sourceKey, fileID: fileID, expectedRawSHA: source.expectedRawSHA)
-    }
-
-    func rebindFileImportSources(_ fileIDs: Set<String>) throws {
-        for (key,value) in sourceDefaults.dictionaryRepresentation() where key.hasPrefix(importSourceKey("")) {
-            guard let data = value as? Data else { continue }
-            let source = try JSONDecoder().decode(ImportSource.self, from: data)
-            guard let fileID = source.fileID, fileIDs.contains(fileID) else { continue }
-            sourceDefaults.set(try JSONEncoder().encode(relocatedImportSource(source)), forKey: key)
-        }
+                            encoding: source.encoding, fileID: fileID, expectedRawSHA: source.expectedRawSHA)
     }
 
     private func resumeSystemInterruptedImport(_ id: String) throws {
@@ -1164,11 +1149,9 @@ actor AppDataService {
             if [.paused, .failed].contains(try indexStore().importStatus(bookId: id).phase) { requestedResumes.insert(id) }
             return
         }
-        guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else {
-            throw CocoaError(.fileReadNoPermission)
-        }
-        let descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
         let core = try indexStore()
+        guard let source = try core.importSource(id) else { throw CocoaError(.fileReadNoPermission) }
+        let descriptor = try relocatedImportSource(source)
         launchImport(core: core, control: try core.resumeImport(bookId: id), descriptor: descriptor, encoding: descriptor.encoding)
     }
 
@@ -1176,12 +1159,12 @@ actor AppDataService {
     /// The lease protects the text; it cannot guarantee a valid source descriptor.
     func readingDecoding(_ id: String) -> String? {
         let logger = Logger(subsystem: "dev.moonread.Moonread", category: "ReaderSource")
-        guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else {
-            logger.notice("Encoding controls unavailable: source record missing")
-            return nil
-        }
         do {
-            let source = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
+            guard let origin = try indexStore().importSource(id) else {
+                logger.notice("Encoding controls unavailable: source record missing")
+                return nil
+            }
+            let source = try relocatedImportSource(origin)
             return source.encoding ?? "auto"
         } catch {
             // Do not log source JSON, bookmarks, paths, titles, or error descriptions.
@@ -1195,8 +1178,8 @@ actor AppDataService {
         // A cancelled reader queued behind this actor must not allocate an import
         // or change the file's persisted decoding policy.
         try Task.checkCancellation()
-        guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else { throw CocoaError(.fileReadNoPermission) }
-        var descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
+        guard let source = try indexStore().importSource(id) else { throw CocoaError(.fileReadNoPermission) }
+        var descriptor = try relocatedImportSource(source)
         let configuration = userCloudConfigurationRevision
         let raw = try await SourceDecodingRead().read(bookmark: descriptor.rootBookmark, relativePath: descriptor.relativePath)
         let decoding = try await prepareSourceDecoding(raw: raw, selection: encoding ?? "auto")
@@ -1212,11 +1195,10 @@ actor AppDataService {
 
 }
 
-struct ImportSource: Codable, Sendable {
+struct ImportSource: Codable, Equatable, Sendable {
     let rootBookmark: Data
     let relativePath: String
     var encoding: String? = nil
-    var sourceKey: String? = nil
     var fileID: String? = nil
     var expectedRawSHA: String? = nil
 }

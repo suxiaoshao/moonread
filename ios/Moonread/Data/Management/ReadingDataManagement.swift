@@ -129,8 +129,7 @@ extension AppDataService {
         // A completed task can transfer its facts without the original file.
         // Stale or missing source descriptors must not block that attempt.
         if result.phase == .complete { return result }
-        guard let bytes = sourceDefaults.data(forKey: importSourceKey(id)) else { return result }
-        let source = try JSONDecoder().decode(ImportSource.self, from: bytes)
+        guard let source = try indexStore().importSource(id) else { return result }
         result.source = source.relativePath
         let rootBookmark: Data
         if let fileID = source.fileID {

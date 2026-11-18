@@ -1,6 +1,7 @@
 import Combine
 import BackgroundTasks
 import os
+import GRDB
 import SwiftUI
 
 extension Notification.Name { static let libraryIdentityChanged = Notification.Name("Moonread.libraryIdentityChanged") }
@@ -120,16 +121,17 @@ final class FullIndexController {
     }()
     static let processingID = "dev.moonread.Moonread.full-index.processing"
     static let continuedPrefix = "dev.moonread.Moonread.full-index.continued."
-    private struct QueuedRequest: Codable { var shelf: String; var includeCloud: Bool; var scannedOnly: Bool? = nil }
-    private struct Request: Codable {
-        var schemaVersion = 1; var shelf: String; var includeCloud: Bool; var resume: Bool
-        // Optional addition keeps saved v1 requests readable.
+    private struct QueuedRequest: Codable, Sendable { var shelf: String; var includeCloud: Bool; var scannedOnly: Bool? = nil }
+    private struct Options: Codable, Sendable { let includeCloud: Bool; let scannedOnly: Bool? }
+    private struct Request: Sendable {
+        var shelf: String; var includeCloud: Bool; var resume: Bool
         var queued: [QueuedRequest]?
         var scannedOnly: Bool? = nil
     }
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let service: AppDataService
     @ObservationIgnored private var request: Request?
+    @ObservationIgnored private var taskStore: DataSession?
     @ObservationIgnored private var runner: Task<Void, Never>?
     @ObservationIgnored private var work: IdentityFileWork?
     @ObservationIgnored private var background: BGTask?
@@ -245,7 +247,6 @@ final class FullIndexController {
     init(defaults: UserDefaults = .standard, service: AppDataService = .shared, registerTasks: Bool = true) {
         self.defaults = defaults; self.service = service
         automatic = defaults.bool(forKey: "Moonread.fullIndex.automatic")
-        if let data = defaults.data(forKey: "Moonread.fullIndex.request.v1"), let saved = try? JSONDecoder().decode(Request.self, from: data), saved.schemaVersion == 1 { request = saved; state = .idle(.init(shelf: saved.shelf)) }
         guard registerTasks else { return }
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processingID, using: nil,
             launchHandler: FullIndexSystemCallback.launch { self.attach($0) })
@@ -256,7 +257,41 @@ final class FullIndexController {
         }
     }
     private var constrained: Bool { ProcessInfo.processInfo.isLowPowerModeEnabled || [.serious,.critical].contains(ProcessInfo.processInfo.thermalState) }
-    private func save() { if let request, let data = try? JSONEncoder().encode(request) { defaults.set(data, forKey: "Moonread.fullIndex.request.v1") } }
+    func restoreTasks(_ store: DataSession) throws {
+        guard taskStore == nil else { return }
+        let saved: Request? = try store.readDeviceTask { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT shelf,options,resume FROM main.full_index_request WHERE id=1") else { return nil }
+            let options = try JSONDecoder().decode(Options.self, from: row["options"])
+            let queue = try Data.fetchAll(db, sql: "SELECT item FROM main.full_index_queue ORDER BY position").map {
+                try JSONDecoder().decode(QueuedRequest.self, from: $0)
+            }
+            return Request(shelf: row["shelf"], includeCloud: options.includeCloud, resume: row["resume"],
+                           queued: queue, scannedOnly: options.scannedOnly)
+        }
+        taskStore = store
+        if let saved { request = saved; state = .idle(.init(shelf: saved.shelf)) }
+    }
+
+    private func save() {
+        guard let request, let taskStore else { return }
+        do {
+            try taskStore.writeDeviceTask { db in
+                let options = Options(includeCloud: request.includeCloud, scannedOnly: request.scannedOnly)
+                try db.execute(sql: """
+                    INSERT INTO main.full_index_request VALUES(1,?,?,?)
+                    ON CONFLICT(id) DO UPDATE SET shelf=excluded.shelf, options=excluded.options, resume=excluded.resume
+                    """, arguments: [request.shelf,try JSONEncoder().encode(options),request.resume])
+                try db.execute(sql: "DELETE FROM main.full_index_queue")
+                for (position, item) in (request.queued ?? []).enumerated() {
+                    try db.execute(sql: "INSERT INTO main.full_index_queue VALUES(?,?)",
+                                   arguments: [position,try JSONEncoder().encode(item)])
+                }
+            }
+        } catch {
+            state = .failed(ReaderMessages.error(error), state.progress)
+        }
+    }
+
     func start(_ shelf: String, includeCloud requestedCloud: Bool, userInitiated: Bool, scannedOnly: Bool = false, files: [SourceFileSnapshot]? = nil) {
         let includeCloud = !scannedOnly && requestedCloud
         if let files {
@@ -286,6 +321,17 @@ final class FullIndexController {
         resume()
     }
     private func attach(_ task: BGTask) {
+        if taskStore == nil {
+            Task {
+                do {
+                    try restoreTasks(try await service.indexStore().session)
+                    attachPrepared(task)
+                } catch { task.setTaskCompleted(success: false) }
+            }
+        } else { attachPrepared(task) }
+    }
+
+    private func attachPrepared(_ task: BGTask) {
         guard request?.resume == true, background == nil else { task.setTaskCompleted(success: false); return }
         background = task
         task.expirationHandler = FullIndexSystemCallback.expiration {
