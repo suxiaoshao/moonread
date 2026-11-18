@@ -93,11 +93,9 @@ extension AppDataService {
                 SystemReadingSnapshotFile(directory: $0.appendingPathComponent(".SystemReading/v1"))
             } ?? SystemReadingSnapshotFile.shared())
             reportSystemSpotlightProgress(String(localized: "正在准备系统搜索…"))
-            let scopeKey = "Moonread.systemReadingScope.v1"
-            let scope = sourceDefaults.string(forKey: scopeKey) ?? UUID().uuidString
-            sourceDefaults.set(scope, forKey: scopeKey)
+            let scope = try indexStore().systemCatalogScope()
             systemCatalog = SystemReadingCatalog(file: output, scope: scope,
-                accountPending: verifiedScopePublicationPending ?? (cloudSyncRequested() && userCloudOwner() != nil))
+                accountPending: verifiedScopePublicationPending ?? (cloudSyncRequested() && hasPreviouslyApprovedReadingAccount()))
             if systemCatalog?.accountPending == true { resetSystemReadingCatalog() }
             else { resumeSystemReadingPublication(); refreshSystemWidgetConfigurations() }
         } catch { publishSystemCatalogError(error) }
@@ -107,7 +105,7 @@ extension AppDataService {
               excludedShelfIDs: sourceDefaults.stringArray(forKey: "Moonread.systemSearchExcludedShelves.v1") ?? [])
     }
     func refreshOfflineSystemReadingPolicy() {
-        setSystemReadingAccountPending(cloudSyncRequested() && userCloudOwner() != nil)
+        setSystemReadingAccountPending(cloudSyncRequested() && hasPreviouslyApprovedReadingAccount())
     }
     func setSystemReadingAccountPending(_ pending: Bool) {
         guard systemCatalog?.accountPending != pending else { return }
@@ -129,7 +127,8 @@ extension AppDataService {
         catalog.displaySnapshot = nil; catalog.statisticsSnapshot = nil
         catalog.configuredBooks.removeAll(); catalog.pendingDonation = nil
         catalog.scope = UUID().uuidString
-        sourceDefaults.set(catalog.scope, forKey: "Moonread.systemReadingScope.v1")
+        do { try persistSystemCatalogScope(catalog.scope) }
+        catch { publishSystemCatalogError(error) }
         systemCatalog = catalog
 
         do { try publishSystemWidgetStatistics(.init(storeScope: catalog.scope), file: catalog.file) }

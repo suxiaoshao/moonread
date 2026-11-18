@@ -81,6 +81,64 @@ struct DataV2MigrationTests {
         try check.close()
     }
 
+    @Test func upgradesReleasedPausedImportAndCleansDefaultsAfterInterruptedCommit() async throws {
+        let root = try sandbox()
+        let suite = "PausedImportMigration-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let oldURL = root.appending(path: "reader.sqlite3")
+        let old = try DatabaseQueue(path: oldURL.path)
+        try await old.write { db in
+            try db.execute(sql: DataV2Schema.sql("schema"))
+            try db.execute(sql: "ALTER TABLE import_jobs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reading'")
+            try db.execute(sql: DataV2Schema.sql("full_index"))
+            try db.execute(sql: DataV2Schema.sql("source_decoding_migration"))
+            try db.execute(sql: """
+                PRAGMA user_version=23;
+                INSERT INTO books(id,title,content_sha256,encoding) VALUES('task','Fixture','pending:task','UTF-8');
+                INSERT INTO import_jobs(book_id,phase,generation,library_file_id) VALUES('task','paused',17,'file');
+                INSERT INTO library_shelves VALUES('external','Fixture',X'AB','local',0,NULL);
+                INSERT INTO library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,book_id,decoding)
+                VALUES ('file','external','fixture.txt','','fixture.txt',0,4,44,0,'task','auto');
+                """)
+        }
+        try old.close()
+
+        let sourceKey = IndexImport.legacySourcePrefix + "task"
+        let draftKey = IndexImport.legacyDraftPrefix + "file"
+        let source = ImportSource(rootBookmark: Data([0xAB]), relativePath: "fixture.txt", fileID: "file")
+        defaults.set(try JSONEncoder().encode(source), forKey: sourceKey)
+        defaults.set("task", forKey: draftKey)
+
+        let layout = DataLayout(applicationSupport: root)
+        let first = try DataSession(layout: layout)
+        let (firstLease, _) = try first.activate(.unknown)
+        try first.prepareIndex(oldURL, token: firstLease, legacyDefaults: defaults.persistentDomain(forName: suite) ?? [:])
+        try first.close() // The transaction committed, but the process did not clean Defaults.
+        #expect(defaults.data(forKey: sourceKey) != nil)
+        #expect(defaults.string(forKey: draftKey) == "task")
+
+        let second = try DataSession(layout: layout)
+        defer { try? second.close() }
+        let (lease, _) = try second.activate(.unknown)
+        try second.prepareIndex(oldURL, token: lease, legacyDefaults: defaults.persistentDomain(forName: suite) ?? [:])
+        let index = ReaderIndex(session: second, lease: lease)
+        AppDataService.removeLegacyLocalDefaults(defaults, domain: suite)
+        #expect(try index.importStatus(bookId: "task").phase == .paused)
+        #expect(try index.importSource("task") == source)
+        #expect(try index.fileImportDraft("file") == "task")
+        let counts = try index.read { db in
+            (try Int.fetchOne(db, sql: "SELECT count(*) FROM main.import_jobs"),
+             try Int.fetchOne(db, sql: "SELECT count(*) FROM main.import_origin"),
+             try Int.fetchOne(db, sql: "SELECT count(*) FROM main.file_import_draft"))
+        }
+        #expect(counts.0 == 1 && counts.1 == 1 && counts.2 == 1)
+        #expect(defaults.object(forKey: sourceKey) == nil && defaults.object(forKey: draftKey) == nil)
+    }
+
     @Test func copiesKnownVersion23WorkAndRejectsFutureTarget() async throws {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }

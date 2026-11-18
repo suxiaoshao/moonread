@@ -44,6 +44,47 @@ enum IndexImport {
             """)
     }
 
+    static let legacySourcePrefix = "Moonread.importSource.library."
+    static let legacyDraftPrefix = "Moonread.sourceDraft.library."
+
+    static func migrateLocalState(_ db: Database, defaults: [String: Any]) throws {
+        for (key, value) in defaults where key.hasPrefix(legacySourcePrefix) {
+            let id = String(key.dropFirst(legacySourcePrefix.count))
+            guard let bytes = value as? Data, let source = try? JSONDecoder().decode(ImportSource.self, from: bytes),
+                  !source.rootBookmark.isEmpty,
+                  (try? validateRelativePath(path: source.relativePath, allowRoot: false)) != nil,
+                  let decoding = try? normalizeSourceDecoding(decoding: source.encoding ?? "auto"),
+                  let job = try Row.fetchOne(db, sql: """
+                    SELECT library_file_id, expected_raw_sha256, decoding FROM main.import_jobs WHERE book_id=?
+                    """, arguments: [id]) else { continue }
+            if let sha = source.expectedRawSHA, (try? parseSha256(value: sha)) == nil { continue }
+            let oldFile: String? = job["library_file_id"], oldSHA: String? = job["expected_raw_sha256"]
+            let oldDecoding: String? = job["decoding"]
+            guard oldFile == nil || source.fileID == nil || oldFile == source.fileID,
+                  oldSHA == nil || source.expectedRawSHA == nil || oldSHA == source.expectedRawSHA,
+                  oldDecoding == nil || oldDecoding == decoding else { continue }
+            try db.execute(sql: """
+                UPDATE main.import_jobs SET library_file_id=?, expected_raw_sha256=?, decoding=? WHERE book_id=?
+                """, arguments: [oldFile ?? source.fileID,oldSHA ?? source.expectedRawSHA,oldDecoding ?? decoding,id])
+            try ReaderIndex.saveImportOrigin(db, id: id, source: source)
+        }
+        for (key, value) in defaults where key.hasPrefix(legacyDraftPrefix) {
+            guard let id = value as? String else { continue }
+            let fileID = String(key.dropFirst(legacyDraftPrefix.count))
+            try db.execute(sql: """
+                INSERT INTO main.file_import_draft(file_id,job_id)
+                SELECT f.id,j.book_id FROM main.library_files f JOIN main.import_jobs j ON j.book_id=f.book_id
+                JOIN main.import_origin o ON o.book_id=j.book_id
+                WHERE f.id=? AND j.book_id=? AND f.directory=0 AND j.library_file_id=f.id AND j.phase<>'complete'
+                """, arguments: [fileID,id])
+        }
+        try db.execute(sql: "UPDATE main.library_files SET seeded_example=1 WHERE id=? AND directory=0",
+                       arguments: [defaults["Moonread.seededExampleFileID"] as? String])
+        try db.execute(sql: "INSERT INTO main.library_device_state(id,author,cloud_documents_owner) VALUES(1,?,?)",
+                       arguments: [defaults["Moonread.userDevice"] as? String ?? UUID().uuidString,
+                                   defaults["Moonread.cloudLibraryOwner"] as? String])
+    }
+
     static func availableText(_ db: Database, id: String, scope: String) throws -> ImportText {
         guard let row = try Row.fetchOne(db, sql: """
             SELECT b.encoding,b.title,b.content_sha256,b.byte_count,b.chunk_count
@@ -69,19 +110,84 @@ extension ReaderIndex {
             """, arguments: [control.id,control.generation,lease.scope.key]) == true else { throw ReaderError.ImportBusy }
     }
 
-    private func createImport(title: String, purpose: String) throws -> ImportControl {
+    private func createImport(title: String, purpose: String, source: ImportSource? = nil) throws -> ImportControl {
         let id = UUID().uuidString.lowercased()
-        try write { db in
-            try db.execute(sql: "INSERT INTO main.books(id,title,content_sha256,encoding) VALUES(?,?,?,'')",
-                           arguments: [id,title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "未命名文本" : title,"pending:" + id])
-            try db.execute(sql: "INSERT INTO main.import_jobs(book_id,purpose,pending_owner) VALUES(?,?,?)",
-                           arguments: [id,purpose,lease.scope.key])
+        let decoding = try source.map { try normalizeSourceDecoding(decoding: $0.encoding ?? "auto") }
+        if let sha = source?.expectedRawSHA { _ = try parseSha256(value: sha) }
+        return try withTaskMap { active in
+            try write { db in
+                try db.execute(sql: "INSERT INTO main.books(id,title,content_sha256,encoding) VALUES(?,?,?,'')",
+                               arguments: [id,title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "未命名文本" : title,"pending:" + id])
+                try db.execute(sql: """
+                    INSERT INTO main.import_jobs(book_id,purpose,pending_owner,library_file_id,expected_raw_sha256,decoding,phase,generation)
+                    VALUES(?,?,?,?,?,?,'preparing',1)
+                    """, arguments: [id,purpose,lease.scope.key,source?.fileID,source?.expectedRawSHA,decoding])
+                if let source {
+                    try Self.saveImportOrigin(db, id: id, source: source)
+                    if let fileID = source.fileID {
+                        try db.execute(sql: "UPDATE main.library_files SET decoding=?,book_id=? WHERE id=? AND directory=0",
+                                       arguments: [decoding,id,fileID])
+                        guard db.changesCount == 1 else { throw ReaderError.NotFound }
+                        try db.execute(sql: """
+                            INSERT INTO main.file_import_draft(file_id,job_id) VALUES(?,?)
+                            ON CONFLICT(file_id) DO UPDATE SET job_id=excluded.job_id
+                            """, arguments: [fileID,id])
+                    }
+                }
+            }
+            let control = ImportControl(id: id, generation: 1, lease: lease)
+            active[id] = .init(control: control)
+            return control
         }
-        return try resumeImport(bookId: id)
     }
 
-    func createImport(title: String) throws -> ImportControl { try createImport(title: title, purpose: "reading") }
+    func createImport(title: String, source: ImportSource? = nil) throws -> ImportControl {
+        try createImport(title: title, purpose: "reading", source: source)
+    }
+
     func createRestorationImport(title: String) throws -> ImportControl { try createImport(title: title, purpose: "restoration") }
+
+    static func saveImportOrigin(_ db: Database, id: String, source: ImportSource) throws {
+        try db.execute(sql: """
+            INSERT INTO main.import_origin(book_id,root_bookmark,relative_path) VALUES(?,?,?)
+            ON CONFLICT(book_id) DO UPDATE SET root_bookmark=excluded.root_bookmark,relative_path=excluded.relative_path
+            """, arguments: [id,source.rootBookmark,source.relativePath])
+    }
+
+    private static let importOriginsSQL = """
+        SELECT j.book_id, j.library_file_id, j.expected_raw_sha256, j.decoding, o.root_bookmark, o.relative_path
+        FROM main.import_jobs j JOIN main.import_origin o ON o.book_id=j.book_id WHERE j.pending_owner=?
+        """
+
+    private static func origin(_ row: Row) -> ImportSource {
+        let decoding: String? = row["decoding"]
+        return ImportSource(rootBookmark: row["root_bookmark"], relativePath: row["relative_path"],
+                            encoding: decoding == "auto" ? nil : decoding, fileID: row["library_file_id"],
+                            expectedRawSHA: row["expected_raw_sha256"])
+    }
+
+    func importSource(_ id: String) throws -> ImportSource? {
+        try read { db in
+            try Row.fetchOne(db, sql: Self.importOriginsSQL + " AND j.book_id=?", arguments: [lease.scope.key,id]).map(Self.origin)
+        }
+    }
+
+    func importSourceSnapshot() throws -> [String: ImportSource] {
+        try read { db in
+            Dictionary(uniqueKeysWithValues: try Row.fetchAll(db, sql: Self.importOriginsSQL,
+                arguments: [lease.scope.key]).map { ($0["book_id"] as String, Self.origin($0)) })
+        }
+    }
+
+    func fileImportDraft(_ fileID: String) throws -> String? {
+        try read { db in
+            try String.fetchOne(db, sql: """
+                SELECT d.job_id FROM main.file_import_draft d JOIN main.import_jobs j ON j.book_id=d.job_id
+                JOIN main.library_files f ON f.id=d.file_id AND f.book_id=d.job_id
+                WHERE d.file_id=? AND j.pending_owner=? AND j.phase<>'complete' AND j.library_file_id=d.file_id
+                """, arguments: [fileID,lease.scope.key])
+        }
+    }
 
     func resumeImport(bookId: String) throws -> ImportControl {
         try withTaskMap { active in

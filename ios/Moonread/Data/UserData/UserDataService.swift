@@ -65,7 +65,7 @@ extension AppDataService {
                                                        deviceState: deviceState, progress: progress)
             } catch { throw UserAuthorityPreparationError.unreadableSource }
             if snapshot.formal == nil, snapshot.pending == nil,
-               deviceState.hidden.isEmpty, deviceState.preferred.isEmpty, deviceState.resume.isEmpty { return nil }
+               deviceState.hidden.isEmpty, deviceState.preferred.isEmpty, deviceState.resume.isEmpty, deviceState.shelfRecovery == nil { return nil }
             return snapshot
         }
     }
@@ -73,12 +73,54 @@ extension AppDataService {
     /// The root cannot mount normal reading, settings or import views before
     /// both authorities have prepared successfully. Retrying reuses the
     /// ordinary transaction and completion marker, never resets either store.
-    func prepareUserAuthorityForStartup(progress: (@Sendable (LegacyImportProgress) -> Void)? = nil) throws {
+    func prepareUserAuthorityForStartup(progress: (@Sendable (LegacyImportProgress) -> Void)? = nil) async throws {
         try Task.checkCancellation()
-        do { try prepareUserIndex(indexStore(), progress: progress) }
+        do {
+            let index = try indexStore()
+            try prepareUserIndex(index, progress: progress)
+            try await cleanLegacyLocalState(index)
+        }
         catch let error as UserAuthorityPreparationError { throw error }
         catch DataV2Error.invalidOwnerState { throw UserAuthorityPreparationError.ownership }
         catch { throw UserAuthorityPreparationError.verification }
+    }
+
+    private func cleanLegacyLocalState(_ index: ReaderIndex) async throws {
+        guard libraryDirectoryOverride == nil, testSession == nil, let domain = Bundle.main.bundleIdentifier else { return }
+        let needsSystemReset = try index.read { db in
+            try Bool.fetchOne(db, sql: """
+                SELECT system_reset_done=0 AND EXISTS(SELECT 1 FROM main.index_import_state WHERE legacy_version>0)
+                FROM main.library_device_state WHERE id=1
+                """) == true
+        }
+        if needsSystemReset {
+            try await clearLegacySpotlight()
+            try await clearLegacyDonations()
+            try index.write { try $0.execute(sql: "UPDATE main.library_device_state SET system_reset_done=1 WHERE id=1") }
+        }
+        let handoff = try dataDirectoryURL().appending(path: "CloudHandoff", directoryHint: .isDirectory)
+        do { try FileManager.default.removeItem(at: handoff) }
+        catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {}
+        let source = try publishedUserSource()
+        if source.scope != .local, cloudSyncIntent.approvedScopeKey == nil {
+            cloudSyncIntent.approve(source.scope)
+        }
+        Self.removeLegacyLocalDefaults(sourceDefaults, domain: domain)
+    }
+
+    static func removeLegacyLocalDefaults(_ defaults: UserDefaults, domain: String) {
+        guard let saved = defaults.persistentDomain(forName: domain) else { return }
+        let names: Set<String> = [
+            "Moonread.hiddenRecent", "Moonread.seededExampleFileID", "Moonread.userDevice", "Moonread.userOwner",
+            "Moonread.cloudLibraryOwner", "Moonread.fullIndex.request.v1", "Moonread.systemSpotlight.v1",
+            "Moonread.systemReadingDonations.v1", "Moonread.systemReadingScope.v1",
+            LocalReadingResumeState.key, ShelfReferenceBindings.key,
+        ]
+        let keys = saved.keys.filter {
+            names.contains($0) || $0.hasPrefix(IndexImport.legacySourcePrefix) ||
+            $0.hasPrefix(IndexImport.legacyDraftPrefix) || $0.hasPrefix("Moonread.preferredFile.")
+        }
+        for key in keys { defaults.removeObject(forKey: key) }
     }
 
     func startUserRecovery() {
@@ -109,10 +151,6 @@ extension AppDataService {
             }
             try reclaimImports(index); recoveredImports = true
         } catch { /* No unverified completed reading alias is reclaimed. */ }
-    }
-    var userDevice: String {
-        if let id = sourceDefaults.string(forKey: "Moonread.userDevice") { return id }
-        let id = UUID().uuidString; sourceDefaults.set(id, forKey: "Moonread.userDevice"); return id
     }
     func userKey(_ id: String) throws -> ReadingKey {
         try indexStore().resolveBookIdentity(bookId: id).key

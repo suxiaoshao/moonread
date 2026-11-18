@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import BackgroundTasks
+import GRDB
 
 @MainActor @Observable final class MetadataExchangeModel {
     static let shared = MetadataExchangeModel(service: .shared, directory: URL.applicationSupportDirectory
@@ -37,7 +38,6 @@ import BackgroundTasks
         var replaceTags: Bool
     }
     private struct Record: Codable {
-        var version = 1
         var id: UUID
         var sourceExtension: String
         var scope: String?
@@ -122,7 +122,7 @@ import BackgroundTasks
     enum PauseReason: Equatable { case unavailable, expired }
     private let directory: URL?
     private var record: Record?
-    private var recordURL: URL? { directory?.appending(path: "task.json") }
+    @ObservationIgnored private var taskStore: DataSession?
     private var inputURL: URL? {
         guard let directory, let record else { return nil }
         return directory.appending(path: record.id.uuidString, directoryHint: .isDirectory)
@@ -133,20 +133,28 @@ import BackgroundTasks
         self.service = service
         exportTask = MetadataExportTask(service: service, usesSystemExecution: directory != nil)
         self.directory = directory
-        if let recordURL, let data = try? Data(contentsOf: recordURL),
-           let saved = try? JSONDecoder().decode(Record.self, from: data), saved.version == 1,
-           Self.inputExtensions.contains(saved.sourceExtension) {
+    }
+
+    func restoreTask(_ store: DataSession) throws {
+        guard directory != nil, taskStore == nil else { return }
+        let data = try store.readDeviceTask {
+            try Data.fetchOne($0, sql: "SELECT record FROM main.metadata_import_task WHERE singleton=1")
+        }
+        if let data {
+            let saved = try JSONDecoder().decode(Record.self, from: data)
+            guard Self.inputExtensions.contains(saved.sourceExtension) else { throw ReaderError.InvalidSettings }
             record = saved
             // The final filename is published by an atomic move, never by partial copy.
-            let complete = inputURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
-            record?.inputComplete = complete
+            record?.inputComplete = inputURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
             phase = saved.finished == true ? .completed : .interrupted
         }
+        taskStore = store
     }
     private static let inputExtensions: Set<String> = ["moonread-metadata", "zip", "json", "jsonl"]
 
     private func persist() throws {
-        guard let recordURL, let directory, let record else { return }
+        guard let directory, let record else { return }
+        guard let taskStore else { throw DataV2Error.migrationNotVerified }
         if !preparedDirectory {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             var location = directory
@@ -155,7 +163,13 @@ import BackgroundTasks
             try location.setResourceValues(values)
             preparedDirectory = true
         }
-        try JSONEncoder().encode(record).write(to: recordURL, options: .atomic)
+        let data = try JSONEncoder().encode(record)
+        try taskStore.writeDeviceTask { db in
+            try db.execute(sql: """
+                INSERT INTO main.metadata_import_task VALUES(1,?,?)
+                ON CONFLICT(singleton) DO UPDATE SET task_id=excluded.task_id, record=excluded.record
+                """, arguments: [record.id.uuidString,data])
+        }
     }
     private func persistChanges() {
         do { try persist() }
@@ -414,10 +428,16 @@ import BackgroundTasks
     }
     func clear() {
         guard work == nil else { return }
+        if let taskStore, let record {
+            do {
+                try taskStore.writeDeviceTask { db in
+                    try db.execute(sql: "DELETE FROM main.metadata_import_task WHERE task_id=?", arguments: [record.id.uuidString])
+                }
+            } catch { showError(ReaderMessages.error(error)); return }
+        }
         if let directory, let record {
             try? FileManager.default.removeItem(at: directory.appending(path: record.id.uuidString, directoryHint: .isDirectory))
         }
-        if let recordURL { try? FileManager.default.removeItem(at: recordURL) }
         record = nil; preview = nil; result = nil; checkpoint = nil; error = nil
         requiresNewPreview = false; sourceScopeChanged = false; pauseReason = nil; preparation = nil
         phase = .idle; completed = 0; total = 0

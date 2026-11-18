@@ -192,12 +192,12 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
         let bookmarked = try await service.hasBookmark(id, at: position)
         XCTAssertTrue(bookmarked)
       }
-      XCTAssertNotNil(defaults.data(forKey: "Moonread.importSource.library.\(id)"))
+      XCTAssertNotNil(try core.importSource(id))
       withExtendedLifetime(lease) {}
       lease = nil
       try await service.waitForReadingIdle()
-      XCTAssertNil(defaults.data(forKey: "Moonread.importSource.library.\(id)"))
-      XCTAssertNil(defaults.string(forKey: "Moonread.sourceDraft.library.\(entry.id)"))
+      XCTAssertNil(try core.importSource(id))
+      XCTAssertNil(try core.fileImportDraft(entry.id))
       XCTAssertTrue(try core.reclaimCompletedImports(retainedBookIds: []).isEmpty)
       let recentlyOpened = try await service.recentLibrary()
       XCTAssertEqual(recentlyOpened.count, 1)
@@ -210,14 +210,6 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
         XCTAssertThrowsError(try core.readerSnapshot(id))
       }
     }
-    // Simulate termination after the DB transaction, before defaults cleanup.
-    defaults.set(Data([1]), forKey: "Moonread.importSource.library.orphan")
-    defaults.set("orphan", forKey: "Moonread.sourceDraft.library.orphan-file")
-    let restarted = AppDataService(core: core, sourceDefaultsSuite: suite)
-    _ = try await restarted.book(try XCTUnwrap(canonical))
-    await restarted.startUserRecovery()
-    await restarted.waitForUserRecovery()
-    XCTAssertNil(defaults.data(forKey: "Moonread.importSource.library.orphan"))
-    XCTAssertNil(defaults.string(forKey: "Moonread.sourceDraft.library.orphan-file"))
+
   }
 }

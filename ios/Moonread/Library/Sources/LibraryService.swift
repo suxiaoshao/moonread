@@ -164,7 +164,7 @@ extension AppDataService {
             try core.scanLibraryShelf(shelfId: "builtin", items: [.init(relativePath: story.lastPathComponent, directory: false, size: UInt64(values.fileSize ?? 0), modified: Int64(values.contentModificationDate?.timeIntervalSince1970 ?? 0), needsDownload: false)])
         }
         if let story = seededStory, let file = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == story.lastPathComponent }) {
-            sourceDefaults.set(file.id, forKey: "Moonread.seededExampleFileID")
+            try core.markExampleFile(file.id)
         }
         #if DEBUG
         if arguments.contains("--ui-test-store-screenshots") { try await createLocalizedStoreShotFixture(); return }
@@ -201,7 +201,7 @@ extension AppDataService {
         guard expectedRoot == cloudLibraryRoot else { throw LibraryFileError.missingShelf }
         let core = try indexStore()
         let existing = try core.sourceFiles(shelfId: "builtin")
-        if let id = sourceDefaults.string(forKey: "Moonread.seededExampleFileID"),
+        if let id = try core.exampleFileID(),
            existing.contains(where: { $0.id == id }) {
             return try await libraryEntry(id)
         }
@@ -224,13 +224,14 @@ extension AppDataService {
         guard let story = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == "月光下的归途.txt" }) else {
             throw LibraryFileError.missingShelf
         }
-        sourceDefaults.set(story.id, forKey: "Moonread.seededExampleFileID")
+        try core.markExampleFile(story.id)
         return try await libraryEntry(story.id)
     }
 
     func hasUserImportedBooks() throws -> Bool {
-        let example = sourceDefaults.string(forKey: "Moonread.seededExampleFileID")
-        return try indexStore().sourceFiles(shelfId: "builtin").contains { !$0.directory && $0.id != example }
+        let core = try indexStore()
+        let example = try core.exampleFileID()
+        return try core.sourceFiles(shelfId: "builtin").contains { !$0.directory && $0.id != example }
     }
     func builtinLibraryURL() throws -> URL {
         if let cloudLibraryRoot { return cloudLibraryRoot }
@@ -755,7 +756,6 @@ extension AppDataService {
             }
         }
         try indexStore().relocateLibraryEntry(fileId: entry.id, targetShelf: destination.shelfID, targetPath: target)
-        try rebindFileImportSources(Set(children.filter { $0.id == entry.id || $0.relativePath.hasPrefix(entry.relativePath + "/") }.map(\.id)))
         try refreshLibraryShelf(entry.shelfId)
         if destination.shelfID != entry.shelfId { try refreshLibraryShelf(destination.shelfID) }
         } catch {

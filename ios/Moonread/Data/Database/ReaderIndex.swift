@@ -17,6 +17,34 @@ final class ReaderIndex: @unchecked Sendable {
     func read<T: Sendable>(_ work: @Sendable (Database) throws -> T) throws -> T { try session.read(lease, requireIndex: true, work) }
     func write<T: Sendable>(_ work: (Database) throws -> T) throws -> T { try session.writeIndex(lease, work) }
 
+    func deviceAuthor() throws -> String {
+        try read { db in
+            guard let author = try String.fetchOne(db, sql: "SELECT author FROM main.library_device_state WHERE id=1") else {
+                throw DataV2Error.migrationNotVerified
+            }
+            return author
+        }
+    }
+
+    func cloudDocumentsOwner() throws -> String? {
+        try read { try String.fetchOne($0, sql: "SELECT cloud_documents_owner FROM main.library_device_state WHERE id=1") }
+    }
+
+    func saveCloudDocumentsOwner(_ owner: String) throws {
+        try write { try $0.execute(sql: "UPDATE main.library_device_state SET cloud_documents_owner=? WHERE id=1", arguments: [owner]) }
+    }
+
+    func exampleFileID() throws -> String? {
+        try read { try String.fetchOne($0, sql: "SELECT id FROM main.library_files WHERE seeded_example=1") }
+    }
+
+    func markExampleFile(_ id: String) throws {
+        try write { db in
+            try db.execute(sql: "UPDATE main.library_files SET seeded_example=0 WHERE seeded_example=1")
+            try db.execute(sql: "UPDATE main.library_files SET seeded_example=1 WHERE id=?", arguments: [id])
+        }
+    }
+
     struct Body: Equatable, Sendable {
         let id: String
         let sha: String

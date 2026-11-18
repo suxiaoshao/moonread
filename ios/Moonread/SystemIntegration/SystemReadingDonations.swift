@@ -2,12 +2,6 @@
 import Foundation
 import WidgetKit
 
-private struct SystemReadingDonationState: Codable {
-    var schemaVersion = 1
-    var scope: String
-    var bookIDs: [String] = []
-}
-
 extension AppDataService {
     /// Independent, bounded platform consumers. After a suspension each
     /// chain uses the latest published envelope, rather than queueing one
@@ -73,28 +67,24 @@ extension AppDataService {
         systemReadingLastError = Self.systemReadingRefreshMessage(error)
         NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
     }
-    private func donationState() -> SystemReadingDonationState {
-        if let data = sourceDefaults.data(forKey: "Moonread.systemReadingDonations.v1"),
-           let value = try? JSONDecoder().decode(SystemReadingDonationState.self, from: data), value.schemaVersion == 1 { return value }
-        return .init(scope: "")
-    }
-    private func saveDonationState(_ value: SystemReadingDonationState) throws {
-        sourceDefaults.set(try JSONEncoder().encode(value), forKey: "Moonread.systemReadingDonations.v1")
+    func clearLegacyDonations() async throws {
+        try await IntentDonationManager.shared.deleteDonations(matching: .intentType(OpenSystemBookIntent.self))
     }
     private func reconcileSystemReadingDonations(_ snapshot: SystemReadingSnapshot) async {
         guard systemCatalog?.scope == snapshot.storeScope else { return }
-        var state = donationState()
         do {
+            let index = try indexStore()
+            var state = try index.systemSubmission("siri")
             if state.scope != snapshot.storeScope {
                 try await IntentDonationManager.shared.deleteDonations(matching: .intentType(OpenSystemBookIntent.self))
                 state = .init(scope: snapshot.storeScope)
-                try saveDonationState(state)
+                try index.saveSystemSubmission("siri", state: state)
             }
             let allowed = Set(snapshot.books.filter(\.allowsAutomaticExposure).map(\.id))
-            for id in state.bookIDs where !allowed.contains(id) {
+            for id in state.ids where !allowed.contains(id) {
                 try await IntentDonationManager.shared.deleteDonations(matching: .entityIdentifier(EntityIdentifier(for: SystemBookEntity.self, identifier: id)))
-                state.bookIDs.removeAll { $0 == id }
-                try saveDonationState(state)
+                state.ids.removeAll { $0 == id }
+                try index.saveSystemSubmission("siri", state: state)
             }
         } catch {
             // IDs remain recorded until a revoke succeeds; next foreground/publication retries.
@@ -124,11 +114,12 @@ extension AppDataService {
         guard policy.systemSearchEnabled, systemCatalog?.scope == scope, systemCatalog?.accountPending == false,
               let snapshot = systemCatalog?.displaySnapshot, snapshot.exposurePolicy == policy,
               snapshot.books.contains(where: { $0.id == book.id && $0.allowsAutomaticExposure }) else { return }
-        var state = donationState()
-        guard state.scope == scope else { return } // A failed old-scope revocation must finish first.
         do {
+            let index = try indexStore()
+            var state = try index.systemSubmission("siri")
+            guard state.scope == scope else { return } // A failed old-scope revocation must finish first.
             // Record before awaiting the system, so an interrupted donation can still be revoked.
-            if !state.bookIDs.contains(book.id) { state.bookIDs.append(book.id); try saveDonationState(state) }
+            if !state.ids.contains(book.id) { state.ids.append(book.id); try index.saveSystemSubmission("siri", state: state) }
             _ = try await IntentDonationManager.shared.donate(intent: OpenSystemBookIntent(target: .init(book: book)))
             if systemCatalog?.scope != scope || systemCatalog?.accountPending == true || systemExposurePolicy() != policy {
                 try await IntentDonationManager.shared.deleteDonations(matching: .entityIdentifier(EntityIdentifier(for: SystemBookEntity.self, identifier: book.id)))

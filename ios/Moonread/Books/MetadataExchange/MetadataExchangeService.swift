@@ -4,11 +4,6 @@ import CryptoKit
 extension AppDataService {
     func metadataImportScope() -> String {
         guard let scope = try? indexStore().lease.scope else { return "unavailable" }
-        // Preserve drafts for exactly the old migration owner, including
-        // while offline. Never use it for a newly attached account.
-        if let owner = userCloudOwner(), (try? publishedUserSource().scope) == scope {
-            return "cloud:" + SHA256.hash(data: Data(owner.utf8)).map { String(format: "%02x", $0) }.joined()
-        }
         return scope == .local ? "local" : "account:" + scope.key
     }
     func exportMetadata(shelfID: String?, format: MetadataFormat, progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }) async throws -> MetadataExportResult {

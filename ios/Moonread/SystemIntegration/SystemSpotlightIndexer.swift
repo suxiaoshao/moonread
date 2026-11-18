@@ -1,4 +1,5 @@
 import CoreSpotlight
+import GRDB
 import Foundation
 import UniformTypeIdentifiers
 import SwiftUI
@@ -97,14 +98,55 @@ private final class SystemSpotlightAcknowledgement: @unchecked Sendable {
         })
     }
 }
-private struct SystemSpotlightState: Codable {
-    var schemaVersion = 1
-    var contentVersion = 0
+struct SystemSubmissionState: Sendable {
     var scope: String
+    var contentVersion = 0
     var ids: [String] = []
 }
 
+extension ReaderIndex {
+    func systemSubmission(_ kind: String) throws -> SystemSubmissionState {
+        try read { db in
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT scope,format FROM main.system_submission_state WHERE kind=?
+                """, arguments: [kind]) else { return .init(scope: "") }
+            let ids = try String.fetchAll(db, sql: """
+                SELECT item_id FROM main.system_submission_item WHERE kind=? ORDER BY item_id
+                """, arguments: [kind])
+            return .init(scope: row["scope"], contentVersion: row["format"], ids: ids)
+        }
+    }
+
+    func saveSystemSubmission(_ kind: String, state: SystemSubmissionState) throws {
+        try write { db in
+            try db.execute(sql: """
+                INSERT INTO main.system_submission_state VALUES(?,?,?)
+                ON CONFLICT(kind) DO UPDATE SET scope=excluded.scope, format=excluded.format
+                """, arguments: [kind,state.scope,state.contentVersion])
+            try db.execute(sql: "DELETE FROM main.system_submission_item WHERE kind=?", arguments: [kind])
+            for id in state.ids {
+                try db.execute(sql: "INSERT INTO main.system_submission_item VALUES(?,?)", arguments: [kind,id])
+            }
+        }
+    }
+
+    func systemCatalogScope() throws -> String {
+        try write { db in
+            if let scope = try String.fetchOne(db, sql: "SELECT scope FROM main.system_catalog_state") { return scope }
+            let scope = UUID().uuidString
+            try db.execute(sql: "INSERT INTO main.system_catalog_state VALUES(1,?)", arguments: [scope])
+            return scope
+        }
+    }
+
+
+}
+
 extension AppDataService {
+    func clearLegacySpotlight() async throws {
+        let native = await SystemSpotlightNative(reindex: {}, thumbnail: { _ in nil })
+        try await native.adapter.deleteAll()
+    }
     func systemSpotlightProgress() -> String? { systemSpotlightSubmissionStatus }
     func reportSystemSpotlightProgress(_ message: String) {
         systemSpotlightSubmissionStatus = message
@@ -154,14 +196,13 @@ extension AppDataService {
                 thumbnail: { [weak self] book in await self?.systemSpotlightThumbnail(book) }).adapter
             systemSpotlightAdapter = adapter
         }
-        let key = "Moonread.systemSpotlight.v1"
-        var state = sourceDefaults.data(forKey: key).flatMap { try? JSONDecoder().decode(SystemSpotlightState.self, from: $0) }
-            .flatMap { $0.schemaVersion == 1 ? $0 : nil } ?? .init(scope: "")
+        let index = try indexStore()
+        var state = try index.systemSubmission("spotlight")
         if state.scope != snapshot.storeScope || state.contentVersion != SystemSpotlightMetadata.contentFormatVersion {
             try await adapter.deleteAll()
             state = .init(scope: snapshot.storeScope)
             systemSpotlightMetadata.removeAll(); systemSpotlightThumbnails.removeAllObjects(); systemSpotlightThumbnailFailures.removeAll()
-            sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
+            try index.saveSystemSubmission("spotlight", state: state)
         }
         let metadata = snapshot.books.filter(\.allowsAutomaticExposure).map {
             SystemSpotlightMetadata(id: $0.id, title: $0.title, author: $0.author, tags: $0.tags,
@@ -172,14 +213,14 @@ extension AppDataService {
         if !obsolete.isEmpty {
             try await adapter.delete(Array(obsolete).sorted())
             state.ids.removeAll { obsolete.contains($0) }
-            sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
+            try index.saveSystemSubmission("spotlight", state: state)
             for id in obsolete { systemSpotlightMetadata[id] = nil }
         }
         let changed = metadata.filter { systemSpotlightMetadata[$0.id] != $0 }
         // Record attempted IDs before the asynchronous API: failed/interrupted
         // submissions can still be deleted after permission changes or a restart.
         state.ids = Array(Set(state.ids).union(desired)).sorted()
-        sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
+        try index.saveSystemSubmission("spotlight", state: state)
         if !changed.isEmpty { reportSystemSpotlightProgress(String(localized: "正在提交系统搜索：\(0) / \(changed.count) 本")) }
         for start in stride(from: 0, to: changed.count, by: 50) {
             // Position-only publications must not keep cancelling a full-format
@@ -195,7 +236,7 @@ extension AppDataService {
         guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
         // Only a fully journaled submission marks this content format complete.
         state.contentVersion = SystemSpotlightMetadata.contentFormatVersion
-        sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
+        try index.saveSystemSubmission("spotlight", state: state)
         reportSystemSpotlightProgress(snapshot.exposurePolicy.systemSearchEnabled
             ? String(localized: "已向系统搜索提交 \(metadata.count) 本，等待系统处理。")
             : String(localized: "系统搜索已关闭。"))

@@ -460,7 +460,9 @@ actor CloudSyncCoordinator {
 extension AppDataService {
     func cloudSyncRequested() -> Bool { cloudSyncIntent.requested }
     func setCloudSyncRequested(_ requested: Bool) { cloudSyncIntent.set(requested) }
-    func userCloudOwner() -> String? { sourceDefaults.string(forKey: "Moonread.userOwner") }
+    func hasPreviouslyApprovedReadingAccount() -> Bool {
+        cloudSyncIntent.approvedScopeKey != nil || sourceDefaults.string(forKey: "Moonread.userOwner") != nil
+    }
     func isReadingCloudApproved(_ scope: DataScope) -> Bool {
         guard scope != .local else { return false }
         if let approved = cloudSyncIntent.approvedScopeKey { return scope.key == approved }

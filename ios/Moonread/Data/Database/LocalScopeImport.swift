@@ -63,6 +63,11 @@ enum LocalScopeImport {
 
     static func copy(_ db: Database, move: UUID, scope: DataScope = .local) throws {
         try db.inTransaction {
+            try db.execute(sql: """
+                INSERT INTO usr.local_shelf_recovery
+                SELECT * FROM move_source.local_shelf_recovery
+                WHERE NOT EXISTS(SELECT 1 FROM usr.local_shelf_recovery)
+                """)
             guard try Bool.fetchOne(db, sql: """
                 SELECT EXISTS(SELECT 1 FROM move_source.cover_asset WHERE availability<>'available'
                     UNION ALL SELECT 1 FROM move_source.quarantined_record WHERE completeness='incomplete'
@@ -285,7 +290,7 @@ enum LocalScopeImport {
                 try db.execute(sql: "DELETE FROM move_source.\(table)")
             }
             // FK cascades delete contained relations, not semantic targets.
-            for table in (candidates + localTables).map(\.name) + ["cover_asset","quarantined_record","legacy_import_state"] {
+            for table in (candidates + localTables).map(\.name) + ["cover_asset","quarantined_record","legacy_import_state","local_shelf_recovery"] {
                 try db.execute(sql: "DELETE FROM move_source.\(table)")
             }
             try UpgradeOrigins.clearFrozenLocal(db)

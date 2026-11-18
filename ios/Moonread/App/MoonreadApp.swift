@@ -101,6 +101,9 @@ struct MoonreadApp: App {
                 for await progress in updates { importProgress = progress }
                 try Task.checkCancellation()
                 try await preparation.value
+                let taskStore = try await service.indexStore().session
+                try library.fullIndex.restoreTasks(taskStore)
+                try MetadataExchangeModel.shared.restoreTask(taskStore)
                 await library.service.installUserScopePresentation(prepare: { [weak library] in
                     try await library?.prepareUserScopeChange()
                 }, finish: { [weak library, weak themes] rebound in

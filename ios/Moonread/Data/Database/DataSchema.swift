@@ -15,7 +15,7 @@ enum DataV2Error: Error, Equatable {
 }
 
 enum DataV2Schema {
-    static let indexVersion = 1
+    static let indexVersion = 2
     // Version 3 belonged only to the removed, unpublished live bridge.
     static let userVersion = 7
 
@@ -74,7 +74,42 @@ enum DataV2Schema {
                           AND l.decoding=f.decoding AND l.indexed_size=f.size AND l.indexed_modified=f.modified
                       JOIN source_identities s ON s.raw_sha256=l.raw_sha256 AND s.decoding=l.decoding
                       WHERE f.directory=0;
-                    PRAGMA main.user_version=1;
+                    CREATE TABLE import_origin(
+                        book_id TEXT PRIMARY KEY REFERENCES import_jobs(book_id) ON DELETE CASCADE,
+                        root_bookmark BLOB NOT NULL, relative_path TEXT NOT NULL
+                    );
+                    CREATE TABLE file_import_draft(
+                        file_id TEXT PRIMARY KEY REFERENCES library_files(id) ON DELETE CASCADE,
+                        job_id TEXT NOT NULL REFERENCES import_jobs(book_id) ON DELETE CASCADE
+                    );
+                    CREATE INDEX file_import_draft_job ON file_import_draft(job_id);
+
+                    CREATE TABLE library_device_state(
+                        id INTEGER PRIMARY KEY CHECK(id=1), author TEXT NOT NULL, cloud_documents_owner TEXT, system_reset_done INTEGER NOT NULL DEFAULT 0
+                    );
+                    ALTER TABLE library_files ADD COLUMN seeded_example INTEGER NOT NULL DEFAULT 0;
+                    CREATE TABLE full_index_request(
+                        id INTEGER PRIMARY KEY CHECK(id=1), shelf TEXT NOT NULL, options BLOB NOT NULL, resume INTEGER NOT NULL
+                    );
+                    CREATE TABLE full_index_queue(
+                        position INTEGER PRIMARY KEY, item BLOB NOT NULL
+                    );
+                    CREATE TABLE system_catalog_state(id INTEGER PRIMARY KEY CHECK(id=1), scope TEXT NOT NULL);
+                    CREATE TABLE system_submission_state(
+                        kind TEXT PRIMARY KEY, scope TEXT NOT NULL, format INTEGER NOT NULL
+                    );
+                    CREATE TABLE system_submission_item(
+                        kind TEXT NOT NULL REFERENCES system_submission_state(kind) ON DELETE CASCADE,
+                        item_id TEXT NOT NULL, PRIMARY KEY(kind,item_id)
+                    );
+                    CREATE TABLE cloud_file_handoff(
+                        owner TEXT NOT NULL, relative_path TEXT NOT NULL, receipt BLOB NOT NULL,
+                        PRIMARY KEY(owner,relative_path)
+                    );
+                    CREATE TABLE metadata_import_task(
+                        singleton INTEGER PRIMARY KEY CHECK(singleton=1), task_id TEXT NOT NULL UNIQUE, record BLOB NOT NULL
+                    );
+                    PRAGMA main.user_version=2;
                     """)
             }
         }
@@ -147,6 +182,9 @@ enum DataV2Schema {
                         record_type TEXT NOT NULL, record_name TEXT NOT NULL, data BLOB,
                         stage INTEGER NOT NULL DEFAULT 1 REFERENCES cloud_bootstrap_state(singleton) ON DELETE CASCADE,
                         PRIMARY KEY(record_type,record_name)
+                    );
+                    CREATE TABLE usr.local_shelf_recovery(
+                        key TEXT NOT NULL, kind TEXT NOT NULL, value BLOB, PRIMARY KEY(key,kind)
                     );
                     PRAGMA usr.user_version=7;
                     """)

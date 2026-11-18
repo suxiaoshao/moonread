@@ -99,21 +99,16 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
 
   // S340: 原件暂不可用时保留已读正文并禁用不可执行编码操作，不强制退出阅读。
   @MainActor func testUnavailableEncodingSourceDoesNotBlockReadingOrExposeControls() async throws {
-    for scenario in ["missing", "corrupt", "removed-file"] {
+    for scenario in ["missing", "removed-file"] {
       let (root, service, core, _, book, _, suite) = try singleBookFixture()
-      let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-      let key = await service.importSourceKey(book.id)
-      if scenario == "corrupt" {
-        defaults.set(Data("{broken source".utf8), forKey: key)
-      } else if scenario == "removed-file" {
+      if scenario == "removed-file" {
         let file = try XCTUnwrap(
           core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
         let bookmark = try root.bookmarkData(
           options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-        defaults.set(
-          try JSONEncoder().encode(
-            ImportSource(rootBookmark: bookmark, relativePath: "a.txt", fileID: file.id)),
-          forKey: key)
+        let source = ImportSource(rootBookmark: bookmark, relativePath: "a.txt", fileID: file.id)
+        try core.linkLibraryFile(fileId: file.id, bookId: book.id)
+        try core.write { try ReaderIndex.saveImportOrigin($0, id: book.id, source: source) }
         try core.scanLibraryShelf(shelfId: "builtin", items: [])
         XCTAssertThrowsError(try core.sourceFileLocation(fileId: file.id))
       }
@@ -133,7 +128,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
       XCTAssertNil(session.encodingLabel, "No actionable encoding control: \(scenario)")
       XCTAssertTrue(session.window?.chunks.contains { !$0.text.isEmpty } == true, scenario)
       await session.leave().value
-      defaults.removePersistentDomain(forName: suite)
+      UserDefaults.standard.removePersistentDomain(forName: suite)
       try FileManager.default.removeItem(at: root)
     }
   }
