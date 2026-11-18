@@ -34,14 +34,18 @@ struct ReaderChapterList: View {
                         chapterFilterFocused = false
                         navigate(0, nil, .cover)
                     } label: {
-                        Label("封面", systemImage: "book.closed")
-                            .foregroundStyle(Color(uiColor: session.showingCover ? theme.accent : theme.ink))
+                        ReaderChapterLabel(title: Text("封面"), current: session.showingCover)
+                            .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
+                            .padding(.horizontal, LayoutTokens.content)
+                            .contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
                     .id("reader-cover")
                     .accessibilityIdentifier("showBookCover")
                     .accessibilityAddTraits(session.showingCover ? .isSelected : [])
                     .listRowBackground(Color(uiColor: theme.surface))
-                    .listRowSeparatorTint(Color(uiColor: theme.separator))
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets())
                     ForEach(outlineGroups) { group in
                         Section {
                             if editingOutline, let volume = group.volume { chapterRow(volume) }
@@ -192,7 +196,7 @@ struct ReaderChapterList: View {
             model.toggleVolume(volume.startUtf8)
         } label: {
             HStack(spacing: LayoutTokens.control) {
-                ReaderChapterLabel(chapter: volume, current: current)
+                ReaderChapterLabel(title: Text(verbatim: volume.title), titleFont: .headline, current: current)
                 Spacer(minLength: LayoutTokens.control)
                 Image(systemName: expanded ? "chevron.down" : "chevron.forward")
                     .font(.caption.weight(.semibold))
@@ -204,7 +208,6 @@ struct ReaderChapterList: View {
         }
         .buttonStyle(.plain)
         .textCase(nil)
-        .background(Color(uiColor: theme.surface))
         .id(volume.startUtf8)
         .contextMenu { chapterActions(volume) }
         .accessibilityLabel(Text(verbatim: volume.title))

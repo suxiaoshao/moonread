@@ -16,7 +16,12 @@ struct ReaderChapterRow<Actions: View>: View {
         let accessibilitySummary = chapter.level == 0 || !showsCoverage ? summary : String(localized: "\(summary)，\(chapter.coverageLabel)")
         Button(action: select) {
             let meta = [count, showsCoverage ? chapter.listCoverageLabel : nil].compactMap { $0 }.joined(separator: " · ")
-            ReaderChapterLabel(chapter: chapter, current: current, metadata: meta)
+            ReaderChapterLabel(
+                title: Text(verbatim: chapter.title),
+                titleFont: chapter.level == 0 ? .headline : .body,
+                current: current,
+                metadata: meta
+            )
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
                 .padding(.leading, LayoutTokens.content + (indented ? LayoutTokens.compact : 0))
@@ -34,7 +39,8 @@ struct ReaderChapterRow<Actions: View>: View {
 }
 
 struct ReaderChapterLabel: View {
-    let chapter: ChapterEntry
+    let title: Text
+    var titleFont: Font = .body
     let current: Bool
     var metadata: String?
     @Environment(\.theme) private var theme
@@ -47,7 +53,7 @@ struct ReaderChapterLabel: View {
                     .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: chapter.title).font(chapter.level == 0 ? .headline : .body)
+                title.font(titleFont)
                     .fontWeight(current ? .semibold : nil)
                     .foregroundStyle(Color(uiColor: theme.ink))
                     .lineLimit(metadata == nil ? nil : 2)
