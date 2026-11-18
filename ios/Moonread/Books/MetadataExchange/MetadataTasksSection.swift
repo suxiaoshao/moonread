@@ -201,7 +201,6 @@ struct MetadataTasksSection: View {
 struct MetadataExportView: View {
     let task: MetadataExportTask
     @Environment(\.theme) private var theme
-    @Environment(\.dismiss) private var dismiss
     @State private var scope: String
     @State private var format = MetadataFormat.jsonl
     @State private var shelves: [LibraryShelf] = []
@@ -220,16 +219,10 @@ struct MetadataExportView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            content.themedPage()
-                .navigationTitle(Text(task.phase == .idle || task.phase == .running ? "导出小说信息" : "导出结果", tableName: "MetadataExchange"))
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        SystemToolbarButton("关闭", role: .close) { dismiss() }.toolbarGlyph()
-                    }
-                }
-                .modifier(MetadataTaskBar { footer })
+        ExportTaskSheet(title: Text(task.phase == .idle || task.phase == .running ? "导出小说信息" : "导出结果", tableName: "MetadataExchange")) {
+            content
+        } footer: {
+            footer
         }
         .alert(Text("无法分享导出文件", tableName: "MetadataExchange"), isPresented: Binding(
             get: { sharingError != nil }, set: { if !$0 { sharingError = nil } }
@@ -248,46 +241,22 @@ struct MetadataExportView: View {
         case .idle:
             configuration.task(id: shelvesReload) { await loadShelves() }
         case .running:
-            GeometryReader { viewport in
-                ScrollView {
-                    VStack(spacing: 16) {
-                        Image(systemName: "square.and.arrow.up").font(.largeTitle)
-                            .foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
-                        Text("正在导出", tableName: "MetadataExchange").font(.title.weight(.semibold))
-                            .accessibilityAddTraits(.isHeader)
-                        if let total = task.total, task.completed < total {
-                            ProgressView(value: Double(task.completed), total: Double(total)) {
-                                Text(task.progressText, tableName: "MetadataExchange").monospacedDigit()
-                            }.tint(Color(uiColor: theme.accent))
-                        } else {
-                            ProgressView { Text(task.progressText, tableName: "MetadataExchange") }
-                        }
-                        if !task.stopping {
-                            Text("可以关闭页面，稍后查看。", tableName: "MetadataExchange")
-                                .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                        }
-                    }.multilineTextAlignment(.center).padding(24).frame(maxWidth: 430)
-                        .frame(maxWidth: .infinity, minHeight: viewport.size.height)
+            ExportRunningView(title: Text("正在导出", tableName: "MetadataExchange"), stopping: task.stopping) {
+                if let total = task.total, task.completed < total {
+                    ProgressView(value: Double(task.completed), total: Double(total)) {
+                        Text(task.progressText, tableName: "MetadataExchange").monospacedDigit()
+                    }.tint(Color(uiColor: theme.accent))
+                } else {
+                    ProgressView { Text(task.progressText, tableName: "MetadataExchange") }
                 }
             }
         case .stopped, .failed:
             MetadataStatusView(symbol: task.phase.symbol,
                                title: String(localized: task.phase == .stopped ? "导出已停止" : "导出失败", table: "MetadataExchange"),
-                               message: task.phase == .stopped ? stopMessage : task.error)
+                               message: task.phase == .stopped ? task.stopMessage : task.error)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .completed:
             if let output = task.output { resultContent(output) }
-        }
-    }
-
-    private var stopMessage: String {
-        switch task.stopReason {
-        case .unavailable:
-            String(localized: "系统未提供后台执行资格。返回后可以重试导出。", table: "MetadataExchange")
-        case .expired:
-            String(localized: "系统后台执行时间已结束。返回后可以重试导出。", table: "MetadataExchange")
-        case nil:
-            String(localized: "未生成可分享的文件。", table: "MetadataExchange")
         }
     }
 
@@ -430,6 +399,52 @@ struct MetadataActionButtonStyle: PrimitiveButtonStyle {
     }
 }
 /// One native scroll-edge registration for this feature's task actions.
+struct ExportTaskSheet<Content: View, Footer: View>: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: Text
+    @ViewBuilder let content: Content
+    @ViewBuilder let footer: Footer
+
+    var body: some View {
+        NavigationStack {
+            content.themedPage()
+                .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        SystemToolbarButton("关闭", role: .close) { dismiss() }.toolbarGlyph()
+                            .accessibilityIdentifier("closeExportTask")
+                    }
+                }
+                .modifier(MetadataTaskBar { footer })
+        }
+    }
+}
+
+struct ExportRunningView<Progress: View>: View {
+    @Environment(\.theme) private var theme
+    let title: Text
+    let stopping: Bool
+    @ViewBuilder let progress: Progress
+
+    var body: some View {
+        GeometryReader { viewport in
+            ScrollView {
+                VStack(spacing: 16) {
+                    Image(systemName: "square.and.arrow.up").font(.largeTitle)
+                        .foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
+                    title.font(.title.weight(.semibold)).accessibilityAddTraits(.isHeader)
+                    progress
+                    if !stopping {
+                        Text("可以关闭页面，稍后查看。", tableName: "MetadataExchange")
+                            .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                }.multilineTextAlignment(.center).padding(24).frame(maxWidth: 430)
+                    .frame(maxWidth: .infinity, minHeight: viewport.size.height)
+            }
+        }
+    }
+}
+
 struct MetadataTaskBar<Bar: View>: ViewModifier {
     @ViewBuilder let bar: Bar
     @ViewBuilder func body(content: Content) -> some View {

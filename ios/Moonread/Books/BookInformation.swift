@@ -433,7 +433,6 @@ struct BookInformationSections: View {
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
-    @State private var expandedSynopsis = false
     /// Search entered from an open book's details is pushed above the suspended reader.
     @State private var readerSearch: AppSearchScope?
     @Environment(\.returnToReading) private var returnToReading
@@ -484,19 +483,12 @@ struct BookInformationSections: View {
                 }
             }
             if let synopsis = model.details?.metadata.synopsis, !synopsis.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(verbatim: synopsis).font(.subheadline).lineLimit(expandedSynopsis ? nil : 3)
-                        .foregroundStyle(Color(uiColor: theme.secondary))
-                    if synopsis.count > 100 || synopsis.filter({ $0 == "\n" }).count > 2 {
-                        Button(expandedSynopsis ? "收起" : "展开简介") { expandedSynopsis.toggle() }
-                            .font(.caption).frame(minHeight: LayoutTokens.hit)
-                    }
-                }
+                BookSynopsis(synopsis: synopsis).id(synopsis)
             }
             VStack(alignment: .leading, spacing: 12) {
                 Text("我的阅读").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
                 readingCard
-            }.padding(.top, 8).id("myReading")
+            }.id("myReading")
         }.frame(maxWidth: .infinity, alignment: .leading).id("bookInformation")
         .navigationDestination(item: $readerSearch) { scope in
             if let library {
@@ -563,6 +555,44 @@ struct BookInformationSections: View {
             if let error = model.coverageError { Text(verbatim: error).font(.caption) }
             else if model.chapters.isEmpty { Text("本章覆盖尚未计算完成，不影响继续阅读。").font(.caption) }
         }
+    }
+}
+
+private struct BookSynopsis: View {
+    let synopsis: String
+    @Environment(\.theme) private var theme
+    @State private var expanded = false
+    @State private var fullHeight: CGFloat = 0
+    @State private var previewHeight: CGFloat = 0
+    private var overflows: Bool { fullHeight > previewHeight + 0.5 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if overflows {
+                DisclosureGroup(isExpanded: $expanded) {
+                    synopsisText()
+                } label: {
+                    Text("简介").frame(minHeight: LayoutTokens.hit, alignment: .leading)
+                }
+            }
+            if !overflows || !expanded { synopsisText(limit: 3) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(alignment: .topLeading) {
+            ZStack(alignment: .topLeading) {
+                synopsisText()
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { fullHeight = $0 }
+                synopsisText(limit: 3)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { previewHeight = $0 }
+            }.hidden().accessibilityHidden(true)
+        }
+    }
+
+    private func synopsisText(limit: Int? = nil) -> some View {
+        Text(verbatim: synopsis).font(.subheadline).lineLimit(limit)
+            .foregroundStyle(Color(uiColor: theme.secondary))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

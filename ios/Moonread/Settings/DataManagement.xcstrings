@@ -1,6 +1,10 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "导出阅读数据备份": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Export Reading Data Backup"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"匯出閱讀資料備份"}}}},
+    "正在生成备份": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Creating Backup"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在建立備份"}}}},
+    "备份已生成": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Backup Ready"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"備份已建立"}}}},
+    "重新导出": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Export Again"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"重新匯出"}}}},
     "数据管理": {
       "extractionState": "manual",
       "localizations": {

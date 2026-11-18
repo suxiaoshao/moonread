@@ -168,10 +168,12 @@ import BackgroundTasks
     var invalidSelection: Bool { books.contains { $0.selectionError != nil } }
     var pending: [MetadataPreviewBook] { books.filter { $0.disposition == .changes } }
     var unchangedCount: Int { books.filter { $0.disposition == .unchanged }.count }
-    var isUnchangedPreview: Bool {
-        phase == .review && !books.isEmpty && error == nil
-            && preview?.diagnostics.isEmpty == true && !invalidSelection
-            && books.allSatisfy { $0.disposition == .unchanged && !$0.hasSuggestedChanges }
+    enum ReviewCompletion: Equatable { case unchanged, unselected }
+    var reviewCompletion: ReviewCompletion? {
+        guard phase == .review, !books.isEmpty, error == nil,
+              preview?.diagnostics.isEmpty == true, !invalidSelection,
+              books.allSatisfy({ $0.disposition == .unchanged }) else { return nil }
+        return books.contains(where: \.hasSuggestedChanges) ? .unselected : .unchanged
     }
     var unmatchedCount: Int { books.filter { $0.disposition == .unmatched }.count }
     var skippedCount: Int { books.filter { $0.disposition == .skipped }.count }
@@ -523,8 +525,8 @@ import BackgroundTasks
     }
 }
 
-/// Shared platform execution for user-initiated metadata work. Each task keeps
-/// its own run, so finishing one import/export never ends the other's claim.
+/// Shared platform execution for user-initiated import and export. Each task
+/// keeps its own run and system claim.
 @MainActor private final class MetadataSystemExecution {
     private final class Run {
         let id = UUID()
@@ -611,7 +613,7 @@ import BackgroundTasks
     }
 }
 
-@MainActor @Observable final class MetadataExportTask {
+@MainActor @Observable final class ExportTask<Request: Sendable, Output: Sendable> {
     enum Phase {
         case idle, running, completed, stopped, failed
 
@@ -635,20 +637,19 @@ import BackgroundTasks
         }
     }
 
-    private struct Request {
-        let shelfID: String?
-        let format: MetadataFormat
-    }
-
     let service: AppDataService
     private let usesSystemExecution: Bool
+    private let kind: String
+    private let title: String
+    private let subtitle: String
+    private let export: (Request, @escaping @Sendable (Int, Int) async -> Void) async throws -> Output
     @ObservationIgnored private let systemExecution = MetadataSystemExecution()
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var request: Request?
     private(set) var phase: Phase = .idle
     private(set) var completed = 0
     private(set) var total: Int?
-    private(set) var output: MetadataExportResult?
+    private(set) var output: Output?
     private(set) var error: String?
     private(set) var stopReason: MetadataExchangeModel.PauseReason?
     private(set) var stopping = false
@@ -658,15 +659,30 @@ import BackgroundTasks
         if total != nil { return "正在生成导出文件。" }
         return "正在准备导出…"
     }
-
-    fileprivate init(service: AppDataService, usesSystemExecution: Bool) {
-        self.service = service
-        self.usesSystemExecution = usesSystemExecution
+    var stopMessage: String {
+        switch stopReason {
+        case .unavailable:
+            String(localized: "系统未提供后台执行资格。返回后可以重试导出。", table: "MetadataExchange")
+        case .expired:
+            String(localized: "系统后台执行时间已结束。返回后可以重试导出。", table: "MetadataExchange")
+        case nil:
+            String(localized: "未生成可分享的文件。", table: "MetadataExchange")
+        }
     }
 
-    func start(shelfID: String?, format: MetadataFormat) {
+    init(service: AppDataService, usesSystemExecution: Bool, kind: String, title: String, subtitle: String,
+         export: @escaping (Request, @escaping @Sendable (Int, Int) async -> Void) async throws -> Output) {
+        self.service = service
+        self.usesSystemExecution = usesSystemExecution
+        self.kind = kind
+        self.title = title
+        self.subtitle = subtitle
+        self.export = export
+    }
+
+    func start(_ request: Request) {
         guard work == nil, phase == .idle else { return }
-        launch(.init(shelfID: shelfID, format: format))
+        launch(request)
     }
 
     func retry() {
@@ -686,11 +702,11 @@ import BackgroundTasks
         completed = 0; total = nil; phase = .idle
     }
 
-    fileprivate func sceneDidEnterBackground() {
+    func sceneDidEnterBackground() {
         systemExecution.sceneDidEnterBackground()
     }
 
-    fileprivate func waitForStop() async { await work?.value }
+    func waitForStop() async { await work?.value }
 
     private func launch(_ request: Request) {
         self.request = request
@@ -698,9 +714,7 @@ import BackgroundTasks
         completed = 0; total = nil; stopReason = nil
         if usesSystemExecution {
             systemExecution.begin(
-                kind: "metadata-export",
-                title: String(localized: "导出小说信息", table: "MetadataExchange"),
-                subtitle: String(localized: "正在准备导出…", table: "MetadataExchange"),
+                kind: kind, title: title, subtitle: subtitle,
                 canAttach: { [weak self] in self?.stopping == false },
                 didAttach: { [weak self] in self?.publishSystemProgress() },
                 didExpire: { [weak self] reason in
@@ -716,7 +730,8 @@ import BackgroundTasks
                 stopping = false
             }
             do {
-                let result = try await service.exportMetadata(shelfID: request.shelfID, format: request.format) { [weak self] done, count in
+                try Task.checkCancellation()
+                let result = try await export(request) { [weak self] done, count in
                     await self?.updateProgress(done, count)
                 }
                 try Task.checkCancellation()
@@ -750,9 +765,30 @@ import BackgroundTasks
             } else if total != nil {
                 String(localized: "正在生成导出文件。", table: "MetadataExchange")
             } else {
-                String(localized: "正在准备导出…", table: "MetadataExchange")
+                self.subtitle
             }
             task.updateTitle(task.title, subtitle: subtitle)
         }
+    }
+}
+
+struct MetadataExportRequest: Sendable {
+    let shelfID: String?
+    let format: MetadataFormat
+}
+
+typealias MetadataExportTask = ExportTask<MetadataExportRequest, MetadataExportResult>
+
+extension ExportTask where Request == MetadataExportRequest, Output == MetadataExportResult {
+    convenience init(service: AppDataService, usesSystemExecution: Bool) {
+        self.init(service: service, usesSystemExecution: usesSystemExecution,
+                  kind: "metadata-export", title: String(localized: "导出小说信息", table: "MetadataExchange"),
+                  subtitle: String(localized: "正在准备导出…", table: "MetadataExchange")) { request, update in
+            try await service.exportMetadata(shelfID: request.shelfID, format: request.format, progress: update)
+        }
+    }
+
+    func start(shelfID: String?, format: MetadataFormat) {
+        start(.init(shelfID: shelfID, format: format))
     }
 }

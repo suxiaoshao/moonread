@@ -750,7 +750,8 @@ import XCTest
     app.navigationBars.buttons.firstMatch.tap()
     ready(app.buttons["exportAllReadingData"]).tap()
     // Export/restore our bytes; do not drive the system share UI in this test.
-    waitUntil { self.app.buttons["exportAllReadingData"].value as? String == "backup-ready" }
+    ready(app.buttons["shareReadingBackup"])
+    ready(app.buttons["closeExportTask"]).tap()
     let readingData = ready(app.buttons["readingDataList"])
     waitUntil { readingData.isHittable }
     readingData.tap()

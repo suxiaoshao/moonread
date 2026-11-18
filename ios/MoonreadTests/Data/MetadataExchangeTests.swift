@@ -89,6 +89,17 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         _ = await service.applyMetadata(repeated) { _, _ in }
         let after = try store.metadataTokens()
         XCTAssertEqual(before, after)
+        let model = MetadataExchangeModel(service: service)
+        let matching: [String: Any] = ["v": 1, "content_sha256": first.fixtureSHA256, "author": metadata.author]
+        try JSONSerialization.data(withJSONObject: matching).write(to: input)
+        model.review(try await service.previewMetadata(input))
+        XCTAssertEqual(model.reviewCompletion, .unchanged)
+        var different = matching
+        different["author"] = "另一位作者"
+        try JSONSerialization.data(withJSONObject: different).write(to: input)
+        model.review(try await service.previewMetadata(input))
+        XCTAssertTrue(model.pending.isEmpty)
+        XCTAssertEqual(model.reviewCompletion, .unselected)
         var b = a; b["author"] = "另一位作者"
         try (JSONSerialization.data(withJSONObject: a) + Data([10]) + JSONSerialization.data(withJSONObject: b)).write(to: input)
         var conflicted = try await service.previewMetadata(input)
@@ -105,9 +116,9 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         try classifications.map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }
             .joined(separator: "\n").write(to: input, atomically: true, encoding: .utf8)
         let mixed = try await service.previewMetadata(input)
-        let model = MetadataExchangeModel(service: service)
         model.review(mixed)
         XCTAssertEqual(model.pending.count, 0)
+        XCTAssertNil(model.reviewCompletion)
         XCTAssertEqual(model.unchangedCount, 1)
         XCTAssertEqual(model.unmatchedCount, 1)
         XCTAssertEqual(model.skippedCount, 1)

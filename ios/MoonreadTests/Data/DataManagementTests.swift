@@ -18,7 +18,11 @@ import XCTest
             startedMs: 1_728_000_000_000, endedMs: 1_728_000_000_015, localDay: 20000,
             utcOffsetSeconds: 0, preview: false, exposures: [.init(startUtf8: 0, endUtf8: 8, durationMs: 15)])], generation: 0)
 
-        let archive = try await source.exportReadingData()
+        let exporter = DataManagementModel(service: source).backupExport
+        exporter.start(())
+        await exporter.waitForStop()
+        XCTAssertEqual(exporter.phase, .completed)
+        let archive = try XCTUnwrap(exporter.output)
         defer { try? FileManager.default.removeItem(at: archive.deletingLastPathComponent()) }
         let preview = try await target.previewReadingBackup(archive)
         defer { try? FileManager.default.removeItem(at: preview.staging.ownedRoot) }

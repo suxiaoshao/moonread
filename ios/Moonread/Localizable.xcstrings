@@ -1,6 +1,8 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "%@ · 按月": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%@ · By Month"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"%@ · 按月"}}}},
+    "各年阅读时长": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Time by Year"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"各年閱讀時間"}}}},
     "阅读数据已更新": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Data Updated"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"閱讀資料已更新"}}}},
     "月读改进了阅读数据的保存和同步方式。请把其他设备上的月读也更新到这个版本，旧版本上新记的进度、批注和统计不会同步过来。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Moonread has improved how reading data is saved and synced. Please update Moonread to this version on your other devices too. New progress, annotations, and statistics from older versions won’t sync to this version."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"月讀改進了閱讀資料的儲存和同步方式。請將其他裝置上的月讀也更新到這個版本，舊版本上新記錄的進度、批註和統計不會同步過來。"}}}},
     "正在准备阅读数据…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Preparing reading data…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在準備閱讀資料…"}}}},

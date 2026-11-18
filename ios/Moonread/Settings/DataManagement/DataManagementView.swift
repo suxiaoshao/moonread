@@ -8,7 +8,7 @@ struct DataManagementView: View {
     @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
     @State private var picker = false
-    @State private var sharing: LibraryExport?
+    @State private var showingBackupExport = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
@@ -21,6 +21,7 @@ struct DataManagementView: View {
                             HStack { backupButtons }
                             VStack { backupButtons }
                         }
+                        backupExportStatus
                         if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
                         if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("readingDataError") }
                     }.frame(maxWidth: .infinity, alignment: .leading)
@@ -94,32 +95,117 @@ struct DataManagementView: View {
         .fileImporter(isPresented: $picker, allowedContentTypes: [.moonreadBackup]) { result in
             switch result { case .success(let url): Task { await model.prepareImport(url) }; case .failure(let error): model.showError(error.localizedDescription) }
         }
-        .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) { if let sharing { LibraryShareSheet(files: sharing) } }
+        .sheet(isPresented: $showingBackupExport) { BackupExportView(model: model).presentationSizing(.page) }
         .sheet(isPresented: Binding(get: { model.preview != nil }, set: { if !$0 && !model.busy { model.closePreview() } })) { BackupImportPreviewView(model: model) }
-    }
-    private func exportBackup() {
-        Task {
-            await model.exportAll()
-            #if DEBUG
-            // U21 uses the original export bytes without driving system sharing.
-            if await model.chooseBackup() != nil { return }
-            #endif
-            if model.exported != nil {
-                do { sharing = try await model.shareBackup() }
-                catch { model.showError(ReaderMessages.error(error)) }
-            }
-        }
     }
     @ViewBuilder private var backupButtons: some View {
         Button { Task { if let url = await model.chooseBackup() { await model.prepareImport(url) } else { picker = true } } } label: {
             Label { Text("导入备份", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
         }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("importReadingBackup")
-        Button { exportBackup() } label: {
-            Label { Text("导出备份", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
+        Button {
+            model.backupExport.start(())
+            showingBackupExport = true
+        } label: {
+            Label { Text("导出备份", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.up") }
+                .frame(maxWidth: .infinity)
         }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("exportAllReadingData")
-        #if DEBUG
-        .accessibilityValue(model.exported == nil ? "not-ready" : "backup-ready")
-        #endif
+    }
+
+    @ViewBuilder private var backupExportStatus: some View {
+        if model.backupExport.phase != .idle {
+            HStack {
+                switch model.backupExport.phase {
+                case .running:
+                    Text("正在生成备份", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
+                case .completed:
+                    Text("备份已生成", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.success))
+                default:
+                    Text(model.backupExport.phase.title, tableName: "MetadataExchange").foregroundStyle(Color(uiColor: theme.secondary))
+                }
+                Spacer()
+                Button { showingBackupExport = true } label: {
+                    Text(model.backupExport.phase == .running ? "查看" : "查看结果", tableName: "MetadataExchange")
+                }
+            }.font(.subheadline)
+        }
+    }
+}
+
+private struct BackupExportView: View {
+    let model: DataManagementModel
+    @State private var sharing: LibraryExport?
+    @State private var sharingError: String?
+    @State private var preparingShare = false
+    private var task: ExportTask<Void, URL> { model.backupExport }
+
+    var body: some View {
+        ExportTaskSheet(title: task.phase == .running ? Text("导出阅读数据备份", tableName: "DataManagement") : Text("导出结果", tableName: "MetadataExchange")) {
+            switch task.phase {
+            case .idle: Color.clear
+            case .running:
+                ExportRunningView(title: Text("正在生成备份", tableName: "DataManagement"), stopping: task.stopping) {
+                    ProgressView {
+                        if task.stopping { Text("正在停止导出。", tableName: "MetadataExchange") }
+                    }
+                }
+            case .completed:
+                MetadataStatusView(symbol: task.phase.symbol, title: String(localized: "备份已生成", table: "DataManagement"),
+                                   message: task.output?.lastPathComponent)
+            case .stopped, .failed:
+                MetadataStatusView(symbol: task.phase.symbol,
+                                   title: String(localized: task.phase == .stopped ? "导出已停止" : "导出失败", table: "MetadataExchange"),
+                                   message: task.phase == .stopped ? task.stopMessage : task.error)
+            }
+        } footer: {
+            footer
+        }
+        .alert(Text("无法分享导出文件", tableName: "MetadataExchange"),
+               isPresented: Binding(get: { sharingError != nil }, set: { if !$0 { sharingError = nil } })) {
+            Button("好", role: .cancel) {}
+        } message: {
+            if let sharingError { Text(verbatim: sharingError) }
+        }
+        .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
+            if let sharing { LibraryShareSheet(files: sharing) }
+        }
+    }
+
+    private var footer: some View {
+        VStack(spacing: 0) {
+            ThemedDivider()
+            VStack(spacing: 8) {
+                switch task.phase {
+                case .idle: EmptyView()
+                case .running:
+                    Button(role: .destructive) { task.cancel() } label: {
+                        Label { Text("停止导出", tableName: "MetadataExchange") } icon: { Image(systemName: "stop.circle") }
+                            .frame(maxWidth: .infinity)
+                    }.buttonStyle(MetadataActionButtonStyle(destructive: true)).disabled(task.stopping)
+                case .completed:
+                    Button { share() } label: {
+                        Text("分享或存储", tableName: "MetadataExchange").frame(maxWidth: .infinity)
+                    }.buttonStyle(MetadataActionButtonStyle(prominent: true)).disabled(preparingShare)
+                        .accessibilityIdentifier("shareReadingBackup")
+                    Button { task.clear(); task.start(()) } label: {
+                        Text("重新导出", tableName: "DataManagement").frame(maxWidth: .infinity)
+                    }.buttonStyle(MetadataActionButtonStyle()).disabled(preparingShare)
+                case .stopped, .failed:
+                    Button { task.retry() } label: {
+                        Text("重试", tableName: "MetadataExchange").frame(maxWidth: .infinity)
+                    }.buttonStyle(MetadataActionButtonStyle(prominent: true))
+                }
+            }.frame(maxWidth: 460).padding(.horizontal, 20).padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func share() {
+        preparingShare = true
+        Task {
+            defer { preparingShare = false }
+            do { sharing = try await model.shareBackup() }
+            catch { sharingError = ReaderMessages.error(error) }
+        }
     }
 }
 struct ReadingDataWorking: ViewModifier {

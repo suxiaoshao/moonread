@@ -15,19 +15,19 @@ struct MetadataImportView: View {
     @State private var confirm = false
     @State private var confirmEnd = false
     @State private var confirmContinue = false
-    @State private var inspectingUnchanged = false
+    @State private var inspectingPreview = false
     @State private var sharing: LibraryExport?
     private var visible: [MetadataPreviewBook] { model.visible(query: query, filter: filter) }
     private var wide: Bool { width == .regular && !typeSize.isAccessibilitySize }
     private var detailedBookID: String? { selected ?? (wide ? model.books.first?.id : nil) }
     var body: some View {
-        let unchanged = !inspectingUnchanged && model.isUnchangedPreview
+        let completion = inspectingPreview ? nil : model.reviewCompletion
         Group {
-            if model.phase != .review || model.books.isEmpty || unchanged {
+            if model.phase != .review || model.books.isEmpty || completion != nil {
                 NavigationStack {
-                    status(showUnchanged: unchanged).themedPage()
+                    status(completion: completion).themedPage()
                         .navigationTitle(Text(model.phase == .review ? "导入预览" : "导入小说信息", tableName: "MetadataExchange"))
-                        .navigationBarTitleDisplayMode(.inline).toolbar { statusToolbar(showUnchanged: unchanged) }
+                        .navigationBarTitleDisplayMode(.inline).toolbar { statusToolbar(completion: completion) }
                 }
             } else if wide {
                 NavigationSplitView(preferredCompactColumn: $compactColumn) {
@@ -58,8 +58,10 @@ struct MetadataImportView: View {
                 }
             }
         }
-        .onChange(of: model.phase) { _, phase in
-            if phase != .review { inspectingUnchanged = false; selected = nil }
+        .onChange(of: model.phase, initial: true) { _, phase in
+            if phase == .review {
+                if !model.books.isEmpty, model.reviewCompletion == nil { inspectingPreview = true }
+            } else { inspectingPreview = false; selected = nil }
         }
         .alert(Text("导入小说信息？", tableName: "MetadataExchange"), isPresented: $confirm) {
             Button { model.save() } label: { Text("确认导入", tableName: "MetadataExchange") }
@@ -209,22 +211,30 @@ struct MetadataImportView: View {
             importAction
         }
     }
-    private var importAction: some View {
+    @ViewBuilder private var importAction: some View {
         let pending = model.pending
         let writes = pending.filter { !$0.changedMetadataFields.isEmpty }.count
         let renames = pending.filter { $0.renameName != nil }.count
-        return Button { confirm = true } label: {
-            Group {
-                if writes > 0 { Text("导入 \(writes) 本", tableName: "MetadataExchange") }
-                else if renames > 0 { Text("确认改名 \(renames) 个文件", tableName: "MetadataExchange") }
-                else { Text("没有待保存的改动", tableName: "MetadataExchange") }
-            }.frame(maxWidth: .infinity)
+        if pending.isEmpty, !model.invalidSelection {
+            finishReview
+        } else {
+            Button { confirm = true } label: {
+                Group {
+                    if writes > 0 { Text("导入 \(writes) 本", tableName: "MetadataExchange") }
+                    else if renames > 0 { Text("确认改名 \(renames) 个文件", tableName: "MetadataExchange") }
+                    else { Text("没有待保存的改动", tableName: "MetadataExchange") }
+                }.frame(maxWidth: .infinity)
+            }
+                .buttonStyle(MetadataActionButtonStyle(prominent: true)).disabled(model.invalidSelection)
+                .accessibilityIdentifier("confirmMetadataImport")
         }
-            .buttonStyle(MetadataActionButtonStyle(prominent: true)).disabled(pending.isEmpty || model.invalidSelection)
-            .accessibilityIdentifier("confirmMetadataImport")
     }
 
-    @ToolbarContentBuilder private func statusToolbar(showUnchanged: Bool) -> some ToolbarContent {
+    private var finishReview: some View {
+        primary(Text("完成", tableName: "MetadataExchange")) { model.clear(); dismiss() }
+    }
+
+    @ToolbarContentBuilder private func statusToolbar(completion: MetadataExchangeModel.ReviewCompletion?) -> some ToolbarContent {
         closeButton
         if (model.canContinue || canStartFreshPreview) && model.phase != .completed {
             ToolbarItem(placement: .topBarLeading) {
@@ -235,10 +245,10 @@ struct MetadataImportView: View {
                 } label: { Image(systemName: "ellipsis") }
                     .toolbarGlyph().accessibilityLabel(Text("更多操作", tableName: "MetadataExchange"))
             }
-        } else if showUnchanged {
+        } else if completion == .unchanged {
             ToolbarItem(placement: .topBarLeading) {
                 Menu {
-                    Button { inspectingUnchanged = true } label: { Text("查看逐书预览", tableName: "MetadataExchange") }
+                    Button { inspectingPreview = true } label: { Text("查看逐书预览", tableName: "MetadataExchange") }
                     Button(role: .destructive) { confirmEnd = true } label: { Text("结束本次导入", tableName: "MetadataExchange") }
                 } label: { Image(systemName: "ellipsis") }
                     .toolbarGlyph().accessibilityLabel(Text("更多操作", tableName: "MetadataExchange"))
@@ -281,22 +291,29 @@ struct MetadataImportView: View {
         }
     }
 
-    @ViewBuilder private func status(showUnchanged: Bool) -> some View {
+    @ViewBuilder private func status(completion: MetadataExchangeModel.ReviewCompletion?) -> some View {
         switch model.phase {
         case .receiving, .preparing, .saving, .renaming:
             runningStatus
-        case .review where showUnchanged:
-            centered {
-                terminalHeading(Text("没有需要更新的资料", tableName: "MetadataExchange"),
-                                symbol: "checkmark.circle", color: theme.success,
-                                message: Text("所选资料与现有内容一致。", tableName: "MetadataExchange"))
-                note(Text("没有重复写入资料。", tableName: "MetadataExchange"))
+        case .review where completion != nil:
+            ContentUnavailableView {
+                Label {
+                    Text(completion == .unchanged ? "没有需要更新的资料" : "当前没有待导入的改动", tableName: "MetadataExchange")
+                } icon: {
+                    Image(systemName: completion == .unchanged ? "checkmark.circle" : "info.circle")
+                }
+            } description: {
+                if completion == .unchanged {
+                    Text("已核对 \(model.books.count) 本，资料均一致。", tableName: "MetadataExchange")
+                }
+            } actions: {
+                if completion == .unselected {
+                    Button { inspectingPreview = true } label: { Text("查看逐书预览", tableName: "MetadataExchange") }
+                        .buttonStyle(MetadataActionButtonStyle())
+                }
             }.modifier(MetadataTaskBar {
                 taskFooter {
-                    primary(Text("完成", tableName: "MetadataExchange")) {
-                        model.clear()
-                        dismiss()
-                    }
+                    finishReview
                 }
             })
         case .review:
