@@ -84,11 +84,27 @@ struct SettingsView: View {
         if sizeClass == .regular { settingsList.listStyle(.sidebar) }
         else { settingsList.listStyle(.insetGrouped).themedPage() }
     }
-    private func settingsLink<Label: View>(_ task: SettingsTask, @ViewBuilder label: () -> Label) -> some View {
-        NavigationLink(value: task, label: label).tag(task)
+    @ViewBuilder private func settingsLink<Label: View>(_ task: SettingsTask, @ViewBuilder label: () -> Label) -> some View {
+        if sizeClass == .regular {
+            let selected = navigation.selectedTask == task
+            Button {
+                navigation.select(task)
+            } label: {
+                label()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(selected ? Color(uiColor: theme.accent) : .clear, in: .rect(cornerRadius: 10))
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+        } else {
+            NavigationLink(value: task, label: label).tag(task)
+        }
     }
     private var settingsList: some View {
-        List(selection: Binding<SettingsTask?>(get: { navigation.selectedTask }, set: { value in
+        List(selection: sizeClass == .regular ? nil : Binding<SettingsTask?>(get: { navigation.selectedTask }, set: { value in
             if let value { navigation.select(value) }
             else { navigation.selectedTask = nil }
         })) {
@@ -201,7 +217,7 @@ struct SettingsView: View {
 
 }
 
-/// Shared only by the settings home: native rows retain their navigation controls.
+/// Label shared by the compact settings list and the wide sidebar.
 private struct SettingsEntry: View {
     let title: LocalizedStringResource
     let symbol: String
@@ -210,9 +226,8 @@ private struct SettingsEntry: View {
     @Environment(\.theme) private var theme
     @ScaledMetric(relativeTo: .body) private var iconSize = 20.0
     var body: some View {
-        // The regular-width sidebar draws its own selection background.
-        let titleColor = selected ? Color.primary : Color(uiColor: theme.ink)
-        let detailColor = selected ? Color.primary : Color(uiColor: theme.secondary)
+        let titleColor = Color(uiColor: selected ? theme.onAccent : theme.ink)
+        let detailColor = Color(uiColor: selected ? theme.onAccent : theme.secondary)
         HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: iconSize))
                 .frame(width: iconSize + 6).foregroundStyle(detailColor)
