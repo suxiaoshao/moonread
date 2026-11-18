@@ -2,24 +2,41 @@ import SwiftUI
 import Charts
 
 /// The selected range's day-level rhythm: seven daily bars, a month calendar,
-/// a year's monthly bars, or all-time yearly bars when there is more than one year.
+/// a year's monthly bars, or all-time monthly or yearly bars.
 struct StatisticsRhythm: View {
     let period: StatisticsPeriod
     let bounds: ClosedRange<Int64>
     let days: [StatisticsDay]
     let today: Int64
-    var book: String?
+    let book: String?
     let open: (StatisticsDayRoute) -> Void
-    private var buckets: [StatisticsBucket] {
+    private let buckets: [StatisticsBucket]
+    private let allByMonth: Bool
+    @State private var selectedBucket: Int64?
+
+    init(period: StatisticsPeriod, bounds: ClosedRange<Int64>, days: [StatisticsDay], today: Int64,
+         book: String?, open: @escaping (StatisticsDayRoute) -> Void) {
+        self.period = period; self.bounds = bounds; self.days = days
+        self.today = today; self.book = book; self.open = open
+        let years = period == .all ? StatisticsBuckets.years(days, today: today) : []
+        allByMonth = years.count == 1
         switch period {
-        case .recent: StatisticsBuckets.days(days, range: bounds)
-        case .month: []
-        case .year: StatisticsBuckets.months(days, year: bounds, today: today)
-        case .all: StatisticsBuckets.years(days, today: today)
+        case .recent: buckets = StatisticsBuckets.days(days, range: bounds)
+        case .month: buckets = []
+        case .year: buckets = StatisticsBuckets.months(days, year: bounds, today: today)
+        case .all:
+            if let year = years.first, allByMonth {
+                buckets = StatisticsBuckets.months(days, year: year.first...year.last, today: today)
+            } else { buckets = years }
         }
     }
-    var hasContent: Bool { period == .all ? buckets.count > 1 : true }
+
+    var hasContent: Bool { period != .all || !buckets.isEmpty }
     var body: some View {
+        chart.onChange(of: period) { _, _ in selectedBucket = nil }
+            .onChange(of: book) { _, _ in selectedBucket = nil }
+    }
+    @ViewBuilder private var chart: some View {
         switch period {
         case .recent:
             StatisticsBarChart(buckets: buckets, label: { $0.first == today ? String(localized: "今天") : StatisticsDates.format($0.first, template: "EE") },
@@ -31,9 +48,23 @@ struct StatisticsRhythm: View {
             StatisticsBarChart(buckets: buckets, slots: 12, label: { StatisticsDates.format($0.first, template: "MMM") },
                                accessibilityLabel: { StatisticsDates.format($0.first, template: "yMMMM") })
         case .all:
-            StatisticsBarChart(buckets: buckets, label: { StatisticsDates.format($0.first, template: "y") },
-                               accessibilityLabel: { StatisticsDates.format($0.first, template: "y") })
+            VStack(alignment: .leading, spacing: 12) {
+                if let selection = buckets.first(where: { $0.first == selectedBucket }) {
+                    Text(verbatim: "\(bucketDate(selection)) · \(StatisticsDates.duration(selection.durationMs))")
+                } else if allByMonth, let first = buckets.first {
+                    Text("\(StatisticsDates.format(first.first, template: "y")) · 按月")
+                } else {
+                    Text("各年阅读时长")
+                }
+                StatisticsBarChart(buckets: buckets, slots: allByMonth ? 12 : nil,
+                                   label: { StatisticsDates.format($0.first, template: allByMonth ? "MMM" : "y") },
+                                   accessibilityLabel: bucketDate, selectable: true, selected: selectedBucket,
+                                   open: { selectedBucket = selectedBucket == $0.first ? nil : $0.first })
+            }.font(.subheadline)
         }
+    }
+    private func bucketDate(_ bucket: StatisticsBucket) -> String {
+        StatisticsDates.format(bucket.first, template: allByMonth ? "yMMMM" : "y")
     }
 }
 
@@ -44,6 +75,8 @@ private struct StatisticsBarChart: View {
     var slots: Int? = nil
     let label: (StatisticsBucket) -> String
     let accessibilityLabel: (StatisticsBucket) -> String
+    var selectable = false
+    var selected: Int64?
     var open: ((StatisticsBucket) -> Void)? = nil
     @Environment(\.theme) private var theme
     private var maximum: Double { max(1, buckets.map { Double($0.durationMs) / 60_000 }.max() ?? 1) }
@@ -53,7 +86,9 @@ private struct StatisticsBarChart: View {
     var body: some View {
         Chart(buckets) { bucket in
             BarMark(x: .value(String(localized: "日期"), String(bucket.first)), y: .value(String(localized: "阅读分钟"), Double(bucket.durationMs) / 60_000), width: .ratio(0.6))
-                .foregroundStyle(Color(uiColor: theme.accent).opacity(bucket.last == StatisticsDates.day(StatisticsWindow.currentDate) ? 1 : 0.18))
+                .foregroundStyle(Color(uiColor: theme.accent).opacity(
+                    (selectable ? bucket.first == selected : bucket.last == StatisticsDates.day(StatisticsWindow.currentDate)) ? 1 : 0.18
+                ))
                 .cornerRadius(5)
         }
         .chartXScale(domain: keys)
@@ -61,7 +96,13 @@ private struct StatisticsBarChart: View {
         .chartXAxis {
             AxisMarks(values: keys) { value in
                 AxisValueLabel {
-                    if let key = value.as(String.self), let bucket = bucket(key) { Text(verbatim: label(bucket)).font(.caption2) }
+                    if let key = value.as(String.self), let bucket = bucket(key) {
+                        if bucket.first == selected {
+                            Text(verbatim: label(bucket)).font(.caption2.bold()).foregroundStyle(Color(uiColor: theme.accent))
+                        } else {
+                            Text(verbatim: label(bucket)).font(.caption2)
+                        }
+                    }
                 }
             }
         }
@@ -87,8 +128,9 @@ private struct StatisticsBarChart: View {
         .accessibilityRepresentation {
             VStack {
                 ForEach(buckets) { bucket in
-                    if let open, bucket.durationMs > 0 {
+                    if let open, selectable || bucket.durationMs > 0 {
                         Button("\(accessibilityLabel(bucket))，\(StatisticsDates.duration(bucket.durationMs))") { open(bucket) }
+                            .accessibilityAddTraits(bucket.first == selected ? .isSelected : [])
                     } else {
                         Text("\(accessibilityLabel(bucket))，\(StatisticsDates.duration(bucket.durationMs))")
                     }

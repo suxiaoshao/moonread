@@ -1,6 +1,8 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "当前没有待导入的改动": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No Changes Selected for Import"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"目前沒有待匯入的變更"}}}},
+    "已核对 %lld 本，资料均一致。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Checked %lld books. All metadata matches."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已核對 %lld 本，資料均一致。"}}}},
     "所选书架已不可用": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Selected Bookshelf Is Unavailable" } },

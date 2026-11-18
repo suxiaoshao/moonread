@@ -189,6 +189,9 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
         years.map(\.durationMs), [10_000, 0, 210_000],
         "Every year from the first reading through now")
       XCTAssertTrue(StatisticsBuckets.years([], today: today).isEmpty)
+      let currentYear = days.filter { $0.day >= civil(2026, 1, 1) }
+      let rhythm = StatisticsRhythm(period: .all, bounds: 0...today, days: currentYear, today: today, book: nil) { _ in }
+      XCTAssertTrue(rhythm.hasContent, "An all-time range with a single year still has a chart")
       XCTAssertEqual(
         StatisticsDates.axisSteps(72), [0, 30, 60, 90], "Gridlines stay on round minutes")
       XCTAssertEqual(StatisticsDates.axisSteps(148), [0, 60, 120, 180])

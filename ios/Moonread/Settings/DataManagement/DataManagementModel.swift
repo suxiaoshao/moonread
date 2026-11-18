@@ -2,6 +2,7 @@ import SwiftUI
 
 @MainActor @Observable final class DataManagementModel {
     let service: AppDataService
+    let backupExport: ExportTask<Void, URL>
     private enum InventoryResult {
         case ready(ReadingDataInventory)
         case failed(String, previous: ReadingDataInventory?)
@@ -27,14 +28,12 @@ import SwiftUI
         }
     }
     private enum OperationResult {
-        case exported
         case imported
         case deleted(cacheCleaned: Bool)
         case cacheCleaned(removed: Int, retained: Int)
 
         var message: String? {
             switch self {
-            case .exported: nil
             case .imported: String(localized: "阅读数据已导入", table: "DataManagement")
             case .deleted(let cleaned):
                 String(localized: cleaned ? "阅读数据已清除，小说文件未变" : "阅读数据已清除，部分本机缓存未清理", table: "DataManagement")
@@ -44,7 +43,7 @@ import SwiftUI
         }
     }
     private enum DataOperation {
-        case idle, exporting, inspectingBackup, promoting, preparingPending
+        case idle, inspectingBackup, promoting, preparingPending
         case previewingImport(ReadingBackupPreview)
         case importing(ReadingBackupPreview)
         case deleting(Set<String>)
@@ -54,7 +53,6 @@ import SwiftUI
 
         var working: String? {
             switch self {
-            case .exporting: String(localized: "正在生成备份…", table: "DataManagement")
             case .inspectingBackup: String(localized: "正在检查备份…", table: "DataManagement")
             case .importing: String(localized: "正在导入…", table: "DataManagement")
             case .deleting: String(localized: "正在清除…", table: "DataManagement")
@@ -67,7 +65,6 @@ import SwiftUI
     }
     private var dataLoad = ReadingDataLoad.idle
     private var dataOperation = DataOperation.idle
-    private var latestExport: URL?
     var inventory: ReadingDataInventory { dataLoad.result?.inventory ?? .init(items: [], pending: 0, unsupported: 0) }
     private(set) var issueCount: Int?
     private(set) var cache: CacheSummary?
@@ -94,7 +91,6 @@ import SwiftUI
         default: nil
         }
     }
-    var exported: URL? { latestExport }
     func showError(_ message: String) { dataOperation = .failed(message, preview: preview) }
     func clearError() {
         if case .failed(_, let previous) = dataOperation { dataOperation = previous.map(DataOperation.previewingImport) ?? .idle }
@@ -139,7 +135,14 @@ import SwiftUI
     }
     private var nameOrder: [String] = []
     private var recentOrder: [String] = []
-    init(service: AppDataService = .shared) { self.service = service }
+    init(service: AppDataService = .shared) {
+        self.service = service
+        backupExport = ExportTask(service: service, usesSystemExecution: service === AppDataService.shared,
+                                  kind: "reading-backup", title: String(localized: "导出备份", table: "MetadataExchange"),
+                                  subtitle: String(localized: "正在生成备份…", table: "DataManagement")) { _, _ in
+            try await service.exportReadingData()
+        }
+    }
     var visible: [ReadingDataItem] {
         let items = Dictionary(uniqueKeysWithValues: inventory.items.map { ($0.id, $0) })
         return (recent ? recentOrder : nameOrder).compactMap { items[$0] }.filter {
@@ -233,17 +236,8 @@ import SwiftUI
         catch { issueErrors[item.id] = ReaderMessages.error(error) }
         await load()
     }
-    func exportAll() async {
-        guard !busy else { return }
-        latestExport = nil
-        await runCancellable(.exporting) {
-            let next = try await self.service.exportReadingData()
-            self.latestExport = next
-            return .completed(.exported)
-        }
-    }
     func shareBackup() async throws -> LibraryExport {
-        guard let exported else { throw ReadingDataError.invalid }
+        guard let exported = backupExport.output else { throw ReadingDataError.invalid }
         return try await service.readingBackupShareCopy(exported)
     }
     func prepareImport(_ url: URL) async {
@@ -296,7 +290,7 @@ import SwiftUI
     }
     func chooseBackup() async -> URL? {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") { return exported }
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") { return backupExport.output }
         #endif
         return nil
     }
