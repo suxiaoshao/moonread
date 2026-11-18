@@ -30,24 +30,19 @@ struct ReaderChapterList: View {
                     }.font(.caption).listRowBackground(Color(uiColor: theme.surface))
                 }
                 if model.chapterFilter.isEmpty {
-                    Button {
-                        chapterFilterFocused = false
-                        navigate(0, nil, .cover)
-                    } label: {
-                        ReaderChapterLabel(title: Text("封面"), current: session.showingCover)
-                            .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
-                            .padding(.horizontal, LayoutTokens.content)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .id("reader-cover")
-                    .accessibilityIdentifier("showBookCover")
-                    .accessibilityAddTraits(session.showingCover ? .isSelected : [])
-                    .listRowBackground(Color(uiColor: theme.surface))
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets())
-                    ForEach(outlineGroups) { group in
+                    let groups = outlineGroups
+                    let firstGroup = groups.first
+                    if firstGroup == nil || firstGroup?.volume != nil {
                         Section {
+                            coverRow
+                        }
+                        .listSectionSpacing(0)
+                    }
+                    ForEach(groups) { group in
+                        Section {
+                            if group.volume == nil, group.id == firstGroup?.id {
+                                coverRow
+                            }
                             if editingOutline, let volume = group.volume { chapterRow(volume) }
                             ForEach(group.chapters, id: \.startUtf8) { chapter in
                                 chapterRow(chapter, indented: group.volume != nil && !editingOutline)
@@ -126,6 +121,36 @@ struct ReaderChapterList: View {
                 }
             }
         }
+    }
+
+    private var coverRow: some View {
+        let current = session.showingCover
+        return Button {
+            chapterFilterFocused = false
+            navigate(0, nil, .cover)
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: current ? "book.closed.fill" : "book.closed")
+                    .font(.footnote)
+                    .foregroundStyle(Color(uiColor: current ? theme.accent : theme.secondary))
+                    .accessibilityHidden(true)
+                Text("封面")
+                    .font(.body)
+                    .fontWeight(current ? .semibold : nil)
+                    .foregroundStyle(Color(uiColor: theme.ink))
+            }
+            .padding(.bottom, 3)
+            .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .bottomLeading)
+            .padding(.horizontal, LayoutTokens.content)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .id("reader-cover")
+        .accessibilityIdentifier("showBookCover")
+        .accessibilityAddTraits(current ? .isSelected : [])
+        .listRowBackground(Color(uiColor: theme.surface))
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets())
     }
 
     private struct OutlineGroup: Identifiable {
