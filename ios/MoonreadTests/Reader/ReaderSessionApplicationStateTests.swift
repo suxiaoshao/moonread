@@ -12,11 +12,11 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     let library = LibraryModel()
     let router = library.systemReading
     let opening = OpeningRequest(target: .book("source-boundary-fixture"))
-    library.libraryPath = [.folder(.init(shelfID: "builtin")), .reader(opening)]
-    XCTAssertEqual(library.readerDestinationDepth(opening.id), 3, "the folder's appearance cannot settle the following reader push")
-    XCTAssertTrue(library.containsReaderDestination(opening.id))
-    library.removeReaderDestination(opening.id)
-    XCTAssertNil(library.readerDestinationDepth(opening.id))
+    library.shell.libraryPath = [.folder(.init(shelfID: "builtin")), .reader(opening)]
+    XCTAssertEqual(library.shell.readerDestinationLocation(opening.id)?.depth, 3, "the folder's appearance cannot settle the following reader push")
+    XCTAssertTrue(library.shell.containsReaderDestination(opening.id))
+    library.shell.removeReaderDestination(opening.id)
+    XCTAssertNil(library.shell.readerDestinationLocation(opening.id)?.depth)
     router.hasUnsavedEdits = { true }
     router.submit(.showLibrary)
     XCTAssertFalse(router.admit(title: "test", library: library))
@@ -88,17 +88,17 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
   // S440: 取消搜索返回实际入口 tab，不把统计入口错误送回书架。
   func testSearchCancelReturnsToActualOriginAndSettingsTabRemainsValid() {
     let model = LibraryModel()
-    model.selectedTab = .statistics
-    model.selectedTab = .search
-    model.setSearchPresented(true)
-    model.setSearchPresented(false)
-    XCTAssertEqual(model.selectedTab, .statistics)
-    model.selectedTab = .conversations
-    model.updateAvailableTabs(aiAvailable: false)
-    XCTAssertEqual(model.selectedTab, .library)
-    model.selectedTab = .settings
-    model.updateAvailableTabs(aiAvailable: true)
-    XCTAssertEqual(model.selectedTab, .settings)
+    model.shell.selectedTab = .statistics
+    model.shell.selectedTab = .search
+    model.shell.setSearchPresented(true)
+    model.shell.setSearchPresented(false)
+    XCTAssertEqual(model.shell.selectedTab, .statistics)
+    model.shell.selectedTab = .conversations
+    model.shell.updateAvailableTabs(aiAvailable: false)
+    XCTAssertEqual(model.shell.selectedTab, .library)
+    model.shell.selectedTab = .settings
+    model.shell.updateAvailableTabs(aiAvailable: true)
+    XCTAssertEqual(model.shell.selectedTab, .settings)
     let loading = LoadingState()
     let old = loading.begin()
     let new = loading.begin()

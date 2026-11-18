@@ -22,7 +22,6 @@ final class LibraryFileWorkLibraryDropTests: LibraryDropFixture {
     let provider = gate.provider(name: "admitted.txt")
     XCTAssertTrue(
       model.acceptDrop(.importProviders([provider]), at: .init(shelfID: "builtin", path: "drop")))
-    XCTAssertTrue(model.explicitFileWork)
     XCTAssertFalse(model.canAcceptFileWork)
     XCTAssertFalse(model.acceptDrop(.importProviders([provider]), at: .init(shelfID: "builtin")))
     XCTAssertFalse(model.runBatch([.create(.init(shelfID: "builtin"), "blocked")]))
@@ -31,7 +30,7 @@ final class LibraryFileWorkLibraryDropTests: LibraryDropFixture {
     model.error = nil
     await fulfillment(of: [gate.requested], timeout: 3)
     provider.suggestedName = "changed-after-admission.txt"
-    model.path = [.folder(.init(shelfID: "builtin", path: "second"))]
+    model.shell.path = [.folder(.init(shelfID: "builtin", path: "second"))]
     model.receiveSystemURLs(
       [try f.write("one.txt"), try f.write("two.txt")], at: .init(shelfID: "builtin", path: "first")
     )
@@ -55,7 +54,7 @@ final class LibraryFileWorkLibraryDropTests: LibraryDropFixture {
         FileManager.default.fileExists(atPath: f.books.appendingPathComponent(path).path))
     }
     XCTAssertEqual(
-      model.path,
+      model.shell.path,
       [
         .folder(.init(shelfID: "builtin", path: "second")),
         .folder(.init(shelfID: "builtin", path: "first")),
@@ -131,7 +130,7 @@ final class LibraryFileWorkLibraryDropTests: LibraryDropFixture {
       try Data(contentsOf: f.books.appendingPathComponent("book.txt")), try Data(contentsOf: source)
     )
     XCTAssertEqual(stagingDirectories(), baseline)
-    XCTAssertTrue(model.path.isEmpty)
+    XCTAssertTrue(model.shell.path.isEmpty)
     XCTAssertTrue(
       model.acceptDrop(
         .importProviders([fileProvider(source, name: "book.txt")]), at: .init(shelfID: "builtin")))
@@ -141,7 +140,7 @@ final class LibraryFileWorkLibraryDropTests: LibraryDropFixture {
     await model.resolveDecision(skipped, accepting: false)
     XCTAssertTrue(model.canAcceptFileWork)
     XCTAssertEqual(stagingDirectories(), baseline)
-    XCTAssertTrue(model.path.isEmpty)
+    XCTAssertTrue(model.shell.path.isEmpty)
     do {
 
       let host = LibraryDecisionAlert.Controller()

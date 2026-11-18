@@ -159,7 +159,7 @@ Rust `builtin_reader_textures` 是支持项、资源变体、参考画布、blen
 
 本机 `Moonread.themePreferences` 原 JSON 新增 `reader_palette_textures: {version:1, enabled_by_palette:{…}}`，按最终配色 ID 独立保存。新用户（没有该 key）默认七项开；已存在的新结构缺支持 ID 时默认开，未知 ID 不获得纹理。明确保存才写入，不在读取时重写；未来版本、坏 JSON 或错误存储类型报错并阻止覆盖。首帧可丢弃快照与偏好使用同一兼容解码。
 
-兼容基线为已发布 1.3 `d44c7df88367c5b5b0a990227c6de921c9627d88`：旧 `reader_light_texture` / `reader_dark_texture` 的无/缺失/未知值转关，有效 paper/kraft/linen/grain（含 night-v1 alias）转开；旧浅槽播种全部四项浅色、旧深槽播种全部三项深色。之后每 ID 独立，新结构优先；旧档位不改变新画稿效果。旧枚举、raw value 与两个字段只作兼容解码，运行时不再使用，不做双写权威。不改 ThemePalette、SwiftData、CloudKit 或用户备份格式。
+兼容基线为已发布 1.3 `d44c7df88367c5b5b0a990227c6de921c9627d88`：旧 `reader_light_texture` / `reader_dark_texture` 的无/缺失/未知值转关，有效 paper/kraft/linen/grain（含 night-v1 alias）转开；旧浅槽播种全部四项浅色、旧深槽播种全部三项深色。之后每 ID 独立，新结构优先；旧档位不改变新画稿效果。旧枚举、raw value 与两个字段只作兼容解码，运行时不再使用，不做双写权威。这次纹理偏好升级只调整设备本机的值，配色与备份沿用当时的发布格式。
 
 阅读设置两入口共用 PalettePicker 原生 List/Section，在原纹理组位置仅对当前编辑槽的有效配色显示“显示〈配色名〉纹理”Toggle，立即保存；footer 说明仅存此设备。失败走 ThemeStore 既有回滚/错误。预览使用同一计划和合成器，配色 draft 不带纹理。
 

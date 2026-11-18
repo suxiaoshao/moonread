@@ -60,14 +60,15 @@ struct LibraryPresentations: ViewModifier {
     @Bindable var model: LibraryModel
     @Environment(\.theme) private var theme
     func body(content: Content) -> some View {
+        @Bindable var shell = model.shell
         content
             .fileImporter(isPresented: $model.filePickerPresented,
                           allowedContentTypes: model.filePicker?.types ?? [.plainText],
                           allowsMultipleSelection: model.filePicker?.multiple ?? false,
                           onCompletion: model.completeFilePicker,
                           onCancellation: model.cancelFilePicker)
-            .sheet(item: $model.aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }
-            .onChange(of: ai.availability.isAvailable) { _, available in if !available { model.aiRequest = nil } }
+            .sheet(item: $shell.aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }
+            .onChange(of: ai.availability.isAvailable) { _, available in if !available { model.shell.aiRequest = nil } }
             .sheet(item: $model.sheet, onDismiss: model.sheetDidDismiss) { sheet in
                 switch sheet {
                 case .rename(let entry): LibraryNameEditor(model: model, entry: entry, location: entry.parent).themeScope(theme)
@@ -82,7 +83,7 @@ struct LibraryPresentations: ViewModifier {
                     LibraryImportResultsView(model: model).themeScope(theme)
                 }
             }
-            .onChange(of: model.path) { _, _ in model.showDeferredIndexPrompt() }
+            .onChange(of: model.shell.path) { _, _ in model.showDeferredIndexPrompt() }
             .alert("暂时无法完成", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
                 Button("知道了", role: .cancel) { model.error = nil }
             } message: { Text(model.error ?? "") }
@@ -92,8 +93,8 @@ struct LibraryPresentations: ViewModifier {
                 Button("取消", role: .cancel) { model.removingShelf = nil }
             } message: { shelf in Text("移除“\(shelf.name)”的入口，目录中的文件仍然保留。") }
             .overlay {
-                if model.processingFiles && model.path.last?.isReader != true {
-                    DeferredLoading(delay: model.explicitFileWork ? .zero : LoadingTiming.inlineDelay) { _ in
+                if model.processingFiles && model.shell.path.last?.isReader != true {
+                    DeferredLoading(delay: model.busy ? .zero : LoadingTiming.inlineDelay) { _ in
                         LoadingActivity(size: 32, waitingLabel: "正在处理文件", delay: .zero).padding(24)
                             .background(theme.floatingBackground(), in: .rect(cornerRadius: 20))
                             .accessibilityLabel("正在处理文件")
@@ -193,10 +194,10 @@ struct LibraryItemMenu: View {
             Button("移动", systemImage: "folder") { model.sheet = .move([entry]) }
             if !entry.directory {
                 Button("小说详情", systemImage: "info.circle") {
-                    model.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title)))
+                    model.shell.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title)))
                 }
                 if ai.availability.isAvailable {
-                    Button("完善资料", systemImage: "sparkles") { model.aiRequest = .library([entry], family: .metadata) }
+                    Button("完善资料", systemImage: "sparkles") { model.shell.aiRequest = .library([entry], family: .metadata) }
                 }
                 if entry.shelfId != "builtin" { Button("复制到我的书架", systemImage: "doc.on.doc") { model.runBatch([.copy(entry)]) } }
                 Button("导出", systemImage: "square.and.arrow.up") { model.export([entry], sharing: false) }

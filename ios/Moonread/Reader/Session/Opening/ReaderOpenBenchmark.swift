@@ -74,8 +74,9 @@ struct ReaderOpenBenchmarkView: View {
         ThemeSurface(plan: try! resolveThemes(value: defaultThemeSnapshot(), system: scheme == .dark ? .dark : .light, highContrast: false).reader)
     }
     var body: some View {
+        @Bindable var shell = library.shell
         NativeThemeHost(theme: theme) {
-            NavigationStack(path: $library.libraryPath) {
+            NavigationStack(path: $shell.libraryPath) {
                 VStack(spacing: 30) {
                     if let error = benchmark.error { Text(error).accessibilityIdentifier("benchmarkError") }
                     HStack {
@@ -104,7 +105,7 @@ struct ReaderOpenBenchmarkView: View {
             .environment(library).environment(\.readerTheme, theme).themeScope(theme)
             .environment(\.moonreadReduceMotion, systemReduced || ProcessInfo.processInfo.arguments.contains("--reader-open-reduce-motion"))
         }
-        .onChange(of: library.libraryPath.isEmpty) { _, empty in if empty { counts = ReaderOpenDiagnostics.displayedCounts() } }
+        .onChange(of: library.shell.libraryPath.isEmpty) { _, empty in if empty { counts = ReaderOpenDiagnostics.displayedCounts() } }
         .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--reader-open-dark") ? .dark : .light)
         .task { UIApplication.shared.isIdleTimerDisabled = true; await benchmark.prepare() }
     }

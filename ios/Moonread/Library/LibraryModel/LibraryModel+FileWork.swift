@@ -141,7 +141,7 @@ extension LibraryModel {
             if let entry = work.imported.first {
                 switch work.importCompletion {
                 case .openSingle: work.stage = .awaitingOpen(entry)
-                case .showFolder: path.append(.folder(entry.parent))
+                case .showFolder: shell.path.append(.folder(entry.parent))
                 case .stayInFolder: break
                 }
             }

@@ -45,7 +45,7 @@ struct AppSearchField: ViewModifier {
         return Group {
             if quickEntry {
                 content.searchable(text: text,
-                                   isPresented: Binding(get: { model.searchPresented }, set: { model.setSearchPresented($0) }),
+                                   isPresented: Binding(get: { model.shell.searchPresented }, set: { model.shell.setSearchPresented($0) }),
                                    prompt: searchPrompt)
             } else {
                 // A contextual search retains its condition tree while editing text.
@@ -290,7 +290,7 @@ struct AppSearchView: View {
         }
     }
     private func navigate(_ route: LibraryRoute) {
-        if let push = host.push { push(route) } else { model.path.append(route) }
+        if let push = host.push { push(route) } else { model.shell.path.append(route) }
     }
     @ViewBuilder private func row(_ entry: LibraryEntry) -> some View {
         if host.push == nil {

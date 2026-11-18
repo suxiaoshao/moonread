@@ -601,5 +601,3 @@ mod tests {
         assert_eq!(duration(&clock.update(changed)), 5_000);
     }
 }
-
-// Business projections are exported only by ReaderQuery.

@@ -12,13 +12,13 @@
 - 正文就绪且准备扉页未显示时直接显示，允许在 push 中出现。仅 push 完成且 routeRequested 满 300ms 后显示慢准备扉页，800ms 才显示原生进度和暂停；确实显示过扉页后才做局部 200ms 淡入，减弱动态直接替换。首次正式书籍封面单独处理，不能为测快强制跳过。
 - Swift 原生 TextKit 负责字体和有限窗口分页，Rust 不承担 iOS 字体度量。已有页边界复用、交互期间推迟窗口替换和有界块预算，不能把整本文件大小直接等同当前排版量。
 
-## 单书投影与保存
+## 单书查询与保存
 
-`UserDataStore` 按 content SHA/pending key 取单书所需位置、资料、章节覆盖；首次 `openingFrame` 合并 snapshot/frame，使用同一次不可变 ReaderQuery。冷首页确需的批量投影可按输入版本复用；普通目录先按子树只读位置/打开时间并裁决身份，由 Rust 的既有规则决定排序、计数和每个文件夹前四个封面候选；第二步只为直接子书、入选封面及参与裁决的别名读取完整记录。两个阶段都重验版本、身份与范围，旧响应不覆盖新目录。直接子书多时仍需读取相应详情；额外范围选择和校验也可能增加热缓存成本，不承诺所有路径更快。搜索、资料导出等完整书目查询保持各自范围；普通最近列表先读位置/打开时间索引。单书章节 facts 与资料共同限定正式/pending 范围；统计概览只取资料/事实，小组件统计只取事实。只有相关书/领域的写入使相应缓存失效，未知云导入保守全局失效。原 ModelActor 只提取 Sendable 值；事实解码/过滤与 JSON 组装在 detached 任务执行，同版本请求合并，版本变化拒绝缓存与发布，不增加只读 context。
+1.7 按正文 SHA 或 pending key 读取位置、资料和有效章节。首页和目录通过固定查询组织各自需要的行，目录封面只加载入选条目。1.6 的 ReaderQuery 建连与 TEMP 投影耗时只用于解读历史测量。
 
 封面 ready 缓存与订阅分离，资源 actor 有界缓存 32MiB/64 项、视图完成呈现缓存 24MiB/64 项；尺寸按固定档位复用，首页预热与实际小封面使用相同档位。同书新图就绪前保留旧成功图，明确删除立即转预设；主 App 的小组件/Spotlight 也经过同一资源读取路径，纯进度更新不重绘同输入缩略图。
 
-位置压缩移到该 key 写入，读路径不写库；CloudKit 导入失效缓存，已知 keys 可按书处理，否则下次该书写入再压缩。缓存要覆盖本机写入、远端导入、pending→SHA、统计开关/清理代次、最近隐藏和首选文件变化；查询版本一致，不能缓存混合代次结果。query 保留独立不可变 TEMP 输入，不换回共享可变投影。
+位置压缩移到该 key 写入，读路径不写库；CloudKit 导入失效缓存，已知 keys 可按书处理，否则下次该书写入再压缩。缓存要覆盖本机写入、远端导入、pending→SHA、统计开关/清理代次、最近隐藏和首选文件变化；查询版本一致，不能缓存混合代次结果。
 
 pending 恢复与全局 reclaim 在本地首页建立后一次启动；读路径仍含 pending 数据，完成/释放只回收当前已转正且无 lease 的 draft，exportPending 按 key 读取。返回首页只更新刚退出的一本。现有 `savePosition`/`StatisticsWriter.drain` 最终保存契约保留，不增加读取优先票据、维护 actor、固定延迟的全局压缩或同书等待层。
 
@@ -40,7 +40,7 @@ actor 串行隔离不等于工作短，也不等于新读取能抢占旧同步�
 
 `ReaderOpenDiagnostics` 由显式 `READER_OPEN_DIAGNOSTICS` 编译条件控制，正常 Release 关闭。诊断包若用于用户日常试用，不带 benchmark、变体或人为延迟参数；记录提交、工作区、编译条件、入口、书是否下载/命中缓存、热状态、字体/模式。日志/trace 可能含用户路径与数据，只保留本机忽略的 build 目录，不提交正文或凭据。
 
-用同一单调时钟和 attempt ID 对齐 tap、fileReadable、routeRequested、push 完成、lease/worker、hash、reuseReady、snapshotRequested/Completed、windowPublished、layout、bodyDisplayOpportunity。现在首次 snapshot 区间已含 frame；后续 refresh 才有单独 frameRequested。`actorOpeningBegin`、`actorProjectionReady`、`actorFrameBegin/End`、`mainActorOpeningResumed` 分别定位入队、投影、窗口执行与主线程恢复。必要时细分 SwiftData fetch/JSON 编解码/queryBuild、字体构建/属性文本/TextKit ensureLayout、协调排队/进入 accessor。
+用同一单调时钟和 attempt ID 对齐 tap、fileReadable、routeRequested、push 完成、lease/worker、hash、reuseReady、snapshotRequested/Completed、windowPublished、layout、bodyDisplayOpportunity。现在首次 snapshot 区间已含 frame；后续 refresh 才有单独 frameRequested。`actorOpeningBegin`、`actorProjectionReady`、`actorFrameBegin/End`、`mainActorOpeningResumed` 分别定位入队、投影、窗口执行与主线程恢复。必要时细分 GRDB 读取、结果解码、字体构建/属性文本/TextKit ensureLayout、协调排队/进入 accessor。
 
 display-link、onAppear、layout completion 都是程序代理，不能声称光学首像素或完整不透明。录屏逐帧另记准备扉页、正式封面、正文首像素、淡入结束；变帧率使用 PTS。Instruments 包含等待线程并对齐 signpost；inclusive 样本不可相加当 wall time，等待权重不可当 CPU。
 
@@ -57,7 +57,7 @@ display-link、onAppear、layout completion 都是程序代理，不能声称光
 | 项目与证据入口 | 剩余风险及建议 | 重新启动的测量条件 |
 | --- | --- | --- |
 | **P1-2 AI 启动与会话列表**：`AIService.load/connect`、`AIRepository.sessions` | 启动逐个连接会话、每个读取最近历史；未分页会话数和长消息解码可能抢首屏/开书。先加载摘要、打开会话才取历史，仅恢复确需运行/确认/排队的 runtime；不能丢恢复语义。对话列表分页为明确未实现项 | 1/100/500 会话，消息 0.8/20KB，启动可交互、actor/主线程等待、RSS；延迟 AI 初始化消融。单会话回放不能覆盖此成本 |
-| **P1-3 统计与章节 facts**：`UserData.visibleFacts/projection(includeFacts:)`、`StatisticsView` | 全事实解码、清理标记遍历、TEMP apply；单书页面期间/累计/活动重复查询。按书/期间下推、同快照批量算、可重建章节范围汇总，实体化查询字段；合并/取消过期查询。exportPending 按 key 已处理，不再列旧全库缺陷 | 1万/10万事实 × 0/100 清理标记，连续切期间；投影字节、CPU/RSS、耗时和废弃查询数。保持时区、查阅、清理、跨设备事实语义 |
+| **统计与章节事实** | 1.7 读取用户库的事实、书×日时长与章节覆盖。1.6 全量 TEMP 投影不再是当前测量项 | 在同一数据规模与日期范围下测固定查询耗时、内存和废弃请求数 |
 | **P1-4 AI 长会话内存与长帧**：`AINativeMarkdown`、`AIConversation` | sizing pool 有界，但 parsed/retained views、高度和用户已加载历史仍可能累计；先测 1000 条及多会话，再决定各缓存 cost 上限、近邻逐出。不能全清缓存导致空白重建 | 缓存项/RSS、流结束/队列换 turn/胶囊消失/拖动结束复合时序。保留历史坏样本，未复现不算修复 |
 | **P2-5 搜索规模**：`Reader/UI/Tools/ReaderTools.swift`、`library/tools/search.rs`、`AIRepository`、`library/bookshelf/` | 单批有界但 UI hits 持续累计；扫描 sleep 与 UI 节流耦合。跨会话先全 fetch 再筛允许会话，书架搜索全取排序。考虑分页显示/内存窗口、存储范围下推与扫描发布解耦，不静默截断既有全结果 | 高频单字/无命中/regex/1MiB 长行/连续改词，首批、全搜、取消、结果数与 RSS。分批等待的估计不当实测 |
 | **P2-6 云刷新与其他文件操作**：`CloudLibrary`、`LibraryService`、`LibraryModel` | 云交接主因已修。剩余 metadata 全量映射、重复通知扫描及其他同步移动/复制/导出是否阻塞共享 actor 待测；按真实变化合并 dirty 代次、保留 single-flight 与原子发布，不因每个等待者补跑一轮 | 393 本含未下载占位、后台变更/下载叠加开书，通知/扫描次数与入队等待；不为摘要/封面下载原书 |
@@ -94,12 +94,12 @@ display-link、onAppear、layout completion 都是程序代理，不能声称光
 
 统计事实和 clear 由 UserDataStore 同版本取 Sendable 值、合并准备兼容性与可见候选；相关历史冷读仍要一次解析，未增加日期持久索引或 CloudKit 字段。范围请求在准备结果上按事实的 local_day 选择，再把统计所需的最小 exposure（活动跳转的原起点）送给 Rust，目录覆盖仍用完整 exposure。资料仅取该范围事实涉及的键；日期详情、小组件与 Siri 复用同一事实准备 owner，连续日/历史状态保留完整历史输入。纯读取不 drain writer；同范围旧内容静默更新，清除与未知导入不保留不可信旧数。单书所选范围先显示，资料/章节独立加载，累计按书/事实版本复用、时段随后补齐，版本不一致不得拼装。
 
-Rust ReaderQuery 的固定建连与 TEMP apply 成本仍存在。只有新数据说明其占主要残余成本时再优化连接或重复 apply，保持独立不可变快照和 search job 持有期。本轮不增加独立 ModelContext/读库、聚合持久缓存或新队列；必要的最终位置保存、清除/导入和退出 drain 继续保留，后台任务仍受原 actor 与存储约束。
+重测 1.7 时，分别记录数据库等待、固定查询执行与窗口排版耗时。旧版 TEMP 建连及填充阶段已移除。
 
 ## 隔离开书诊断
 
 - Release 测量用显式的 `READER_OPEN_DIAGNOSTICS` 编译条件；四组对照使用相同的埋点并标明变体；正式包关闭诊断。诊断构建启动时使用 `--reader-open-benchmark --reader-open-session <有效 UUID>`（可另加 `--reader-open-mode resume/first/import` 等测量选项），不要添加 `--ui-testing` 或任何 `--ui-test-*` 参数。缺失/非法 session 会显示错误，不使用正式书库作为回退。
-- `--reader-open-session` 的解析、benchmark 界面及独立 AppDataService 的创建只在 `READER_OPEN_DIAGNOSTICS` 下编译；隔离正文缓存、SwiftData 阅读数据、source defaults 和临时小说根，同一 UUID 重启复用隔离数据，新 UUID 开新测量。普通 Release 不识别 UI 测试参数，也不含这些诊断启动开关；带诊断条件的专用构建不可用于 TestFlight 上传。
+- `--reader-open-session` 的解析、benchmark 界面及独立 AppDataService 的创建只在 `READER_OPEN_DIAGNOSTICS` 下编译；隔离正文缓存、用户库阅读数据、source defaults 和临时小说根，同一 UUID 重启复用隔离数据，新 UUID 开新测量。普通 Release 不识别 UI 测试参数，也不含这些诊断启动开关；带诊断条件的专用构建不可用于 TestFlight 上传。
 - 示例（固定已有模拟器，无需新建）：用 `-configuration Release 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) READER_OPEN_DIAGNOSTICS'` 编译并安装后，`xcrun simctl launch FFA6F448-E09C-4885-B59C-53C5E07185F5 dev.moonread.Moonread --reader-open-benchmark --reader-open-session "$(uuidgen)" --reader-open-mode resume`。进入“开书测量”且“小书／长书”出现，说明已走过“准备隔离快开缓存”；只看到该提示不能算准备成功。
 
 

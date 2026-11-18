@@ -1,4 +1,6 @@
-# CloudKit / SwiftData 跨设备同步怎么测
+# 1.6 CloudKit / SwiftData 跨设备同步研究
+
+此文保留旧版镜像的调研依据。1.7 的传输与发布核对见[同步设计](../data/sync.md)和[发布核对](../data/cloudkit-release-checklist.md)。
 
 2026-10-26。只读调研，不改代码、不登录 iCloud、不调用 cktool。月读的阅读事实走 SwiftData，底层是 `NSPersistentCloudKitContainer` 镜像私有库；小说原件走 iCloud Documents，不进 `CKAsset`。见[同步合同](../data/sync.md)。本文只谈阅读事实这条 CloudKit 路径。
 

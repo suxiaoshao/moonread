@@ -47,7 +47,7 @@ AI 会话与附件只在本机 SwiftData，不进 CloudKit；配置本机保存�
 
 ## 快捷任务与业务提案
 
-以下保持一个 Agent、现有 Swift target、SDK、AppDataService/ReaderQuery、Rust 正文及文件索引、SwiftData 用户数据。不新增包、供应商、依赖、通用任务引擎或全应用 owner 重构。工具只是业务服务适配；目录组织不等于职责已经解耦。
+以下保持一个 Agent、现有 Swift target、SDK、AppDataService、Rust 正文计算和 GRDB 索引与用户库。不新增包、供应商、依赖、通用任务引擎或全应用 owner 重构。工具只是业务服务适配；目录组织不等于职责已经解耦。
 
 ### 模型启用与搜索
 

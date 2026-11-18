@@ -96,6 +96,7 @@ DIMENSIONS = {'iphone-medium': (1206, 2622), 'ipad-13': (2064, 2752),
               'ipad-portrait': (2064, 2752), 'ipad-landscape': (2752, 2064),
               'duo-outer': (1398, 2034), 'duo-inner': (2853, 2007)}
 SCENES = [f'R{i:02}' for i in range(1, 14)] + ['R15']
+METADATA_SCENES = ['M01', 'M02']
 PAGES = ['book-details', 'reader-settings', 'settings', 'library-home', 'reader']
 LANGUAGES = ['zh-Hans', 'zh-Hant', 'en']
 GALLERY = Path('build/Release/1.4-screenshots')
@@ -161,8 +162,10 @@ def csv(name, default=''):
 
 
 def validate(item):
-    if item['scene'] not in SCENES + PAGES or item['language'] not in LANGUAGES:
+    if item['scene'] not in SCENES + METADATA_SCENES + PAGES or item['language'] not in LANGUAGES:
         raise ValueError('Invalid scene/language')
+    if item['scene'] in METADATA_SCENES and (item['group'] != 'iphone-medium' or item['language'] == 'zh-Hant'):
+        raise ValueError('Metadata website scenes require iPhone and a website language')
     if item['group'] not in DIMENSIONS or item['appearance'] not in ('light', 'dark') or item['systemAppearance'] not in ('light', 'dark'):
         raise ValueError('Invalid device/appearance')
     if item['orientation'] not in ('portrait', 'landscape', 'current'):
@@ -286,8 +289,12 @@ def capture(root):
                 short, long = sorted(dimensions)
                 orientation = item['orientation']
                 expected = (long, short) if orientation == 'landscape' else (short, long) if orientation == 'portrait' else dimensions
-                base = root / GALLERY if item['scene'] == 'R15' else root / 'build/Release' / (config['version'] + '-screenshots')
-                target = (root / 'build/PageShots' / group / (item['scene'] + '-' + ('浅' if item['appearance'] == 'light' else '深') + '.png')) if page else base / raw_path(item)
+                release_17 = config['version'] == '1.7' and item['scene'] in ['R10', *METADATA_SCENES]
+                base = root / GALLERY if release_17 or item['scene'] == 'R15' else root / 'build/Release' / (config['version'] + '-screenshots')
+                relative = Path(raw_path(item))
+                if release_17:
+                    relative = Path('raw/1.7') / relative.relative_to('raw')
+                target = (root / 'build/PageShots' / group / (item['scene'] + '-' + ('浅' if item['appearance'] == 'light' else '深') + '.png')) if page else base / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 raw = state / 'raw.png'
                 arguments = ['xcrun', 'simctl', 'io', uid, 'screenshot']
@@ -302,10 +309,10 @@ def capture(root):
                 if not opaque_pixels(raw, target, display_oriented=True): raise ValueError('Black screenshot; not acknowledged')
                 raw.unlink()
                 if not page:
-                    manifest = base / 'raw/manifest.json'
+                    manifest = base / ('raw/1.7/capture-manifest.json' if release_17 else 'raw/manifest.json')
                     values = json.loads(manifest.read_text()) if manifest.exists() else {}
                     plan_row = next(r for r in config['plan'] if r['id'] == item['id'])
-                    values[item['id']] = dict(plan_row, state='captured-unreviewed', fixtureVersion=receipt['fixtureVersion'], applied=receipt, source_commit=config['source_commit'],
+                    values[item['id']] = dict(plan_row, rawPath=str(relative), state='captured-unreviewed', fixtureVersion=receipt['fixtureVersion'], applied=receipt, source_commit=config['source_commit'],
                         source_dirty=config['source_dirty'], source_diff_sha256=config['source_diff_sha256'],
                         device=uid, device_model=config['model'], runtime=config['runtime'], system_language=desktop_language, dimensions=size,
                         captured_at=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),

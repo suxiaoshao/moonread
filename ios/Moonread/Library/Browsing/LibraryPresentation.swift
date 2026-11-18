@@ -249,7 +249,7 @@ struct LibraryLocationAction: View {
     let model: LibraryModel
     let entry: LibraryEntry
     var body: some View {
-        Button("所在文件夹", systemImage: "folder") { model.path.append(.folder(entry.parent)) }
+        Button("所在文件夹", systemImage: "folder") { model.shell.path.append(.folder(entry.parent)) }
             .accessibilityIdentifier("library-result-path")
     }
 }

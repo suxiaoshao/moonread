@@ -335,7 +335,7 @@ struct ReaderScreen: View {
             battery.start()
             session.activity.update(visibility: statisticsVisibility, preview: session.browseOrigin != nil)
         }
-        .onChange(of: library.selectedTab) { _, _ in sendTool(.sourceChanged); synchronizeNativePresentation() }
+        .onChange(of: library.shell.selectedTab) { _, _ in sendTool(.sourceChanged); synchronizeNativePresentation() }
         .onChange(of: automatic?.panelRequest) { _, _ in
             guard scenePhase == .active, !session.isLeaving, !sheetPresented,
                   !session.viewportAccess.hasBlockingPresentation(allowingReaderAccessory: false),
@@ -601,13 +601,13 @@ struct ReaderScreen: View {
     }
     private var rootPresentation: ReaderPresentationTarget { nativeHost.showing }
     private var sourceLocation: (tab: AppTab, depth: Int)? {
-        (openingRequest?.id ?? session.opening.request?.id).flatMap { library.readerDestinationLocation($0) }
+        (openingRequest?.id ?? session.opening.request?.id).flatMap { library.shell.readerDestinationLocation($0) }
     }
     private var sourceDepth: Int? { sourceLocation?.depth }
-    private var sourceSelected: Bool { sourceLocation.map { $0.tab == library.selectedTab } ?? true }
+    private var sourceSelected: Bool { sourceLocation.map { $0.tab == library.shell.selectedTab } ?? true }
     private var sourceRoutePresent: Bool {
         guard let id = openingRequest?.id ?? session.opening.request?.id else { return true }
-        return library.containsReaderDestination(id)
+        return library.shell.containsReaderDestination(id)
     }
     private var readerNativeReady: Bool {
         sourceRoutePresent && sourceSelected && sourceCurrent && session.opening.navigationSettled && render.sourcePage == nil
@@ -895,8 +895,8 @@ struct ReaderScreen: View {
             nativeHost.update(toolTarget == .dock ? render : nil,
                 cause: leaving ? .leaveReader : page ? .replaceContainer : .toolClosed, force: leaving)
             ReaderSceneDiagnostics.record("presentation.project", opening: opening, fields: [
-                "sourceTab": String(describing: library.selectedTab), "sourceCurrent": sourceCurrent,
-                "sourceRouteCount": library.path.count, "sourcePage": String(describing: render.sourcePage),
+                "sourceTab": String(describing: library.shell.selectedTab), "sourceCurrent": sourceCurrent,
+                "sourceRouteCount": library.shell.path.count, "sourcePage": String(describing: render.sourcePage),
                 "navigationSettled": session.opening.navigationSettled, "location": String(describing: render.compact),
                 "desired": String(describing: desired), "toolRequested": String(describing: nativeHost.showing),
                 "toolPhase": nativeHost.phase.rawValue, "token": nativeHost.token?.id.uuidString ?? "none"])

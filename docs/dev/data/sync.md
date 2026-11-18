@@ -28,9 +28,11 @@ App 的前台同步编排区分普通后台暂停、身份暂时未知、确认�
 
 位置按书与 token 保存，普通远端入站不写本机续读基线。批注同步完整候选、祖先、合并关系及逻辑删除证据，并发分支继续由领域结算。换位置和压缩批注的物理删除在精确的新 SAVE ACK 后才放行；对端删除尚未确认的新候选会撤销压缩删除。撤销后不另存已压缩前驱的书归属；明确整书删除使用现有候选和待发依赖。入站解析、移除与重结仍由各领域处理。
 
+## 1.6 已发布行为与格式
+
 以下为 1.6 已发布行为与格式，供迁入和旧备份兼容对照。2026-10-02：用户数据已正式切换为 SwiftData + CloudKit 自动同步；正文和文件索引保留 Rust，文件交接规则不变，真实云容器和跨设备联调尚未完成，限制见[接入实施](sync.md)。原始 TXT 与真实目录使用 iCloud Documents，设置和 SHA 下的阅读数据使用 CloudKit；不把小说原件放入 CKAsset。统一书架模型见[数据与来源](README.md)。
 
-## 两条同步边界
+### 两条同步边界
 
 | 数据 | 保存与同步 | 身份依据 |
 | --- | --- | --- |
@@ -43,7 +45,7 @@ CloudKit 不再重复保存一份藏书目录清单、文件夹树或 TXT 附件
 
 应用运行中的 SQLite/WAL 仍放在私有目录，不用 iCloud Drive 覆盖数据库。[SQLite：运行中复制限制](https://www.sqlite.org/howtocorrupt.html#_backup_or_restore_while_a_transaction_is_active)
 
-## 内置目录与系统文件管理
+### 内置目录与系统文件管理
 
 我的书架由应用在自己的 iCloud ubiquity container 下创建公开的 `Documents` 目录，可在“文件”和 Finder 中查看。容器与相对根由应用固定配置，实际 URL 向系统取得；不让用户选根或修改绑定位置。配置 `NSUbiquitousContainers`、公开文档目录和允许任意子目录层级。[Apple：公开文档目录示例](https://developer.apple.com/documentation/uikit/synchronizing-documents-in-the-icloud-environment)
 
@@ -53,7 +55,7 @@ CloudKit 不再重复保存一份藏书目录清单、文件夹树或 TXT 附件
 
 应用内不提供重命名、移动、移除我的书架根入口或改变其位置的操作，内部文件与子目录仍可管理。容器确认可用而固定目录不存在时可以创建空根；绝不从阅读缓存重建用户已经删除的 TXT。
 
-## 外部书架的同步提示与本机授权
+### 外部书架的同步提示与本机授权
 
 `UserValue` 新增 `shelf-reference/<logical UUID>`，载荷为 `{schemaVersion: 1, name, locationDescription}`，沿现有 `StoredValue(updated, token, value)` 的 LWW 裁决；来源描述仅接受 `icloud-drive` 或 `file-provider`；其他值的原记录保留并单条隔离，不参与 LWW，也不遮蔽同一逻辑 ID 的可用提示。不包含路径、bookmark、本机 ID 或文件清单。内置根不发布提示。不新增 SwiftData model 或 CloudKit 字段；旧版本保留不认识的原记录，新版本按条目隔离未知载荷，不阻断其他记录或改写未知版本。
 
@@ -61,7 +63,7 @@ CloudKit 不再重复保存一份藏书目录清单、文件夹树或 TXT 附件
 
 重新授权或内置根首次可用后，可经现有全量索引重新关联 SHA 用户数据；未下载云文件仍需用户选择包含。同步提示并不授予目录访问权，也不改变[最近阅读逐本恢复](recent-reading-restoration.md)规则。真实跨设备提示与授权恢复的验收单独记录，不能用本地注入代替。
 
-## 固定目录与同步控制
+### 固定目录与同步控制
 
 **内置的本地目录和 iCloud 目录均由应用固定管理，用户不能配置位置。** 未启用 iCloud 时本地保存；启用后读取系统容器 URL 并使用固定相对目录。容器 API 返回空只说明云容器不可用，不阻止应用在自己的本地目录接收文件。[Apple：获取容器](https://developer.apple.com/documentation/foundation/filemanager/url%28forubiquitycontaineridentifier%3A%29)
 
@@ -78,7 +80,7 @@ Apple 的 iCloud 设计指南明确建议不可用时将新内容保存到应用
 
 暂时断网时继续使用可访问的本地 iCloud 文件，不因为网络变化重建书架。未登录、关闭 iCloud 或云容器不可用时，新内容仍能进入固定本地目录，沿用同一我的书架界面；已有云文件如不可访问则按实际状态显示。退出或切换账户不自动把旧原件或用户记录搬到新账户。完整规则见[本地导入](README.md#未启用-icloud-时照常导入)，此能力不再列为待确认项。
 
-## 原文下载与离线阅读
+### 原文下载与离线阅读
 
 通过元数据先显示目录和文件，打开需要原文时请求下载；应用不为列书主动下载整棵树。系统可能自行预取或回收原文件的本机副本，因此不宣称完全控制 iCloud 的调度。
 
@@ -86,7 +88,7 @@ Apple 的 iCloud 设计指南明确建议不可用时将新内容保存到应用
 
 “移除本机下载”调用平台的本机副本回收能力，只有原件已可靠上传才允许回收；“删除文件”先将目标云文件移到系统“最近删除”，由系统传播删除与恢复；移到最近删除失败即按不支持处理，本批由用户确认永久删除或跳过，不静默降级。阅读缓存的清理与平台文件回收分开处理，不删 SHA 下的私人记录。[Apple：本机副本与删除的区别](https://developer.apple.com/documentation/xcode/reducing-your-app-s-disk-usage)
 
-## 用户数据范围与唯一写入入口
+### 用户数据范围与唯一写入入口
 
 SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`AppDataService` 负责正文身份、设备偏好和业务接口；Rust 只接收临时计算输入。已删除 Rust 用户表、修订队列与 CKSyncEngine，不能恢复成双写。
 
@@ -103,7 +105,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`A
 
 没有唯一约束或必须共同到达的关系。普通字段每台设备保存最终快照，通过包含更新时间和稳定标识的完整载荷取最终值；没有主动上传默认偏好。位置更新使用独立不可变对象，淘汰旧对象不会与其他设备离线改写同一个对象发生删除竞争。
 
-### 批注：保留完整候选，用户解决真实并发
+#### 批注：保留完整候选，用户解决真实并发
 
 范围、摘录、评论是一个完整载荷，存于独立 `AnnotationOperation`。每次操作保存所依据的候选标识和因果标识；后继明确取代自己的基线，不取代尚未见到的并发候选。连续编辑删除旧内容，只保留当前候选与判断离线并发所需的标识，不建设批注历史库。
 
@@ -117,7 +119,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`A
 
 自动 CloudKit 同步只传递独立对象，业务层才判断候选。以上本地语义测试不能证明真实 CloudKit 会按预期交付所有并发对象，必须继续双设备验证。
 
-### 阅读事实、清理与正文准备
+#### 阅读事实、清理与正文准备
 
 `ReadingFact` 保存稳定片段 ID、设备、会话、连续访问、UTC 起止、发生地自然日/时区、查阅类型及可见范围证据。Rust 保留 120 秒闲置、15 秒切片、午夜和连续 3 秒覆盖计算，统计查询从 SwiftData 取得原始事实，按批由 Rust 类型化解析；Swift 只保留行 id、书键、日期和选中索引。计算和章节覆盖复用选中的 Rust 对象，TEMP 私有且不持久化或同步用户事实。
 
@@ -125,7 +127,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`A
 
 完整 SHA 确定前，位置、标记和事实进入 `.none` 的设备 SwiftData 存储 `pending-users.store`。准备完成后，先按稳定身份事务写入正式用户存储，再移除设备暂存，重试不重复创建事实；失败保留任务映射供导入继续，格式演进须保持旧任务可恢复。导入任务回收在用户数据已归入 SHA 后执行。批注未提交编辑仅属于当前会话；取消直接丢弃。
 
-### 同步启停与账户
+#### 同步启停与账户
 
 默认关闭阅读数据同步。用户的开启意愿单独持久化，实际自动同步可以暂停；账户不可用、变化或初始化失败不会关闭开关。同一个已确认账户恢复后尝试恢复同步。只有用户主动关闭才写入关闭意愿，随后使用 `.none` 重新建立本机容器；启用使用 `ModelConfiguration.cloudKitDatabase.private`。本机、账户检查、等待确认、已启用及不可用是独立的运行阶段；传输和最后同步时间单独记录。启用时向串行配置入口提供已核对的账户与确认方式，旧操作不得发布新阶段。
 
@@ -137,13 +139,13 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`A
 
 启停后旧容器的在途操作、账户切换期间的系统镜像隔离、附件自动同步及两设备离线并发尚未实测。相关验证条件见[接入实施](sync.md)。
 
-## 验证边界
+### 验证边界
 
 本地模型、因果归并、删除/撤销、独立事实累加、附件外存与重启已纳入回归。iCloud 签名、同账户两设备上传/下载、离线乱序、账户切换和附件迟到必须在真实云环境验收。没有将本地双 context、单 actor 注入或模拟器构建当作云端验证。
 
 官方接口依据：[SwiftData 自动 CloudKit 同步](https://developer.apple.com/documentation/swiftdata/syncing-model-data-across-a-persons-devices)、[ModelActor](https://developer.apple.com/documentation/swiftdata/modelactor)、[外部存储属性](https://developer.apple.com/documentation/swiftdata/schema/attribute/option/externalstorage)。
 
-## 云交接的执行与恢复
+### 云交接的执行与恢复
 
 已完成交接、根未变化且无待交接标记时，在查找容器、读取 receipt、协调或枚举之前返回；快开 reuse/导入完成不再无条件调度交接。冷启动检查及真实新本地文件仍可启动待交接恢复。
 
@@ -151,7 +153,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`A
 
 回执中的路径、期望原始 SHA、复制状态、published、file id/关联/解码策略用于幂等恢复，不是另一套内容身份。运行时区分意图、已复制、已发布及旧格式中的不合法组合；旧字段照常编码，缺少复制凭据的回执不能删源。删源前在同次协调中重新核对源与目标字节；目标被逐出、不可读或已替换时保留源，源缺失仅允许已发布状态。账户隔离、完整源检查、同名冲突、路径越界和符号链接保护不变。完整定位规则见[SHA 关联](README.md#文件定位与-sha-关联)，调度原则见[性能设计](../engineering/performance.md)。
 
-## 同步 payload 的 v1 边界与隔离
+### 同步 payload 的 v1 边界与隔离
 
 发布后的扩展优先使用新 key / 新记录类型；不要向既有对象追加旧版会忽略的字段。改变既有意义的新类型（例如新的清除或合并规则）必须同时在相关作用域写一条旧版认识的高 `v` 标记，让旧版停止编辑该作用域。已发布的类型、key、作用域与排序元数据含义保持稳定。CloudKit 生产 schema 只增不删。
 
@@ -181,13 +183,13 @@ v1 key 白名单：`position/{contentKey}`、`opened/{contentKey}`（1.6 起的�
 
 阅读状态是独立字符串 key，未知字符串保留为带原值的 Other，不当作未读、不触发自动升级到“阅读中”，显示“其他（当前版本不支持）”。编辑作者等其他属性不写回状态；只有用户明确选择已支持状态才替换。AI `search_books` 状态过滤支持 `other`，未指定状态时为全部；写入建议仍只接受已知状态，不创造丢失原值的“其他”。
 
-### 并发语义与验证边界
+#### 并发语义与验证边界
 
 UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也遵循这一顺序。Swift 用户事实层的 `PositionCandidate.winner` 是位置的唯一胜者函数，即时投影、scoped 合并和 pending 晋升共用；投影保留 token，pending 别名归并到正文 SHA 后，每个 content key 只交给 Rust 一条最终位置，Rust 装载时拒绝重复 key。并发位置或同一独立属性互相覆盖是允许的产品语义，`v` 不能保全离线设备从未看到的新信息。需要保全的新数据必须拆为独立 key、独立不可变记录或显式字段级合并，不能声称“保留未知字段”就解决跨版本 LWW。批注沿用因果候选而非整对象 LWW，统计事实/清除是不可变记录。
 
 隔离状态依据**仍存在的无法理解记录**计算，不依据哪个 v1 候选最后到达；后到或时间戳更高的旧版记录不能解除隔离。验证必须经 UserDataStore/AppDataService 的真实保存链路，覆盖 v1→v2 与 v2→离线 v1 两种到达顺序、压缩/append/清除/pending、未知嵌套字段、缺失/null/错类型、整数精度与明确修改状态；本机模拟导入不等同于真实双设备 CloudKit 验收。
 
-## 整书阅读数据删除与备份恢复
+### 整书阅读数据删除与备份恢复
 
 整书清除删除当前 SwiftData 中所选正文 SHA 的全部物理候选/副本，由 CloudKit 镜像传播对象删除；不新增 book-reset、删除代次或同步 epoch，不要求所有设备升级。共享封面只有无剩余引用才删除，跨书/全局统计清除保留，配色和小说不动。本机保存成功不表示所有设备已完成删除；关闭同步时不承诺追溯删除未同步云记录。其他设备的新事实及主动导入旧备份允许保存，正常旧备份合并仍保留已有较新数据。
 
@@ -201,13 +203,13 @@ UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也�
 
 库存诊断区分较新格式、数据无法读取与读取失败（存储/查询异常）。阅读事实仅在可按已知结构读取到高 v 时明确标为较新格式，其他不支持结构仍隔离；只在确认为较新格式时建议更新。诊断只返回书键、可得书名/来源、记录类型和原因，不返回 payload。统计清除的 book 可以是正式 SHA 或非空 pending 键，旧作用域在库存、备份和整书删除中保持可读。
 
-## 1.3 同步进度与编码
+### 1.3 同步进度与编码
 
 以下为 #98/#99 的实现契约；兼容基线为已发布 1.2 (10) `6ceef33`。CloudKit schema 不变，不新增通用同步引擎。
 
-### 同步进度提示：同步位置更靠后时的非打断提示
+#### 同步进度提示：同步位置更靠后时的非打断提示
 
-#### 不增加位置同步字段的边界
+##### 不增加位置同步字段的边界
 
 PositionValue 仍是 `content_key/offset/source_hint`，StoredValue 仍是 `updated/token/value`。不添 device、maxOffset、远端位置数组，不修改 UserPosition/CloudKit schema，不改变 LWW。
 
@@ -217,7 +219,7 @@ PositionValue 仍是 `content_key/offset/source_hint`，StoredValue 仍是 `upda
 
 用户已确认该冷启动语义：有本机基线且同步胜者明显领先时，先留在本机上一位置并提示；无基线仍沿现有胜者恢复。不以一次升级伪造本机历史，也不新增用户设置开关。
 
-#### 决策与时序
+##### 决策与时序
 
 `Data/Restoration/ReadingContinuation.swift` 统一准备 ResumeContext；`ReaderSession` 只拥有可见提示、关闭和导航状态。
 
@@ -230,7 +232,7 @@ PositionValue 仍是 `content_key/offset/source_hint`，StoredValue 仍是 `upda
 
 “明显更靠后”由 **Rust navigation.rs 的一个查询方法**计算，复用真实有效章节和 reading_percentage，不在 Swift 用字节数自算比例。输入同 SHA 的本机 offset 与胜者 offset；输出是否提示、有效章节、百分比。确定阈值：严格 forward，且差额达到全文 1 个百分点，或至少一个有效章边界且差额达到 0.2 个百分点。章节尚未完成只在可信全文长度已有时按比例；否则延后判断，不拿当前准备字节作分母。阈值是已确认的产品参数，不做设置滑杆。
 
-#### 阅读交互与写入
+##### 阅读交互与写入
 
 在现有阅读工具区域显示紧凑、可点的提示条，不用 alert/sheet，不抢焦点、不播放声音；页面正文坐标不因提示进入而重排。关闭工具时可呈现底部轻提示，按正文安全区覆盖且可收起。旁白一次低优先级公告，不自动移动焦点；VoiceOver 使用时不自动超时消失。
 
@@ -240,9 +242,9 @@ PositionValue 仍是 `content_key/offset/source_hint`，StoredValue 仍是 `upda
 
 最小测试：Swift 固定候选与本机回执，验证不自动跳、不因重复通知重现、切书丢弃旧结果、首次布局不写旧值、跳转成功保留原点及失败保留原位；Rust 测明显领先与有效章节边界；修改/新增最多 1 条 UI 流程，覆盖“出现提示→跳过去→历史返回”。真实双设备测试验证云端时序，不能用本机注入代替。
 
-### 编码同步：编码选择属于原始字节
+#### 编码同步：编码选择属于原始字节
 
-#### 同步键、值与唯一归属
+##### 同步键、值与唯一归属
 
 采用新 `UserValue` 命名空间 `source-decoding/<raw_sha256>`，值 `{ "decoding": "gb18030" }` 或 `{ "decoding": "auto" }`；外层仍使用既有 v1 StoredValue envelope，不再加第二套时钟/版本。`decoding` 的合法化和规范拼写调用 Rust `normalize_source_decoding`，SHA 语法调用 `parse_sha256`。新增命名空间由 `UserSyncJSON.kind/validateValue` 识别并严格校验，不把任意编码标签字符串直接交给 UI。
 
@@ -255,7 +257,7 @@ PositionValue 仍是 `content_key/offset/source_hint`，StoredValue 仍是 `upda
 
 Swift `Data/Sources/SourceDecodingPreferences.swift` 统一编排“确定 rawSHA → 完成这条来源的旧值迁移 → 读取同步 winner”。Rust 继续负责原始摘要、编码规范和解码。迁移器只生产历史候选，正常解析只消费 UserDataStore 胜者，没有本机旧值参与第二轮裁决。
 
-#### 三条路径共用同一个编码判定
+##### 三条路径共用同一个编码判定
 
 共同接口 `resolveSourceDecoding(rawSHA) -> ResolvedDecoding`：有已识别同步值则返回其策略，没有则 auto；未知协议按现有隔离规则报告，不能当成不存在、不能改写默认。**没有 `legacyLocalSelection` 参数。** 用户明确改编码时，先通过唯一保存入口写真实新选择，再读其胜者用于重启；当前会话的任务描述仍冻结一次选定策略，不在流式解码途中切换。
 
@@ -267,7 +269,7 @@ hash 与解析跨 actor 时不得持 NSFileCoordinator accessor 同步等待 Mai
 
 同步编码改变只在下次开书/重建采用，不销毁正在阅读的会话。旧身份关联按现有解码变更失效规则处理；解码后只有 contentSHA 相同才恢复同组进度/批注，不迁移不同正文之间的阅读数据。
 
-#### 升级时一次性迁移旧手选（epoch 候选）
+##### 升级时一次性迁移旧手选（epoch 候选）
 
 迁移必须复用保留时钟/token 的候选接入：普通 put 会推进 updated，不能用于 epoch 旧值；既有 `(updated, token)` 决定胜者，迁移器不复制 LWW。
 
@@ -283,7 +285,7 @@ hash 与解析跨 actor 时不得持 NSFileCoordinator accessor 同步等待 Mai
 
 “一次性”指每条升级前选择只生产一个幂等历史候选，不是保证离线原文件在升级瞬间就能被 hash。迁移待办仅在升级和取得相应原文件时使用，迁移完成后没有两套偏好查找。所有设备同样按 epoch 导入，无专门的旧设备优先级。
 
-#### 发布、存储与备份
+##### 发布、存储与备份
 
 | 对象 | 定稿要求 |
 | --- | --- |
@@ -298,7 +300,7 @@ hash 与解析跨 actor 时不得持 NSFileCoordinator accessor 同步等待 Mai
 
 相关设备升级仍是版本说明中的建议，不再要求用户逐本确认旧手选才能迁移。迁移产生的编码事实也纳入导出全部；未能确定原始 SHA 的待办不伪装成已迁成功的同步事实。
 
-#### 必要迁移测试
+##### 必要迁移测试
 
 测试跟随唯一规则，不用真实时钟 sleep、不重复整套 LWW 矩阵：
 

@@ -123,6 +123,7 @@
         152000000000000000000001 /* ReaderFontLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152000000000000000000002; };
 		F13000000000000000000001 /* ReaderPresentationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13000000000000000000002 /* ReaderPresentationState.swift */; };
 		3D1C1E4B0133473A9A1C7DC4 /* ReaderToolSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383925FAF2394CAEBB958065 /* ReaderToolSession.swift */; };
+		75AC6A58A0F342E1BBCD5E39 /* ReaderNativeToolPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24876A02745446B988AAC7F8 /* ReaderNativeToolPresentation.swift */; };
         F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14100000000000000000002 /* ReaderSettingsStore.swift */; };
 		4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */; };
 		6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */; };
@@ -249,6 +250,9 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         AD1000000000000000000005 = {isa = PBXBuildFile; fileRef = AD2000000000000000000005; };
         AD1000000000000000000004 = {isa = PBXBuildFile; fileRef = AD2000000000000000000004; };
         AD1000000000000000000003 = {isa = PBXBuildFile; fileRef = AD2000000000000000000003; };
+        39D7C1FD293B4F679A79FD96 = {isa = PBXBuildFile; fileRef = 0D0965B74AE0467A91227A7C; };
+        34F12DF9BAFE4E998085F3FD = {isa = PBXBuildFile; fileRef = BDD21FDF37FC419990915D98; };
+        11BFB3022CB8470AB1230F9C = {isa = PBXBuildFile; fileRef = 0BF0665B40B94F05A6C9E334; };
         AD1000000000000000000002 = {isa = PBXBuildFile; fileRef = AD2000000000000000000002; };
         AD1000000000000000000001 = {isa = PBXBuildFile; fileRef = AD2000000000000000000001; };
         AC1000000000000000000001 = {isa = PBXBuildFile; fileRef = AC2000000000000000000001; };
@@ -257,6 +261,7 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         AC1000000000000000000004 = {isa = PBXBuildFile; fileRef = AC2000000000000000000004; };
         AC1000000000000000000006 = {isa = PBXBuildFile; fileRef = AC2000000000000000000006; };
 		A10000000000000000000001 /* MoonreadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MoonreadApp.swift */; };
+		6330E9327FF2417A990DB18A /* AppShellModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32EF7CA859B141099ECA688E /* AppShellModel.swift */; };
 		A10000000000000000000002 /* AppDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppDataService.swift */; };
 		A10000000000000000000003 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* LibraryView.swift */; };
 		A10000000000000000000004 /* ReaderScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* ReaderScreen.swift */; };
@@ -633,6 +638,7 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
         152000000000000000000002 /* ReaderFontLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontLibrary.swift"; sourceTree = "<group>"; };
 		F13000000000000000000002 /* ReaderPresentationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderPresentationState.swift"; sourceTree = "<group>"; };
 		383925FAF2394CAEBB958065 /* ReaderToolSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderToolSession.swift"; sourceTree = "<group>"; };
+		24876A02745446B988AAC7F8 /* ReaderNativeToolPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderNativeToolPresentation.swift"; sourceTree = "<group>"; };
         F14100000000000000000002 /* ReaderSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSettingsStore.swift"; sourceTree = "<group>"; };
 		80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProtectedFileAccess.swift"; sourceTree = "<group>"; };
 		B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SourceDecodingTests.swift"; sourceTree = "<group>"; };
@@ -763,6 +769,9 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         AD2000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderProgress.swift"; sourceTree = "<group>"; };
         AD2000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderDeviceControls.swift; sourceTree = "<group>"; };
         AD2000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderPreferences.swift"; sourceTree = "<group>"; };
+        0D0965B74AE0467A91227A7C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSettingsControls.swift"; sourceTree = "<group>"; };
+        BDD21FDF37FC419990915D98 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSettingsEditing.swift"; sourceTree = "<group>"; };
+        0BF0665B40B94F05A6C9E334 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderQuickSettings.swift"; sourceTree = "<group>"; };
         AD2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingTypography.swift"; sourceTree = "<group>"; };
         AD2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBackNavigation.swift"; sourceTree = "<group>"; };
         AC2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -772,6 +781,7 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         AC2000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
         AC2000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputFocus.swift; sourceTree = "<group>"; };
 		A20000000000000000000001 /* MoonreadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadApp.swift; sourceTree = "<group>"; };
+		32EF7CA859B141099ECA688E /* AppShellModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellModel.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* AppDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataService.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryView.swift"; sourceTree = "<group>"; };
 		A20000000000000000000004 /* ReaderScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderScreen.swift"; sourceTree = "<group>"; };
@@ -1179,6 +1189,7 @@ D35000000000000000000001,
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000001 /* MoonreadApp.swift */,
+				32EF7CA859B141099ECA688E /* AppShellModel.swift */,
 				C0A538254DAE463BA4801DAB /* MoonreadDelegate.swift */,
 			);
 			path = App;
@@ -1609,6 +1620,7 @@ D35000000000000000000001,
 				A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */,
 				F13000000000000000000002 /* ReaderPresentationState.swift */,
 				383925FAF2394CAEBB958065 /* ReaderToolSession.swift */,
+				24876A02745446B988AAC7F8 /* ReaderNativeToolPresentation.swift */,
 				3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */,
 			);
 			path = "Presentation";
@@ -1725,6 +1737,9 @@ D35000000000000000000001,
 			isa = PBXGroup;
 			children = (
 				AD2000000000000000000003 /* ReaderPreferences.swift */,
+				0D0965B74AE0467A91227A7C /* ReadingSettingsControls.swift */,
+				BDD21FDF37FC419990915D98 /* ReadingSettingsEditing.swift */,
+				0BF0665B40B94F05A6C9E334 /* ReaderQuickSettings.swift */,
 				4E5FFA7219F463F7E5C1509C /* ReaderSettingsCache.swift */,
 				F14100000000000000000002 /* ReaderSettingsStore.swift */,
 				B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */,
@@ -2523,6 +2538,7 @@ F01900000000000000000001,
 				D14015000000000000000001 /* NoteDocument.swift in Sources */,
 				87B3FE2BFDD04847AE5A02CA /* ReaderLibrarySheet.swift in Sources */,
 				3D1C1E4B0133473A9A1C7DC4 /* ReaderToolSession.swift in Sources */,
+				75AC6A58A0F342E1BBCD5E39 /* ReaderNativeToolPresentation.swift in Sources */,
 				F13000000000000000000001 /* ReaderPresentationState.swift in Sources */,
 				48A7297CFF794C178D1242D0 /* ReaderBattery.swift in Sources */,
 				308165AED1DF4230A31FF52B /* ReaderEncodingMenu.swift in Sources */,
@@ -2548,6 +2564,7 @@ F01900000000000000000001,
 				BC404FD2C78B4E67B20B56A2 /* StatisticsSettingsView.swift in Sources */,
 				180EAB5E6B1F402795800E0D /* StatisticsSessionsView.swift in Sources */,
 				A10000000000000000000001 /* MoonreadApp.swift in Sources */,
+				6330E9327FF2417A990DB18A /* AppShellModel.swift in Sources */,
                 AC1000000000000000000001,
                 AC1000000000000000000002,
                 F01600000000000000000001,
@@ -2569,6 +2586,9 @@ F01900000000000000000001,
                 AD1000000000000000000001,
                 AD1000000000000000000002,
                 AD1000000000000000000003,
+                39D7C1FD293B4F679A79FD96,
+                34F12DF9BAFE4E998085F3FD,
+                11BFB3022CB8470AB1230F9C,
                 F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */,
                 F15200000000000000000005 /* ReaderBuiltinFonts.swift in Sources */,
                 152000000000000000000003 /* ReaderFontPicker.swift in Sources */,
