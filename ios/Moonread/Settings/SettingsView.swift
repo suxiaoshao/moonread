@@ -210,8 +210,9 @@ private struct SettingsEntry: View {
     @Environment(\.theme) private var theme
     @ScaledMetric(relativeTo: .body) private var iconSize = 20.0
     var body: some View {
-        let titleColor = Color(uiColor: selected ? theme.onAccent : theme.ink)
-        let detailColor = Color(uiColor: selected ? theme.onAccent : theme.secondary)
+        // The regular-width sidebar draws its own selection background.
+        let titleColor = selected ? Color.primary : Color(uiColor: theme.ink)
+        let detailColor = selected ? Color.primary : Color(uiColor: theme.secondary)
         HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: iconSize))
                 .frame(width: iconSize + 6).foregroundStyle(detailColor)
