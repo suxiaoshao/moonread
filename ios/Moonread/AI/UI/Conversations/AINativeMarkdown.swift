@@ -217,7 +217,7 @@ final class AINativeMarkdownView: MarkdownTextView {
             return copy
         }
         let range = NSRange(location: 0, length: document.length)
-        // MarkdownView 4.8.3 represents emphasis as an underline, including CJK.
+        // The pinned MarkdownView renderer represents emphasis as an underline, including CJK.
         document.enumerateAttribute(.underlineStyle, in: range) { value, span, _ in
             guard value != nil else { return }
             output().removeAttribute(.underlineStyle, range: span)

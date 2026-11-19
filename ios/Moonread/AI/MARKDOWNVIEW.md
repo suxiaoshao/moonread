@@ -1,6 +1,6 @@
 # MarkdownView 验证依赖
 
-第一步 UIKit 文本块验证使用 [Lakr233/MarkdownView 4.8.3](https://github.com/Lakr233/MarkdownView/tree/4.8.3)，SPM 固定精确版本，源码提交 `00bcbc12a58601b407f379deb06791fe02fa1e31`。MIT 原文见 [MARKDOWNVIEW-LICENSE.txt](MARKDOWNVIEW-LICENSE.txt)。传递依赖以 Package.resolved 为准。
+当前 UIKit 文本块使用 [Lakr233/MarkdownView 4.8.5](https://github.com/Lakr233/MarkdownView/tree/4.8.5)，SPM 固定精确版本，源码提交 `3941f1857005d648f452fd1bfbdbe01d37961fd2`。MIT 原文见 [MARKDOWNVIEW-LICENSE.txt](MARKDOWNVIEW-LICENSE.txt)。Litext 以 3.6.7 为基线重放隐私清单，经 workspace mirror 锁定 `cabc9c669e04f9e84629c867554a1660cd69b5da`。swift-collections 以传递依赖锁定 1.7.6。
 
 仅使用 MIT 库 API。FlowDown 为 AGPL，仅阅读缓存、测量和保留视图的设计思路，没有复制其源码。ListViewKit 属于尚待用户决定的第二步，当前未接入。
 

@@ -13,7 +13,7 @@ Source: https://github.com/groue/GRDB.swift/tree/92a554cd0d5e8d67cb18993c6054e73
 Text: 9853f9dce81365fc
 
 Swift litext/LICENSE
-Source: https://github.com/suxiaoshao/Litext/tree/c1d74fe65557534e01301a58a8617fddc0e88992
+Source: https://github.com/suxiaoshao/Litext/tree/cabc9c669e04f9e84629c867554a1660cd69b5da
 Text: a8069924c2b66187
 
 Swift lrucache/LICENSE.md
@@ -21,7 +21,7 @@ Source: https://github.com/nicklockwood/LRUCache/tree/f0570e943ea4445d258113ba73
 Text: cc59ff976bc63961
 
 Swift markdownview/LICENSE
-Source: https://github.com/Lakr233/MarkdownView/tree/00bcbc12a58601b407f379deb06791fe02fa1e31
+Source: https://github.com/Lakr233/MarkdownView/tree/3941f1857005d648f452fd1bfbdbe01d37961fd2
 Text: 7daf1f9f7da3de2e
 
 Swift swift-ai-sdk/LICENSE
@@ -37,7 +37,7 @@ Source: https://github.com/swiftlang/swift-cmark/tree/08ddb528923cc1a6527e02b7a1
 Text: c22e885f33b821bd
 
 Swift swift-collections/LICENSE.txt
-Source: https://github.com/apple/swift-collections/tree/3b69cedbaa49957e97c092ae400bb57602ef941f
+Source: https://github.com/apple/swift-collections/tree/88754449ab766a739610b660e117762115fabc9c
 Text: 770af8291f708538
 
 Swift swiftmath/LICENSE

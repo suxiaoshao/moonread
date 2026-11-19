@@ -2740,8 +2740,8 @@ F01900000000000000000001,
 /* Begin XCRemoteSwiftPackageReference section */
         270E40000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/apollographql/apollo-ios"; requirement = {kind = exactVersion; version = 2.5.0;};};
         270D00000000000000000041 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/groue/GRDB.swift"; requirement = {kind = exactVersion; version = 7.12.0;};};
-AP3000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Lakr233/Litext"; requirement = {kind = revision; revision = c1d74fe65557534e01301a58a8617fddc0e88992;};};
-FB3000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Lakr233/MarkdownView"; requirement = {kind = exactVersion; version = 4.8.3;};};
+AP3000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Lakr233/Litext"; requirement = {kind = revision; revision = cabc9c669e04f9e84629c867554a1660cd69b5da;};};
+FB3000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Lakr233/MarkdownView"; requirement = {kind = exactVersion; version = 4.8.5;};};
 D33000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/suxiaoshao/swift-ai-sdk"; requirement = {kind = revision; revision = 9843cba7de6c2a0f1a042a4f3b1facc8af910a82;};};
 /* End XCRemoteSwiftPackageReference section */
 /* Begin XCSwiftPackageProductDependency section */
