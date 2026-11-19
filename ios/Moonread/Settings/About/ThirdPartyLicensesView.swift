@@ -13,10 +13,10 @@ enum ThirdPartyNotices {
         var url: URL { URL(string: "https://crates.io/crates/\(id)/\(version)")! }
     }
     static let mplSources = [
-        Source(id: "cssparser", version: "0.37.0"),
+        Source(id: "cssparser", version: "0.38.0"),
         Source(id: "cssparser-macros", version: "0.7.1"),
         Source(id: "dtoa-short", version: "0.3.5"),
-        Source(id: "selectors", version: "0.38.0"),
+        Source(id: "selectors", version: "0.41.0"),
     ] + ["uniffi", "uniffi_bindgen", "uniffi_core", "uniffi_internal_macros", "uniffi_macros", "uniffi_meta", "uniffi_pipeline", "uniffi_udl"]
         .map { Source(id: $0, version: "0.32.2") }
 
