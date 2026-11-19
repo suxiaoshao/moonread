@@ -158,8 +158,11 @@ import XCTest
     ready(file(sample))
     app.terminate()
     app.launch()
-    shelf()
-    open()
+    let card = ready(file(sample))
+    XCTAssertTrue(card.label.hasPrefix("继续阅读"))
+    XCTAssertTrue((card.value as? String)?.contains("%") == true)
+    card.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)).tap()
+    readableBody()
     waitUntil { self.anchor() == saved }
   }
   func testU05DeleteOnlySelectedBook() {
