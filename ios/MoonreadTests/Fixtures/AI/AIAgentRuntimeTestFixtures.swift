@@ -20,15 +20,15 @@ import XCTest
   }
 }
 
-actor AgentModel: LanguageModelV3 {
+actor AgentModel: LanguageModelV4 {
   nonisolated let provider = "fixture"
   nonisolated let modelId = "fixture"
-  var requests: [LanguageModelV3CallOptions] = []
-  let responses: [[LanguageModelV3StreamPart]]
-  init(_ responses: [[LanguageModelV3StreamPart]]) { self.responses = responses }
-  func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult
+  var requests: [LanguageModelV4CallOptions] = []
+  let responses: [[LanguageModelV4StreamPart]]
+  init(_ responses: [[LanguageModelV4StreamPart]]) { self.responses = responses }
+  func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult
   { throw AIAgentFailure.invalidResponse }
-  func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+  func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
     requests.append(options)
     let parts = responses[min(requests.count - 1, responses.count - 1)]
     return .init(
@@ -77,7 +77,7 @@ struct SessionImageOutput: Codable, Sendable { var attachment: AIImageAttachment
     addTeardownBlock { await AIImageStore.shared.forget(id) }
     return repository
   }
-  func text(_ value: String) -> [LanguageModelV3StreamPart] {
+  func text(_ value: String) -> [LanguageModelV4StreamPart] {
     [
       .streamStart(warnings: []), .textStart(id: "t", providerMetadata: nil),
       .textDelta(id: "t", delta: value, providerMetadata: nil),
@@ -85,7 +85,7 @@ struct SessionImageOutput: Codable, Sendable { var attachment: AIImageAttachment
       .finish(finishReason: .init(unified: .stop), usage: .init(), providerMetadata: nil),
     ]
   }
-  func call(_ id: String = "call", input: String = "{}") -> [LanguageModelV3StreamPart] {
+  func call(_ id: String = "call", input: String = "{}") -> [LanguageModelV4StreamPart] {
     [
       .streamStart(warnings: []),
       .toolCall(.init(toolCallId: id, toolName: "lookup", input: input)),

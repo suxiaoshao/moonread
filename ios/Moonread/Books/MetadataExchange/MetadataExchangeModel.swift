@@ -533,11 +533,7 @@ import GRDB
             let handle = try FileHandle(forWritingTo: url); defer { try? handle.close() }
             let encoder = JSONEncoder(); encoder.keyEncodingStrategy = .convertToSnakeCase
             for item in diagnostics {
-                struct Diagnostic: Encodable {
-                    let sourceLine: UInt64?, recordIndex: UInt64?
-                    let code: String, field: String?, contentSha256: String?, message: String
-                }
-                try handle.write(contentsOf: encoder.encode(Diagnostic(sourceLine: item.sourceLine, recordIndex: item.recordIndex, code: item.code, field: item.field, contentSha256: item.contentSha256, message: item.message)))
+                try handle.write(contentsOf: encoder.encode(MetadataDiagnosticPayload(item)))
                 try handle.write(contentsOf: Data([10]))
             }
             return [url]

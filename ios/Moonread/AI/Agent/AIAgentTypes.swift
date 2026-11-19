@@ -1,6 +1,7 @@
 import AISDKProvider
 import AISDKProviderUtils
 import Foundation
+import Synchronization
 import SwiftAISDK
 
 // Apollo also exports a JSONValue alias. AI messages use the provider wire value.
@@ -130,8 +131,8 @@ struct AIAgentEntry: Codable, Equatable, Sendable, Identifiable {
 struct AIAgentConfiguration: Sendable {
   var provider: String
   var modelID: String
-  var model: any LanguageModelV3
-  var system: String
+  var model: any LanguageModelV4
+  var system: String?
   var options: ProviderOptions = [:]
   var summaryOptions: ProviderOptions?
   var contextWindow: Int
@@ -188,7 +189,7 @@ struct AIAgentTool: Sendable {
     self.enabled = enabled
     schema = Input.schema
     let typed: TypedTool<Input, Output> = SwiftAISDK.tool(
-      description: description,
+      description: .text(description),
       inputSchema: FlexibleSchema.jsonSchema(Input.schema, as: Input.self),
       execute: { (input: Input, _) async throws -> Output in
         try input.validate()
@@ -197,7 +198,7 @@ struct AIAgentTool: Sendable {
     // The SDK's typed wrapper decodes Codable; the erased schema sent to
     // streamText uses its JSON Schema validator for bounds and unknown fields.
     sdkTool = AISDKProviderUtils.tool(
-      description: description, inputSchema: FlexibleSchema(jsonSchema(Input.schema)),
+      description: .text(description), inputSchema: FlexibleSchema(jsonSchema(Input.schema)),
       strict: false, execute: typed.tool.execute)
     self.confirmation = { value in
       let input = try JSONDecoder().decode(Input.self, from: JSONEncoder().encode(value))
@@ -208,17 +209,24 @@ struct AIAgentTool: Sendable {
   }
 }
 
+/// A request-scoped signal shared with the SDK's stream tasks.
+final class AIStreamAbort: Sendable {
+  private let stopped = Mutex(false)
+  var isAborted: Bool { stopped.withLock { $0 } }
+  func cancel() { stopped.withLock { $0 = true } }
+}
+
 /// prepareStep can replace the model but not CallSettings. Enforce the selected
 /// model's output limit at the actual provider call, including mid-loop switches.
-struct AIAgentBoundedModel: LanguageModelV3 {
-  let base: any LanguageModelV3
+struct AIAgentBoundedModel: LanguageModelV4 {
+  let base: any LanguageModelV4
   let outputLimit: Int
   var provider: String { base.provider }
   var modelId: String { base.modelId }
   var supportedUrls: [String: [NSRegularExpression]] {
     get async throws { try await base.supportedUrls }
   }
-  private func bounded(_ o: LanguageModelV3CallOptions) -> LanguageModelV3CallOptions {
+  private func bounded(_ o: LanguageModelV4CallOptions) -> LanguageModelV4CallOptions {
     var limit = min(o.maxOutputTokens ?? outputLimit, outputLimit)
     var options = o.providerOptions ?? [:]
     // The pinned Anthropic SDK adds manual thinking tokens to maxOutputTokens.
@@ -237,13 +245,13 @@ struct AIAgentBoundedModel: LanguageModelV3 {
       presencePenalty: o.presencePenalty, frequencyPenalty: o.frequencyPenalty,
       responseFormat: o.responseFormat,
       seed: o.seed, tools: o.tools, toolChoice: o.toolChoice, includeRawChunks: o.includeRawChunks,
-      abortSignal: o.abortSignal, headers: o.headers, providerOptions: options)
+      abortSignal: o.abortSignal, headers: o.headers, reasoning: o.reasoning, providerOptions: options)
   }
-  func doGenerate(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3GenerateResult
+  func doGenerate(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4GenerateResult
   {
     try await base.doGenerate(options: bounded(options))
   }
-  func doStream(options: LanguageModelV3CallOptions) async throws -> LanguageModelV3StreamResult {
+  func doStream(options: LanguageModelV4CallOptions) async throws -> LanguageModelV4StreamResult {
     try await base.doStream(options: bounded(options))
   }
 }

@@ -504,13 +504,13 @@ private extension View {
 // The transparent marker exposes the actual header bounds to local frame diagnostics.
 private struct AIProcessHeaderGeometry: UIViewRepresentable {
     let id: String
-    func makeUIView(context: Context) -> UIView {
+    func makeUIView(context: UIViewRepresentableContext<Self>) -> UIView {
         let view = UIView()
         view.isUserInteractionEnabled = false
         view.accessibilityIdentifier = "aiHeaderGeometry-" + id
         return view
     }
-    func updateUIView(_ view: UIView, context: Context) {}
+    func updateUIView(_ view: UIView, context: UIViewRepresentableContext<Self>) {}
 }
 
 #endif

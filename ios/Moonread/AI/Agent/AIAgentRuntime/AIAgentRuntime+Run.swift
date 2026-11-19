@@ -41,7 +41,6 @@ extension AIAgentRuntime {
         configuration = try await resolve()
         try await transact { $0.activeModel = self.configuration?.modelID; $0.activeThinking = $0.selection?.thinking; return [] }
         guard let config = configuration else { throw AIAgentFailure.invalidResponse }
-        responseCount = 0
         committedStepCount = 0
         clearLiveOutput(resetCursor: true)
         inFlightCalls = []
@@ -50,19 +49,22 @@ extension AIAgentRuntime {
         forceCompression = false
         let toolsBeforeRequest = toolCount
         do {
-          let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
-            model: .v3(AIAgentBoundedModel(base: config.model, outputLimit: requestOutputLimit)), system: config.system, messages: input,
+          let abort = AIStreamAbort()
+          stopStream = { abort.cancel() }
+          let result = try streamText(
+            model: AIAgentBoundedModel(base: config.model, outputLimit: requestOutputLimit),
             tools: toolSet(),
+            instructions: config.system.map(Instructions.text), messages: input,
+            stopWhen: [{ [weak self] _ in await self?.shouldStop() ?? true }],
             providerOptions: config.options,
             prepareStep: { [weak self] options in
               guard let self else { throw CancellationError() }
               return try await self.prepare(options)
-            }, stopWhen: [{ [weak self] _ in await self?.shouldStop() ?? true }],
-            onError: { _ in },
+            },
+            onError: { _ in nil },
             settings: .init(
               maxOutputTokens: config.maxOutput,
-              maxRetries: 0))
-          stopStream = { result.stop() }
+              maxRetries: 0, abortSignal: { abort.isAborted }))
           var finished = false
           var lastReason = ""
           for try await event in result.fullStream {
@@ -73,7 +75,7 @@ extension AIAgentRuntime {
               observe(.init(status: head.status))
             case .textStart(let spanID, let metadata):
               openPart(.text, id: spanID, metadata: metadata)
-            case .textEnd(let spanID, let metadata):
+            case .textEnd(let spanID, let metadata, _):
               appendPart(.text, id: spanID, text: "", metadata: metadata)
             case .toolCall(let call):
               openPart(.tool, id: call.toolCallId)
@@ -193,10 +195,12 @@ extension AIAgentRuntime {
     guard let config = configuration else { throw AIAgentFailure.invalidResponse }
     try await config.authorize()
     let messages = try await inputMessages(config)
+    // An unset override would retain the previous step's instructions.
+    let instructions = config.system.map(Instructions.text) ?? options.instructions.map { _ in .messages([]) }
     return .init(
-      model: .v3(AIAgentBoundedModel(base: config.model, outputLimit: requestOutputLimit)),
+      model: AIAgentBoundedModel(base: config.model, outputLimit: requestOutputLimit),
       activeTools: config.supportsTools ? definitions.filter { $0.enabled() }.map(\.name).sorted() : [],
-      system: config.system, messages: messages, providerOptions: config.options)
+      instructions: instructions, messages: messages, providerOptions: config.options)
   }
 
 }

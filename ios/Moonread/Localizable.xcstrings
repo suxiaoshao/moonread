@@ -8794,22 +8794,6 @@
         }
       }
     },
-    "SQLite / rusqlite": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SQLite / rusqlite"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SQLite / rusqlite"
-          }
-        }
-      }
-    },
     "Serde": {
       "localizations": {
         "en": {

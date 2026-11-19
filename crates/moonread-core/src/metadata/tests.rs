@@ -1,18 +1,119 @@
 use super::*;
 use serde_json::json;
-use std::fs;
+use std::{
+    collections::HashMap,
+    io::{Cursor, Seek, SeekFrom, Write},
+    sync::{Arc, Mutex},
+};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
-fn inspect(text: &str, suffix: &str) -> (tempfile::TempDir, std::sync::Arc<MetadataDocument>) {
-    let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join(format!("input.{suffix}"));
-    fs::write(&path, text).unwrap();
-    let doc = inspect_metadata_exchange(
-        path.to_string_lossy().into(),
-        temp.path().join("stage").to_string_lossy().into(),
-    )
-    .unwrap();
-    (temp, doc)
+#[derive(Default)]
+struct Bytes(Mutex<Vec<u8>>);
+
+impl Bytes {
+    fn from(bytes: impl Into<Vec<u8>>) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(bytes.into())))
+    }
 }
+
+impl MetadataInput for Bytes {
+    fn length(&self) -> u64 {
+        self.0.lock().unwrap().len() as u64
+    }
+
+    fn read(&self, offset: u64, count: u32) -> crate::Result<Vec<u8>> {
+        let data = self.0.lock().unwrap();
+        let offset = (offset as usize).min(data.len());
+        let end = (offset + count as usize).min(data.len());
+        Ok(data[offset..end].to_vec())
+    }
+}
+
+impl MetadataOutput for Bytes {
+    fn write(&self, offset: u64, bytes: Vec<u8>) -> crate::Result<()> {
+        let mut data = self.0.lock().unwrap();
+        let mut cursor = Cursor::new(&mut *data);
+        cursor.seek(SeekFrom::Start(offset))?;
+        cursor.write_all(&bytes)?;
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+struct Stage {
+    books: Mutex<Vec<(MetadataBook, Option<u64>, u64)>>,
+    diagnostics: Mutex<Vec<MetadataDiagnostic>>,
+    members: Mutex<HashMap<String, Arc<Bytes>>>,
+}
+
+impl MetadataStagingSink for Stage {
+    fn record(
+        &self,
+        sha: String,
+        payload: String,
+        source_line: Option<u64>,
+        record_index: u64,
+    ) -> crate::Result<()> {
+        let book = decode_staged_metadata_book(payload)?;
+        assert_eq!(sha, book.content_sha256);
+        self.books
+            .lock()
+            .unwrap()
+            .push((book, source_line, record_index));
+        Ok(())
+    }
+
+    fn diagnostic(&self, diagnostic: MetadataDiagnostic) -> crate::Result<()> {
+        self.diagnostics.lock().unwrap().push(diagnostic);
+        Ok(())
+    }
+
+    fn has_cover(&self, name: String) -> bool {
+        self.members.lock().unwrap().contains_key(&name)
+    }
+}
+
+impl MetadataArchiveOutput for Stage {
+    fn create_member(&self, name: String) -> crate::Result<Arc<dyn MetadataOutput>> {
+        let bytes = Arc::new(Bytes::default());
+        self.members.lock().unwrap().insert(name, bytes.clone());
+        Ok(bytes)
+    }
+}
+
+impl MetadataArchiveInput for Stage {
+    fn open_member(&self, name: String) -> crate::Result<Arc<dyn MetadataInput>> {
+        Ok(self.members.lock().unwrap()[&name].clone())
+    }
+}
+
+fn inspect(text: &str, format: MetadataFormat) -> Arc<Stage> {
+    let stage = Arc::new(Stage::default());
+    parse_metadata_manifest(Bytes::from(text), format, false, stage.clone()).unwrap();
+    stage
+}
+
+fn inspect_archive(input: Arc<Bytes>) -> crate::Result<Arc<Stage>> {
+    let stage = Arc::new(Stage::default());
+    let manifest = unpack_metadata_archive(input, stage.clone(), stage.clone())?;
+    parse_metadata_manifest(
+        stage.open_member(manifest.name)?,
+        manifest.format,
+        true,
+        stage.clone(),
+    )?;
+    Ok(stage)
+}
+
+fn archive(names: &[&str]) -> Arc<Bytes> {
+    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+    for name in names {
+        zip.start_file(*name, SimpleFileOptions::default()).unwrap();
+        zip.write_all(b"{}").unwrap();
+    }
+    Bytes::from(zip.finish().unwrap().into_inner())
+}
+
 fn book() -> serde_json::Value {
     json!({"v":1,"content_sha256":"a".repeat(64),"author":"林舟","tags":["短篇"]})
 }
@@ -27,15 +128,13 @@ fn jsonl_isolates_bad_lines_capabilities_and_ignores_readonly_references() {
         json!({"match":{"path":"../../not-a-selector"},"author":"never written"});
     readonly["future_field"] = json!(42);
     let text = format!("\u{feff}\n{}\r\n{{bad}}\n{}\n{}", valid, unknown, readonly);
-    let (_tmp, doc) = inspect(&text, "jsonl");
-    let summary = doc.summary().unwrap();
-    assert_eq!(summary.books, 1);
-    assert_eq!(summary.variants, 1);
-    let rows = doc.records(None, 0, 100).unwrap();
-    assert_eq!(rows.records[0].duplicates, 2);
-    assert!(rows.records[0].book.reference.is_none());
-    assert_eq!(rows.records[0].source_line, Some(2));
-    let d = doc.diagnostics(0, 100).unwrap().diagnostics;
+    let stage = inspect(&text, MetadataFormat::Jsonl);
+    let records = stage.books.lock().unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].0, records[1].0);
+    assert!(records[0].0.reference.is_none());
+    assert_eq!(records[0].1, Some(2));
+    let d = stage.diagnostics.lock().unwrap();
     assert!(
         d.iter()
             .any(|v| v.code == "invalid_json" && v.source_line == Some(3))
@@ -47,17 +146,13 @@ fn jsonl_isolates_bad_lines_capabilities_and_ignores_readonly_references() {
     assert!(d.iter().any(|v| v.code == "unknown_field"));
     let mut private_key = book();
     private_key["/private/source-or-secret-key"] = json!("not logged");
-    let (_private_dir, private_doc) = inspect(&private_key.to_string(), "jsonl");
-    let diagnostic = private_doc
-        .diagnostics(0, 10)
-        .unwrap()
-        .diagnostics
-        .remove(0);
+    let private_doc = inspect(&private_key.to_string(), MetadataFormat::Jsonl);
+    let diagnostic = private_doc.diagnostics.lock().unwrap().remove(0);
     assert!(diagnostic.field.is_none());
     assert!(!diagnostic.message.contains("private"));
     for bad in ["{\"v\":1,\"v\":1}", "{\"v\":1,\"content_sha256\":null}"] {
-        let (_temp, doc) = inspect(bad, "jsonl");
-        assert_eq!(doc.summary().unwrap().books, 0);
+        let stage = inspect(bad, MetadataFormat::Jsonl);
+        assert!(stage.books.lock().unwrap().is_empty());
     }
 }
 
@@ -74,8 +169,8 @@ fn json_stream_and_writer_use_published_schema_and_roundtrip_samples() {
     ))
     .unwrap();
     assert!(validator.is_valid(&example));
-    let (_example_dir, example_doc) = inspect(&example.to_string(), "json");
-    assert!(example_doc.summary().unwrap().books > 0);
+    let example_stage = inspect(&example.to_string(), MetadataFormat::Json);
+    assert!(!example_stage.books.lock().unwrap().is_empty());
     for line in include_str!(
         "../../../../docs/site/static/skills/moonread-metadata/examples/metadata.jsonl"
     )
@@ -84,40 +179,32 @@ fn json_stream_and_writer_use_published_schema_and_roundtrip_samples() {
     {
         let value: serde_json::Value = serde_json::from_str(line).unwrap();
         assert!(validator.is_valid(&value));
-        let (_dir, document) = inspect(line, "jsonl");
-        assert_eq!(document.summary().unwrap().books, 1);
+        let stage = inspect(line, MetadataFormat::Jsonl);
+        assert_eq!(stage.books.lock().unwrap().len(), 1);
     }
     let value = json!({"format":"moonread-metadata","version":1,"books":[book()]});
     assert!(validator.is_valid(&value));
-    let (tmp, doc) = inspect(&value.to_string(), "json");
-    let b = doc.records(None, 0, 1).unwrap().records.remove(0).book;
+    let stage = inspect(&value.to_string(), MetadataFormat::Json);
+    let (b, source_line, index) = stage.books.lock().unwrap().remove(0);
+    assert_eq!(source_line, None);
+    assert_eq!(index, 0);
     assert!(validator.is_valid(&serde_json::to_value(&b).unwrap()));
     for format in [MetadataFormat::Json, MetadataFormat::Jsonl] {
-        let path = tmp.path().join(if format == MetadataFormat::Json {
-            "out.json"
-        } else {
-            "out.jsonl"
-        });
-        let writer = create_metadata_writer(path.to_string_lossy().into(), format, false).unwrap();
+        let output = Arc::new(Bytes::default());
+        let writer = create_metadata_writer(output.clone(), format, false).unwrap();
         writer.append(b.clone()).unwrap();
         writer.finish().unwrap();
-        let other = inspect_metadata_exchange(
-            path.to_string_lossy().into(),
-            tmp.path().join("stage").to_string_lossy().into(),
-        )
-        .unwrap();
-        assert_eq!(other.summary().unwrap().books, 1);
+        let other = Arc::new(Stage::default());
+        parse_metadata_manifest(output, format, false, other.clone()).unwrap();
+        assert_eq!(other.books.lock().unwrap()[0].0, b);
     }
-    let path = tmp.path().join("bad.json");
-    fs::write(
-        &path,
-        "{\"format\":\"moonread-metadata\",\"version\":1,\"books\":[],\"books\":[]}",
-    )
-    .unwrap();
+    let duplicate_keys = r#"{"format":"moonread-metadata","version":1,"books":[],"books":[]}"#;
     assert!(
-        inspect_metadata_exchange(
-            path.to_string_lossy().into(),
-            tmp.path().join("stage").to_string_lossy().into()
+        parse_metadata_manifest(
+            Bytes::from(duplicate_keys),
+            MetadataFormat::Json,
+            false,
+            Arc::new(Stage::default()),
         )
         .is_err()
     );
@@ -125,76 +212,47 @@ fn json_stream_and_writer_use_published_schema_and_roundtrip_samples() {
 
 #[test]
 fn metadata_zip_reuses_safety_and_missing_cover_only_blocks_cover() {
-    use std::io::Write;
-    use zip::{ZipWriter, write::SimpleFileOptions};
-    let tmp = tempfile::tempdir().unwrap();
     for unsafe_name in [
         "../outside",
         "/outside",
         "covers/../outside",
         "covers\\outside",
     ] {
-        let path = tmp.path().join("bad.moonread-metadata");
-        let mut zip = ZipWriter::new(fs::File::create(&path).unwrap());
-        zip.start_file(unsafe_name, SimpleFileOptions::default())
-            .unwrap();
-        zip.write_all(b"bad").unwrap();
-        zip.finish().unwrap();
-        assert!(
-            inspect_metadata_exchange(
-                path.to_string_lossy().into(),
-                tmp.path().join("stage").to_string_lossy().into()
-            )
-            .is_err()
-        );
+        assert!(inspect_archive(archive(&[unsafe_name])).is_err());
     }
     let mut b = book();
     b["cover"] = json!("covers/missing.png");
-    let (_tmp, doc) = inspect(&b.to_string(), "jsonl");
-    let page = doc.records(None, 0, 1).unwrap();
-    assert_eq!(page.records[0].book.author.as_deref(), Some("林舟"));
-    assert!(page.records[0].book.cover.is_none());
+    let stage = inspect(&b.to_string(), MetadataFormat::Jsonl);
+    let records = stage.books.lock().unwrap();
+    assert_eq!(records[0].0.author.as_deref(), Some("林舟"));
+    assert!(records[0].0.cover.is_none());
     assert_eq!(
-        doc.diagnostics(0, 10).unwrap().diagnostics[0].code,
+        stage.diagnostics.lock().unwrap()[0].code,
         "cover_unavailable"
     );
     for names in [
-        vec!["metadata.json", "metadata.jsonl"],
-        vec!["covers/A.png", "covers/a.png"],
+        ["metadata.json", "metadata.jsonl"],
+        ["covers/A.png", "covers/a.png"],
     ] {
-        let path = tmp.path().join("collisions.zip");
-        let mut zip = ZipWriter::new(fs::File::create(&path).unwrap());
-        for name in names {
-            zip.start_file(name, SimpleFileOptions::default()).unwrap();
-            zip.write_all(b"{}").unwrap();
-        }
-        zip.finish().unwrap();
-        assert!(
-            inspect_metadata_exchange(
-                path.to_string_lossy().into(),
-                tmp.path().join("stage").to_string_lossy().into()
-            )
-            .is_err()
-        );
+        assert!(inspect_archive(archive(&names)).is_err());
     }
-    let root = tmp.path().join("export");
-    fs::create_dir(&root).unwrap();
-    fs::write(root.join("metadata.jsonl"), book().to_string()).unwrap();
-    let package = tmp.path().join("good.moonread-metadata");
-    write_metadata_archive(
-        root.to_string_lossy().into(),
-        package.to_string_lossy().into(),
-    )
-    .unwrap();
+
+    let stage = Arc::new(Stage::default());
+    let name = String::from("metadata.jsonl");
+    stage
+        .members
+        .lock()
+        .unwrap()
+        .insert(name.clone(), Bytes::from(book().to_string()));
+    let package = Arc::new(Bytes::default());
+    encode_metadata_archive(vec![name], stage, package.clone()).unwrap();
     assert_eq!(
-        inspect_metadata_exchange(
-            package.to_string_lossy().into(),
-            tmp.path().join("stage").to_string_lossy().into()
-        )
-        .unwrap()
-        .summary()
-        .unwrap()
-        .books,
+        inspect_archive(package)
+            .unwrap()
+            .books
+            .lock()
+            .unwrap()
+            .len(),
         1
     );
 }

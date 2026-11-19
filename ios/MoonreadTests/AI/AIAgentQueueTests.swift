@@ -49,7 +49,8 @@ final class AIAgentQueueAgentRuntimeTests: AgentRuntimeFixture {
     let first = AgentModel([call()])
     let second = AgentModel([text("新模型回答")])
     let firstConfig = config(first)
-    let secondConfig = config(second)
+    var secondConfig = config(second)
+    secondConfig.system = nil
     var selected = firstConfig
     var requestID: String?
     let runtime = try await AIAgentRuntime(
@@ -70,6 +71,8 @@ final class AIAgentQueueAgentRuntimeTests: AgentRuntimeFixture {
     let two = await second.count
     XCTAssertEqual(one, 1)
     XCTAssertEqual(two, 1)
+    let prompt = await second.requests.first?.prompt
+    XCTAssertFalse(try XCTUnwrap(prompt).contains { if case .system = $0 { true } else { false } })
     let entries = try await runtime.history()
     let json = String(decoding: try JSONEncoder().encode(entries), as: UTF8.self)
     XCTAssertEqual(entries.filter { $0.userText == "新要求" }.count, 1)

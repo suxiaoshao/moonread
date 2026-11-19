@@ -38,7 +38,6 @@ import SwiftAISDK
   var pendingConfirmations: [AIAgentConfirmation] = []
   var approvals: [String: CheckedContinuation<Bool, Error>] = [:]
   var turn: String { head.currentTurn }
-  var responseCount = 0
   var committedStepCount = 0
   enum EventCursor: Equatable {
     case notStarted

@@ -9,7 +9,7 @@ import GoogleProvider
 
 /// Converts a selected connection into an SDK model; the agent is provider-agnostic.
 struct AIProviderRequest {
-    let model: any LanguageModelV3
+    let model: any LanguageModelV4
     let system: String?
     let options: ProviderOptions
 
@@ -25,7 +25,7 @@ struct AIProviderRequest {
         if connection.catalogID == "openrouter" { routeHeaders["x-session-id"] = conversationID }
         if connection.catalogID == "baseten" { routeHeaders["x-session-affinity"] = conversationID }
         let endpoint = connection.baseURL
-        let languageModel: any LanguageModelV3
+        let languageModel: any LanguageModelV4
         let chatGPT = connection.authMethod == .chatGPT
         let fetch: FetchFunction = { request in
             if chatGPT { return try await AIChatGPTResponses.fetch(request, transport: transport, onUnauthorized: onUnauthorized) }
@@ -33,15 +33,20 @@ struct AIProviderRequest {
         }
         switch wire {
         case .responses:
-            languageModel = try createOpenAIProvider(settings: .init(baseURL: endpoint, apiKey: credential.accessToken, headers: routeHeaders, fetch: fetch)).languageModel(modelId: model.id)
+            languageModel = try createOpenAI(settings: .init(baseURL: endpoint, apiKey: credential.accessToken, headers: routeHeaders, fetch: fetch)).languageModel(modelId: model.id)
         case .chat:
-            languageModel = try createOpenAICompatibleProvider(settings: .init(baseURL: endpoint, name: connection.catalogID, apiKey: credential.accessToken, headers: routeHeaders, fetch: fetch, includeUsage: true, transformRequestBody: { AIChatPayload.prepare($0, provider: connection.catalogID) }, metadataExtractor: connection.catalogID == "openrouter" ? AIReasoningDetails.extractor : nil)).languageModel(modelId: model.id)
+            languageModel = try createOpenAICompatible(settings: .init(
+                baseURL: endpoint, name: connection.catalogID, apiKey: credential.accessToken,
+                headers: .value(routeHeaders), fetch: fetch, includeUsage: true,
+                transformRequestBody: { body, _ in AIChatPayload.prepare(body, provider: connection.catalogID) },
+                metadataExtractor: connection.catalogID == "openrouter" ? AIReasoningDetails.extractor : nil
+            )).languageModel(modelId: model.id)
         case .anthropic:
-            languageModel = try createAnthropicProvider(settings: .init(baseURL: endpoint,
+            languageModel = try createAnthropic(settings: .init(baseURL: endpoint,
                 apiKey: connection.authMethod == .apiKey ? credential.accessToken : nil,
                 authToken: connection.authMethod == .apiKey ? nil : credential.accessToken, headers: routeHeaders, fetch: fetch)).languageModel(modelId: model.id)
         case .gemini:
-            languageModel = try createGoogleGenerativeAI(settings: .init(baseURL: endpoint, apiKey: credential.accessToken, headers: routeHeaders, fetch: fetch)).languageModel(modelId: model.id)
+            languageModel = try createGoogle(settings: .init(baseURL: endpoint, apiKey: credential.accessToken, headers: routeHeaders, fetch: fetch)).languageModel(modelId: model.id)
         }
         var options: [String: JSONValue] = [:]
         var namespace = "openai"
@@ -168,7 +173,7 @@ final class AIReasoningDetails: @unchecked Sendable {
             } else { details.append(value) }
         }
     }
-    func metadata() -> SharedV3ProviderMetadata? {
+    func metadata() -> SharedV4ProviderMetadata? {
         lock.lock(); defer { lock.unlock() }
         return details.isEmpty ? nil : ["openaiCompatible": ["reasoning_details": .array(details)]]
     }

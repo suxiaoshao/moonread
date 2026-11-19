@@ -68,7 +68,7 @@ import Foundation
                         try await self.providers.confirmLoginInvalid(connection, sessionID: credential.sessionID)
                     })
                     return .init(provider: connection.id + ":" + connection.protocolIdentity, modelID: model.id, model: request.model,
-                        system: request.system ?? "", options: request.options, summaryOptions: request.options, contextWindow: capacity,
+                        system: request.system, options: request.options, summaryOptions: request.options, contextWindow: capacity,
                         maxOutput: resolved.output ?? capacity, supportsTools: resolved.capabilities.tools == true,
                         authorize: authorize, cancel: { transport.cancel() }, finish: { transport.finish() })
                 }, admission: { [weak self] in

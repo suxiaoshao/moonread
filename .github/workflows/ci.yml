@@ -95,7 +95,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
       - name: Scan committed history for secrets
         run: nix develop --no-update-lock-file -c gitleaks git --redact --no-banner --log-opts=HEAD .
 
@@ -109,7 +109,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
       - name: Check workflow syntax
         run: nix develop --no-update-lock-file -c actionlint
 
@@ -123,7 +123,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
       - name: Check generated reader preview data
         run: nix develop --no-update-lock-file -c cargo run --locked -p moonread-core --bin site-theme-data -- --check
       - name: Build site
@@ -138,7 +138,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 60
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       SWIFTPM_CACHE: build/DerivedData/SwiftPMPackageCache
       SWIFTPM_WORKSPACE: build/SwiftPM/SourcePackages
       SWIFTPM_LOCK: ios/Moonread.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
@@ -153,13 +153,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require Xcode 27.1 and the existing iOS 27 simulator
+      - name: Require Xcode 27.2 and the existing iOS 27 simulator
         id: simulator
         run: |
           mkdir -p build/CI
           git rev-parse HEAD | tee build/CI/checkout-sha.txt
           xcodebuild -version | tee build/CI/xcode.txt
-          test "$(head -n 1 build/CI/xcode.txt)" = 'Xcode 27.1'
+          test "$(head -n 1 build/CI/xcode.txt)" = 'Xcode 27.2'
+          test "$(sed -n '2p' build/CI/xcode.txt)" = 'Build version 27B52'
           xcrun --sdk iphonesimulator --show-sdk-version > build/CI/sdk.txt
           xcrun --sdk iphonesimulator --show-sdk-build-version >> build/CI/sdk.txt
           xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"
@@ -175,7 +176,7 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('udid=' + matches[0] + '\n')
           PY
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
       - name: Identify the single cache environment and current inputs
         id: cache-key
         env:

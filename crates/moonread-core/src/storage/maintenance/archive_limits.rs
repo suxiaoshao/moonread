@@ -35,7 +35,14 @@ pub(crate) fn open_archive(
     allow_directories: bool,
     limit: fn(&str) -> u64,
 ) -> Result<zip::ZipArchive<File>> {
-    let mut file = File::open(path)?;
+    open_archive_stream(File::open(path)?, allow_directories, limit)
+}
+
+pub(crate) fn open_archive_stream<T: Read + Seek>(
+    mut file: T,
+    allow_directories: bool,
+    limit: fn(&str) -> u64,
+) -> Result<zip::ZipArchive<T>> {
     preflight_directory(&mut file)?;
     let zipped = |_| invalid("备份 ZIP 无效、不完整或使用不支持的压缩方式");
     let mut zip = zip::ZipArchive::new(file).map_err(zipped)?;
@@ -75,8 +82,8 @@ pub(crate) fn open_archive(
 
 // Bound central-directory allocation before the ZIP library parses it. Format
 // validity/header consistency is still checked by zip; this is only a budget gate.
-pub(crate) fn preflight_directory(file: &mut File) -> Result<()> {
-    let length = file.metadata()?.len();
+fn preflight_directory(file: &mut (impl Read + Seek)) -> Result<()> {
+    let length = file.seek(SeekFrom::End(0))?;
     if length > MAX_ARCHIVE {
         return Err(invalid("备份超过压缩包大小上限"));
     }
