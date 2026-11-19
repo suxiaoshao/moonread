@@ -50,9 +50,9 @@ impl From<std::io::Error> for ReaderError {
         }
     }
 }
-impl From<rusqlite::Error> for ReaderError {
-    fn from(value: rusqlite::Error) -> Self {
-        Self::Storage {
+impl From<uniffi::UnexpectedUniFFICallbackError> for ReaderError {
+    fn from(value: uniffi::UnexpectedUniFFICallbackError) -> Self {
+        Self::Io {
             message: value.to_string(),
         }
     }

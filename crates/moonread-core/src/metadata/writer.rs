@@ -1,43 +1,32 @@
+use super::stream::{MetadataOutput, Output};
 use super::*;
 use crate::{Result, storage::maintenance::archive_limits::*};
 use std::{
-    fs::{self, File, OpenOptions},
     io::Write,
-    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
-#[derive(Debug)]
 struct State {
-    file: File,
+    file: Output,
     format: MetadataFormat,
     first: bool,
     finished: bool,
     budget: u64,
     bytes: u64,
 }
-#[derive(Debug, uniffi::Object)]
+
+#[derive(uniffi::Object)]
 pub struct MetadataExportWriter {
-    path: PathBuf,
     state: Mutex<State>,
 }
-impl Drop for MetadataExportWriter {
-    fn drop(&mut self) {
-        if self.state.get_mut().is_ok_and(|s| !s.finished) {
-            let _ = fs::remove_file(&self.path);
-        }
-    }
-}
+
 #[uniffi::export]
 pub fn create_metadata_writer(
-    destination: String,
+    destination: Arc<dyn MetadataOutput>,
     format: MetadataFormat,
     packaged: bool,
 ) -> Result<Arc<MetadataExportWriter>> {
-    let mut file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&destination)?;
+    let mut file = Output::new(destination);
     let prefix = if format == MetadataFormat::Json {
         format!(
             "{{\"$schema\":\"{METADATA_SCHEMA_URL}\",\"format\":\"moonread-metadata\",\"version\":1,\"books\":[\n"
@@ -47,7 +36,6 @@ pub fn create_metadata_writer(
     };
     file.write_all(prefix.as_bytes())?;
     Ok(Arc::new(MetadataExportWriter {
-        path: destination.into(),
         state: Mutex::new(State {
             file,
             format,
@@ -97,8 +85,7 @@ impl MetadataExportWriter {
             if state.format == MetadataFormat::Json {
                 state.file.write_all(b"\n]}\n")?;
             }
-            state.file.sync_all()?;
-            if state.file.metadata()?.len() > state.budget {
+            if state.file.length() > state.budget {
                 return Err(invalid("超过公共资源预算"));
             }
             state.finished = true;

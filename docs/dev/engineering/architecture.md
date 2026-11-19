@@ -30,7 +30,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 独立规则 | 唯一归属方 / 文件 | 理由与其他层边界 | 现状 / 边界 |
 | --- | --- | --- | --- |
 | 封面显示优先级、预设分配与排版 | Swift 共享 `SystemIntegrationShared/SystemReadingCard.swift` 的 `SystemBookCover`；`SystemPresetBookCover.swift` 负责预设绘制 | `SystemBookCover` 唯一决定用户图片优先、否则预设／无 SHA 文字兜底；App 的 `BookCoverView` 只订阅既有 `CoverImageLoader`，小组件只读取共享缩略图，Spotlight 用同一视图生成缩略图，阅读扉页也复用；统计查询从现有资料投影带回作者及封面。固定六款按完整 content_sha256 取余6；主 App/小组件共享竖排、横排、作者、固定字色、书脊与有界缩略缓存；宋体仅用已安装字款，缓存包含实际字款；无身份文字封面使用固定暖灰纸/墨色；不重算身份、不写用户封面事实。扩展对传入 SHA 拼写作防御性校验，主 App 沿用 Rust 身份校验 | 显示规则及读取接线共用；不新增用户数据格式 |
-| 小说信息交换格式、归档与诊断 | Rust `metadata/`，共用 `storage/maintenance/archive_limits.rs` | JSON/JSONL/ZIP、版本/必需能力、流式私有暂存、路径与资源预算；不实现字段正规化或 LWW | 新增单源 |
+| 小说信息交换格式、归档与诊断 | Rust `metadata/`，共用 `storage/maintenance/archive_limits.rs` | JSON/JSONL/ZIP、版本/必需能力、流式解析与诊断、路径与资源预算；每次下传一个规范记录或诊断 | 新增单源 |
+| 小说信息包文件与预检索引 | Swift `MetadataImportDocument` / GRDB | Swift 提供有界文件读写，管理归档成员、封面、诊断输出与一次性 inspection.sqlite；同一事务暂存规范记录，按 SHA 和行 ID 分页，释放时删除暂存。 | 只处理本机可丢弃暂存 |
 | 小说信息编辑与交换 | Swift `Books/BookMetadata.swift`、`MetadataExchangeRows`、`UserValueRows.putMetadata` | 预览和资料导出在同一 GRDB 快照匹配索引、全库副本与 current 引用；保留正式库逐 SHA 兼容屏障及 pending 整对象。单书和资料包共用事务 writer，批量预取选中键的全部设备时钟与兼容状态。封面在事务外准备，候选、附件与 current 一次提交。资料包后台任务在批闸门内复核原配置、用户库归属与确认后的逐书删除状态；唯一来源改名仍独立，并核对正文身份 | 资料交换已切关系库；页面详情及其他消费者另批接入 |
 | 配色草稿字段与保存准入 | Rust `user/themes/palettes.rs` 的 `validate_theme_palette_draft` / `make_theme_palette` 共用名称 trim、Unicode scalar 长度与 RGB 校验；Swift `UserThemes.paletteSaveIssue` | UI 只消费字段原因并定位名称，保存仍由服务按当前事实检查 64 个上限与编辑目标；已存配色解码不重新规范化 | 单源字段规则／服务事实 |
 | 配色专属纹理支持、descriptor/混合参数、独立开关及发布迁移 | Rust `user/themes/textures.rs`（descriptor），`preferences.rs`（偏好与迁移），`resolve.rs`（校验/解析） | 分层资源、锚点/尺度限制与混合参数单源；按最终有效内置配色 ID 解析；运行时区分不支持、关闭、启用，关闭仍保留图案说明；本机 version 1 map；旧 1.3 两槽播种同明暗全部支持项，缺 key 新默认开；App/官网共用 descriptor，不再维护通用纹理/强度/Lr/tile 运行契约 | 单源 |
@@ -250,7 +251,7 @@ AI 连接、共享授权、用途默认值逐条解码，失败条目跳过并�
 
 ## 正文接口与业务查询归属
 
-2b 已移除 Rust `ReaderCore`、`ReaderQuery` 及正文库的 SQL/迁移。Swift `DataSession` 按当前作用域独占 `Data/v2/index.sqlite`，挂载对应 `usr`；来源扫描、解码策略、导入、章节暂存、搜索和缓存驱逐共用这一池。慢速文件协调和 Rust 计算在数据库闭包外。资料包的私有暂存 `inspection.sqlite` 和归档文件 I/O 仍在 Rust，计划在 2c 之后、新同步之前迁到 Swift。
+2b 已移除 Rust `ReaderCore`、`ReaderQuery` 及正文库的 SQL/迁移。Swift `DataSession` 按当前作用域独占 `Data/v2/index.sqlite`，挂载对应 `usr`；来源扫描、解码策略、导入、章节暂存、搜索和缓存驱逐共用这一池。慢速文件协调和 Rust 计算在数据库闭包外。资料包的私有暂存 `inspection.sqlite` 与归档文件 I/O 由 Swift 管理；Rust 保留交换格式和预算。
 
 导入从实际 EOF 或 64 KiB 加一字节识别编码，每步最多读 8192 个新字节。中止后新建 Rust 状态，从头读并按连续窗口验证至多 16 个既有块。允许有界合并多步输出；只有提交才推进已发布进度，提交失败丢弃整批未提交输出和工作状态。2b 仍在每个产出步骤后提交。若连失败或暂停状态也写不进去，Swift 在当前 lease、书 ID 与代次内保留终态；下一代任务或切换会话不继承旧终态。章节暂存到最终 apply 才替换正式内容。
 

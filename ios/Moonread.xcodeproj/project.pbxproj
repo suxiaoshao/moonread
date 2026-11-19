@@ -470,6 +470,7 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		471EC7FB4D05BD00640CFA1D /* MetadataExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB3912F88E0505A233C40FF6; };
 		7FFFB76F33327913F37A7D68 /* MetadataExchangeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2359B9413943919B9286CDF7; };
 		4C40326EFE5BB71FA030A863 /* MetadataExchangeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 201974DC4BBF9AC197832880; };
+		E29300000000000000000001 /* MetadataExchangeStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = E29300000000000000000002; };
 		CDF00E04D1ED44A69B16733E /* MetadataImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B921D33133257F57CF747E59; };
 		2A9B96701CC7CDCCC25D0622 /* MetadataTasksSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE54835FF23B76DF33D8DB39; };
 		89E96FFFF6571AEF936D682A = {isa = PBXBuildFile; fileRef = ED137C59B129523670772A6F; };
@@ -979,6 +980,7 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		BB3912F88E0505A233C40FF6 /* MetadataExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchange.swift; sourceTree = "<group>"; };
 		2359B9413943919B9286CDF7 /* MetadataExchangeModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeModel.swift; sourceTree = "<group>"; };
 		201974DC4BBF9AC197832880 /* MetadataExchangeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeService.swift; sourceTree = "<group>"; };
+		E29300000000000000000002 /* MetadataExchangeStaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeStaging.swift; sourceTree = "<group>"; };
 		B921D33133257F57CF747E59 /* MetadataImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataImportView.swift; sourceTree = "<group>"; };
 		DE54835FF23B76DF33D8DB39 /* MetadataTasksSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataTasksSection.swift; sourceTree = "<group>"; };
 		ED137C59B129523670772A6F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeTests.swift; sourceTree = "<group>"; };
@@ -2033,6 +2035,7 @@ D35000000000000000000001,
 			BB3912F88E0505A233C40FF6 /* MetadataExchange.swift */,
 			2359B9413943919B9286CDF7 /* MetadataExchangeModel.swift */,
 			201974DC4BBF9AC197832880 /* MetadataExchangeService.swift */,
+			E29300000000000000000002 /* MetadataExchangeStaging.swift */,
 			B921D33133257F57CF747E59 /* MetadataImportView.swift */,
 			DE54835FF23B76DF33D8DB39 /* MetadataTasksSection.swift */,
 		); path = MetadataExchange; sourceTree = "<group>"; };
@@ -2388,6 +2391,7 @@ E51000000000000000000009,D41000000000000000000001,
 				471EC7FB4D05BD00640CFA1D /* MetadataExchange.swift in Sources */,
 				7FFFB76F33327913F37A7D68 /* MetadataExchangeModel.swift in Sources */,
 				4C40326EFE5BB71FA030A863 /* MetadataExchangeService.swift in Sources */,
+				E29300000000000000000001 /* MetadataExchangeStaging.swift in Sources */,
 				CDF00E04D1ED44A69B16733E /* MetadataImportView.swift in Sources */,
 				2A9B96701CC7CDCCC25D0622 /* MetadataTasksSection.swift in Sources */,
 				34118FBC4E5AADEF0EE21434 /* ReaderChapterRow.swift in Sources */,

@@ -16,6 +16,34 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         let input = root.appendingPathComponent("input.jsonl")
         let a: [String: Any] = ["v": 1, "content_sha256": first.fixtureSHA256, "author": "  林舟  ", "tags": ["海边", "海边"], "reading_state": "unread", "title": "New Name", "reference": ["files": [["path": "not-a-selector.txt"]]]]
         try (JSONSerialization.data(withJSONObject: a) + Data([10])).write(to: input)
+        let duplicateFixture = root.appendingPathComponent("duplicates.jsonl")
+        let firstLine = try JSONSerialization.data(withJSONObject: a) + Data([10])
+        var changed = a
+        changed["author"] = "Another author"
+        let nextLine = try JSONSerialization.data(withJSONObject: changed) + Data([10])
+        try (firstLine + firstLine + Data("{bad}\n{bad}\n".utf8) + nextLine).write(to: duplicateFixture)
+        let stagingRoot = root.appendingPathComponent("inspection")
+        var document: MetadataImportDocument? = try MetadataImportDocument(input: duplicateFixture, stagingRoot: stagingRoot)
+        let stageURL = try XCTUnwrap(document?.root)
+        let summary = try XCTUnwrap(document?.summary())
+        XCTAssertEqual(summary.books, 1)
+        XCTAssertEqual(summary.variants, 2)
+        let firstPage = try XCTUnwrap(document?.records(sha: first.fixtureSHA256, cursor: 0, count: 1))
+        XCTAssertFalse(firstPage.done)
+        XCTAssertEqual(firstPage.records.first?.duplicates, 2)
+        XCTAssertEqual(firstPage.records.first?.sourceLine, 1)
+        let lastPage = try XCTUnwrap(document?.records(sha: first.fixtureSHA256, cursor: firstPage.nextCursor, count: 1))
+        XCTAssertTrue(lastPage.done)
+        XCTAssertEqual(lastPage.records.first?.sourceLine, 5)
+        let diagnosticPage = try XCTUnwrap(document?.diagnostics(cursor: 0, count: 1))
+        XCTAssertFalse(diagnosticPage.done)
+        let rest = try XCTUnwrap(document?.diagnostics(cursor: diagnosticPage.nextCursor, count: 100))
+        XCTAssertTrue(rest.done)
+        let diagnostics = diagnosticPage.diagnostics + rest.diagnostics
+        XCTAssertEqual(diagnostics.filter { $0.code == "invalid_json" }.map(\.sourceLine), [3, 4])
+        document = nil
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stageURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: duplicateFixture.path))
         // JSON starts at books[0], including the JSON manifest inside a cover package.
         let stage = root.appendingPathComponent("json-package", isDirectory: true)
         let covers = stage.appendingPathComponent("covers", isDirectory: true)
@@ -33,7 +61,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         let json = stage.appendingPathComponent("metadata.json")
         try JSONSerialization.data(withJSONObject: ["format": "moonread-metadata", "version": 1, "books": records]).write(to: json)
         let package = root.appendingPathComponent("synthetic.moonread-metadata")
-        try writeMetadataArchive(stagingDirectory: stage.path, destination: package.path)
+        try writeMetadataArchive(stagingDirectory: stage, destination: package)
         for url in [json, package] {
             let checked = try await service.previewMetadata(url)
             XCTAssertEqual(checked.books.count, 2)
@@ -59,7 +87,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         records[1]["cover"] = "covers/missing.jpg"
         try JSONSerialization.data(withJSONObject: ["format": "moonread-metadata", "version": 1, "books": records]).write(to: json)
         try FileManager.default.removeItem(at: package)
-        try writeMetadataArchive(stagingDirectory: stage.path, destination: package.path)
+        try writeMetadataArchive(stagingDirectory: stage, destination: package)
         let unavailable = try await service.previewMetadata(package)
         XCTAssertTrue(unavailable.books.allSatisfy { $0.coverUnavailable && $0.incomingCovers.isEmpty })
         XCTAssertTrue(unavailable.books.allSatisfy { !$0.fields.contains { $0.field == .cover } })
@@ -257,7 +285,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         catch is CancellationError {}
         XCTAssertEqual(exported.count, 2)
         XCTAssertEqual(exported.skipped.map(\.path), ["unindexed.txt"])
-        let document = try inspectMetadataExchange(inputPath: exported.file.urls[0].path, stagingRoot: root.appendingPathComponent("check").path)
+        let document = try MetadataImportDocument(input: exported.file.urls[0], stagingRoot: root.appendingPathComponent("check"))
         let record = try XCTUnwrap(document.records(sha: first.fixtureSHA256, cursor: 0, count: 10).records.first)
         XCTAssertNil(record.book.reference, "Imports intentionally ignore the whole reference object")
         let rawLines = try String(contentsOf: exported.file.urls[0], encoding: .utf8).split(separator: "\n")
@@ -498,7 +526,7 @@ extension MetadataExchangeTests {
         try JSONSerialization.data(withJSONObject: ["format":"moonread-metadata","version":1,"books":records])
             .write(to: staging.appendingPathComponent("metadata.json"))
         let package = root.appendingPathComponent("cover-fixture.moonread-metadata")
-        try writeMetadataArchive(stagingDirectory: staging.path, destination: package.path)
+        try writeMetadataArchive(stagingDirectory: staging, destination: package)
         let preview = try await service.previewMetadata(package)
         let a = try XCTUnwrap(preview.books.first { $0.id == first.fixtureSHA256 })
         let b = try XCTUnwrap(preview.books.first { $0.id == second.fixtureSHA256 })

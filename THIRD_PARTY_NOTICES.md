@@ -11,6 +11,7 @@ Moonread 自有代码与原创样本采用根目录的 [MIT 许可](LICENSE)。�
 | 包 | 版本 / revision | 许可 | 源码 |
 | --- | --- | --- | --- |
 | displaylink | 3.0.1 / `41bea2661e04bebcb1c4f15fc0b6197850100fdd` | MIT | [锁定源码](https://github.com/Lakr233/DisplayLink/tree/41bea2661e04bebcb1c4f15fc0b6197850100fdd) |
+| grdb.swift | 7.12.0 / `92a554cd0d5e8d67cb18993c6054e73fe42c066c` | MIT | [锁定源码](https://github.com/groue/GRDB.swift/tree/92a554cd0d5e8d67cb18993c6054e73fe42c066c) |
 | litext | revision / `c1d74fe65557534e01301a58a8617fddc0e88992` | MIT | [锁定源码](https://github.com/suxiaoshao/Litext/tree/c1d74fe65557534e01301a58a8617fddc0e88992) |
 | lrucache | 1.3.0 / `f0570e943ea4445d258113ba73f50cb2b7e564ac` | MIT | [锁定源码](https://github.com/nicklockwood/LRUCache/tree/f0570e943ea4445d258113ba73f50cb2b7e564ac) |
 | markdownview | 4.8.3 / `00bcbc12a58601b407f379deb06791fe02fa1e31` | MIT | [锁定源码](https://github.com/Lakr233/MarkdownView/tree/00bcbc12a58601b407f379deb06791fe02fa1e31) |
@@ -41,7 +42,7 @@ Moonread 自有代码与原创样本采用根目录的 [MIT 许可](LICENSE)。�
 
 ## Rust crates
 
-下表完整列出 Cargo.lock 的 registry 包，包含工具、构建、测试及非 iOS 目标，不表示全部进入 iOS 二进制。iOS 使用系统 SQLite；其他目标启用 rusqlite bundled SQLite（SQLite 为 public domain）。双许可包可按列出的 MIT 或 Apache 许可使用；r-efi 选择 MIT，不要求使用 LGPL。
+下表完整列出 Cargo.lock 的 registry 包，包含工具、构建、测试及非 iOS 目标，不表示全部进入 iOS 二进制。iOS 通过 GRDB 使用系统 SQLite（SQLite 为 public domain）。双许可包可按列出的 MIT 或 Apache 许可使用；r-efi 选择 MIT，不要求使用 LGPL。
 
 MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short、selectors 和 UniFFI 各包；没有修改这些包的上游文件。接收者可通过下表每个精确版本的 crates.io 源码包取得对应源代码（下载地址为 `https://crates.io/api/v1/crates/<name>/<version>/download`），也可用本仓库 Cargo.lock 执行 `cargo vendor --locked` 取得同版本源码与校验信息。更大作品的 MIT 不覆盖 MPL 文件；以后修改这些文件时须提供对应修改源码。
 
@@ -63,7 +64,6 @@ MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short
 | camino | 1.2.6 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/camino/1.2.6) |
 | cargo-platform | 0.3.3 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/cargo-platform/0.3.3) |
 | cargo_metadata | 0.23.1 | MIT | [源码包](https://crates.io/crates/cargo_metadata/0.23.1) |
-| cc | 1.8.0 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/cc/1.8.0) |
 | cfg-if | 1.0.5 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/cfg-if/1.0.5) |
 | chardetng | 1.0.0 | Apache-2.0 OR MIT | [源码包](https://crates.io/crates/chardetng/1.0.0) |
 | clap | 4.6.7 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/clap/4.6.7) |
@@ -86,10 +86,7 @@ MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short
 | encoding_rs | 0.8.42 | (Apache-2.0 OR MIT) AND BSD-3-Clause | [源码包](https://crates.io/crates/encoding_rs/0.8.42) |
 | equivalent | 1.0.2 | Apache-2.0 OR MIT | [源码包](https://crates.io/crates/equivalent/1.0.2) |
 | errno | 0.3.14 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/errno/0.3.14) |
-| fallible-iterator | 0.3.0 | MIT/Apache-2.0 | [源码包](https://crates.io/crates/fallible-iterator/0.3.0) |
-| fallible-streaming-iterator | 0.1.9 | MIT/Apache-2.0 | [源码包](https://crates.io/crates/fallible-streaming-iterator/0.1.9) |
 | fastrand | 2.5.0 | Apache-2.0 OR MIT | [源码包](https://crates.io/crates/fastrand/2.5.0) |
-| find-msvc-tools | 0.1.14 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/find-msvc-tools/0.1.14) |
 | foldhash | 0.2.0 | Zlib | [源码包](https://crates.io/crates/foldhash/0.2.0) |
 | form_urlencoded | 1.2.2 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/form_urlencoded/1.2.2) |
 | fs-err | 3.3.2 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/fs-err/3.3.2) |
@@ -99,9 +96,7 @@ MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short
 | getrandom | 0.4.3 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/getrandom/0.4.3) |
 | glob | 0.3.4 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/glob/0.3.4) |
 | goblin | 0.8.2 | MIT | [源码包](https://crates.io/crates/goblin/0.8.2) |
-| hashbrown | 0.16.1 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/hashbrown/0.16.1) |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/hashbrown/0.17.1) |
-| hashlink | 0.12.2 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/hashlink/0.12.2) |
 | heck | 0.5.0 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/heck/0.5.0) |
 | html5ever | 0.39.0 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/html5ever/0.39.0) |
 | hybrid-array | 0.4.15 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/hybrid-array/0.4.15) |
@@ -118,7 +113,6 @@ MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short
 | itoa | 1.0.18 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/itoa/1.0.18) |
 | js-sys | 0.3.106 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/js-sys/0.3.106) |
 | libc | 0.2.190 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/libc/0.2.190) |
-| libsqlite3-sys | 0.38.2 | MIT | [源码包](https://crates.io/crates/libsqlite3-sys/0.38.2) |
 | linux-raw-sys | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | [源码包](https://crates.io/crates/linux-raw-sys/0.12.1) |
 | litemap | 0.8.3 | Unicode-3.0 | [源码包](https://crates.io/crates/litemap/0.8.3) |
 | lock_api | 0.4.14 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/lock_api/0.4.14) |
@@ -139,7 +133,6 @@ MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short
 | phf_macros | 0.13.1 | MIT | [源码包](https://crates.io/crates/phf_macros/0.13.1) |
 | phf_shared | 0.13.1 | MIT | [源码包](https://crates.io/crates/phf_shared/0.13.1) |
 | pin-project-lite | 0.2.17 | Apache-2.0 OR MIT | [源码包](https://crates.io/crates/pin-project-lite/0.2.17) |
-| pkg-config | 0.3.34 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/pkg-config/0.3.34) |
 | plain | 0.2.3 | MIT/Apache-2.0 | [源码包](https://crates.io/crates/plain/0.2.3) |
 | potential_utf | 0.1.6 | Unicode-3.0 | [源码包](https://crates.io/crates/potential_utf/0.1.6) |
 | precomputed-hash | 0.1.1 | MIT | [源码包](https://crates.io/crates/precomputed-hash/0.1.1) |
@@ -150,8 +143,6 @@ MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short
 | regex | 1.13.1 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/regex/1.13.1) |
 | regex-automata | 0.4.18 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/regex-automata/0.4.18) |
 | regex-syntax | 0.8.11 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/regex-syntax/0.8.11) |
-| rsqlite-vfs | 0.1.1 | MIT | [源码包](https://crates.io/crates/rsqlite-vfs/0.1.1) |
-| rusqlite | 0.40.2 | MIT | [源码包](https://crates.io/crates/rusqlite/0.40.2) |
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT | [源码包](https://crates.io/crates/rustc-hash/2.1.3) |
 | rustc_version | 0.4.1 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/rustc_version/0.4.1) |
 | rustix | 1.1.5 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | [源码包](https://crates.io/crates/rustix/1.1.5) |
@@ -169,13 +160,11 @@ MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short
 | serde_spanned | 1.1.2 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/serde_spanned/1.1.2) |
 | servo_arc | 0.4.3 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/servo_arc/0.4.3) |
 | sha2 | 0.11.0 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/sha2/0.11.0) |
-| shlex | 2.0.1 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/shlex/2.0.1) |
 | simdutf8 | 0.1.5 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/simdutf8/0.1.5) |
 | siphasher | 1.0.4 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/siphasher/1.0.4) |
 | slab | 0.4.12 | MIT | [源码包](https://crates.io/crates/slab/0.4.12) |
 | smallvec | 1.16.3 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/smallvec/1.16.3) |
 | smawk | 0.3.3 | MIT | [源码包](https://crates.io/crates/smawk/0.3.3) |
-| sqlite-wasm-rs | 0.5.5 | MIT | [源码包](https://crates.io/crates/sqlite-wasm-rs/0.5.5) |
 | stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/stable_deref_trait/1.2.1) |
 | static_assertions | 1.1.0 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/static_assertions/1.1.0) |
 | string_cache | 0.9.0 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/string_cache/0.9.0) |
@@ -209,7 +198,6 @@ MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short
 | url | 2.5.8 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/url/2.5.8) |
 | utf8_iter | 1.0.4 | Apache-2.0 OR MIT | [源码包](https://crates.io/crates/utf8_iter/1.0.4) |
 | uuid | 1.28.0 | Apache-2.0 OR MIT | [源码包](https://crates.io/crates/uuid/1.28.0) |
-| vcpkg | 0.2.15 | MIT/Apache-2.0 | [源码包](https://crates.io/crates/vcpkg/0.2.15) |
 | wasm-bindgen | 0.2.129 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/wasm-bindgen/0.2.129) |
 | wasm-bindgen-macro | 0.2.129 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/wasm-bindgen-macro/0.2.129) |
 | wasm-bindgen-macro-support | 0.2.129 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/wasm-bindgen-macro-support/0.2.129) |
