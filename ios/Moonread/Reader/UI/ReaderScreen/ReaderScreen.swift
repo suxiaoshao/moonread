@@ -221,7 +221,7 @@ struct ReaderScreen: View {
         .modifier(ReaderOpenLegacyFade(ready: session.window != nil, reduced: reduceMotion))
         .background(Color(uiColor: theme.paper))
         .toolbarVisibility(.hidden, for: .tabBar)
-        .statusBarHidden(!render.controls)
+        .statusBarHidden(!(render.controls || navigationPresentation.revealsNavigation))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if Onboarding.shared.enabled, !Onboarding.shared.revealedControls, !controlsVisible,
                session.opening.phase == .reading, !session.isLeaving {
@@ -426,8 +426,7 @@ struct ReaderScreen: View {
             ReaderSceneDiagnostics.record("source.completed", opening: session.opening.request?.id, fields: ["popping": popping, "cancelled": cancelled])
             guard popping else { return }
             navigationPresentation.finish(cancelled: cancelled)
-            if cancelled { sendTool(.hideChrome) }
-            else if !sourceRoutePresent { completeReturning() }
+            if !cancelled, !sourceRoutePresent { completeReturning() }
         }, removed: { if !sourceRoutePresent { completeReturning() } }, becameCurrent: {
             sourceCurrent = true
             ReaderSceneDiagnostics.record("source.current", opening: session.opening.request?.id)
@@ -439,6 +438,7 @@ struct ReaderScreen: View {
             .background(sourceObserver)
             .navigationTitle(session.book?.title ?? route.title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar(removing: navigationPresentation.revealsNavigation ? .title : nil)
             .toolbarBackground(Color(uiColor: theme.paper), for: .navigationBar)
             .toolbarBackground(readerOwnsChrome ? .visible : .automatic, for: .navigationBar)
             .toolbar {
@@ -793,8 +793,7 @@ struct ReaderScreen: View {
                             compactHeaderHeight: compactHeaderHeight, showControls: { sendTool(.showChrome) })
     }
     private var readerOwnsChrome: Bool {
-        // The temporary bar belongs to C's interactive pop. Otherwise the
-        // current reader owns its preference even while a tool is dismissing.
+        // Keep the outgoing reader in charge of the shared bar during interactive pop.
         navigationPresentation.revealsNavigation
             || (sourceSelected && sourceCurrent && render.sourcePage == nil && !session.isLeaving)
     }

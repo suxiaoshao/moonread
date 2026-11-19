@@ -61,7 +61,9 @@ struct LibraryView: View {
                     if let current {
                         VStack(alignment: .leading, spacing: 12) {
                             homeHeader("继续阅读", showsAll: following.isEmpty)
-                            ContinueReadingRow(model: model, entry: current).contextMenu { recentMenu(current) }
+                            ContinueReadingRow(model: model, entry: current)
+                                .contextMenu { recentMenu(current) }
+                                .accessibilityActions { recentMenu(current) }
                         }
                     }
                     if let error = model.recentReading.failure {
@@ -172,8 +174,17 @@ private struct ContinueReadingRow: View {
     let entry: LibraryEntry
     @Environment(\.theme) private var theme
     private var position: Double { min(1, Double(entry.positionUtf8) / Double(max(1, entry.byteCount))) }
+    private var progress: String { position.formatted(.percent.precision(.fractionLength(0))) }
+    private var lastRead: String? {
+        guard entry.lastRead > 0 else { return nil }
+        let date = Date(timeIntervalSince1970: Double(entry.lastRead) / 1000)
+        if Date.now.timeIntervalSince(date) < 60 { return String(localized: "刚刚") }
+        return date.formatted(.relative(presentation: .named))
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let lastRead = lastRead
+        Button { model.openRecent(entry) } label: {
             HStack(spacing: 16) {
                 BookCoverView(title: entry.title, compact: true, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).frame(width: 60, height: 84)
                     .overlay { LibraryFileAvailability(entry: entry, compact: true) }
@@ -183,20 +194,40 @@ private struct ContinueReadingRow: View {
                         .foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
                     ProgressView(value: position).tint(Color(uiColor: theme.accent))
                     HStack(spacing: 6) {
-                        Text(position, format: .percent.precision(.fractionLength(0))).monospacedDigit()
-                        if entry.lastRead > 0 {
+                        Text(verbatim: progress).monospacedDigit()
+                        if let lastRead {
                             Text("·")
-                            let lastRead = Date(timeIntervalSince1970: Double(entry.lastRead) / 1000)
-                            if Date.now.timeIntervalSince(lastRead) < 60 { Text("刚刚") }
-                            else { Text(lastRead, format: .relative(presentation: .named)) }
+                            Text(verbatim: lastRead)
                         }
                     }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: theme.secondary))
             }
-            Button { model.openRecent(entry) } label: {
-                Text("继续阅读").frame(maxWidth: .infinity)
-            }.buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("library-file-\(entry.name)")
-        }.padding(16).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 20))
+            .padding(16)
+            .contentShape(.rect(cornerRadius: 20))
+            .accessibilityElement(children: .ignore)
+        }
+        .buttonStyle(ContinueReadingButtonStyle())
+        .accessibilityLabel(Text("\(Text("继续阅读"))，\(entry.title)"))
+        .accessibilityValue(Text(verbatim: [
+            entry.chapterTitle, progress, lastRead,
+            entry.needsDownload ? String(localized: "待下载") : nil,
+        ].compactMap { $0 }.joined(separator: ", ")))
+        .accessibilityIdentifier("library-file-\(entry.name)")
+    }
+}
+
+private struct ContinueReadingButtonStyle: ButtonStyle {
+    @Environment(\.theme) private var theme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Color(uiColor: configuration.isPressed ? theme.ui(\.pressed, system: .tertiarySystemFill) : theme.surface),
+                in: .rect(cornerRadius: 20)
+            )
     }
 }
 
