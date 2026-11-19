@@ -25,7 +25,7 @@ Source: https://github.com/Lakr233/MarkdownView/tree/3941f1857005d648f452fd1bfbd
 Text: 7daf1f9f7da3de2e
 
 Swift swift-ai-sdk/LICENSE
-Source: https://github.com/suxiaoshao/swift-ai-sdk/tree/9843cba7de6c2a0f1a042a4f3b1facc8af910a82
+Source: https://github.com/suxiaoshao/swift-ai-sdk/tree/91a91744dfb6067815b09b2abba83948dedf351d
 Text: cfc7749b96f63bd3
 
 Swift swift-argument-parser/LICENSE.txt

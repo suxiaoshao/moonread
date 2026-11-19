@@ -108,13 +108,15 @@ import GoogleProvider
         let hosted = route == .googleSearch ? GoogleTools().googleSearch() : purpose == .search ? OpenAITools().webSearch() : OpenAITools().imageGeneration(.init(outputFormat: "png"))
         let name = route == .googleSearch ? "google_search" : purpose == .search ? "web_search" : "image_generation"
         var saved: [String] = []
+        let abort = AIStreamAbort()
         do {
             return try await withTaskCancellationHandler {
-                let result: DefaultStreamTextResult<JSONValue, JSONValue> = try streamText(
-                    model: .v3(request.model), system: request.system,
-                    messages: [.user(.init(content: .parts(parts)))], tools: inlineImage ? nil : [name: hosted],
-                    toolChoice: connection.authMethod == .chatGPT || route == .googleSearch || inlineImage ? .auto : .required, providerOptions: nativeOptions,
-                    onError: { _ in }, settings: .init(maxRetries: 0))
+                let result = try streamText(
+                    model: request.model, tools: inlineImage ? nil : [name: hosted],
+                    toolChoice: connection.authMethod == .chatGPT || route == .googleSearch || inlineImage ? .auto : .required,
+                    instructions: request.system.map(Instructions.text),
+                    messages: [.user(.init(content: .parts(parts)))], providerOptions: nativeOptions,
+                    onError: { _ in nil }, settings: .init(maxRetries: 0, abortSignal: { abort.isAborted }))
                 for try await event in result.fullStream {
                     try Task.checkCancellation()
                     if case .error(let error) = event {
@@ -158,7 +160,7 @@ import GoogleProvider
                 }
                 try Task.checkCancellation()
                 return value
-            } onCancel: { transport.cancel() }
+            } onCancel: { abort.cancel(); transport.cancel() }
         } catch {
             await images.discardStaged(owner: owner, refs: Set(saved))
             if Task.isCancelled || error is CancellationError { throw CancellationError() }
@@ -248,11 +250,11 @@ extension AINativeExecutor {
     private func directImage(_ route: AINativeCapabilities.Route, connection: AIConnection, model: AIModelOption,
                              credential: RuntimeCredential, prompt: String, refs: [String], transport: AITransport) async throws -> AINativeResult {
         let fetch: FetchFunction = { try await transport.fetch($0) }
-        let imageModel: any ImageModelV3
+        let imageModel: any ImageModelV4
         if route == .googleImage {
-            imageModel = try createGoogleGenerativeAI(settings: .init(baseURL: connection.baseURL, apiKey: credential.accessToken, fetch: fetch)).imageModel(modelId: model.id)
+            imageModel = try createGoogle(settings: .init(baseURL: connection.baseURL, apiKey: credential.accessToken, fetch: fetch)).imageModel(modelId: model.id)
         } else {
-            imageModel = try createOpenAIProvider(settings: .init(baseURL: connection.baseURL, apiKey: credential.accessToken, fetch: fetch)).imageModel(modelId: model.id)
+            imageModel = try createOpenAI(settings: .init(baseURL: connection.baseURL, apiKey: credential.accessToken, fetch: fetch)).imageModel(modelId: model.id)
         }
         var files: [ImageModelV4File] = []
         for ref in refs {
@@ -261,7 +263,7 @@ extension AINativeExecutor {
             let mime = try await images.attachment(owner: owner, ref: ref).mimeType
             files.append(.file(mediaType: mime, data: .binary(data), providerOptions: nil))
         }
-        let output = try await generateImage(model: .v3(imageModel), prompt: prompt, files: files.isEmpty ? nil : files, maxRetries: 0)
+        let output = try await generateImage(model: imageModel, prompt: prompt, files: files.isEmpty ? nil : files, maxRetries: 0)
         var saved: [AIImageAttachment] = []
         do {
             for file in output.images { saved.append(try await images.save(file.data, owner: owner)) }

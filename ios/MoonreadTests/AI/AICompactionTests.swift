@@ -146,7 +146,7 @@ final class AICompactionTests: AgentRuntimeFixture {
       [
         .streamStart(warnings: []), .textStart(id: "t", providerMetadata: nil),
         .textDelta(id: "t", delta: "已收到一部分", providerMetadata: nil),
-        .error(error: .string("synthetic failure")),
+        .error(error: .value(.string("synthetic failure"))),
       ],
       text("继续后的回答"),
     ])

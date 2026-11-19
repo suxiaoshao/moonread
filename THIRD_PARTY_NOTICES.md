@@ -15,7 +15,7 @@ Moonread 自有代码与原创样本采用根目录的 [MIT 许可](LICENSE)。�
 | litext | 3.6.7 + 隐私清单 / `cabc9c669e04f9e84629c867554a1660cd69b5da` | MIT | [锁定源码](https://github.com/suxiaoshao/Litext/tree/cabc9c669e04f9e84629c867554a1660cd69b5da) |
 | lrucache | 1.3.0 / `f0570e943ea4445d258113ba73f50cb2b7e564ac` | MIT | [锁定源码](https://github.com/nicklockwood/LRUCache/tree/f0570e943ea4445d258113ba73f50cb2b7e564ac) |
 | markdownview | 4.8.5 / `3941f1857005d648f452fd1bfbdbe01d37961fd2` | MIT | [锁定源码](https://github.com/Lakr233/MarkdownView/tree/3941f1857005d648f452fd1bfbdbe01d37961fd2) |
-| swift-ai-sdk | revision / `9843cba7de6c2a0f1a042a4f3b1facc8af910a82` | Apache-2.0 | [锁定源码](https://github.com/suxiaoshao/swift-ai-sdk/tree/9843cba7de6c2a0f1a042a4f3b1facc8af910a82) |
+| swift-ai-sdk | V4 + 隐私清单 / `91a91744dfb6067815b09b2abba83948dedf351d` | Apache-2.0 | [锁定源码](https://github.com/suxiaoshao/swift-ai-sdk/tree/91a91744dfb6067815b09b2abba83948dedf351d) |
 | swift-argument-parser | 1.8.2 / `6a52f3251125d74daf04fcbd5e6f08a75d074382` | Apache-2.0 WITH Swift-exception | [锁定源码](https://github.com/apple/swift-argument-parser/tree/6a52f3251125d74daf04fcbd5e6f08a75d074382) |
 | swift-cmark | 0.9.0 / `08ddb528923cc1a6527e02b7a1aee9e516ca749a` | BSD / MIT（完整 COPYING） | [锁定源码](https://github.com/swiftlang/swift-cmark/tree/08ddb528923cc1a6527e02b7a1aee9e516ca749a) |
 | swift-collections | 1.7.6 / `88754449ab766a739610b660e117762115fabc9c` | Apache-2.0 WITH Swift-exception | [锁定源码](https://github.com/apple/swift-collections/tree/88754449ab766a739610b660e117762115fabc9c) |

@@ -59,7 +59,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/suxiaoshao/swift-ai-sdk",
       "state" : {
-        "revision" : "9843cba7de6c2a0f1a042a4f3b1facc8af910a82"
+        "revision" : "91a91744dfb6067815b09b2abba83948dedf351d"
       }
     },
     {

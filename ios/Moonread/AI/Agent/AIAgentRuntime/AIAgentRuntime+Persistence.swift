@@ -7,7 +7,7 @@ extension AIAgentRuntime {
   func persistSteps(_ steps: [StepResult]) async throws {
     try check()
     for step in steps.dropFirst(committedStepCount) {
-      let messages = try step.response.messages.dropFirst(responseCount).map {
+      let messages = try step.response.messages.map {
         message -> ModelMessage in
         switch message {
         case .assistant(let value):
@@ -26,7 +26,6 @@ extension AIAgentRuntime {
       #if DEBUG || AI_TESTING
       if let beforeStepPublication { await beforeStepPublication() }
       #endif
-      responseCount = step.response.messages.count
       committedStepCount += 1
       inFlightCalls = []
       results = [:]

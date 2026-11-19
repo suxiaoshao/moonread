@@ -83,7 +83,8 @@ extension AIAgentRuntime {
       }
       let work = Task {
         guard let execute = definition.sdkTool.execute else { throw AIAgentFailure.invalidTool }
-        return try await execute(input, .init(toolCallId: callID, messages: [])).resolve()
+        let options = ToolExecutionOptions(toolCallId: callID, messages: [])
+        return try await execute(input, options).resolve()
       }
       toolTasks[callID] = work
       defer {
