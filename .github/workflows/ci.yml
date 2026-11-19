@@ -138,7 +138,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 60
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       SWIFTPM_CACHE: build/DerivedData/SwiftPMPackageCache
       SWIFTPM_WORKSPACE: build/SwiftPM/SourcePackages
       SWIFTPM_LOCK: ios/Moonread.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
@@ -153,13 +153,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require Xcode 27.1 and the existing iOS 27 simulator
+      - name: Require Xcode 27.2 and the existing iOS 27 simulator
         id: simulator
         run: |
           mkdir -p build/CI
           git rev-parse HEAD | tee build/CI/checkout-sha.txt
           xcodebuild -version | tee build/CI/xcode.txt
-          test "$(head -n 1 build/CI/xcode.txt)" = 'Xcode 27.1'
+          test "$(head -n 1 build/CI/xcode.txt)" = 'Xcode 27.2'
+          test "$(sed -n '2p' build/CI/xcode.txt)" = 'Build version 27B52'
           xcrun --sdk iphonesimulator --show-sdk-version > build/CI/sdk.txt
           xcrun --sdk iphonesimulator --show-sdk-build-version >> build/CI/sdk.txt
           xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"

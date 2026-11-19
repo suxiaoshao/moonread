@@ -108,7 +108,7 @@ jobs:
     permissions:
       contents: read
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       # Each source project's Rust build phase owns its output path (legacy
       # build/cargo or current target); do not override it from the workflow.
       SOURCE_BRANCH: ${{ needs.prepare.outputs.branch }}
@@ -129,7 +129,9 @@ jobs:
           test "$RUNNER_ENVIRONMENT" = github-hosted
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$SOURCE_BRANCH" --jq .object.sha)" = "$EXPECTED_SHA"
-          test "$(xcodebuild -version | head -n 1)" = 'Xcode 27.1'
+          xcode_version=$(xcodebuild -version)
+          test "$(head -n 1 <<< "$xcode_version")" = 'Xcode 27.2'
+          test "$(sed -n '2p' <<< "$xcode_version")" = 'Build version 27B52'
           xcrun --sdk iphoneos --show-sdk-version
       - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
       - name: Prepare isolated signing context and read-only ASC client

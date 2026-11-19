@@ -23,7 +23,7 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 
 `Secret scan` 对任何改动都运行：gitleaks 扫描当前 HEAD 可达的已提交历史并遮盖密钥。`Workflow syntax` 仍在 Linux 运行 actionlint；网站生成检查同样留在 Linux。这些轻量作业不保存 Actions 缓存。
 
-`Rust and iOS tests` 是唯一 macOS 执行作业，使用 `xcode-27` arm64 镜像，固定 Xcode 27.1 与镜像已有的 iOS 27.0 iPhone 18 Pro；缺失时失败，不新建模拟器或替换工具链。先要求密钥及适用的工作流检查成功，再恢复缓存、实现当前 Nix 环境、按 Rust 范围串行运行 fmt/nixfmt、工作区全 target/feature Clippy 和 Rust 测试，随后 build-for-testing 并运行完整 MoonreadTests。纯 Swift PR 跳过 Rust 规则检查，但 Xcode 仍每次构建 Rust/绑定；分支 push 和手动运行仍全检查。Cargo 使用 `--locked`，测试关闭并行、固定简中、ad-hoc 签名以保留真实 Keychain 接线，每项最多五分钟。
+`Rust and iOS tests` 是唯一 macOS 执行作业，使用 `xcode-27` arm64 镜像，固定 Xcode 27.2（27B52） 与镜像已有的 iOS 27.0 iPhone 18 Pro；缺失时失败，不新建模拟器或替换工具链。先要求密钥及适用的工作流检查成功，再恢复缓存、实现当前 Nix 环境、按 Rust 范围串行运行 fmt/nixfmt、工作区全 target/feature Clippy 和 Rust 测试，随后 build-for-testing 并运行完整 MoonreadTests。纯 Swift PR 跳过 Rust 规则检查，但 Xcode 仍每次构建 Rust/绑定；分支 push 和手动运行仍全检查。Cargo 使用 `--locked`，测试关闭并行、固定简中、ad-hoc 签名以保留真实 Keychain 接线，每项最多五分钟。
 
 范围判断失败回退全检查。`main`、`release/1.7` 与 `release/1.8` 直接以 `Rust and iOS tests` 作为必需检查；PR 无相关改动时，该作业可按范围跳过。分支 push 的 [TestFlight 来源检查](development.md#testflight-手动-ci)仍要求该作业明确成功。同一 PR 的新提交取消旧运行。
 
