@@ -271,7 +271,7 @@ MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short
 
 - **LobeHub icons 1.95.1**：MIT，Copyright (c) 2023 LobeHub；24 张服务商品牌 SVG 的逐项映射和变换见 [PROVIDER-ICONS.md](ios/Moonread/AI/PROVIDER-ICONS.md)。不沿用来源未闭环的 Gupi 中间副本。
 - **Pi**：MIT，Copyright (c) 2025 Mario Zechner；协议与认证实现参考/适配来源为 [pi-mono](https://github.com/badlogic/pi-mono/tree/200387122ca450d6387f033949423114a270b96c)。保留完整 MIT 声明，不把协议常量的来源误写成服务商授权。
-- **SwiftUI Expert skill**：仅开发资料，MIT，Copyright (c) 2026 Antoine van der Lee，固定 [4.2.0 / 9692ec5](https://github.com/AvdLee/SwiftUI-Agent-Skill/tree/9692ec5c3e78a0acc7757de2dbe8e64e519a72fb)，原始 LICENSE 保留在 skill 目录。
+- **SwiftUI Expert skill**：仅开发资料，MIT，Copyright (c) 2026 Antoine van der Lee，固定 [5.3.0 / 62bd760](https://github.com/AvdLee/SwiftUI-Agent-Skill/tree/62bd760f005093d1e2e4de5db156e456a5f96400)，原始 LICENSE 保留在 skill 目录。
 - **FlowDown**：仅设计思路参考，不是依赖，未复制其 AGPL 实现；参见 [MarkdownView 集成说明](ios/Moonread/AI/MARKDOWNVIEW.md)。
 
 本表覆盖当前锁定版本，不替代对历史 Git/GitHub 材料的处理。许可来源和版权声明保留上游公共作者信息，与本地私人数据脱敏分开。

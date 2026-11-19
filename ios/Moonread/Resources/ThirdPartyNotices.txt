@@ -1609,7 +1609,7 @@ Source: https://www.npmjs.com/package/@lobehub/icons-static-svg/v/1.95.1
 Text: add9d7531d1b2164
 
 SwiftUI Expert skill (development only)
-Source: https://github.com/AvdLee/SwiftUI-Agent-Skill/tree/9692ec5c3e78a0acc7757de2dbe8e64e519a72fb
+Source: https://github.com/AvdLee/SwiftUI-Agent-Skill/tree/62bd760f005093d1e2e4de5db156e456a5f96400
 Text: 8f5fd8e5cddb015b
 
 SwiftMath font bundle / OFL.txt
