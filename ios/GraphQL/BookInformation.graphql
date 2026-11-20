@@ -1,0 +1,14 @@
+query BookInformation($target: InformationTarget!, $sourceFileID: ID, $includeRecordSource: Boolean!) {
+  bookInformation(target: $target, sourceFileID: $sourceFileID, includeRecordSource: $includeRecordSource) {
+    kind fileID readingKey aliases
+    body { id title encoding byteCount chunkCount position wordCount chapterCount currentChapter }
+    metadata {
+      author synopsis status hasPosition tags
+      cover { id sha256 fileExtension width height }
+    }
+    sources {
+      file { id shelfID shelfName relativePath parentPath name size modified needsDownload }
+      readingKey bodyID position lastRead byteCount preferred
+    }
+  }
+}

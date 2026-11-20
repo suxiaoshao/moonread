@@ -61,6 +61,7 @@ struct ReaderSelectionTip: Tip {
     var enabled: Bool { completed && tipsEnabled }
     static let completionKey = "Moonread.onboarding.completed.v1"
     private(set) var completed: Bool
+    var hasCompletedIntroduction: Bool { defaults.bool(forKey: Self.completionKey) }
     enum Destination { case importBook, story(LibraryEntry), library }
     private var destination: Destination?
     private enum Key {
@@ -74,22 +75,30 @@ struct ReaderSelectionTip: Tip {
     private(set) var selectedText: Bool
     init(defaults: UserDefaults = .standard, enabled: Bool? = nil, showIntroduction: Bool? = nil, invalidate: ((TipTarget) -> Void)? = nil) {
         self.invalidation = invalidate
+        #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         self.tipsEnabled = enabled ?? (!args.contains("--disable-tips") && (!args.contains("--ui-testing") || args.contains("--ui-test-tips")))
         let session = args.firstIndex(of: "--ui-test-session").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
         self.defaults = session.flatMap { UserDefaults(suiteName: "Moonread.Onboarding." + $0) } ?? defaults
         completed = !(showIntroduction ?? (!args.contains("--ui-testing") || args.contains("--ui-test-introduction"))) || self.defaults.bool(forKey: Self.completionKey)
+        #else
+        self.tipsEnabled = enabled ?? true
+        self.defaults = defaults
+        completed = !(showIntroduction ?? true) || defaults.bool(forKey: Self.completionKey)
+        #endif
         imported = self.defaults.bool(forKey: Key.imported)
         revealedControls = self.defaults.bool(forKey: Key.controls)
         selectedText = self.defaults.bool(forKey: Key.selection)
         guard tipsEnabled, invalidate == nil else { return }
         do {
             var config: [Tips.ConfigurationOption] = [.displayFrequency(.immediate)]
+            #if DEBUG
             if let session {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Tips-" + session)
                 try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
                 config.append(.datastoreLocation(.url(url)))
             }
+            #endif
             try Tips.configure(config)
         } catch { tipsEnabled = false }
     }
@@ -331,14 +340,14 @@ struct FirstRunOnboarding: View {
         guard !working else { return }
         working = true; defer { working = false }
         complete(destination: .importBook)
-        library.selectedTab = .library
+        library.shell.selectedTab = .library
     }
     private func finishSample() async {
         guard canFinishWithLibrary, !working else { return }
         working = true; defer { working = false }
         do {
             let entry = hasBooks || directoryFailed ? nil : try await library.welcomeStoryForIntroduction()
-            library.selectedTab = .library
+            library.shell.selectedTab = .library
             complete(destination: entry.map { .story($0) } ?? .library)
         } catch { self.error = ReaderMessages.error(error) }
     }
@@ -349,7 +358,7 @@ struct FirstRunOnboarding: View {
         while !Task.isCancelled {
             let key = directoryKey, generation = library.discoveryGeneration, revision = library.discoveryRevision
             do {
-                let entries = try await ReaderService.shared.libraryEntries(LibraryLocation(shelfID: "builtin"))
+                let entries = try await AppDataService.shared.libraryEntries(LibraryLocation(shelfID: "builtin"))
                 try Task.checkCancellation()
                 guard key == directoryKey else { continue }
                 contents = entries; contentsKey = key; directoryFailed = false

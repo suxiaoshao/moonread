@@ -70,12 +70,24 @@ import XCTest
     controls()
     app.navigationBars.buttons.firstMatch.tap()
   }
+  private func selectTab(_ title: String) {
+    let tab = ready(app.tabBars.buttons[title])
+    waitUntil { tab.isHittable }
+    // XCTest can choose a rounded tab's noninteractive corner after a reader pop.
+    // Tap its relative center once, then verify the actual selection.
+    tab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    waitUntil { tab.isSelected }
+  }
   private func anchor() -> UInt64 { UInt64(body().value as? String ?? "") ?? UInt64.max }
   private func waitUntil(_ predicate: @escaping () -> Bool) {
     if predicate() { return }
     let condition = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in predicate() }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [condition], timeout: 8), .completed)
+  }
+  private func snapshot(_ name: String) {
+    let image = XCTAttachment(screenshot: app.screenshot())
+    image.name = name; image.lifetime = .keepAlways; add(image)
   }
   private func list(_ name: String) {
     controls()
@@ -153,15 +165,18 @@ import XCTest
   func testU05DeleteOnlySelectedBook() {
     launch()
     shelf()
+    XCTAssertTrue(app.tabBars.buttons["书架"].isHittable)
     app.buttons["folderActions"].tap()
     app.buttons["选择项目"].tap()
+    waitUntil { !self.app.tabBars.buttons["书架"].isHittable }
     file(sample).tap()
     app.buttons["删除"].tap()
-    ready(app.buttons["移到最近删除"]).tap()
     XCTAssertTrue(file(sample).waitForNonExistence(timeout: 8))
     XCTAssertTrue(file("同名.txt").exists)
     app.buttons["librarySelectionDone"].tap()
+    waitUntil { self.app.tabBars.buttons["书架"].isHittable }
     open("同名.txt")
+    XCTAssertFalse(app.tabBars.buttons["书架"].isHittable)
   }
   func testU06CopyAndSkipConflict() {
     launch()
@@ -203,7 +218,20 @@ import XCTest
     ready(file(sample))
     XCTAssertTrue((query.value as? String)?.hasSuffix("排版") == true)
     XCTAssertTrue(
-      (query.value as? String)?.contains("我的书架") == true, "Returning must preserve the shelf scope")
+      element("appSearchResults").staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "我的书架")).count > 0, "Returning must preserve the shelf condition summary")
+    ready(app.buttons["searchFilters"]).tap()
+    ready(app.buttons["addSearchCondition"]).tap()
+    ready(app.buttons["阅读状态"]).tap()
+    // Closing a just-opened book can publish its first reading position here.
+    // Exercise multi-select without assuming whether that async projection has arrived.
+    ready(app.buttons["阅读中"]).tap()
+    ready(app.buttons["未读"]).tap()
+    ready(app.buttons["saveSearchCondition"]).tap()
+    ready(app.buttons["applySearchFilters"]).tap()
+    ready(file(sample))
+    XCTAssertTrue((query.value as? String)?.hasSuffix("排版") == true, "Applying filters keeps search text")
+    XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "未读")).count > 0)
+
   }
   func testU08BrowseTagAndUnindexedGroup() {
     launch()
@@ -257,13 +285,112 @@ import XCTest
     XCTAssertFalse(app.buttons["appSettings"].exists)
     ready(app.tabBars.buttons["设置"]).tap()
     ready(app.buttons["readerThemeSettings"])
+    snapshot("settings-home")
+    ready(app.buttons["readerThemeSettings"]).tap()
+    app.segmentedControls["readerThemeTabs"].buttons["排版"].tap()
+    ready(app.buttons["readingFont"]).tap()
+    ready(app.buttons["readerFont-system"]).tap()
+    waitUntil { self.app.buttons["readerFont-system"].isSelected }
+    XCTAssertTrue(app.buttons["readerFont-system"].exists) // Immediate save leaves the list open.
+    app.navigationBars.buttons.firstMatch.tap()
+    app.navigationBars.buttons.firstMatch.tap()
     XCTAssertFalse(app.buttons["aiSettings"].exists)
+    XCTAssertFalse(element("automaticFullIndex").exists)
+    ready(app.buttons["statisticsSettings"]).tap()
+    ready(element("statisticsEnabled"))
+    XCTAssertTrue(app.staticTexts["关闭后保留历史统计，只停止此设备的新记录。只记录可见正文活动；锁屏、后台、工具面板和闲置时暂停。"].exists)
+    element("statisticsEnabled").tap()
+    app.navigationBars.buttons.firstMatch.tap()
+    app.tabBars.buttons["统计"].tap()
+    ready(app.staticTexts["阅读统计已暂停"])
+    XCTAssertTrue(ready(app.staticTexts["暂无阅读记录"]).exists)
+    XCTAssertTrue(element("statisticsPeriod").exists)
+    ready(app.buttons["统计设置"]).tap()
+    ready(element("statisticsEnabled")).tap()
+    app.navigationBars.buttons.firstMatch.tap()
+    app.tabBars.buttons["设置"].tap()
+    ready(app.buttons["libraryManagementSettings"]).tap()
+    ready(element("automaticFullIndex"))
+    app.navigationBars.buttons.firstMatch.tap()
     app.tabBars.buttons["书架"].tap()
     shelf()
     open()
     controls()
     XCTAssertFalse(app.buttons["readerAIMoon"].exists)
+    body().swipeUp()
+    let saved = anchor()
+    backFromReader()
+    waitUntil { self.file(self.sample).isHittable }
+    selectTab("设置")
+    ready(app.buttons["readerThemeSettings"]).tap()
+    app.segmentedControls["readerThemeTabs"].buttons["配色与纹理"].tap()
+    app.segmentedControls["readerPaletteSlots"].buttons["浅色时"].tap()
+    element("paletteOptions").swipeUp()
+    ready(app.buttons["palette-apricot-light"]).tap()
+    element("readerAppearanceMode").tap(); app.buttons["浅色"].tap()
+    element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
+    let texture = app.switches["readerPaletteTexture"].switches.firstMatch
+    ready(texture)
+    if texture.value as? String == "1" { texture.tap() }
+    XCTAssertEqual(texture.value as? String, "0")
+    element("paletteOptions").swipeUp()
+    ready(app.buttons["palette-mint-light"]).tap()
+    element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
+    XCTAssertEqual(ready(texture).value as? String, "1")
+    element("paletteOptions").swipeUp()
+    ready(app.buttons["palette-white-light"]).tap()
+    element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
+    XCTAssertFalse(texture.exists)
+    ready(app.buttons["系统配色"]).tap()
+    XCTAssertFalse(texture.exists)
+    element("paletteOptions").swipeUp()
+    ready(app.buttons["palette-apricot-light"]).tap()
+    element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
+    XCTAssertEqual(ready(texture).value as? String, "0")
+    app.navigationBars.buttons.firstMatch.tap()
+    app.tabBars.buttons["书架"].tap(); open()
+    waitUntil { self.anchor() == saved }
+    backFromReader()
+    waitUntil { self.file(self.sample).isHittable }
+    selectTab("设置")
+    ready(app.buttons["readerThemeSettings"]).tap()
+    app.segmentedControls["readerThemeTabs"].buttons["配色与纹理"].tap()
+    element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
+    ready(app.switches["readerPaletteTexture"].switches.firstMatch).tap()
+    XCTAssertEqual(app.switches["readerPaletteTexture"].switches.firstMatch.value as? String, "1")
   }
+  func testV2MigrationFailureBlocksNormalAppAndRetryReleasesIt() {
+    launch(["--ui-test-migration-read-failure"])
+    ready(app.staticTexts["暂时无法准备阅读数据"])
+    XCTAssertTrue(app.staticTexts["原有数据已保留。"].exists)
+    XCTAssertTrue(app.staticTexts["暂时无法读取旧阅读数据。请确认本机数据可访问后重试。"].exists)
+    XCTAssertFalse(app.tabBars.buttons["书架"].exists)
+    XCTAssertFalse(app.buttons["shelf-builtin"].exists)
+    ready(app.buttons["retryUserMigration"]).tap()
+    ready(app.buttons["shelf-builtin"], timeout: 20)
+    XCTAssertFalse(app.buttons["retryUserMigration"].exists)
+  }
+
+  func testV2StatisticsReadsRecordedHistoryAndBookDetails() {
+    app.launchArguments = [
+      "--ui-testing", "--ui-test-session", UUID().uuidString, "--disable-tips",
+      "--ui-test-reader-fixture", "--ui-test-statistics-fixture",
+      "-Moonread.statisticsEnabled", "YES",
+      "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
+    ]
+    app.launchEnvironment["MOONREAD_TEST_CREDENTIALS"] = "memory"
+    app.launch()
+    ready(app.tabBars.buttons["统计"]).tap()
+    let book = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'statistics-book-'")).firstMatch
+    ready(book, timeout: 20)
+    XCTAssertFalse(element("statisticsEmpty").exists)
+    ready(element("statisticsPeriod")).buttons["全部"].tap()
+    ready(book).tap()
+    ready(element("statisticsSummary"))
+    ready(app.staticTexts["阅读时段"])
+    XCTAssertFalse(app.staticTexts["暂时无法读取统计"].exists)
+  }
+
   func testU13ManualEncodingRecovery() {
     launch(["--ui-test-encoding"])
     shelf()
@@ -280,6 +407,16 @@ import XCTest
     launch()
     shelf()
     open()
+    // Real touches on the default List button, including its blank row area.
+    // Accessibility activation alone bypasses the ancestor-gesture regression.
+    for x in [0.25, 0.9] {
+      controls()
+      ready(app.buttons["showChapters"]).tap()
+      let cover = ready(app.buttons["showBookCover"])
+      cover.coordinate(withNormalizedOffset: CGVector(dx: x, dy: 0.5)).tap()
+      ready(app.buttons["returnFromBrowse"]).tap()
+      readableBody()
+    }
     controls()
     app.buttons["showChapters"].tap()
     app.buttons["chapterActions"].tap()
@@ -313,15 +450,37 @@ import XCTest
     open()
     app.buttons["smokeAddNote"].tap()
     let editor = ready(app.textViews["noteEditorText"])
+    editor.tap()
     editor.typeText("合成批注")
+    waitUntil { (editor.value as? String)?.contains("合成批注") == true }
     app.buttons["saveNote"].tap()
     XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
     list("笔记")
-    ready(app.staticTexts["合成批注"])
+    let saved = ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch)
+    XCTAssertTrue(saved.label.contains("合成批注"))
+    ready(app.buttons["选择标注与笔记"]).tap()
+    let row = ready(app.cells.containing(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch)
+    XCTAssertFalse(app.buttons["分享"].isEnabled)
+    XCTAssertFalse(app.buttons["删除"].isEnabled)
+    row.tap()
+    ready(app.staticTexts["已选 1 项"])
+    XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editNote-'")).firstMatch.exists)
+    app.buttons["删除"].tap()
+    let undo = ready(app.buttons["撤销"])
+    XCTAssertFalse(app.alerts.firstMatch.exists)
+    undo.tap()
+    ready(app.cells.containing(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch)
+    app.buttons["结束选择"].tap()
+    ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editNote-'")).firstMatch)
     closeList()
     ready(app.buttons["toggleBookmark"]).tap()
     ready(app.buttons["openBookmarks"]).tap()
-    ready(app.otherElements["readerBottomPanel"].buttons["第一章 星灯"])
+    ready(app.buttons["选择书签"]).tap()
+    ready(app.cells.containing(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch).tap()
+    ready(app.staticTexts["已选 1 项"])
+    app.buttons["结束选择"].tap()
+    closeList()
+    ready(app.buttons["openNotes"])
   }
   func testU17SearchPreviewCommitsOnlyOnContinue() {
     launch()
@@ -330,9 +489,10 @@ import XCTest
     let original = anchor()
     controls()
     app.buttons["showSearch"].tap()
-    let query = ready(app.textFields["bookSearchQuery"])
+    let query = ready(app.searchFields.firstMatch)
     query.tap()
     query.typeText("星灯")
+    ready(element("searchStatus"))
     let hit = ready(
       app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'searchHit-'")).element(
         boundBy: 1))
@@ -344,7 +504,7 @@ import XCTest
     waitUntil { self.anchor() == original }
     controls()
     app.buttons["showSearch"].tap()
-    let again = ready(app.textFields["bookSearchQuery"])
+    let again = ready(app.searchFields.firstMatch)
     if (again.value as? String) != "星灯" {
       again.tap()
       again.typeText("星灯")
@@ -373,6 +533,166 @@ import XCTest
     list("笔记")
     ready(app.staticTexts["暂无笔记"])
   }
+
+  func testU23ReturnToSpeechKeepsFooterInteractive() {
+    app.launchEnvironment["MOONREAD_READER_EVENTS"] = "1"
+    launch(["--ui-test-smoke-restored"])
+    shelf()
+    open()
+    controls()
+    app.buttons["readerMore"].tap()
+    ready(app.buttons["openListening"]).tap()
+    ready(app.buttons["startListening"]).tap()
+    let playback = ready(app.buttons["compactListeningPlayback"])
+    waitUntil { playback.label == "暂停" }
+    let text = body()
+    let more = app.buttons["readerMore"]
+    let settings = app.buttons["readingSettings"]
+    let chapters = app.buttons["showChapters"]
+    let search = app.buttons["showSearch"]
+    let back = app.buttons["returnToSpeech"]
+    let center = CGVector(dx: 0.5, dy: 0.5)
+
+    func tapFooter(_ button: XCUIElement) {
+      ready(button)
+      waitUntil { button.isHittable }
+      button.coordinate(withNormalizedOffset: center).tap()
+    }
+
+    for label in ["暂停", "继续"] {
+      if label == "继续" { playback.tap() }
+      waitUntil { playback.label == label }
+      text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+        .press(forDuration: 0.08, thenDragTo: text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.22)))
+      ready(back).tap()
+      XCTAssertTrue(back.waitForNonExistence(timeout: 8))
+      XCTAssertEqual(playback.label, label)
+      text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+
+      tapFooter(more)
+      ready(app.buttons["openBookmarks"])
+      tapFooter(more)
+      XCTAssertEqual(ready(playback).label, label)
+      tapFooter(settings)
+      ready(app.buttons["moreReadingSettings"])
+      tapFooter(settings)
+      XCTAssertEqual(ready(playback).label, label)
+      tapFooter(chapters)
+      closeList()
+      XCTAssertEqual(ready(playback).label, label)
+      controls()
+      tapFooter(search)
+      ready(app.searchFields.firstMatch)
+      let endSearch = app.buttons["closeSearch"]
+      let closeInput = app.navigationBars["搜索"].buttons["关闭"]
+      waitUntil { endSearch.exists || closeInput.exists }
+      if !endSearch.exists { closeInput.tap() }
+      ready(endSearch).tap()
+      XCTAssertEqual(ready(playback).label, label)
+    }
+  }
+
+  func testU22ListeningKeepsReadingToolsAccessible() {
+    launch(["--ui-test-smoke-restored"])
+    shelf()
+    open()
+
+    func showListening() {
+      controls()
+      app.buttons["readerMore"].tap()
+      ready(app.buttons["openListening"]).tap()
+    }
+    let playback = app.buttons["compactListeningPlayback"]
+    let chapters = app.buttons["showChapters"]
+    let search = app.buttons["showSearch"]
+    let more = app.buttons["readerMore"]
+    let settings = app.buttons["readingSettings"]
+
+    func expectPlayback(_ label: String) {
+      ready(playback)
+      waitUntil { playback.label == label }
+    }
+
+    showListening()
+    ready(app.buttons["startListening"]).tap()
+    expectPlayback("暂停")
+    XCTAssertFalse(chapters.exists)
+
+    body().tap()
+    ready(chapters)
+    XCTAssertLessThan(playback.frame.maxY, chapters.frame.minY)
+    more.tap()
+    ready(app.buttons["openBookmarks"])
+    XCTAssertTrue(playback.waitForNonExistence(timeout: 5))
+    more.tap()
+    expectPlayback("暂停")
+
+    settings.tap()
+    ready(app.buttons["moreReadingSettings"])
+    settings.tap()
+    expectPlayback("暂停")
+    settings.tap()
+    ready(app.buttons["moreReadingSettings"]).tap()
+    let fullSettings = ready(app.navigationBars["阅读设置"])
+    ready(app.buttons["toggleReadingPreview"])
+    ready(fullSettings.buttons.firstMatch).tap()
+    expectPlayback("暂停")
+
+    controls()
+    more.tap()
+    ready(app.buttons["openBookmarks"]).tap()
+    closeList()
+    expectPlayback("暂停")
+
+    controls()
+    more.tap()
+    ready(app.buttons["moreBookDetails"]).tap()
+    let details = ready(app.navigationBars["小说详情"])
+    ready(details.buttons.firstMatch).tap()
+    expectPlayback("暂停")
+
+    controls()
+    ready(search).tap()
+    let query = ready(app.searchFields.firstMatch)
+    query.tap()
+    query.typeText("星灯")
+    let hits = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'searchHit-'"))
+    ready(hits.firstMatch).tap()
+    ready(app.buttons["returnToSpeech"])
+    ready(app.buttons["continueFromHere"])
+    controls()
+    more.tap()
+    ready(app.buttons["openBookmarks"])
+    more.tap()
+    expectPlayback("继续")
+    ready(search).tap()
+    XCTAssertEqual(ready(query).value as? String, "星灯")
+    ready(hits.firstMatch).tap()
+    ready(app.buttons["closeCollapsedSearch"]).tap()
+    expectPlayback("继续")
+    ready(app.buttons["returnToSpeech"]).tap()
+    XCTAssertTrue(app.buttons["returnToSpeech"].waitForNonExistence(timeout: 5))
+    expectPlayback("继续")
+
+    playback.tap()
+    expectPlayback("暂停")
+    controls()
+    ready(chapters).tap()
+    ready(app.buttons["chapter-1249"]).tap()
+    expectPlayback("继续")
+    ready(app.buttons["continueFromHere"]).tap()
+    XCTAssertTrue(playback.waitForNonExistence(timeout: 5))
+
+    controls()
+    more.tap()
+    ready(app.buttons["openBookmarks"]).tap()
+    closeList()
+    ready(app.buttons["openBookmarks"])
+    XCTAssertFalse(playback.exists)
+    more.tap()
+    showListening()
+    XCTAssertEqual(ready(app.buttons["startListening"]).label, "开始")
+  }
   func testU19ShareInboxImportAndRead() {
     launch()
     ready(app.buttons["shelf-builtin"])
@@ -383,4 +703,112 @@ import XCTest
     backFromReader()
     ready(file("分享样本.txt"))
   }
+  func testU20ReauthorizeAndRestoreWholeShelf() {
+    launch(["--ui-test-shelf-recovery"])
+    let sessionIndex = app.launchArguments.firstIndex(of: "--ui-test-session")!
+    let referenceID = app.launchArguments[sessionIndex + 1]
+    ready(app.buttons["manageShelfRecovery"]).tap()
+    ready(app.buttons["reauthorizeShelf-" + referenceID]).tap()
+    let indexButtons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recoverWholeShelf-"))
+    waitUntil { indexButtons.allElementsBoundByIndex.contains(where: \.isHittable) }
+    XCTAssertTrue(app.staticTexts["建立索引以恢复进度与标签"].exists)
+    snapshot("shelf-recovery")
+    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "已知下载量：")).firstMatch.exists)
+    indexButtons.allElementsBoundByIndex.first(where: \.isHittable)!.tap()
+    ready(app.buttons["fullIndexStart"])
+    XCTAssertTrue(ready(element("fullIndexRemaining")).label.contains("还有 1 本"))
+    snapshot("index-ready")
+    app.buttons["fullIndexStart"].tap()
+    let progress = app.staticTexts["fullIndexProgress"]
+    waitUntil { progress.exists && progress.label.contains("1 / 1") }
+    app.buttons["closeFullIndex"].tap()
+    ready(file("复原样本.txt"))
+    let restoredCard = app.cells.containing(.button, identifier: "library-file-复原样本.txt").firstMatch
+    XCTAssertTrue(ready(restoredCard.staticTexts["50.0%"]).exists)
+    menu("复原样本.txt")
+    app.buttons["小说详情"].tap()
+    ready(app.buttons["复原标签"])
+    XCTAssertTrue(ready(app.buttons["bookReadingStatus"].staticTexts["阅读中"]).exists)
+    XCTAssertFalse(app.textViews["scrollText"].exists, "Whole-shelf indexing must not open a book")
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = "U20-recovered-whole-shelf"
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+  }
+
+  func testU21ExportAllDeleteAndRestoreReadingData() {
+    launch(["--ui-test-data-management", "--ui-test-storefront", "CHN"])
+    ready(app.buttons["设置"]).tap()
+    ready(element("dataManagementSettings")).tap()
+    ready(app.buttons["readingDataCaches"])
+    snapshot("data-overview")
+    app.buttons["readingDataCaches"].tap()
+    ready(app.buttons["clearRebuildableCaches"])
+    XCTAssertTrue(app.staticTexts["正文缓存可以随时重新生成，清理后再打开小说会稍慢一些。"].exists)
+    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "有 0 本正在使用")).firstMatch.exists)
+    snapshot("data-cache")
+    app.navigationBars.buttons.firstMatch.tap()
+    ready(app.buttons["exportAllReadingData"]).tap()
+    // Export/restore our bytes; do not drive the system share UI in this test.
+    ready(app.buttons["shareReadingBackup"])
+    ready(app.buttons["closeExportTask"]).tap()
+    let readingData = ready(app.buttons["readingDataList"])
+    waitUntil { readingData.isHittable }
+    readingData.tap()
+    let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-"))
+    ready(rows.firstMatch)
+    XCTAssertEqual(rows.count, 1)
+    XCTAssertTrue(rows.firstMatch.label.contains("上次来源："))
+    XCTAssertTrue(rows.firstMatch.label.contains("读到 50%"))
+    ready(app.buttons["selectReadingData"]).tap()
+    XCTAssertEqual(app.buttons["selectReadingData"].label, "结束选择")
+    XCTAssertTrue(app.buttons["readingDataSort"].exists)
+    XCTAssertTrue(ready(app.buttons["selectAllReadingData"]).exists)
+    XCTAssertTrue(app.navigationBars.buttons["BackButton"].exists)
+    XCTAssertFalse(app.tabBars.buttons["书架"].isHittable)
+    XCTAssertFalse(app.buttons["readingDataSelectionMenu"].exists)
+    ready(app.buttons["selectAllReadingData"]).tap()
+    XCTAssertEqual(app.buttons["selectAllReadingData"].label, "取消全选")
+    app.buttons["readingDataFilterUnlinked"].tap()
+    XCTAssertFalse(app.buttons["deleteSelectedReadingData"].isEnabled)
+    XCTAssertTrue(ready(element("readingDataNoMatches")).exists)
+    XCTAssertFalse(element("readingDataEmpty").exists)
+    snapshot("reading-data-unlinked-selection")
+    app.buttons["readingDataFilterAll"].tap()
+    // Native List selection exposes row content as text, not a Button.
+    ready(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-")).firstMatch).tap()
+    ready(app.buttons["deleteSelectedReadingData"]).tap()
+    ready(app.buttons["confirmDeleteReadingData"].firstMatch).tap()
+    waitUntil { rows.count == 0 && !self.app.otherElements["readingDataWorking"].exists }
+    XCTAssertTrue(ready(element("readingDataResult")).exists)
+    XCTAssertTrue(ready(element("readingDataEmpty")).exists)
+    XCTAssertFalse(element("readingDataError").exists)
+    app.buttons["selectReadingData"].tap()
+    app.buttons["书架"].tap()
+    shelf()
+    XCTAssertTrue(ready(file(sample)).exists, "Clearing reading data must leave the original novel")
+    app.buttons["设置"].tap()
+    app.navigationBars.buttons.element(boundBy: 0).tap()
+    ready(app.buttons["importReadingBackup"]).tap()
+    ready(app.staticTexts["包含 1 本小说的阅读数据，其中 1 本在书架上"], timeout: 30)
+    ready(app.buttons["confirmImportReadingBackup"].firstMatch, timeout: 30)
+    snapshot("data-import-preview")
+    app.buttons["confirmImportReadingBackup"].firstMatch.tap()
+    ready(app.staticTexts["阅读数据已导入"], timeout: 30)
+    ready(app.buttons["readingDataList"]).tap()
+    waitUntil { rows.count == 1 }
+    app.buttons["书架"].tap()
+    menu(sample)
+    app.buttons["小说详情"].tap()
+    ready(app.buttons["星灯"])
+    XCTAssertEqual(ready(app.progressIndicators["全书位置"].firstMatch).value as? String, "50%")
+    ready(app.buttons["继续阅读"]).tap()
+    readableBody()
+    controls()
+    app.buttons["showChapters"].tap()
+    XCTAssertTrue(ready(app.buttons["chapter-0"]).label.contains("备份目录"))
+    let shot = XCTAttachment(screenshot: app.screenshot())
+    shot.name = "U21-backup-delete-restore"; shot.lifetime = .keepAlways; add(shot)
+  }
+
 }

@@ -1,8 +1,9 @@
 //! Original UTF-8 sources; encoded bytes are generated at runtime, never real novels.
 use encoding_rs::Encoding;
-use moonread_core::{ReaderCore, SourceContentKey};
+use moonread_core::{
+    TextImportMode, advance_text_import, begin_text_import, detect_import_encoding,
+};
 use serde::Deserialize;
-use tempfile::TempDir;
 
 #[derive(Deserialize)]
 struct Sample {
@@ -42,14 +43,8 @@ fn bytes(sample: &Sample) -> Vec<u8> {
     }
     bytes
 }
-fn body(core: &ReaderCore, id: &str, count: u32) -> String {
-    (0..count)
-        .map(|i| core.read_chunk(id.into(), i).unwrap().text)
-        .collect()
-}
-
 #[test]
-fn frozen_corpus_detects_and_decodes_identically_through_both_import_paths() {
+fn frozen_corpus_preserves_released_detection_normalization_and_sha() {
     let samples: Vec<Sample> =
         serde_json::from_str(include_str!("fixtures/encodings/corpus.json")).unwrap();
     let mut mismatches = Vec::new();
@@ -73,10 +68,7 @@ fn frozen_corpus_detects_and_decodes_identically_through_both_import_paths() {
         {
             continue;
         }
-        let root = TempDir::new().unwrap();
-        let file = root.path().join("source.txt");
         let bytes = bytes(&sample);
-        std::fs::write(&file, &bytes).unwrap();
         let expected = sample.text.replace("\r\n", "\n").replace('\r', "\n");
         let expected_sha = match sample.id.as_str() {
             "utf8" => "bf18e419db634cbc944f3be8c32feb2d3337d2bed1ff4b9bba52ee6d385dac68",
@@ -96,66 +88,34 @@ fn frozen_corpus_detects_and_decodes_identically_through_both_import_paths() {
             "iso-2022-jp" => "431b19d2d004a88413a295baf231185d85307b167ae0961d7437d98a62f081d8",
             _ => continue,
         };
-        let direct = ReaderCore::new(root.path().join("direct").to_string_lossy().into()).unwrap();
-        let book = direct
-            .import_book(file.to_string_lossy().into(), sample.id.clone())
-            .unwrap();
-        if book.encoding != sample.detected {
+        let encoding = detect_import_encoding(bytes[..bytes.len().min(65_537)].to_vec()).unwrap();
+        if encoding != sample.detected {
             mismatches.push(format!(
-                "{}: expected {}, detected {}, decoded {:?}",
-                sample.id,
-                sample.detected,
-                book.encoding,
-                body(&direct, &book.id, book.chunk_count)
+                "{}: expected {}, detected {}",
+                sample.id, sample.detected, encoding
             ));
             continue;
         }
+        let mut ticket = begin_text_import(encoding, TextImportMode::Index, 0).unwrap();
+        let mut body = String::new();
+        for bytes in bytes.chunks(8192) {
+            let step = advance_text_import(ticket, bytes.to_vec(), false, vec![]).unwrap();
+            for value in step.chunks {
+                body.push_str(&value.chunk.text);
+            }
+            ticket = step.next.unwrap();
+        }
+        let eof = advance_text_import(ticket, vec![], true, vec![]).unwrap();
+        for value in eof.chunks {
+            body.push_str(&value.chunk.text);
+        }
+        assert_eq!(body, expected, "{} text", sample.id);
         assert_eq!(
-            body(&direct, &book.id, book.chunk_count),
-            expected,
-            "{} direct",
+            eof.identity.unwrap().content_sha256,
+            expected_sha,
+            "{} SHA",
             sample.id
         );
-        assert_eq!(book.content_sha256, expected_sha, "{} SHA", sample.id);
-
-        let stream = ReaderCore::new(root.path().join("stream").to_string_lossy().into()).unwrap();
-        let token = stream.create_import(sample.id.clone()).unwrap();
-        let raw = stream
-            .hash_import_source(token.clone(), file.to_string_lossy().into())
-            .unwrap();
-        stream
-            .stream_import(
-                token.clone(),
-                file.to_string_lossy().into(),
-                raw.clone(),
-                None,
-            )
-            .unwrap();
-        let id = stream.finish_import(token).unwrap();
-        let book = stream
-            .source_book(SourceContentKey {
-                raw_sha256: raw,
-                decoding: "auto".into(),
-            })
-            .unwrap()
-            .unwrap();
-        assert_eq!(book.encoding, sample.detected, "{} progressive", sample.id);
-        assert_eq!(
-            body(&stream, &id, book.chunk_count),
-            expected,
-            "{} progressive",
-            sample.id
-        );
-        assert_eq!(
-            book.content_sha256, expected_sha,
-            "{} progressive SHA",
-            sample.id
-        );
-        assert_eq!(std::fs::read(&file).unwrap(), bytes);
     }
-    assert!(
-        mismatches.is_empty(),
-        "Frozen corpus changed:\n{}",
-        mismatches.join("\n")
-    );
+    assert!(mismatches.is_empty(), "{mismatches:?}");
 }

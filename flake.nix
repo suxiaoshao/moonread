@@ -39,7 +39,6 @@
               targets = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
                 "aarch64-apple-ios"
                 "aarch64-apple-ios-sim"
-                "x86_64-apple-ios"
               ];
             }).overrideAttrs
               (

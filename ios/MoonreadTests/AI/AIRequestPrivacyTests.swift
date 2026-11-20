@@ -112,9 +112,9 @@ final class AIRequestPrivacyAuthenticationTests: AuthenticationFixture {
     XCTAssertThrowsError(
       try AIProviderRequest(
         connection: connection, model: .init(id: "available", name: "Available", thinking: []),
-        credential: .init(
+        credential: .init(storage: .init(
           accessToken: "synthetic", refreshToken: "", expires: .distantFuture,
-          accountID: "synthetic"), thinking: nil, conversationID: "synthetic", instructions: "Read",
+          accountID: "synthetic"), method: .chatGPT), thinking: nil, conversationID: "synthetic", instructions: "Read",
         transport: AITransport()))
   }
 }

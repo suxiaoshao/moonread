@@ -1,0 +1,62 @@
+/* Local clipboard writes on user action only; no dependencies, requests or clipboard reads. */
+(() => {
+  const zh = document.documentElement.lang.startsWith('zh');
+  const labels = zh
+    ? {copy:'复制',copied:'已复制',prompt:'提示语',code:'代码',success:'已复制到剪贴板',failed:'未能自动复制；内容已选中，请手动复制。'}
+    : {copy:'Copy',copied:'Copied',prompt:'Prompt',code:'Code',success:'Copied to clipboard',failed:'Could not copy automatically. The text is selected; please copy it manually.'};
+  document.querySelectorAll('.doc-body pre.giallo').forEach((pre, index) => {
+    const code = pre.querySelector('code');
+    if (!code) return;
+    const lines = [...code.querySelectorAll('.giallo-l')];
+    // Read the generated logical lines, not layout-dependent innerText. Exclude optional line numbers.
+    const text = lines.length ? lines.map(line => {
+      const clone = line.cloneNode(true);
+      clone.querySelectorAll('.giallo-ln').forEach(number => number.remove());
+      return clone.textContent;
+    }).join('\n') : code.textContent;
+    const language = code.dataset.lang || '';
+    const name = ['plain','text','txt',''].includes(language) ? labels.prompt : language.toUpperCase();
+    const block = document.createElement('div');
+    block.className = 'code-block';
+    const toolbar = document.createElement('div');
+    toolbar.className = 'code-tools';
+    const caption = document.createElement('span');
+    caption.textContent = name;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'code-copy';
+    button.textContent = labels.copy;
+    button.setAttribute('aria-label', zh ? `复制${name}` : `Copy ${name}`);
+    const status = document.createElement('span');
+    status.className = 'code-copy-status';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    status.id = `code-copy-status-${index}`;
+    button.setAttribute('aria-describedby', status.id);
+    toolbar.append(caption, button, status);
+    pre.before(block);
+    block.append(toolbar, pre);
+    let reset;
+    button.addEventListener('click', async () => {
+      clearTimeout(reset);
+      status.textContent = '';
+      try {
+        await navigator.clipboard.writeText(text);
+        button.textContent = labels.copied;
+        // Visually signal success on the button without adding a row and shifting the page.
+        status.classList.add('sr');
+        status.textContent = labels.success;
+        reset = setTimeout(() => {button.textContent = labels.copy; status.textContent = '';}, 2500);
+      } catch (_) {
+        button.textContent = labels.copy;
+        status.classList.remove('sr');
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        status.textContent = labels.failed;
+      }
+    });
+  });
+})();

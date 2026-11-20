@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://suxiaoshao.github.io/moonread/schema/moonread-metadata-v1.schema.json",
+  "$comment": "JSON Schema 2020-12. Match only indexed content_sha256. reference is read-only and ignored by import. Runtime checks also enforce capabilities, file/image safety and shared backup resource budgets.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/envelope"
+    },
+    {
+      "$ref": "#/$defs/book"
+    }
+  ],
+  "$defs": {
+    "book": {
+      "type": "object",
+      "required": [
+        "v",
+        "content_sha256"
+      ],
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "真实改名建议，仅hash唯一对应一个索引文件时提供，默认不勾；多文件跳过。"
+        },
+        "author": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "cover": {
+          "type": "string",
+          "pattern": "^covers/(?!.*(?:^|/)\\.\\.?(/|$))(?!.*\\\\).+\\.(jpg|jpeg|png)$"
+        },
+        "reading_state": {
+          "enum": [
+            "unread",
+            "reading",
+            "finished",
+            "paused"
+          ]
+        },
+        "clear": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "author",
+              "tags",
+              "description",
+              "cover"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "series": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "uniqueItems": true
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "readOnly": true,
+          "description": "正文身份normalization-v1，唯一匹配键。已有清单保留；新建可按公开算法从TXT计算，与月读书架索引匹配。"
+        },
+        "reference": {
+          "type": "object",
+          "readOnly": true,
+          "description": "仅供人和agent理解，导入完全忽略；直接生成可省略；files 中 shelf 可省略，不编造未知书架；不用于匹配或选择改名目标。",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "author": {
+              "type": "string"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "path"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "shelf": {
+                    "type": "string",
+                    "description": "可选的已知书架名；未知时省略。导出通常包含，不是导入必需字段。"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "clear"
+            ],
+            "properties": {
+              "clear": {
+                "contains": {
+                  "const": "author"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "author"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "clear"
+            ],
+            "properties": {
+              "clear": {
+                "contains": {
+                  "const": "tags"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "tags"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "clear"
+            ],
+            "properties": {
+              "clear": {
+                "contains": {
+                  "const": "description"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "description"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "clear"
+            ],
+            "properties": {
+              "clear": {
+                "contains": {
+                  "const": "cover"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "cover"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "envelope": {
+      "type": "object",
+      "required": [
+        "format",
+        "version",
+        "books"
+      ],
+      "properties": {
+        "$schema": {
+          "const": "https://suxiaoshao.github.io/moonread/schema/moonread-metadata-v1.schema.json"
+        },
+        "format": {
+          "const": "moonread-metadata"
+        },
+        "version": {
+          "const": 1
+        },
+        "books": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/book"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

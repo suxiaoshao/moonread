@@ -1,0 +1,5 @@
+# False positives: SQL upsert text "book_key=excluded.book_key" matched generic-api-key (#270).
+7b3b3a0ad0c42b229eca694832e4389000e96864:ios/Moonread/Data/Database/UpgradeOrigins.swift:generic-api-key:143
+7b3b3a0ad0c42b229eca694832e4389000e96864:ios/Moonread/Data/Database/UpgradeOrigins.swift:generic-api-key:151
+2216ff6993ae319394572d196ec7b27201018248:ios/Moonread/Data/Database/UpgradeOrigins.swift:generic-api-key:304
+2216ff6993ae319394572d196ec7b27201018248:ios/Moonread/Data/Database/UpgradeOrigins.swift:generic-api-key:312

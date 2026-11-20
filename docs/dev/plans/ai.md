@@ -1,6 +1,6 @@
 # AI 未完成工作
 
-现行产品规则见[AI 设计](../design/ai.md)，执行/存储见[AI 架构](../engineering/ai-architecture.md)，原生服务见[原生工具](../ai/native-tools.md)。已实现的阶段不在此重复列清单。候选均由[roadmap](../roadmap.md)索引；计划不授权自动开始下一项。
+现行产品规则见[AI 设计](../design/ai.md)，执行/存储见[AI 架构](../ai/architecture.md)，原生服务见[原生工具](../ai/native-tools.md)。已实现的阶段不在此重复列清单。候选均由[roadmap](../roadmap.md)索引；计划不授权自动开始下一项。
 
 ## 会话列表分页
 

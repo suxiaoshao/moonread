@@ -13,7 +13,7 @@ struct AIProviderRequest {
     let system: String?
     let options: ProviderOptions
 
-    init(connection: AIConnection, model: AIModelOption, credential: AICredential,
+    init(connection: AIConnection, model: AIModelOption, credential: RuntimeCredential,
          thinking: String?, conversationID: String, instructions: String, transport: AITransport,
          onUnauthorized: @escaping @Sendable () async throws -> Void = {}) throws {
         if connection.authMethod == .chatGPT {
@@ -45,6 +45,13 @@ struct AIProviderRequest {
         }
         var options: [String: JSONValue] = [:]
         var namespace = "openai"
+        let reasoning = model.reasoningParameters?.map(\.resolved) ?? []
+        let hasToggle = reasoning.contains { if case .toggle = $0 { true } else { false } }
+        let hasEffort = reasoning.contains { if case .effort = $0 { true } else { false } }
+        let budget: AIResolvedReasoningParameter.Budget? = reasoning.lazy.compactMap { option in
+            if case .budget(let bounds) = option { return bounds }
+            return nil
+        }.first
         if wire == .responses {
             options["store"] = .bool(false)
             options["promptCacheKey"] = .string(conversationID)
@@ -61,10 +68,10 @@ struct AIProviderRequest {
                 let enabled = thinking != "none" && thinking != "off"
                 switch connection.catalogID {
                 case "baseten":
-                    if model.reasoningParameters?.contains(where: { $0.type == "toggle" }) == true {
+                    if hasToggle {
                         options["chat_template_args"] = .object(["enable_thinking": .bool(enabled)])
                     }
-                    if model.reasoningParameters?.contains(where: { $0.type == "effort" }) == true {
+                    if hasEffort {
                         options["reasoningEffort"] = .string(thinking)
                     }
                 case "opencode", "opencode-go":
@@ -75,25 +82,25 @@ struct AIProviderRequest {
                     } else { options["reasoningEffort"] = .string(thinking) }
                 case "openrouter":
                     if !enabled || thinking == "on" { options["reasoning"] = .object(["enabled": .bool(enabled)]) }
-                    else if let budget = model.reasoningParameters?.first(where: { $0.type == "budget_tokens" }),
-                            model.reasoningParameters?.contains(where: { $0.type == "effort" }) != true {
+                    else if let budget,
+                            !hasEffort {
                         options["reasoning"] = .object(["max_tokens": .number(Double(AIReasoningControl.budget(thinking, parameter: budget)))])
                     } else { options["reasoning"] = .object(["effort": .string(thinking)]) }
                 case "zai", "zai-coding-plan", "zhipuai", "zhipuai-coding-plan":
                     options["thinking"] = .object(["type": .string(enabled ? "enabled" : "disabled"), "clear_thinking": .bool(false)])
-                    if enabled, model.reasoningParameters?.contains(where: { $0.type == "effort" }) == true { options["reasoningEffort"] = .string(thinking) }
+                    if enabled, hasEffort { options["reasoningEffort"] = .string(thinking) }
                 case "deepseek":
                     options["thinking"] = .object(["type": .string(enabled ? "enabled" : "disabled")])
-                    if enabled, model.reasoningParameters?.contains(where: { $0.type == "effort" }) == true { options["reasoningEffort"] = .string(thinking) }
+                    if enabled, hasEffort { options["reasoningEffort"] = .string(thinking) }
                 case "alibaba", "alibaba-cn", "alibaba-token-plan", "alibaba-token-plan-cn":
                     options["enable_thinking"] = .bool(enabled)
-                    if enabled, let budget = model.reasoningParameters?.first(where: { $0.type == "budget_tokens" }) {
+                    if enabled, let budget {
                         options["thinking_budget"] = .number(Double(AIReasoningControl.budget(thinking, parameter: budget)))
                     }
-                    if enabled, model.reasoningParameters?.contains(where: { $0.type == "effort" }) == true { options["reasoningEffort"] = .string(thinking) }
+                    if enabled, hasEffort { options["reasoningEffort"] = .string(thinking) }
                 case "ant-ling": options["reasoning"] = .object(["effort": .string(enabled ? thinking : "none")])
                 case "togetherai":
-                    if enabled, model.reasoningParameters?.contains(where: { $0.type == "effort" }) == true {
+                    if enabled, hasEffort {
                         options["reasoningEffort"] = .string(thinking)
                     } else { options["reasoning"] = .object(["enabled": .bool(enabled)]) }
                 case "moonshotai", "moonshotai-cn":
@@ -112,9 +119,9 @@ struct AIProviderRequest {
             if let thinking {
                 if ["none", "off"].contains(thinking) {
                     options["thinking"] = .object(["type": .string("disabled")])
-                } else if let budget = model.reasoningParameters?.first(where: { $0.type == "budget_tokens" }) {
+                } else if let budget {
                     options["thinking"] = .object(["type": .string("enabled"), "budgetTokens": .number(Double(AIReasoningControl.budget(thinking, parameter: budget)))])
-                    if model.reasoningParameters?.contains(where: { $0.type == "effort" }) == true { options["effort"] = .string(thinking) }
+                    if hasEffort { options["effort"] = .string(thinking) }
                 } else if model.id.contains("claude") || ["kimi-code-plan-cn", "kimi-code-plan-global"].contains(connection.catalogID) {
                     options["thinking"] = .object(["type": .string("adaptive")])
                     options["effort"] = .string(thinking)
@@ -128,8 +135,8 @@ struct AIProviderRequest {
             if let thinking {
                 var config: [String: JSONValue] = ["includeThoughts": .bool(true)]
                 if ["none", "off"].contains(thinking) { config["thinkingBudget"] = .number(0) }
-                else if let budget = model.reasoningParameters?.first(where: { $0.type == "budget_tokens" }),
-                   model.reasoningParameters?.contains(where: { $0.type == "effort" }) != true {
+                else if let budget,
+                   !hasEffort {
                     config["thinkingBudget"] = .number(Double(AIReasoningControl.budget(thinking, parameter: budget)))
                 } else if thinking != "on" { config["thinkingLevel"] = .string(thinking) }
                 options["thinkingConfig"] = .object(config)

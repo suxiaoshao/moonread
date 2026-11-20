@@ -101,8 +101,8 @@ final class CallbackURLProvider: NSItemProvider {
 @MainActor class LibraryDropFixture: XCTestCase {
   struct Fixture {
     let root: URL, books: URL
-    let core: ReaderCore
-    let service: ReaderService
+    let core: ReaderIndex
+    let service: AppDataService
     func write(_ name: String) throws -> URL {
       let url = root.appendingPathComponent(name)
       try FileManager.default.createDirectory(
@@ -114,16 +114,16 @@ final class CallbackURLProvider: NSItemProvider {
       -> LibraryModel
     {
       LibraryModel(
-        service: service, fileMutationReload: {}, prepareSource: { _, _ in },
+        service: service, fileMutationReload: {},
         lookupDropEntry: lookup)
     }
     func remove() { try? FileManager.default.removeItem(at: root) }
   }
   func fixture() async throws -> Fixture {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     let books = root.appendingPathComponent("books")
-    let service = ReaderService(core: core, libraryDirectory: books)
+    let service = AppDataService(core: core, libraryDirectory: books)
     try await service.prepareLibrary()
     return Fixture(root: root, books: books, core: core, service: service)
   }
@@ -151,9 +151,10 @@ final class CallbackURLProvider: NSItemProvider {
       id: path, shelfId: "builtin", shelfName: "Builtin", relativePath: path,
       parentPath: (path as NSString).deletingLastPathComponent,
       name: (path as NSString).lastPathComponent,
-      directory: directory, size: 0, modified: 0, needsDownload: false, bookId: nil,
-      positionUtf8: 0, byteCount: 0, chapterTitle: nil, childBookCount: 0, lastRead: 0,
-      preferred: false, coverPreviews: [], metadata: nil, contentSha256: nil)
+      size: 0, modified: 0, lastRead: 0,
+      item: directory ? .folder(row: .init(childBookCount: 0, coverPreviews: [])) :
+        .book(row: .init(resolution: .unidentified(fileId: path), needsDownload: false,
+          positionUtf8: 0, byteCount: 0, chapterTitle: nil, preferred: false, metadata: nil, cardMetadata: nil)))
   }
 
 }

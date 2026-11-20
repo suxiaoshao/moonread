@@ -1,3 +1,4 @@
+import GRDB
 import Foundation
 import Observation
 import SwiftData
@@ -144,7 +145,7 @@ enum TestCredentials {
   static func load<T: Decodable>(_ key: String, as type: T.Type) throws -> T? {
     try store.load(key, as: type)
   }
-  static func load(_ key: String) throws -> AICredential? { try store.load(key) }
+  static func load(_ key: String) throws -> AICredentialStorage? { try store.load(key) }
   static func save<T: Encodable>(_ value: T, reference: String) throws {
     try store.save(value, reference: reference)
   }
@@ -183,8 +184,8 @@ final class OfflineTestProtocol: URLProtocol, @unchecked Sendable {
     session: URLSession = TestAI.session(),
     credentials: any CredentialStore = TestCredentials.store,
     chatGPTHostReference: String = "chatgpt/host",
-    credentialSaver: (@Sendable (AICredential, String) throws -> Void)? = nil,
-    credentialResolver: (@Sendable (AIConnection) async throws -> AICredential)? = nil,
+    credentialSaver: (@Sendable (AICredentialStorage, String) throws -> Void)? = nil,
+    credentialResolver: (@Sendable (AIConnection) async throws -> AICredentialStorage)? = nil,
     availability: AIAvailability? = nil
   ) -> AIAuthentication {
     AIAuthentication(
@@ -196,7 +197,7 @@ final class OfflineTestProtocol: URLProtocol, @unchecked Sendable {
   static func service(
     repository: AIRepository? = nil, defaults: UserDefaults? = nil,
     storefront: AIStorefrontSource = .fixed("USA"), auth: AIAuthentication? = nil,
-    reader: ReaderService = .shared,
+    reader: AppDataService = .shared,
     makeTransport: @escaping @Sendable () -> AITransport = {
       AITransport(configuration: TestAI.configuration())
     }
@@ -240,4 +241,119 @@ func makeInMemoryUserStore() throws -> UserDataStore {
       configurations: [
         ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
       ]))
+}
+
+/// Run tests through the same attached writer and schema as the app.
+func makeReaderIndexFixture(at directory: URL, account: DataScope? = nil) throws -> ReaderIndex {
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  let session = try DataSession(layout: .init(applicationSupport: directory), confirmedLegacyOwner: account)
+  let status: DataIdentityStatus = account.map { .confirmed($0, syncRequested: false) } ?? .signedOut
+  let lease = try session.activate(status).0
+  try session.prepareIndex(directory.appending(path: "reader.sqlite3"), token: lease)
+  try session.prepareUsers(lease) { nil }
+  return ReaderIndex(session: session, lease: lease)
+}
+
+func importBookFixture(_ index: ReaderIndex, filePath: String, title: String) throws -> ImportText {
+  let control = try index.createImport(title: title)
+  let sha = try index.hashImportSource(control: control, filePath: filePath)
+  try index.streamImport(control: control, filePath: filePath, expectedRawSha256: sha, encodingOverride: nil)
+  _ = try index.finishImport(control: control)
+  return try index.importStatus(bookId: control.id).text
+}
+
+/// Test input for current user rows. All normal candidates go through their
+/// domain owner; malformed fixtures may insert a quarantined input directly.
+struct UserRowsFixture: Sendable {
+  let index: ReaderIndex
+
+  func seedValue(_ key: String, value: String, device: String = "fixture",
+                 updated: Int64? = nil) throws {
+    try index.session.writeUsers(index.lease) { db in
+      if key.hasPrefix("opened/") {
+        try ReadingPositionRows.recordOpened(db, book: String(key.dropFirst("opened/".count)),
+                                             openedAt: Int64(value)!, file: nil, device: device,
+                                             now: updated ?? 1, token: UUID().uuidString)
+      } else if let updated {
+        try UserValueRows.merge(db, key: .init(key),
+                                head: .init(updated: updated, token: UUID().uuidString, value: value), device: device)
+      } else {
+        try UserValueRows.put(db, key: .init(key), value: value, device: device, now: 1)
+      }
+    }
+  }
+
+  func seedAnnotation(key: String, mark: String, candidate: AnnotationCandidate) throws {
+    try index.session.writeUsers(index.lease) {
+      try AnnotationRows.mergeBackup($0, book: key, mark: mark, value: candidate)
+    }
+  }
+
+  func annotationHeads(_ key: String) throws -> [String: [AnnotationCandidate]] {
+    try index.session.readUsers(index.lease) { try AnnotationRows.snapshot($0, key: key).groups }
+  }
+
+  func metadataTokens() throws -> [String] {
+    try index.session.readUsers(index.lease) {
+      try String.fetchAll($0, sql: """
+        SELECT token FROM usr.metadata_text_candidate UNION ALL
+        SELECT token FROM usr.tag_candidate UNION ALL
+        SELECT token FROM usr.cover_candidate ORDER BY token
+        """)
+    }
+  }
+
+  func annotationRecordIDs() throws -> [String] {
+    try index.session.readUsers(index.lease) {
+      try String.fetchAll($0, sql: "SELECT record_id FROM usr.annotation_candidate ORDER BY partition,record_id")
+    }
+  }
+
+  func seedPosition(_ key: String, offset: UInt64, hint: PositionSourceHint? = nil,
+                    time: Int64 = 123456, token: String = "fixture") throws {
+    try index.session.writeUsers(index.lease) { db in
+      if try ReadingPositionRows.partition(for: key) == 1 {
+        _ = try ReadingPositionRows.recordPosition(db, book: key, offset: offset, hint: hint, file: nil,
+                                                  device: "fixture", now: time, token: token)
+      } else {
+        try ReadingPositionRows.mergeBackup(db, book: key,
+          incoming: .init(value: .init(content_key: key, offset: offset, source_hint: hint),
+                          updated: time, token: token, device: nil))
+      }
+    }
+  }
+
+  func positionToken(_ key: String) throws -> String? {
+    try index.session.readUsers(index.lease) {
+      try ReadingPositionRows.position($0, book: key, partition: ReadingPositionRows.partition(for: key))?.token
+    }
+  }
+
+  func coverBytes(id: String, sha: String) throws -> Data? {
+    try index.session.readUsers(index.lease) { try UserValueRows.coverBytes($0, id: id, sha: sha) }
+  }
+
+  func quarantineAnnotation(book: String, id: String, mark: String, payload: String) throws {
+    let name = CausalCloudRows.key(.annotation, id: id).name
+    try index.session.writeUsers(index.lease) {
+      try CloudInboxRows.apply($0, records: [
+        .init(type: CausalCloudRows.Family.annotation.rawValue, name: name, id: id, logical: book,
+              device: nil, mark: mark, payload: payload, systemFields: Data(),
+              archive: Data(payload.utf8), archiveComplete: true, assets: [])
+      ], deletions: [], scope: index.lease.scope)
+    }
+  }
+
+  func quarantineValue(_ key: String, payload: String, partition: Int = 0) throws {
+    try index.session.writeUsers(index.lease) { db in
+      let book = try? UserValueRows.Key(key).book
+      let id = UUID().uuidString
+      let bytes = Data(payload.utf8)
+      try db.execute(sql: """
+        INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,logical_key,
+                                            raw_format,raw_bytes,digest,reason,completeness)
+        VALUES (?,'fixture',?,'UserValue',?,?,?,'json',?,?,'unsupported-schema','complete')
+        """, arguments: [partition,id,id,book,key,bytes,DataIdentity.sha(bytes)])
+    }
+  }
 }

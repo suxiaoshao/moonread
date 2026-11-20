@@ -1,0 +1,71 @@
+{
+  "name": "moonread-light",
+  "type": "light",
+  "colors": {
+    "editor.background": "#fffaf3",
+    "editor.foreground": "#37332e"
+  },
+  "tokenColors": [
+    {
+      "scope": [
+        "comment"
+      ],
+      "settings": {
+        "foreground": "#736a61"
+      }
+    },
+    {
+      "scope": [
+        "keyword",
+        "storage",
+        "support.type.property-name.json"
+      ],
+      "settings": {
+        "foreground": "#98543c"
+      }
+    },
+    {
+      "scope": [
+        "string"
+      ],
+      "settings": {
+        "foreground": "#476b50"
+      }
+    },
+    {
+      "scope": [
+        "constant.numeric",
+        "constant.language"
+      ],
+      "settings": {
+        "foreground": "#785585"
+      }
+    },
+    {
+      "scope": [
+        "entity.name.type",
+        "support.type"
+      ],
+      "settings": {
+        "foreground": "#94621b"
+      }
+    },
+    {
+      "scope": [
+        "entity.name.function",
+        "support.function"
+      ],
+      "settings": {
+        "foreground": "#426579"
+      }
+    },
+    {
+      "scope": [
+        "punctuation"
+      ],
+      "settings": {
+        "foreground": "#37332e"
+      }
+    }
+  ]
+}

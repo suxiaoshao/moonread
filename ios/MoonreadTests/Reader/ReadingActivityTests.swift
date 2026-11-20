@@ -1,0 +1,265 @@
+import Observation
+import SQLite3
+import SwiftData
+import SwiftUI
+import UIKit
+import XCTest
+
+@testable import Moonread
+
+final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
+  // S274: 只测 recorder 把暂停/预览/停止事件正确传给 Rust 并只提交返回段快照；idle 时长算法仅 R048/R049，删 Swift 重算。
+  @MainActor func testEffectiveSessionDurationUsesReadingClockIdleAndPauseRules() async throws {
+    func readable(_ body: Bool = true, _ preparation: Bool = false, _ share: Bool = false,
+                  _ alert: Bool = false, _ chooser: Bool = false) -> Bool {
+      ReaderStatisticsVisibility(body: body, preparingExcerpt: preparation,
+        excerptPresented: share, confirmationPresented: alert, choosingAnnotations: chooser).isReadable()
+    }
+    XCTAssertTrue(readable())
+    XCTAssertFalse(readable(true, true)) // Before the selection read starts.
+    XCTAssertFalse(readable(true, false, true)) // Sheet after preparation ends.
+    XCTAssertFalse(readable(true, false, false, true))
+    XCTAssertFalse(readable(true, false, false, false, true))
+    XCTAssertFalse(readable(false), "Dismissing a task cannot override another unreadable condition")
+    let controller = ReadingController(), chooser = UIAlertController()
+    var chooserVisible = true
+    controller.annotationChooser = chooser
+    controller.annotationChooserChanged = { chooserVisible = $0 }
+    let dismissed = AnnotationChooserDelegate { controller.finishAnnotationChooser(chooser) }
+    dismissed.presentationControllerDidDismiss(UIPresentationController(presentedViewController: chooser, presenting: controller))
+    XCTAssertFalse(chooserVisible)
+    XCTAssertNil(controller.annotationChooser)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let service = AppDataService(core: try makeReaderIndexFixture(at: root))
+    let clock = ReviewTestTime()
+    let viewport = ReadingViewportAccess(
+      capture: {
+        ReadingViewport(
+          offset: 0, lineY: 0, size: .zero, settings: defaultReaderSettings(), typeSize: .large,
+          pages: [])
+      }, range: { (0, 30) })
+    let host = StatisticsPresentationController()
+    host.addChild(controller); controller.didMove(toParent: host)
+    viewport.controller = controller
+    var segments: [ReadingSegment] = []
+    var bookIDs: [String] = []
+    var generations: [UInt64] = []
+    let writer = StatisticsWriter { batch in
+      segments += batch.values
+      bookIDs.append(batch.bookID)
+      generations.append(batch.generation)
+    }
+    let recorder = ReadingActivityRecorder(
+      writer: writer,
+      time: {
+        ReadingActivityTime(uptime: clock.elapsed, date: self.now.addingTimeInterval(clock.elapsed))
+      }, captureAuthor: { _ in
+        ReadingSegmentAuthor(ownerInstanceId: "test-install", sessionId: "test-session", title: "Fixture", device: "test-device")
+      }
+    ) { StatisticsPreferences(enabled: true, generation: 17) }
+    controller.statisticsPresentationChanged = { [weak recorder] in recorder?.sample() }
+    let attempt = UUID()
+    recorder.prepareStart(attempt)
+    await recorder.start(
+      lease: ReadingLease(id: "activity-fixture", service: service), viewport: viewport,
+      attempt: attempt)
+    recorder.update(visibility: .init(body: true), preview: false)
+    recorder.interacted()
+    clock.elapsed = 1
+    recorder.update(visibility: .init(body: true), preview: true)
+    clock.elapsed = 2
+    host.modal = UIViewController()
+    recorder.sample() // No SwiftUI update: native presentation alone pauses.
+    await recorder.flush()
+    let beforeTask = recorder.effectiveReadingMilliseconds
+    clock.elapsed = 3
+    recorder.interacted() // capture:false must also observe the native task.
+    clock.elapsed = 30
+    recorder.sample()
+    await recorder.flush()
+    XCTAssertEqual(recorder.effectiveReadingMilliseconds, beforeTask)
+    host.modal = nil
+    recorder.sample() // Programmatic dismissal needs no delegate callback.
+    clock.elapsed = 31
+    await recorder.flush()
+    XCTAssertGreaterThan(recorder.effectiveReadingMilliseconds, beforeTask)
+    recorder.update(visibility: .init(body: false), preview: true)
+    host.modal = UIViewController()
+    clock.elapsed = 32
+    recorder.sample()
+    host.modal = nil
+    clock.elapsed = 33
+    await recorder.flush()
+    let inactive = recorder.effectiveReadingMilliseconds
+    XCTAssertEqual(inactive, beforeTask + 1000, "Closing a task cannot override an inactive scene or other UI blocker")
+    recorder.update(visibility: .init(body: true), preview: true)
+    clock.elapsed = 300
+    await recorder.flush()
+    let exhausted = recorder.effectiveReadingMilliseconds
+    host.modal = UIViewController(); recorder.sample()
+    clock.elapsed = 301
+    host.modal = nil; recorder.sample()
+    clock.elapsed = 310
+    await recorder.flush()
+    XCTAssertEqual(recorder.effectiveReadingMilliseconds, exhausted, "Task dismissal cannot grant new idle credit")
+    XCTAssertTrue(segments.contains { !$0.header.preview }, "formal reading is passed to the writer")
+    XCTAssertTrue(segments.contains { $0.header.preview }, "preview facts remain distinguishable")
+    XCTAssertTrue(bookIDs.allSatisfy { $0 == "activity-fixture" })
+    XCTAssertTrue(generations.allSatisfy { $0 == 17 })
+    let ids = segments.map { $0.header.id }
+    recorder.stop()
+    host.modal = nil
+    controller.statisticsPresentationChanged() // A late native callback cannot resume a stopped session.
+    await writer.drain()
+    XCTAssertEqual(segments.map { $0.header.id }, ids, "stop must not resend already flushed facts")
+  }
+
+  @MainActor func testNativePresentationExemptsOnlyTheCurrentReadingAccessory() {
+    let host = StatisticsPresentationController(), reader = ReadingController()
+    host.addChild(reader); reader.didMove(toParent: host)
+    let viewport = ReadingViewportAccess()
+    viewport.controller = reader
+    reader.retainedSelection = (0, 10)
+    XCTAssertFalse(viewport.hasBlockingPresentation(allowingReaderAccessory: false), "A text selection/menu without a modal does not pause")
+    let accessory = StatisticsPresentationController()
+    host.modal = accessory
+    XCTAssertTrue(viewport.hasBlockingPresentation(allowingReaderAccessory: false))
+    XCTAssertFalse(viewport.hasBlockingPresentation(allowingReaderAccessory: true))
+    let content = StatisticsPresentationController()
+    accessory.addChild(content); content.didMove(toParent: accessory)
+    content.modal = UIViewController()
+    XCTAssertTrue(viewport.hasBlockingPresentation(allowingReaderAccessory: true), "Only the accessory layer is exempt, not its child tasks")
+    content.modal = nil
+    accessory.dismissing = true
+    XCTAssertTrue(viewport.hasBlockingPresentation(allowingReaderAccessory: true), "Keep pausing until the presentation relation is removed")
+    host.modal = nil
+    XCTAssertFalse(viewport.hasBlockingPresentation(allowingReaderAccessory: true))
+    let leaf = StatisticsPresentationController()
+    reader.addChild(leaf); leaf.didMove(toParent: reader)
+    leaf.modal = UIViewController()
+    XCTAssertTrue(viewport.hasBlockingPresentation(allowingReaderAccessory: false), "A text page can own its own task presentation")
+  }
+}
+
+@MainActor private final class StatisticsPresentationController: UIViewController {
+  var modal: UIViewController?
+  var dismissing = false
+  override var presentedViewController: UIViewController? { modal }
+  override var isBeingDismissed: Bool { dismissing }
+}
+
+final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
+  // S311: 取消/离开/失败前后的晚到 activity lease 必须释放且不回填可见前时长；两个受控时序。
+  @MainActor func testActivityStartCancellationAndStopReleaseLateLease() async throws {
+    let (root, service, core, _, book, _, suite) = try singleBookFixture()
+    defer {
+      try? core.session.close()
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let entered = expectation(description: "preferences suspended")
+    let gate = SourceReadinessGate(entered: entered)
+    let recorder = ReadingActivityRecorder {
+      await gate.wait()
+      return StatisticsPreferences(enabled: true, generation: 0)
+    }
+    let token = UUID()
+    recorder.prepareStart(token)
+    var lease: ReadingLease? = try await service.openReading(book.id)
+    weak var retained = lease
+    let task = Task { [lease = lease!] in
+      await recorder.start(lease: lease, viewport: ReadingViewportAccess(), attempt: token)
+    }
+    lease = nil
+    await fulfillment(of: [entered], timeout: 2)
+    task.cancel()
+    recorder.stop()
+    await gate.release()
+    await task.value
+    XCTAssertNil(recorder.recordingBookID)
+    XCTAssertFalse(recorder.hasSamplingTimer)
+    for _ in 0..<20 {
+      if retained == nil { break }
+      await Task.yield()
+    }
+    XCTAssertNil(retained)
+  }
+
+  // S312: 旧开始请求晚到不得替换新会话计时 owner，两个确定 gate。
+  @MainActor func testActivityOldAttemptCannotOverwriteNewClock() async throws {
+    let (root, service, core, _, first, second, suite) = try singleBookFixture()
+    defer {
+      try? core.session.close()
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let firstLease = try await service.openReading(first.id)
+    let secondLease = try await service.openReading(second.id)
+    let entered = expectation(description: "old preferences")
+    let gate = SourceReadinessGate(entered: entered)
+    var calls = 0
+    let recorder = ReadingActivityRecorder {
+      calls += 1
+      if calls == 1 { await gate.wait() }
+      return StatisticsPreferences(enabled: true, generation: 0)
+    }
+    let old = UUID()
+    recorder.prepareStart(old)
+    let task = Task {
+      await recorder.start(
+        lease: firstLease, viewport: ReadingViewportAccess(),
+        attempt: old)
+    }
+    await fulfillment(of: [entered], timeout: 2)
+    let fresh = UUID()
+    recorder.prepareStart(fresh)
+    await recorder.start(
+      lease: secondLease, viewport: ReadingViewportAccess(),
+      attempt: fresh)
+    XCTAssertEqual(recorder.recordingBookID, second.id)
+    recorder.update(visibility: .init(body: false), preview: false)  // Background state remains authoritative during a late start.
+    await gate.release()
+    await task.value
+    XCTAssertEqual(recorder.recordingBookID, second.id)
+    XCTAssertTrue(recorder.hasSamplingTimer)
+    recorder.stop()
+  }
+
+  // S314: recorder 停止后仍等已承诺统计写入完成才释放 lease，不丢最后一段记录。
+  @MainActor func testStatisticsWriterKeepsLeaseUntilPendingWriteFinishesAfterRecorderStops()
+    async throws
+  {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let service = AppDataService(core: try makeReaderIndexFixture(at: root))
+    let entered = expectation(description: "pending writer")
+    let gate = SourceReadinessGate(entered: entered)
+    let writer = StatisticsWriter { _ in await gate.wait() }
+    var lease: ReadingLease? = ReadingLease(id: "pending-write", service: service)
+    weak var retained = lease
+    let state = try beginReadingSegment(author: .init(ownerInstanceId: "test-install", sessionId: "test-session",
+        title: "Fixture", device: "test-device"), visitId: "test-visit", limits: readingSegmentLimits())
+    var moment = ReadingMoment(
+      monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true, automaticMoving: false, automaticMilliseconds: 0, preview: false, startUtf8: 0, endUtf8: 9)
+    let first = try advanceReadingSegment(previous: state, moment: moment, segmentSeed: UUID().uuidString.lowercased(), nextVisitId: "next")
+    moment.monotonicMs = 1000
+    moment.unixMs = 1000
+    moment.readable = false
+    let stop = try advanceReadingSegment(previous: first.next, moment: moment, segmentSeed: UUID().uuidString.lowercased(), nextVisitId: "ended")
+    XCTAssertFalse(stop.segmentUpdates.isEmpty)
+    writer.enqueue(stop.segmentUpdates, generation: 0, lease: lease!)
+    let recorder = ReadingActivityRecorder()
+    recorder.stop()
+    lease = nil
+    await fulfillment(of: [entered], timeout: 2)
+    XCTAssertNotNil(retained, "Cancelling startup must not invalidate a writer-owned lease")
+    await gate.release()
+    await writer.drain()
+    for _ in 0..<20 {
+      if retained == nil { break }
+      await Task.yield()
+    }
+    XCTAssertNil(retained)
+  }
+}

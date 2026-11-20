@@ -94,14 +94,14 @@ struct AIOrganizationTreeItem: Codable, Identifiable, Sendable {
     var results: [AIFileExecutionResult] { nodes.compactMap(\.result) }
     var pendingCount: Int { nodes.filter { $0.result?.stage != .completed }.count }
     var includedCount: Int { nodes.filter { $0.included }.count }
-    @ObservationIgnored private let reader: ReaderService
+    @ObservationIgnored private let reader: AppDataService
     @ObservationIgnored private let references: AIReadingReferences
     @ObservationIgnored private let scope: LibraryLocation
     @ObservationIgnored private var snapshots: [String: AIFileSnapshot] = [:]
     @ObservationIgnored private var entries: [String: LibraryEntry] = [:]
     @ObservationIgnored private var occupied: [String: Set<String>] = [:]
     @ObservationIgnored private let moveItem: @MainActor (LibraryEntry, LibraryLocation, String, AIFileMoveCheck) async -> AIFileExecutionResult
-    init(proposal: AIOrganizationProposal, scope: LibraryLocation, reader: ReaderService = .shared, historical: Bool = false,
+    init(proposal: AIOrganizationProposal, scope: LibraryLocation, reader: AppDataService = .shared, historical: Bool = false,
          moveItem: (@MainActor (LibraryEntry, LibraryLocation, String, AIFileMoveCheck) async -> AIFileExecutionResult)? = nil) {
         canExecute = !historical
         self.proposal = proposal; self.scope = scope; self.reader = reader
@@ -168,7 +168,7 @@ struct AIOrganizationTreeItem: Codable, Identifiable, Sendable {
         for node in nodes where node.result == nil || node.result?.canExecuteRemaining == true {
             node.conflict = nil
             if node.changedSincePreview { node.conflict = .changed; continue }
-            if node.name.isEmpty || node.name == "." || node.name == ".." || node.name.contains("/") || node.name.contains("\\") || node.name.hasPrefix(".") { node.conflict = .invalidName }
+            if (try? validateLibraryName(input: node.name, profile: .aiPreview)) == nil { node.conflict = .invalidName }
             var seen: Set<String> = [node.id], parent = node.parentRef
             while let ancestor = nodes.first(where: { $0.id == parent && $0.kind == .newFolder }) {
                 guard seen.insert(parent).inserted else { node.conflict = .cycle; break }

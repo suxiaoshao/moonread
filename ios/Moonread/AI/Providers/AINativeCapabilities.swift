@@ -24,10 +24,33 @@ enum AINativeCapabilities {
         default: false
         }
     }
+    static func supportsText(connection: AIConnection, model: AIModelOption) -> Bool {
+        guard model.isListed != false else { return false }
+        if connection.authMethod == .chatGPT { return model.capabilities?.text != false }
+        if model.isManual == true, model.capabilities?.text == nil { return true }
+        guard model.capabilities?.text == true else { return false }
+        if connection.catalogID == "openai", connection.authMethod == .apiKey,
+           connection.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) == "https://api.openai.com/v1",
+           (model.wireProtocol ?? connection.wireProtocol) == .responses, model.isManual != true {
+            return openAIResponses(model.id)
+        }
+        return true
+    }
+    // Endpoint compatibility, not a second model catalog. The basic /models
+    // response includes audio/embedding/legacy Chat-only models. Exact public
+    // metadata still supplies modality; a recognized family only gates Responses.
+    // https://developers.openai.com/api/docs/guides/your-data
+    private static func openAIResponses(_ id: String) -> Bool {
+        let excluded = ["audio", "realtime", "transcribe", "tts", "search-api", "search-preview", "chat-latest"]
+        guard !excluded.contains(where: { id.contains($0) }) else { return false }
+        let families = ["gpt-6", "gpt-6.1", "gpt-5", "gpt-4.1", "gpt-4o", "o1", "o3", "o4-mini", "computer-use-preview"]
+        return families.contains { id == $0 || id.hasPrefix($0 + "-") || id.hasPrefix($0 + ".") }
+    }
     static func route(_ purpose: AIModelPurpose, connection: AIConnection, model: AIModelOption) -> Route? {
+        guard model.isListed != false else { return nil }
         let endpoint = connection.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let image = model.capabilities?.imageOutput == true
-        let text = model.capabilities?.text != false && !image
+        let text = supportsText(connection: connection, model: model) && !image && (connection.authMethod == .chatGPT || model.capabilities?.text == true)
         if connection.authMethod == .chatGPT, endpoint == "https://api.openai.com/v1", text, purpose == .search {
             return .openAIHosted
         }
@@ -39,10 +62,12 @@ enum AINativeCapabilities {
         if connection.authMethod == .apiKey {
             if connection.catalogID == "openai", endpoint == "https://api.openai.com/v1" {
                 if purpose == .image, image { return .openAIImage }
-                if text, (model.wireProtocol ?? connection.wireProtocol) == .responses { return .openAIHosted }
+                if text, openAIResponses(model.id),
+                   !["o1", "o1-mini", "o1-preview", "o3-mini", "gpt-4.1-nano"].contains(where: { model.id == $0 || model.id.hasPrefix($0 + "-") }),
+                   (model.wireProtocol ?? connection.wireProtocol) == .responses { return .openAIHosted }
             }
             if connection.catalogID == "google", endpoint == "https://generativelanguage.googleapis.com/v1beta" {
-                if purpose == .search, !image { return .googleSearch }
+                if purpose == .search, text { return .googleSearch }
                 if purpose == .image, image { return .googleImage }
             }
         }

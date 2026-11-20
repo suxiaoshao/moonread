@@ -1,0 +1,2 @@
+{"v": 1, "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111", "reference": {"title": "灯塔", "files": [{"title": "灯塔", "shelf": "我的书架", "path": "短篇/灯塔.txt"}], "author": "林舟"}, "title": "灯塔", "author": "林舟", "tags": ["短篇", "海边"], "description": "一名守灯人与远航来信的故事。", "reading_state": "reading"}
+{"v": 1, "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222", "reference": {"title": "雨后小站", "files": [{"title": "雨后小站", "shelf": "我的书架", "path": "旅途/雨后小站.txt"}]}, "tags": ["旅行"], "clear": ["description"]}

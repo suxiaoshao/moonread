@@ -40,7 +40,7 @@ import GoogleProvider
                     }
                 }
                 if case AIError.loginRequired = error { try await providers.confirmLoginInvalid(connection, sessionID: nil) }
-                if providers.needsLogin.contains(connection.id) {
+                if providers.requiresLogin(connection.id) {
                     throw AIToolError("login_required", message: AIError.loginRequired.localizedDescription)
                 }
             }
@@ -168,7 +168,7 @@ import GoogleProvider
 }
 
 extension AINativeExecutor {
-    private func jsonRequest(_ url: String, body: JSONValue, credential: AICredential,
+    private func jsonRequest(_ url: String, body: JSONValue, credential: RuntimeCredential,
                              transport: AITransport) async throws -> JSONValue {
         var request = URLRequest(url: URL(string: url)!)
         request.httpMethod = "POST"
@@ -189,7 +189,7 @@ extension AINativeExecutor {
     /// pi-web-access/xai-search.ts: deliberately minimal request; sources can be
     /// annotations, action.sources, or response-level citations. No OpenAI-only options.
     private func xai(_ route: AINativeCapabilities.Route, connection: AIConnection, model: AIModelOption,
-                     credential: AICredential, prompt: String, refs: [String], transport: AITransport) async throws -> AINativeResult {
+                     credential: RuntimeCredential, prompt: String, refs: [String], transport: AITransport) async throws -> AINativeResult {
         var result = AINativeResult(data: .init(connectionID: connection.id, modelID: model.id))
         if route == .xaiSearch {
             let raw = try await jsonRequest("https://api.x.ai/v1/responses", body: .object([
@@ -246,7 +246,7 @@ extension AINativeExecutor {
         }
     }
     private func directImage(_ route: AINativeCapabilities.Route, connection: AIConnection, model: AIModelOption,
-                             credential: AICredential, prompt: String, refs: [String], transport: AITransport) async throws -> AINativeResult {
+                             credential: RuntimeCredential, prompt: String, refs: [String], transport: AITransport) async throws -> AINativeResult {
         let fetch: FetchFunction = { try await transport.fetch($0) }
         let imageModel: any ImageModelV3
         if route == .googleImage {

@@ -66,9 +66,9 @@ final class AIProviderAdapterAuthenticationTests: AuthenticationFixture {
       let connection = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
       let request = try AIProviderRequest(
         connection: connection, model: .init(id: "available", name: "Available", thinking: []),
-        credential: .init(
+        credential: .init(storage: .init(
           accessToken: "synthetic", refreshToken: "", expires: .distantFuture,
-          accountID: "synthetic"), thinking: nil, conversationID: "synthetic", instructions: "Read",
+          accountID: "synthetic"), method: .chatGPT), thinking: nil, conversationID: "synthetic", instructions: "Read",
         transport: transport)
       do {
         _ = try await request.model.doGenerate(
@@ -213,7 +213,7 @@ final class AIProviderAdapterAIProviderContractTests: AIProviderContractFixture 
     let effort = AIReasoningControl.levels([.init(type: "effort", values: ["low", "high"])])
     XCTAssertEqual(effort, ["low", "high"])
     XCTAssertEqual(
-      AIReasoningControl.budget("high", parameter: .init(type: "budget_tokens", max: 8000)), 8000,
+      AIReasoningControl.budget("high", parameter: .init(minimum: nil, maximum: 8000)), 8000,
       "token budget must not exceed the model limit")
     XCTAssertTrue(
       AIReasoningControl.levels([.init(type: "unknown_control")]).isEmpty,

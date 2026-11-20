@@ -1,0 +1,248 @@
+import CryptoKit
+import Observation
+import SQLite3
+import SwiftData
+import SwiftUI
+import UIKit
+import XCTest
+
+@testable import Moonread
+
+final class ReaderSettingsAppStorePrivacyTests: AppStorePrivacyFixture {
+  @MainActor func testReaderBatteryHidesUnknownLevelAndPreservesKnownLevels() {
+    XCTAssertNil(ReaderBattery.symbol(level: -1, state: .unknown))
+    XCTAssertNil(ReaderBattery.symbol(level: -1, state: .charging))
+    XCTAssertEqual(ReaderBattery.symbol(level: 0, state: .unplugged), "battery.0percent")
+    XCTAssertEqual(ReaderBattery.symbol(level: 0.2, state: .unplugged), "battery.25percent")
+    XCTAssertEqual(ReaderBattery.symbol(level: 0.5, state: .unplugged), "battery.50percent")
+    XCTAssertEqual(ReaderBattery.symbol(level: 0.7, state: .unplugged), "battery.75percent")
+    XCTAssertEqual(ReaderBattery.symbol(level: 1, state: .full), "battery.100percent")
+    XCTAssertEqual(ReaderBattery.symbol(level: 0.5, state: .charging), "battery.100percent.bolt")
+  }
+
+  // S250: 已发布设置 raw value 保持可读，不因本地化改键；删错误文案逐字匹配，存储不重置由 Rust 迁移测试。
+  func testReleaseSettingsUseStableIdentifiersAndStoreErrorsPreserveData() {
+    XCTAssertEqual(
+      ReadingSettingsTab.allCases.map(\.rawValue), ["typography", "colors", "controls"])
+    XCTAssertNil(ReadingSettingsTab(rawValue: "排版"))
+    XCTAssertFalse(ReaderMessages.error(ReaderError.IncompatibleStore).contains("重新安装"))
+    XCTAssertEqual(
+      ReaderMessages.error(ReaderError.StoreTooNew(version: 21, current: 20)),
+      String(localized: "数据由更新版本的月读创建，请更新应用后再打开。"))
+  }
+}
+
+final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
+  // S343: 书内和设置页共用当前偏好；交错与连续编辑保留最后一次，持久化仍经过 Rust 校验。
+  @MainActor func testSettingsMemoryCopyTracksValidatedPersistence() async throws {
+    let (root, service, _, _, _, _, suite) = try singleBookFixture()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+    }
+    let store = ReaderSettingsStore(service: service)
+    try store.load()
+    let session = ReaderSession(service: service, settingsStore: store)
+    session.update(fontSize: 23)
+    XCTAssertEqual(store.binding.wrappedValue.fontSize, 23)
+    var settings = store.binding.wrappedValue
+    settings.lineSpacing = 9
+    settings.autoReadingSpeed = 12
+    store.binding.wrappedValue = settings
+    XCTAssertEqual(session.settings?.fontSize, 23)
+    XCTAssertEqual(session.settings?.lineSpacing, 9)
+    XCTAssertEqual(session.settings?.autoReadingSpeed, 12)
+    for size in 24...28 { session.update(fontSize: Double(size)) }
+    settings.fontSize = 28
+    await store.flush()
+    XCTAssertEqual(store.value, settings)
+    XCTAssertEqual(session.settings, settings)
+    XCTAssertEqual(try service.settings(), settings)
+    XCTAssertEqual(
+      try decodeReaderSettings(
+        json: UserDefaults(suiteName: suite)!.string(forKey: "Moonread.readerSettings")!), settings)
+  }
+
+  @MainActor func testImportedFontSelectionDeletionAndMissingResourceKeepDurableChoice() async throws {
+    let (root, service, _, _, _, _, suite) = try singleBookFixture()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+    }
+    let fonts = root.appendingPathComponent("Fonts")
+    try FileManager.default.createDirectory(at: fonts, withIntermediateDirectories: true)
+    let face = ReaderFontFace(postscriptName: "Sample-Regular", displayName: "Sample")
+    let resource = try makeReaderFontResource(sha256: String(repeating: "a", count: 64), extension: "ttc", sourceName: "sample.ttc", faces: [face])
+    let file = fonts.appendingPathComponent(resource.relativePath)
+    let manifest = fonts.appendingPathComponent("manifest.json")
+    try Data("private font fixture".utf8).write(to: file)
+    try Data(encodeReaderFontManifest(resources: [resource]).utf8).write(to: manifest)
+    var fails = false
+    let store = ReaderSettingsStore(service: service, persist: { next in
+      if fails { throw CocoaError(.fileWriteOutOfSpace) }
+      try await service.saveSettings(next)
+    })
+    try store.load()
+    let ref = ImportedReaderFont(resourceSha256: resource.sha256, face: face.postscriptName)
+    try await store.selectFont(.imported(id: ref, fallback: .system))
+    XCTAssertEqual(try service.settings().importedFont, ref)
+    XCTAssertEqual(store.value?.importedFont, ref)
+    let selected = try XCTUnwrap(store.value)
+    let failedDownload = ReaderBuiltinFonts(lookup: { _, _ in nil }, match: { names in
+      XCTAssertEqual(names, ["STYuanti-SC-Regular"])
+      return AsyncThrowingStream { $0.finish(throwing: URLError(.notConnectedToInternet)) }
+    })
+    do { try await store.selectBuiltinFont(.rounded, fonts: failedDownload); XCTFail("Download failure must retain the choice") }
+    catch { }
+    XCTAssertEqual(store.value, selected)
+    XCTAssertEqual(try service.settings(), selected)
+
+    let started = expectation(description: "System font matching started")
+    var continuation: AsyncThrowingStream<Double, Error>.Continuation?
+    let pendingDownload = ReaderBuiltinFonts(lookup: { _, _ in nil }, match: { names in
+      XCTAssertEqual(names, ["STSongti-SC-Regular"])
+      return AsyncThrowingStream { continuation = $0; started.fulfill() }
+    })
+    let downloading = Task { try await store.selectBuiltinFont(.serif, fonts: pendingDownload) }
+    await fulfillment(of: [started], timeout: 2)
+    downloading.cancel()
+    continuation?.finish()
+    do { try await downloading.value; XCTFail("Leaving the picker must not apply a late choice") }
+    catch { }
+    XCTAssertEqual(store.value, selected)
+    XCTAssertEqual(try service.settings(), selected)
+    XCTAssertFalse(selected.hasSameLayout(as: defaultReaderSettings()))
+
+    // Resource availability is a platform fact, never a preference rewrite.
+    let missing = ReaderFontLibrary(root: fonts, register: { _ in throw CocoaError(.fileReadNoSuchFile) }, unregister: { _ in })
+    missing.loadIfNeeded()
+    XCTAssertFalse(missing.isAvailable(ref))
+    XCTAssertEqual(ReadingTypography.font(selected, library: missing).fontName, ReadingTypography.font(defaultReaderSettings()).fontName)
+    XCTAssertEqual(try service.settings().importedFont, ref)
+
+    let library = ReaderFontLibrary(root: fonts, register: { _ in }, unregister: { _ in })
+    library.loadIfNeeded()
+    fails = true
+    do { try await library.remove(resource, settings: store); XCTFail("Save must precede resource deletion") }
+    catch { }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    XCTAssertTrue(library.isAvailable(ref))
+    XCTAssertEqual(store.value?.importedFont, ref)
+    XCTAssertEqual(try decodeReaderFontManifest(json: String(contentsOf: manifest, encoding: .utf8)), [resource])
+    fails = false
+    let inUse = ReaderFontLibrary(root: fonts, register: { _ in }, unregister: { _ in throw CocoaError(.fileWriteNoPermission) })
+    inUse.loadIfNeeded()
+    do { try await inUse.remove(resource, settings: store); XCTFail("Unregister failure must retain the file") }
+    catch { }
+    XCTAssertNil(store.value?.importedFont)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    XCTAssertTrue(inUse.isAvailable(ref))
+    try await store.selectFont(.imported(id: ref, fallback: .system))
+    try await library.remove(resource, settings: store)
+    XCTAssertNil(store.value?.importedFont)
+    XCTAssertEqual(store.value?.font, .system)
+    XCTAssertNil(try service.settings().importedFont)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    XCTAssertTrue(try decodeReaderFontManifest(json: String(contentsOf: manifest, encoding: .utf8)).isEmpty)
+  }
+
+  // S418: 设置连续编辑只发布最终已保存值，保存失败回退最后成功值；不锁 coalescing 写次数。
+  @MainActor
+  func testThemePreferenceFailureRollsBackToLastSavedEdit() async {
+    let writer = ThemePreferenceWriterProbe()
+    let store = ThemeStore(persistPreferences: writer.save)
+    writer.snapshot = store.snapshot
+    let firstWrite = expectation(description: "First write")
+    let nextWrite = expectation(description: "Queued write")
+    writer.started = { count in
+      if count == 1 { firstWrite.fulfill() }
+      if count == 2 { nextWrite.fulfill() }
+    }
+    store.update {
+      $0.reduceMotion.toggle()
+      $0 = try! setReaderPaletteTexture(preferences: $0, paletteId: "apricot-light", enabled: false)
+    }
+    let saved = store.snapshot.preferences
+    await fulfillment(of: [firstWrite], timeout: 2)
+    store.update {
+      $0.readerMode = $0.readerMode == .dark ? .light : .dark
+      $0 = try! setReaderPaletteTexture(preferences: $0, paletteId: "apricot-dark", enabled: false)
+    }
+    let newer = store.snapshot.preferences
+    writer.succeed()
+    await fulfillment(of: [nextWrite], timeout: 2)
+    XCTAssertEqual(store.snapshot.preferences, newer)
+    writer.fail()
+    await store.flushPreferences()
+    XCTAssertEqual(store.snapshot.preferences, saved)
+    XCTAssertEqual(store.snapshot.preferences.readerPaletteTextures, saved.readerPaletteTextures)
+    XCTAssertNotNil(store.error)
+    XCTAssertFalse(store.saving)
+  }
+}
+
+final class ReaderSettingsUserDataTests: UserDataFixture {
+  // S484: 共享配色保存不带设备选择偏好，删除当前配色只让本机选择回退；Rust 编解码和 Swift 写入边界分开。
+  @MainActor func testPaletteStorageDoesNotCaptureDevicePreferences() async throws {
+    let (root, service, _, store) = try await editorFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var template = defaultThemeSnapshot().palettes[0]
+    template.name = "Independent"
+    template.colors.ink = template.colors.paper
+    XCTAssertFalse(themeColorsReadable(c: template.colors))
+    XCTAssertNil(validateThemePaletteDraft(name: template.name, colors: template.colors))
+    let palette = try await service.savePalette(template, creating: true)
+    let json = try encodeThemePalette(value: palette)
+    let stored = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+    XCTAssertNil(stored["preferences"])
+    XCTAssertNil(stored["palettes"])
+    var preferences = defaultThemeSnapshot().preferences
+    XCTAssertEqual(AppDataService.paletteDeletionImpact(palette.id, in: preferences), .init(appSlots: false, readerSlots: false))
+    XCTAssertNil(AppDataService.paletteDeletionImpact(palette.id, in: preferences).message)
+    preferences.appLight = .palette(id: palette.id)
+    XCTAssertEqual(AppDataService.paletteDeletionImpact(palette.id, in: preferences), .init(appSlots: true, readerSlots: false))
+    var directlySelected = preferences; directlySelected.readerLight = .palette(id: palette.id)
+    XCTAssertEqual(AppDataService.paletteDeletionImpact(palette.id, in: directlySelected), .init(appSlots: true, readerSlots: true))
+    directlySelected.appLight = .system
+    XCTAssertEqual(AppDataService.paletteDeletionImpact(palette.id, in: directlySelected), .init(appSlots: false, readerSlots: true))
+    preferences = try setReaderPaletteTexture(preferences: preferences, paletteId: "apricot-light", enabled: false)
+    let selected = try await service.saveThemes(preferences)
+    XCTAssertEqual(selected.preferences.appLight, .palette(id: palette.id))
+    let reloaded = try await service.themes()
+    XCTAssertEqual(reloaded.preferences.readerPaletteTextures, preferences.readerPaletteTextures)
+    let deleted = try await service.deletePalette(palette.id)
+    XCTAssertEqual(deleted.preferences.appLight, defaultThemeSnapshot().preferences.appLight)
+    XCTAssertFalse(deleted.palettes.contains { $0.id == palette.id })
+    XCTAssertEqual(deleted.preferences.readerPaletteTextures, preferences.readerPaletteTextures)
+    var full = defaultThemeSnapshot()
+    var values: [String: String] = [:]
+    for index in 0..<64 {
+      var custom = palette; custom.id = "custom-limit-\(index)"
+      full.palettes.append(custom)
+      values["palette/" + custom.id] = try encodeThemePalette(value: custom)
+    }
+    XCTAssertEqual(AppDataService.paletteSaveIssue(in: full), .customLimit)
+    let existing = try XCTUnwrap(full.palettes.last)
+    XCTAssertNil(AppDataService.paletteSaveIssue(in: full, editing: existing), "The limit blocks creation, never editing")
+    for (key, value) in values { try store.seedValue(key, value: value) }
+    do { _ = try await service.savePalette(template, creating: true); XCTFail("Enforce current storage capacity") }
+    catch PaletteSaveIssue.customLimit { }
+    var renamed = existing; renamed.name = "Edited at capacity"
+    _ = try await service.savePalette(renamed, creating: false)
+    _ = try await service.deletePalette(existing.id)
+    do { _ = try await service.savePalette(renamed, creating: false); XCTFail("Missing edit targets must not become new palettes") }
+    catch PaletteSaveIssue.missingTarget { }
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: "Review-\(root.lastPathComponent)"))
+    let key = "Moonread.themePreferences"
+    var future = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try encodeThemePreferences(value: preferences).utf8)) as? [String: Any])
+    future["reader_palette_textures"] = ["version": 2, "enabled_by_palette": [:]]
+    let futureJSON = String(decoding: try JSONSerialization.data(withJSONObject: future), as: UTF8.self)
+    for invalid in ["{", futureJSON] {
+      defaults.set(invalid, forKey: key)
+      do { _ = try await service.saveThemes(preferences); XCTFail("Unreadable preferences must block overwrite") }
+      catch { }
+      XCTAssertEqual(defaults.string(forKey: key), invalid)
+    }
+  }
+}

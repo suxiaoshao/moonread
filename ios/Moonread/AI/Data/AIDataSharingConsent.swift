@@ -138,7 +138,7 @@ import CryptoKit
 
 @MainActor extension AIConnectionService {
     /// Match the selected endpoint and effective protocol, rather than a display name.
-    func authorizeSharing(connection: AIConnection, model: AIModelOption, credential: AICredential,
+    func authorizeSharing(connection: AIConnection, model: AIModelOption, credential: RuntimeCredential,
                           owner: String, purpose: String, scopes: Set<AIDataSharingConsent.Scope>, accountGeneration: String) async throws {
         try availability.requireAvailable()
         guard try sharing.destination(connection).accountGeneration == accountGeneration else { throw CancellationError() }

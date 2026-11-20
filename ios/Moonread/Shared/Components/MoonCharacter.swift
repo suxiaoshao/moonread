@@ -23,7 +23,12 @@ struct MoonArtwork {
         let dimDisc = Color(red: 20 / 255, green: 29 / 255, blue: 60 / 255)
         let dimGold = Color(red: 136 / 255, green: 109 / 255, blue: 52 / 255)
         let accent: Color
-        init(_ theme: ThemeSurface) { accent = Color(uiColor: theme.accent) }
+        let failure: Color
+        let onFailure: Color
+        init(_ theme: ThemeSurface) {
+            accent = Color(uiColor: theme.accent)
+            failure = Color(uiColor: theme.destructive); onFailure = Color(uiColor: theme.onDestructive)
+        }
     }
     static let disc = CGRect(x: 14, y: 14, width: 72, height: 72)
     let pose: MoonPose
@@ -76,11 +81,11 @@ struct MoonArtwork {
         if pose == .needsYou || pose == .doneReview || dimmed {
             let badge = Path(ellipseIn: CGRect(x: 68, y: 16, width: 18, height: 18))
             if let backing { c.stroke(badge, with: .color(backing), lineWidth: 4) }
-            c.fill(badge, with: .color(dimmed ? .red : pose == .needsYou ? palette.accent : palette.gold))
+            c.fill(badge, with: .color(dimmed ? palette.failure : pose == .needsYou ? palette.accent : palette.gold))
             if dimmed {
                 var mark = Path(); mark.move(to: CGPoint(x: 77, y: 20)); mark.addLine(to: CGPoint(x: 77, y: 26))
-                c.stroke(mark, with: .color(.white), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                c.fill(Path(ellipseIn: CGRect(x: 76, y: 29, width: 2, height: 2)), with: .color(.white))
+                c.stroke(mark, with: .color(palette.onFailure), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                c.fill(Path(ellipseIn: CGRect(x: 76, y: 29, width: 2, height: 2)), with: .color(palette.onFailure))
             }
         }
     }

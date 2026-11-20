@@ -1,0 +1,64 @@
+Moonread — metadata exchange v1
+
+Human guide: https://suxiaoshao.github.io/moonread/en/metadata-format/
+中文说明: https://suxiaoshao.github.io/moonread/metadata-format/
+Schema: https://suxiaoshao.github.io/moonread/schema/moonread-metadata-v1.schema.json
+Skill: https://suxiaoshao.github.io/moonread/skills/moonread-metadata/SKILL.md
+Runnable identity reference and verification:
+https://suxiaoshao.github.io/moonread/skills/moonread-metadata/identity/README.md
+
+Two supported routes, neither requires the other:
+1. Edit a copy of an existing manifest; preserve content_sha256 and reference.
+2. Generate a manifest directly from authorized local TXT files. Calculate the
+   normalized text identity locally; no Moonread export is required. reference
+   is optional and ignored for matching. Do not invent unknown shelf details.
+
+For direct TXT generation, omit `reference` entirely if unneeded. If you include `reference.files`, each item has `title` and relative `path`; `shelf` is **optional** and should be omitted when unknown, not guessed or filled with a placeholder. For example: `"reference": {"files": [{"title": "Sample book", "path": "sample.txt"}]}`. Preserve reference values in an existing export. The importer discards the whole reference object before parsing editable fields; none of it selects a book.
+
+Normalization-v1 (current implementation: chardetng 1.0.0, encoding_rs 0.8.42):
+- Use Moonread's manual encoding if set, resolved through Encoding::for_label;
+  reject replacement and x-user-defined. Otherwise use auto:
+- Read up to 65,537 bytes; detect on the first 65,536. complete = file <=65,536.
+- Encoding::for_bom recognizes UTF-8/UTF-16LE/UTF-16BE. No separate UTF-32 or
+  BOMless UTF-16 heuristic; specify the encoding for BOMless UTF-16.
+- Without BOM, UTF-8 decode_to_utf8_without_replacement(sample, last=complete):
+  if not malformed AND sample has no ESC (0x1B), select UTF-8. A capped sample
+  may end within a scalar; a true EOF is strict.
+- Otherwise chardetng EncodingDetector::new(Iso2022JpDetection::Allow),
+  feed(sample, complete), guess(None, Utf8Detection::Deny). No TLD/language hint.
+  Upgrade GBK guess to GB18030; keep other results.
+- Decode the whole file from the start with encoding_rs
+  new_decoder_with_bom_removal + decode_to_utf8, finishing with last=true.
+  Only one matching initial BOM is removed. Invalid sequences use the exact
+  decoder's U+FFFD recovery; do not ignore bytes or redetect after later errors.
+- CRLF -> LF, then remaining CR -> LF. No other normalization: retain whitespace,
+  final newline presence, internal/second BOM, controls and zero-width characters;
+  no NFC/NFKC, trimming, display indentation or chapter processing.
+- SHA-256 over the resulting UTF-8 bytes without adding BOM; 64 lowercase hex.
+- Admission: reject raw PNG 89504e470d0a1a0a, ZIP 504b0304, gzip 1f8b, or full
+  JFIF ffd8ffe000104a46494600 prefixes. Before newline normalization, in each
+  consecutive 4096-scalar window (including partial final), reject >=4 NULs
+  occupying >=10%. Reject whitespace-only/empty normalized text according to
+  Rust char::is_whitespace. Other scalars, including stray NUL/U+FFFD, remain.
+
+**Do not replace this detector with Python strict decoding.** `sample.decode('utf-8', errors='strict')` treats the end of a 64 KiB slice as EOF: a valid UTF-8 file whose sample ends halfway through a character would fail that test. Moonread passes `last=false` when more bytes exist, so that incomplete suffix is allowed; malformed bytes within the sample still fail. At real EOF it passes `last=true`. Use the runnable reference, or reproduce these incremental-decoder rules exactly; do not substitute `errors='ignore'` or `errors='replace'` for detection.
+
+**Prerequisites and working directory:** external users need an installed Rust/Cargo toolchain supporting edition 2024 and the pinned dependencies (verified with Rust 1.99.0), plus the platform's native linker/build tools. No Moonread checkout, Xcode project, Nix or `nix develop` is required. Download `Cargo.toml` and `identity.rs` into a new empty directory, open a terminal **in that directory**, and run `cargo run --release -- /absolute/path/to/book.txt auto`. Cargo compiles the downloaded reference, not the App; the first build needs access to the dependency registry. If Rust/Cargo is unavailable, arrange a toolchain rather than silently substituting a Python detector.
+
+For Moonread contributors only: `nix develop` uses the repository's `flake.nix`; run it at the repository root, then use `cargo run --manifest-path /absolute/path/to/reference/Cargo.toml -- /absolute/path/to/book.txt auto`. The reference directory need not be inside the repository. Running plain `nix develop` in the downloaded two-file directory will not work because it has no flake.
+
+Use the downloadable pinned Rust reference for independent generation; Python
+chardet/charset-normalizer/default open() are not interchangeable. Mismatched
+encoding can produce a different identity, especially on short/non-UTF-8 files.
+Moonread needs a matching current shelf index; metadata import never downloads,
+indexes or rereads TXT for matching. A miss is “Book not found” and is skipped,
+not rematched by title/path. Check encoding or use an export if needed.
+
+JSONL: one Book per nonblank physical line; JSON: format=moonread-metadata,
+version=1, books=[...]. Each Book has v=1 and content_sha256. Missing means unchanged;
+null does not clear. Explicit clear/rename needs user review. Unknown facts stay
+absent. This is not a reading-data backup. Generate on copies; do not modify or
+upload original TXT. Return the importable file, changes, encodings and uncertainties.
+
+Archive budgets:
+Concrete shared limits (binary units, not decimal GB/MB): ZIP file or bare JSON/JSONL ≤ **512 MiB (536,870,912 bytes)**; total uncompressed ZIP members ≤ **2 GiB (2,147,483,648 bytes)**; at most **100,000 ZIP members** (including directory entries); each cover file ≤ **32 MiB (33,554,432 bytes)**; each book record and optional README.txt ≤ **16 MiB (16,777,216 bytes)**. The manifest inside a ZIP shares the 2 GiB total budget; individual fields retain their smaller limits above. The ZIP central directory is also limited to 64 MiB. Covers must decode successfully; these byte budgets do not waive image or path validation.

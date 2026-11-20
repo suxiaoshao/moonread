@@ -149,7 +149,7 @@ final class AIAvailabilityConversationTests: ConversationFixture {
       let account = AIChatGPTAccount(
         clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic",
         scopes: ["chatgpt.tokens.use.direct"])
-      let credential = AICredential(
+      let credential = AICredentialStorage(
         accessToken: "synthetic", refreshToken: "synthetic-refresh", expires: .distantPast,
         accountID: account.subject, chatGPT: account)
       try TestCredentials.save(credential, reference: connection.credentialReference)
@@ -166,7 +166,7 @@ final class AIAvailabilityConversationTests: ConversationFixture {
       XCTAssertEqual(
         try TestCredentials.load(connection.credentialReference)?.refreshToken,
         credential.refreshToken)
-      XCTAssertFalse(providers.needsLogin.contains(connection.id))
+      XCTAssertFalse(providers.requiresLogin(connection.id))
 
     }
   }

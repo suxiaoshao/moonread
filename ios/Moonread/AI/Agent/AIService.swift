@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Observation
 import AISDKProvider
@@ -152,6 +153,7 @@ struct AISessionSummary: Identifiable {
     let proposals: AIProposalRegistry
     let availability: AIAvailability
     let providers: AIConnectionService
+    let usage: AIConnectionUsageService
     let sharing: AIDataSharingConsent
     private(set) var sessions: [AIConversation] = []
     var conversations: [AIConversation] { sessions.filter(\.listed).sorted { $0.updated > $1.updated } }
@@ -164,25 +166,30 @@ struct AISessionSummary: Identifiable {
     var loaded = false
     @ObservationIgnored private var repository: AIRepository?
     @ObservationIgnored private var coordinator: AIAgentCoordinator?
-    @ObservationIgnored private let reader: ReaderService
+    @ObservationIgnored private let reader: AppDataService
     @ObservationIgnored private let makeTransport: @Sendable () -> AITransport
     @ObservationIgnored private var loading: Task<Void, Never>?
     private var closedOwners: Set<String> = []
     private var admittedApplications: [String: Set<UUID>] = [:]
     #if DEBUG
-    @ObservationIgnored private var fixtureObserver: NSObjectProtocol?
+    @ObservationIgnored private var fixtureObserver: AnyCancellable?
     @ObservationIgnored var fixtureSeeding = false
     @ObservationIgnored var fixtureSeeded = false
     #endif
-    init(repository: AIRepository? = nil, defaults suppliedDefaults: UserDefaults? = nil, storefront: AIStorefrontSource = .live, auth: AIAuthentication = AIAuthentication(), reader: ReaderService = .shared, makeTransport: @escaping @Sendable () -> AITransport = { AITransport() }) {
+    init(repository: AIRepository? = nil, defaults suppliedDefaults: UserDefaults? = nil, storefront: AIStorefrontSource = .live, auth: AIAuthentication = AIAuthentication(), reader: AppDataService = .shared, makeTransport: @escaping @Sendable () -> AITransport = { AITransport() }) {
+        #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let session = arguments.firstIndex(of: "--ui-test-session").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
         let defaults = suppliedDefaults ?? session.flatMap { UserDefaults(suiteName: "Moonread.AI.UITest-\($0)") } ?? .standard
+        #else
+        let defaults = suppliedDefaults ?? .standard
+        #endif
         self.repository = repository; self.makeTransport = makeTransport; self.reader = reader
         proposals = AIProposalRegistry(reader: reader)
         availability = AIAvailability(defaults: defaults, storefront: storefront)
         sharing = AIDataSharingConsent(defaults: defaults)
-        providers = AIConnectionService(defaults: defaults, auth: auth, sharing: sharing, availability: availability)
+        usage = AIConnectionUsageService(availability: availability, now: auth.now)
+        providers = AIConnectionService(defaults: defaults, auth: auth, sharing: sharing, availability: availability, usage: usage)
         availability.didDisable = { [weak self] in
             guard let self else { return }
             for value in self.sessions { self.stop(value.id) }
@@ -227,7 +234,7 @@ struct AISessionSummary: Identifiable {
     #if DEBUG
     private func installTaskFixturesIfRequested() {
         guard ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.arguments.contains("--ui-test-ai-tasks") else { return }
-        fixtureObserver = NotificationCenter.default.addObserver(forName: .aiTaskFixtureReady, object: nil, queue: .main) { [weak self] _ in
+        fixtureObserver = MainActorNotifications.observe(.aiTaskFixtureReady) { [weak self] in
             Task { @MainActor in do { try await self?.seedTaskFixturesIfReady() } catch { self?.error = AIRequestError.message(error) } }
         }
         Task { do { try await seedTaskFixturesIfReady() } catch { self.error = AIRequestError.message(error) } }

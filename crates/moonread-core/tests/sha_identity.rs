@@ -1,10 +1,9 @@
-use moonread_core::{ReaderCore, SourceContentKey};
-use tempfile::TempDir;
+use moonread_core::{
+    TextImportMode, advance_text_import, begin_text_import, detect_import_encoding,
+};
 
 #[test]
 fn raw_counted_and_normalized_import_hashes_match_sha010_database_values() {
-    let root = TempDir::new().unwrap();
-    let core = ReaderCore::new(root.path().join("db").to_string_lossy().into()).unwrap();
     let text = "第一章 春风\r\n中文正文。\r\n";
     let fixtures = [
         (
@@ -33,40 +32,17 @@ fn raw_counted_and_normalized_import_hashes_match_sha010_database_values() {
         ),
     ];
     for (name, bytes, expected_raw) in fixtures {
-        let path = root.path().join(format!("{name}.txt"));
-        std::fs::write(&path, &bytes).unwrap();
-        let imported = core
-            .import_book(path.to_string_lossy().into(), name.into())
+        let encoding = detect_import_encoding(bytes.clone()).unwrap();
+        let input = begin_text_import(encoding, TextImportMode::Identity, 0).unwrap();
+        let result = advance_text_import(input, bytes, true, vec![])
+            .unwrap()
+            .identity
             .unwrap();
+        assert_eq!(result.raw_sha256, expected_raw, "{name} raw");
         assert_eq!(
-            imported.content_sha256,
-            "5aae5263622e54a70db8174765a6171f6e3447f4eedd84c37a773474a62c8be2"
+            result.content_sha256,
+            "5aae5263622e54a70db8174765a6171f6e3447f4eedd84c37a773474a62c8be2",
+            "{name} normalized"
         );
-        let control = core.create_import(name.into()).unwrap();
-        assert_eq!(
-            core.hash_import_source(control.clone(), path.to_string_lossy().into())
-                .unwrap(),
-            expected_raw
-        );
-        let key = SourceContentKey {
-            raw_sha256: expected_raw.into(),
-            decoding: "auto".into(),
-        };
-        core.validate_import_source(control.clone(), key.clone())
-            .unwrap();
-        // stream_import's CountingReader checks the same raw input before publishing the cache.
-        core.stream_import(
-            control.clone(),
-            path.to_string_lossy().into(),
-            expected_raw.into(),
-            None,
-        )
-        .unwrap();
-        core.finish_import(control).unwrap();
-        assert_eq!(
-            core.source_book(key).unwrap().unwrap().content_sha256,
-            imported.content_sha256
-        );
-        assert_eq!(std::fs::read(path).unwrap(), bytes);
     }
 }

@@ -1,3 +1,4 @@
+import Combine
 import UIKit
 
 /// Platform effects are leased only while the reader's scene is active.
@@ -15,8 +16,10 @@ final class ReaderDeviceControls {
     func sceneActive(_ value: Bool) { if value { activate() } else { suspend() } }
     private let lease = UUID()
     private weak var scene: UIWindowScene?
-    private var observers: [NSObjectProtocol] = []
+    private var observers: [AnyCancellable] = []
     private var active = false
+    private var automaticReading = false
+    var willSuspend: () -> Void = {}
     private var originalBrightness: CGFloat?
     private var expectedBrightness: CGFloat?
     private var settings = defaultReaderSettings()
@@ -32,22 +35,28 @@ final class ReaderDeviceControls {
         let previous = settings
         settings = value
         guard active else { return }
-        if previous.keepAwake != value.keepAwake { setAwake(value.keepAwake) }
+        if previous.keepAwake != value.keepAwake { setAwake(value.keepAwake || automaticReading) }
         if previous.brightness != value.brightness { applyBrightness() }
         if previous.orientation != value.orientation { applyOrientation() }
+    }
+
+    func setAutomaticReading(_ value: Bool) {
+        guard automaticReading != value else { return }
+        automaticReading = value
+        if active { setAwake(settings.keepAwake || value) }
     }
 
     func start(in scene: UIWindowScene?) {
         guard self.scene == nil, let scene else { return }
         self.scene = scene
         let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: UIScene.didActivateNotification, object: scene, queue: .main) { [weak self] _ in
+        observers.append(MainActorNotifications.observe(UIScene.didActivateNotification, object: scene, center: center) { [weak self] in
             Task { @MainActor in self?.activate() }
         })
-        observers.append(center.addObserver(forName: UIScene.willDeactivateNotification, object: scene, queue: .main) { [weak self] _ in
+        observers.append(MainActorNotifications.observe(UIScene.willDeactivateNotification, object: scene, center: center) { [weak self] in
             Task { @MainActor in self?.suspend() }
         })
-        observers.append(center.addObserver(forName: UIScreen.brightnessDidChangeNotification, object: scene.screen, queue: .main) { [weak self] _ in
+        observers.append(MainActorNotifications.observe(UIScreen.brightnessDidChangeNotification, object: scene.screen, center: center) { [weak self] in
             Task { @MainActor in self?.observeBrightness() }
         })
         if scene.activationState == .foregroundActive { activate() }
@@ -55,7 +64,7 @@ final class ReaderDeviceControls {
 
     func stop() {
         suspend()
-        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers.forEach { $0.cancel() }
         observers.removeAll()
         scene = nil
     }
@@ -63,13 +72,14 @@ final class ReaderDeviceControls {
     private func activate() {
         guard !active else { return }
         active = true
-        setAwake(settings.keepAwake)
+        setAwake(settings.keepAwake || automaticReading)
         applyBrightness()
         applyOrientation()
     }
 
     private func suspend() {
         guard active else { return }
+        willSuspend()
         active = false
         setAwake(false)
         restoreBrightness()
@@ -132,7 +142,7 @@ final class ReaderDeviceControls {
         Self.orientations[scene.session.persistentIdentifier] = mask
         scene.windows.forEach { $0.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations() }
         let requested = settings.orientation
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { [weak self] _ in
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { @Sendable [weak self] _ in
             Task { @MainActor in
                 guard let self, self.active, self.settings.orientation == requested, requested != .system else { return }
                 self.orientationFailed()

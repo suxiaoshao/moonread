@@ -1,0 +1,14 @@
+pub(crate) mod bookshelf;
+pub(crate) mod order;
+pub(crate) mod tools;
+pub use crate::library::bookshelf::full_index::LibraryIdentityInventory;
+pub use crate::library::bookshelf::*;
+pub use order::{
+    DirectorySortEntry, ReadingDataSortEntry, SearchFileOrdinal, library_directory_order,
+    reading_data_order, search_file_ordinals,
+};
+pub use tools::{
+    ChapterEntry, ChapterOutline, MarkKind, MarkPage, ReaderMark, SearchBatch, SearchHit,
+    SearchRange, SearchScanState, SearchScanStep, TextRange, advance_search_scan,
+    begin_search_scan,
+};
