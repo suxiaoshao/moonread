@@ -250,6 +250,7 @@
     "匹配程度": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"匹配程度"}},"en":{"stringUnit":{"state":"translated","value":"Relevance"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"符合程度"}}}},
     "编辑内容": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"编辑内容"}},"en":{"stringUnit":{"state":"translated","value":"Edit"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"編輯內容"}}}},
     "条件": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"条件"}},"en":{"stringUnit":{"state":"translated","value":"Conditions"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"條件"}}}},
+    "恢复为已保存的条件": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Restore saved conditions"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"恢復為已儲存的條件"}}}},
     "重置筛选与排序": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"重置筛选与排序"}},"en":{"stringUnit":{"state":"translated","value":"Reset filters and sorting"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"重設篩選與排序"}}}},
     "放弃筛选更改？": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"放弃筛选更改？"}},"en":{"stringUnit":{"state":"translated","value":"Discard filter changes?"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"放棄篩選更改？"}}}},
     "放弃更改": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"放弃更改"}},"en":{"stringUnit":{"state":"translated","value":"Discard changes"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"放棄更改"}}}},

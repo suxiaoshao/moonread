@@ -332,7 +332,7 @@ struct AppSearchView: View {
         .sheet(item: $sheet, onDismiss: openCreatedFilter) { item in
             switch item {
             case .filters(let draft):
-                BookSearchEditor(search: search, model: model, draft: draft, virtualShelf: virtualShelf)
+                BookSearchEditor(search: search, model: model, draft: draft, savedConfiguration: savedFilter?.configuration)
             case .name(let request):
                 SavedFilterNameSheet(request: request, model: model) { createdFilter = $0 }
             }

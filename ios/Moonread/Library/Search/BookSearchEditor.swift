@@ -65,7 +65,7 @@ struct BookSearchEditor: View {
     let search: AppSearch
     let model: LibraryModel
     @Bindable var draft: BookSearchDraft
-    var virtualShelf = false
+    let savedConfiguration: BookSearchConfiguration?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @State private var discard = false
@@ -130,11 +130,15 @@ struct BookSearchEditor: View {
         let quick = root.supportsQuickEditing
         // Keep the section slots stable while UIKit updates the list's layout and snapshot.
         let conditionRows = quick ? BookSearchField.allCases.map(quickConditionRow) : []
-        let resetRows: [ThemedGroupedList.Row] = draft.value.booksOnly ? [
+        let showsReset = savedConfiguration.map { draft.value != $0 } ?? draft.value.booksOnly
+        let resetRows: [ThemedGroupedList.Row] = showsReset ? [
             .init("resetSearchFilters", action: {
-                draft.value = BookSearchConfiguration(root: BookSearchNode(id: draft.original.root.id))
+                draft.value = savedConfiguration ?? BookSearchConfiguration(root: BookSearchNode(id: draft.original.root.id))
             }) {
-                BookSearchActionLabel(title: "重置筛选与排序", systemImage: "arrow.counterclockwise")
+                BookSearchActionLabel(
+                    title: savedConfiguration == nil ? "重置筛选与排序" : "恢复为已保存的条件",
+                    systemImage: "arrow.counterclockwise"
+                )
             }
         ] : []
         let result: [ThemedGroupedList.Section] = [
@@ -176,9 +180,9 @@ struct BookSearchEditor: View {
         let sorts = draft.value.sorts
         var rows = sorts.enumerated().map { index, item in sortRow(item, index: index) }
         let available = BookSearchSortField.allCases.filter { field in
-            (!virtualShelf || !field.requiresSearchText) && !sorts.contains { $0.field == field }
+            (savedConfiguration == nil || !field.requiresSearchText) && !sorts.contains { $0.field == field }
         }
-        let defaultOrder = virtualShelf
+        let defaultOrder = savedConfiguration != nil
             ? String(localized: "默认：最近阅读 → 自然名称")
             : String(localized: "默认：匹配程度 → 最近阅读 → 自然名称")
         if !available.isEmpty {
