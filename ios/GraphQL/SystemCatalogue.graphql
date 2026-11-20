@@ -1,0 +1,6 @@
+query SystemCatalogue {
+  systemBookCatalogue {
+    readingKey title author tags sourceShelfIDs sourceCount reconnectRequired needsDownload percentage chapterTitle recentRank naturalOrdinal
+    cover { id sha256 fileExtension width height }
+  }
+}

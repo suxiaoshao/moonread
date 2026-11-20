@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import SwiftUI
 
 /// A description is syncable; a bookmark and the local shelf UUID are not.
@@ -19,7 +20,7 @@ struct ShelfReference: Identifiable, Equatable, Sendable {
 /// Device-only authorization and acknowledgement. Missing data is the v1 initial
 /// state; an unknown version is never overwritten by an older installation.
 struct ShelfReferenceBindings: Codable, Equatable {
-    struct Scope: Codable, Equatable {
+    struct Scope: Codable, Equatable, Sendable {
         var bindings: [String: String] = [:]
         var ignored: Set<String> = []
         var guided: Set<String> = []
@@ -35,17 +36,36 @@ struct ShelfReferenceBindings: Codable, Equatable {
             guard schemaVersion == 1 else { throw UserSyncCompatibilityError() }
         }
     }
-    mutating func bind(_ reference: String, shelf: String, scope: String) {
-        var value = scopes[scope] ?? Scope()
-        value.bindings[reference] = shelf; value.ignored.remove(reference)
-        scopes[scope] = value
-    }
-    mutating func forget(_ shelf: String, scope: String) {
-        var value = scopes[scope] ?? Scope()
-        for reference in value.bindings.filter({ $0.value == shelf }).keys {
-            value.bindings.removeValue(forKey: reference); value.ignored.insert(reference)
+    static func read(_ db: Database) throws -> Scope {
+        var scope = Scope()
+        for row in try Row.fetchAll(db, sql: "SELECT key,kind,value FROM usr.local_shelf_recovery") {
+            let key: String = row["key"]
+            let kind: String = row["kind"]
+            switch kind {
+            case "binding":
+                scope.bindings[key] = try JSONDecoder().decode(String.self, from: row["value"])
+            case "ignored": scope.ignored.insert(key)
+            case "guided": scope.guided.insert(key)
+            case "recovery": scope.recovery = (scope.recovery ?? []).union([key])
+            case "published":
+                if scope.published == nil { scope.published = [:] }
+                scope.published?[key] = try JSONDecoder().decode(ShelfReferenceValue.self, from: row["value"])
+            default: throw UserSyncCompatibilityError()
+            }
         }
-        scopes[scope] = value
+        return scope
+    }
+
+    static func write(_ db: Database, scope: Scope) throws {
+        try db.execute(sql: "DELETE FROM usr.local_shelf_recovery")
+        func insert(_ key: String, _ kind: String, value: Data? = nil) throws {
+            try db.execute(sql: "INSERT INTO usr.local_shelf_recovery VALUES(?,?,?)", arguments: [key,kind,value])
+        }
+        for (key, value) in scope.bindings { try insert(key,"binding",value: JSONEncoder().encode(value)) }
+        for key in scope.ignored { try insert(key,"ignored") }
+        for key in scope.guided { try insert(key,"guided") }
+        for key in scope.recovery ?? [] { try insert(key,"recovery") }
+        for (key, value) in scope.published ?? [:] { try insert(key,"published",value: JSONEncoder().encode(value)) }
     }
 }
 
@@ -57,57 +77,63 @@ struct ShelfRecoverySnapshot: Sendable, Equatable {
 
 extension AppDataService {
     private var shelfReferenceScope: String {
-        userDirectoryName + "/" + (sourceDefaults.string(forKey: "Moonread.userOwner") ?? "local")
+        get throws { try indexStore().lease.scope.key }
     }
-    private func shelfBindings() throws -> ShelfReferenceBindings {
-        try ShelfReferenceBindings(data: sourceDefaults.data(forKey: ShelfReferenceBindings.key))
+    private func shelfBindings() throws -> ShelfReferenceBindings.Scope {
+        let index = try relationalUserIndex()
+        return try index.session.readUsers(index.lease) { try ShelfReferenceBindings.read($0) }
     }
-    private func saveShelfBindings(_ bindings: ShelfReferenceBindings) throws {
-        sourceDefaults.set(try JSONEncoder().encode(bindings), forKey: ShelfReferenceBindings.key)
+    private func saveShelfBindings(_ bindings: ShelfReferenceBindings.Scope) throws {
+        let index = try relationalUserIndex()
+        try index.session.writeUsers(index.lease) { try ShelfReferenceBindings.write($0, scope: bindings) }
     }
     /// Called after registration and on configuration/import refresh. Stable local
-    /// IDs are saved before awaiting SwiftData, so reentrant retries reuse them.
+    /// IDs are saved locally before publishing the description.
     func shelfRecoverySnapshot() async throws -> ShelfRecoverySnapshot {
-        let revision = userCloudConfigurationRevision, scope = shelfReferenceScope
-        let store = try await userStore()
-        guard revision == userCloudConfigurationRevision, scope == shelfReferenceScope else { throw CancellationError() }
+        let revision = userCloudConfigurationRevision, scope = try shelfReferenceScope
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        guard revision == userCloudConfigurationRevision, scope == (try shelfReferenceScope) else { throw CancellationError() }
+        let index = try relationalUserIndex()
         let shelves = try shelves()
         var changed = false
         for shelf in shelves where !shelf.builtin {
             var bindings = try shelfBindings()
-            var ids = (bindings.scopes[scope]?.bindings ?? [:]).filter { $0.value == shelf.id }.keys.sorted()
+            var ids = bindings.bindings.filter { $0.value == shelf.id }.keys.sorted()
             if ids.isEmpty {
                 let id = UUID().uuidString
-                bindings.bind(id, shelf: shelf.id, scope: scope); try saveShelfBindings(bindings)
+                bindings.bindings[id] = shelf.id; bindings.ignored.remove(id); try saveShelfBindings(bindings)
                 ids = [id]
             }
             let value = ShelfReferenceValue(name: shelf.name, locationDescription: shelf.location == "icloud" ? "icloud-drive" : "file-provider")
             for id in ids {
                 // Publish local description changes, not a fresh LWW fact on every
                 // remote import. Devices with different display names must not ping-pong.
-                if bindings.scopes[scope]?.published?[id] == value { continue }
+                if bindings.published?[id] == value { continue }
                 let key = "shelf-reference/" + id
                 do {
-                    let old = try await store.value(key)
-                    guard revision == userCloudConfigurationRevision, scope == shelfReferenceScope else { throw CancellationError() }
                     guard let current = try? libraryShelf(shelf.id), current.name == shelf.name, current.location == shelf.location,
-                          try shelfBindings().scopes[scope]?.bindings[id] == shelf.id else { continue }
-                    if old.flatMap({ try? JSONDecoder().decode(ShelfReferenceValue.self, from: Data($0.utf8)) }) != value {
-                        try await store.put(key, value: UserSyncJSON.encode(value), device: userDevice); changed = true
+                          try shelfBindings().bindings[id] == shelf.id else { continue }
+                    if try index.session.writeUsers(index.lease, { db in
+                        guard try UserValueRows.shelfReferences(db, id: id).first?.value != value else { return false }
+                        try UserValueRows.put(db, key: .init(key), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock,
+                                              scope: index.lease.scope)
+                        return true
+                    }) {
+                        changed = true
                     }
-                    guard revision == userCloudConfigurationRevision, scope == shelfReferenceScope else { throw CancellationError() }
+                    guard revision == userCloudConfigurationRevision, scope == (try shelfReferenceScope) else { throw CancellationError() }
                     var latest = try shelfBindings()
-                    if latest.scopes[scope]?.bindings[id] == shelf.id {
-                        var published = latest.scopes[scope]?.published ?? [:]
-                        published[id] = value; latest.scopes[scope]?.published = published
+                    if latest.bindings[id] == shelf.id {
+                        var published = latest.published ?? [:]
+                        published[id] = value; latest.published = published
                         try saveShelfBindings(latest)
                     }
                 } catch is UserSyncCompatibilityError { continue }
             }
         }
-        let references = try await store.shelfReferences()
-        guard revision == userCloudConfigurationRevision, scope == shelfReferenceScope else { throw CancellationError() }
-        let local = try shelfBindings().scopes[scope] ?? .init()
+        let references = try index.session.readUsers(index.lease) { try UserValueRows.shelfReferences($0) }
+        guard revision == userCloudConfigurationRevision, scope == (try shelfReferenceScope) else { throw CancellationError() }
+        let local = try shelfBindings()
         let currentShelves = try self.shelves()
         let known = Set(currentShelves.map(\.id))
         let missing = references.filter { reference in
@@ -125,45 +151,40 @@ extension AppDataService {
         }, guidance: candidates)
     }
     func bindShelfReference(_ reference: String, shelf: String, scope: String) throws {
-        guard scope == shelfReferenceScope else { throw CancellationError() }
+        guard scope == (try shelfReferenceScope) else { throw CancellationError() }
         guard UUID(uuidString: reference) != nil, try !libraryShelf(shelf).builtin else { throw LibraryFileError.invalidDestination }
         var bindings = try shelfBindings()
-        bindings.bind(reference, shelf: shelf, scope: shelfReferenceScope)
+        bindings.bindings[reference] = shelf; bindings.ignored.remove(reference)
         try saveShelfBindings(bindings)
         try requestShelfRecoveryGuidance(shelf)
     }
     func forgetShelfReference(_ shelf: String) throws {
-        var bindings = try shelfBindings(); bindings.forget(shelf, scope: shelfReferenceScope)
+        var bindings = try shelfBindings()
+        for reference in bindings.bindings.filter({ $0.value == shelf }).keys {
+            bindings.bindings.removeValue(forKey: reference); bindings.ignored.insert(reference)
+        }
         try saveShelfBindings(bindings)
     }
     func acknowledgeShelfGuidance(_ shelf: String, scope: String) throws {
-        guard scope == shelfReferenceScope else { throw CancellationError() }
-        var bindings = try shelfBindings(), value = bindings.scopes[shelfReferenceScope] ?? .init()
-        value.guided.insert(shelfGuidanceKey(try libraryShelf(shelf))); bindings.scopes[shelfReferenceScope] = value
+        guard scope == (try shelfReferenceScope) else { throw CancellationError() }
+        var bindings = try shelfBindings()
+        bindings.guided.insert(shelfGuidanceKey(try libraryShelf(shelf)))
         try saveShelfBindings(bindings)
     }
     private func shelfGuidanceKey(_ shelf: LibraryShelf) -> String { shelf.builtin ? "builtin-" + shelf.location : shelf.id }
     func requestShelfRecoveryGuidance(_ shelf: String) throws {
-        var bindings = try shelfBindings(), value = bindings.scopes[shelfReferenceScope] ?? .init()
-        value.guided.remove(shelf); value.recovery = (value.recovery ?? []).union([shelf])
-        bindings.scopes[shelfReferenceScope] = value; try saveShelfBindings(bindings)
+        var bindings = try shelfBindings()
+        bindings.guided.remove(shelf); bindings.recovery = (bindings.recovery ?? []).union([shelf])
+        try saveShelfBindings(bindings)
     }
     func registerRecoveredShelf(_ url: URL, reference: ShelfReference, scope: String) throws -> String {
-        guard scope == shelfReferenceScope else { throw CancellationError() }
-        let replacing = try shelfBindings().scopes[scope]?.bindings[reference.id]
+        guard scope == (try shelfReferenceScope) else { throw CancellationError() }
+        let replacing = try shelfBindings().bindings[reference.id]
         let id = try registerLibraryShelf(url, replacing: replacing)
         try bindShelfReference(reference.id, shelf: id, scope: scope)
         return id
     }
-    /// The first opt-in keeps locally assigned logical IDs. Later account changes
-    /// do not copy bindings into a different account's scope.
-    func adoptLocalShelfBindings(account: String) throws {
-        var bindings = try shelfBindings()
-        let local = userDirectoryName + "/local", destination = userDirectoryName + "/" + account
-        if bindings.scopes[destination] == nil, let value = bindings.scopes[local] {
-            bindings.scopes[destination] = value; try saveShelfBindings(bindings)
-        }
-    }
+
 }
 
 /// A committed scan supplies an authorization scope, not another identity rule.

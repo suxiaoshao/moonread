@@ -82,10 +82,10 @@ struct ReadingReviewCandidate: Equatable {
 
     func body(content: Content) -> some View {
         content.onChange(of: phase) { _, phase in
-            if phase != .active { library.reviewCandidate = nil }
-        }.task(id: library.reviewCandidate?.id) {
-            guard let candidate = library.reviewCandidate else { return }
-            defer { if library.reviewCandidate?.id == candidate.id { library.reviewCandidate = nil } }
+            if phase != .active { library.shell.reviewCandidate = nil }
+        }.task(id: library.shell.reviewCandidate?.id) {
+            guard let candidate = library.shell.reviewCandidate else { return }
+            defer { if library.shell.reviewCandidate?.id == candidate.id { library.shell.reviewCandidate = nil } }
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
             if args.contains("--ui-testing"), !args.contains("--ui-test-review-prompt") { return }
@@ -93,14 +93,14 @@ struct ReadingReviewCandidate: Equatable {
             guard isBookshelf, candidate.milliseconds >= ReadingReviewEligibility.minimumReadingMilliseconds,
                   let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
                   store.mayRequest(version: version) else { return }
-            let returnPath = library.libraryPath
+            let returnPath = library.shell.libraryPath
             // Let the native pop and final-save UI settle; never block navigation.
             do {
                 try await Task.sleep(for: .seconds(1))
-                guard canPresent, library.libraryPath == returnPath else { return }
-                let overview = try await AppDataService.shared.statistics(first: 0, last: StatisticsDates.day(Date()))
-                guard !Task.isCancelled, canPresent, library.libraryPath == returnPath,
-                      store.claim(days: overview.days, milliseconds: candidate.milliseconds, version: version) else { return }
+                guard canPresent, library.shell.libraryPath == returnPath else { return }
+                let read = try await AppDataService.shared.statisticsDayRead(first: 0, last: StatisticsDates.day(Date()))
+                guard read.compatibilityNotice == nil, !Task.isCancelled, canPresent, library.shell.libraryPath == returnPath,
+                      store.claim(days: read.value, milliseconds: candidate.milliseconds, version: version) else { return }
                 requestReview()
             } catch { /* Missing statistics or cancellation must never interrupt reading. */ }
         }
@@ -123,16 +123,16 @@ struct ReadingReviewCandidate: Equatable {
 
     private var canPresent: Bool {
         guard phase == .active, Onboarding.shared.completed, themes.error == nil,
-              library.selectedTab == .library, !library.busy,
-              library.error == nil, library.readerExitError == nil,
-              library.sheet == nil, library.aiRequest == nil, !library.filePickerPresented,
+              library.shell.selectedTab == .library, !library.busy,
+              library.error == nil, library.shell.readerExitError == nil,
+              library.sheet == nil, library.shell.aiRequest == nil, !library.filePickerPresented,
               library.pendingDecision == nil, library.removingShelf == nil, presentationIsIdle else { return false }
         return isBookshelf
     }
 
     private var isBookshelf: Bool {
-        guard library.selectedTab == .library else { return false }
-        switch library.libraryPath.last {
+        guard library.shell.selectedTab == .library else { return false }
+        switch library.shell.libraryPath.last {
         case nil, .folder, .allBooks, .recent: return true
         default: return false
         }

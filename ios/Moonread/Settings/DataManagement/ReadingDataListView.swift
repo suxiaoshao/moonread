@@ -39,7 +39,7 @@ struct ReadingDataListView: View {
                 ThemedGroupedList(sections: [
                     .init(id: "readingData", footer: String(localized: "按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。", table: "DataManagement"), rows: model.visible.map { item in
                         .init(item.id, action: { detail = item }, actions: [
-                            .init(title: String(localized: "删除", table: "DataManagement"), destructive: true, perform: { model.deleting = [item.id] })
+                            .init(title: String(localized: "删除", table: "DataManagement"), destructive: true, perform: { model.requestDelete([item.id]) })
                         ], accessibilityID: "reading-data-" + item.id) {
                             DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
                                 .accessibilityIdentifier("reading-data-" + item.id)
@@ -79,12 +79,23 @@ struct ReadingDataListView: View {
                     Button { model.toggleVisibleSelection() } label: { Text(model.allVisibleSelected ? "取消全选" : "全选", tableName: "DataManagement") }
                         .accessibilityIdentifier("selectAllReadingData")
                     Spacer()
-                    Button(role: .destructive) { model.deleting = model.selected } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
+                    Button(role: .destructive) { model.requestDelete(model.selected) } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
                         .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
                 }
             }
         }
         .toolbar(model.selecting ? .hidden : .automatic, for: .tabBar)
+        .task { await model.load() }
+        .refreshable { await model.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
+            if !model.busy { Task { await model.load() } }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cloudStatusChanged).receive(on: DispatchQueue.main)) { _ in
+            if !model.busy { Task { await model.load() } }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
+            if !model.busy { Task { await model.load() } }
+        }
         .onDisappear { model.selecting = false; model.selected.removeAll() }
         .modifier(ReadingDataWorking(model: model)).modifier(ReadingDataDeletionPrompt(model: model))
         .sheet(item: $detail) { item in

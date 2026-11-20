@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Rebuildable, local-only display data. No path, bookmark, offset, token or text.
@@ -97,6 +98,66 @@ struct SystemReadingSnapshotFile: Sendable {
         // Foundation writes a sibling temporary file and renames atomically; the
         // same protection applies to the newly published inode, not only its parent.
         try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+    /// All large work is done before a scope-authorized atomic publication.
+    func stage(_ snapshot: SystemReadingSnapshot) throws -> URL {
+        let data = try Self.encode(snapshot)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+        let staging = directory.appendingPathComponent(".catalog-" + UUID().uuidString)
+        do {
+            try data.write(to: staging, options: [.atomic,.completeFileProtectionUntilFirstUserAuthentication])
+            return staging
+        } catch {
+            try? FileManager.default.removeItem(at: staging)
+            throw error
+        }
+    }
+
+    func publishStaged(_ staging: URL) throws {
+        guard staging.deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path,
+              staging.lastPathComponent.hasPrefix(".catalog-") else { throw CocoaError(.fileWriteInvalidFileName) }
+        guard rename(staging.path, url.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    }
+    #endif
+}
+
+/// A separate, rebuildable Widget file. Statistics refreshes never read or
+/// replace the book catalogue. Both files are retired when the owner changes.
+struct SystemReadingStatisticsSnapshot: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let storeScope: String
+    let appearance: SystemReadingSnapshot.Appearance?
+    let statistics: SystemReadingSnapshot.Statistics?
+
+    init(storeScope: String, appearance: SystemReadingSnapshot.Appearance? = nil,
+         statistics: SystemReadingSnapshot.Statistics? = nil) {
+        schemaVersion = 1
+        self.storeScope = storeScope; self.appearance = appearance; self.statistics = statistics
+    }
+}
+
+extension SystemReadingSnapshotFile {
+    private static var maximumStatisticsBytes: Int { 64 * 1024 }
+    var statisticsURL: URL { directory.appendingPathComponent("statistics.json") }
+
+    func readStatistics() throws -> SystemReadingStatisticsSnapshot {
+        let size = try statisticsURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= Self.maximumStatisticsBytes else { throw CocoaError(.fileReadTooLarge) }
+        let data = try Data(contentsOf: statisticsURL)
+        guard data.count <= Self.maximumStatisticsBytes else { throw CocoaError(.fileReadTooLarge) }
+        let value = try JSONDecoder().decode(SystemReadingStatisticsSnapshot.self, from: data)
+        guard value.schemaVersion == 1 else { throw CocoaError(.coderReadCorrupt) }
+        return value
+    }
+
+    #if !MOONREAD_WIDGET
+    func publishStatistics(_ value: SystemReadingStatisticsSnapshot) throws {
+        let bytes = try JSONEncoder().encode(value)
+        guard bytes.count <= Self.maximumStatisticsBytes else { throw CocoaError(.fileWriteOutOfSpace) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+        try bytes.write(to: statisticsURL, options: [.atomic,.completeFileProtectionUntilFirstUserAuthentication])
     }
     #endif
 }

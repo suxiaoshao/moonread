@@ -19,7 +19,7 @@
 | AI 对话与列表 | canvas/surface、raised、input、accentSurface、ink、secondary、accent/onAccent、border/focus、selected、destructive、success、moon/maria | 对话列表为 plain List：标题＋右侧时间或运行状态，下一行为最新可见消息摘要，关联书名用小字；对话页用户气泡 accentSurface 靠右，回复无底框；输入框 1pt border/focus，发送与停止为 accent 实心圆；阅读弹窗沿用阅读作用域的 surface；阅读月亮为主题 MoonView 加纸色间隙，状态角标颜色按语义。细则见 [AI 阅读助手](ai.md) 与[对话错误与单次操作确认](../ai/rendering.md) |
 | 准备、空态、关于 | moon、maria、secondary、paper | 月亮角色以矢量路径按主题着色（静止姿态），月体保持完整圆形 |
 | 阅读封面／扉页 | paper、ink、secondary、accent；品牌固定色 | 书名与封面居中、细分隔线和小字号落款；封面与书架共用用户图片／预设／文字兜底，页面其余部分使用阅读主题。正文准备阶段复用这一画面，较慢任务在底部显示原生加载进度 |
-| 启动页 | LaunchBackground 浅深颜色资产、LaunchSeal（桌面图标渲染） | 系统静态图与 App 首帧均为 120pt 桌面图标、全屏居中；主题与本地首页快照就绪或错误后（根等待上限1s、封面子预算150ms），底色和图标一起250ms原地淡出，减弱动态缩短至 120ms；首页同步可用，回前台不重播 |
+| 启动页 | 系统启动背景、App 主题 canvas、LaunchSeal（桌面图标渲染） | 系统静态图与 App 首帧使用同一张 120pt 桌面图标；主题与本地首页快照就绪或错误后（根等待上限1s、封面子预算150ms），底色和图标一起250ms原地淡出，减弱动态缩短至 120ms；首页同步可用，回前台不重播 |
 
 应用自绘内容的文字层级显式读取 ink/secondary，包括书架文件名与路径、目录与笔记摘要、搜索标题/结果数量/摘要、空态和准备状态。不能用通用 `.primary/.secondary` 代替配色中的独立角色。自绘分隔线使用 separator；自定义返回、撤销、准备与加载浮层在预设/自定义配色下使用 raised，选择系统配色时保留系统材质。
 
@@ -27,7 +27,7 @@
 
 搜索 List 的行背景、分隔线和间距修饰放在几何观察器外层，使列表能读取到行样式；列表自身也显式设置 surface。深浅截图验证普通结果行与面板同底色，选中行使用 selected，防止只改文字后仍残留系统黑/白色列表。
 
-原生导航、菜单、键盘、控件内部和玻璃仍由系统绘制。搜索 Tab 的入口、输入框、token 和取消按钮由系统 `searchable` 绘制，不使用阅读搜索面板的自定义输入样式；结果文字和命中继续使用主题角色。`ThemeSurface` 内的系统语义色是“系统配色”的映射；透明绘制层/遮罩不是独立色板；主题编辑器中的色块展示被编辑配色的值；LaunchBackground 与桌面图标是静态平台资产。这些是明确的颜色来源，不是页面自行硬编码的 RGB。不能把系统材质某一帧的 RGB 当作固定色。
+原生导航、菜单、键盘、控件内部和玻璃仍由系统绘制。搜索 Tab 的入口、输入框、token 和取消按钮由系统 `searchable` 绘制，不使用阅读搜索面板的自定义输入样式；结果文字和命中继续使用主题角色。`ThemeSurface` 内的系统语义色是“系统配色”的映射；透明绘制层/遮罩不是独立色板；主题编辑器中的色块展示被编辑配色的值。桌面图标是静态平台资产。不能把系统材质某一帧的 RGB 当作固定色。
 
 阅读数据页的“全部 / 不在书架上”是主题色筛选胶囊，选中用 selected/accent、未选用 surface/secondary；搜索仍为原生 searchable。选择态保留返回和完成，暂隐藏 Tab，原位置显示 raised 悬浮胶囊操作栏；完成或离开页面恢复 Tab。普通内容行用 surface/separator，页内确认区用 canvas，需要处理摘要用 surface，处理中浮层复用 floatingBackground；不额外重绘系统导航或标签胶囊。
 

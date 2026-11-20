@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 enum AppTab: Hashable { case library, conversations, statistics, settings, search }
 
@@ -44,7 +45,7 @@ struct AppSearchField: ViewModifier {
         return Group {
             if quickEntry {
                 content.searchable(text: text,
-                                   isPresented: Binding(get: { model.searchPresented }, set: { model.setSearchPresented($0) }),
+                                   isPresented: Binding(get: { model.shell.searchPresented }, set: { model.shell.setSearchPresented($0) }),
                                    prompt: searchPrompt)
             } else {
                 // A contextual search retains its condition tree while editing text.
@@ -153,7 +154,8 @@ struct AppSearchView: View {
     private var folders: [LibraryEntry] { host.showsFolders ? entries.filter(\.directory) : [] }
     private var groupCount: Int { [!books.isEmpty, !folders.isEmpty, ai.availability.isAvailable && !conversations.isEmpty].filter { $0 }.count }
     private var key: SearchKey {
-        SearchKey(term: search.term, configuration: search.configuration, revision: model.revision, retry: retry, aiAvailable: ai.availability.isAvailable)
+        SearchKey(term: search.term, configuration: search.configuration, revision: results.authorityRevision,
+                  retry: retry, aiAvailable: ai.availability.isAvailable)
     }
     var body: some View {
         List {
@@ -263,12 +265,16 @@ struct AppSearchView: View {
         editor = BookSearchDraft(search.configuration)
     }
     private func run(_ key: SearchKey) async {
-        await results.run(key, hasCriteria: search.hasCriteria) {
+        let spec = LibraryQueryRules.SearchSpec(profile: .library, query: key.term, configuration: key.configuration)
+        await results.observe(key, hasCriteria: search.hasCriteria) {
             try await Task.sleep(for: .milliseconds(120))
             try await AppDataService.libraryTestLatency()
-            let found = try await AppDataService.shared.searchLibrary(query: key.term, configuration: key.configuration)
-            let talks = !key.configuration.booksOnly && key.aiAvailable && !key.term.isEmpty ? try await ai.searchConversations(key.term) : []
-            return (found.entries, talks, found.unknownCount)
+            return try await AppDataService.shared.searchInvalidations(spec)
+        } search: {
+            try await AppDataService.shared.searchLibrary(query: key.term, configuration: key.configuration)
+        } conversations: {
+            guard !key.configuration.booksOnly, key.aiAvailable, !key.term.isEmpty else { return [] }
+            return try await ai.searchConversations(key.term)
         }
     }
 
@@ -284,7 +290,7 @@ struct AppSearchView: View {
         }
     }
     private func navigate(_ route: LibraryRoute) {
-        if let push = host.push { push(route) } else { model.path.append(route) }
+        if let push = host.push { push(route) } else { model.shell.path.append(route) }
     }
     @ViewBuilder private func row(_ entry: LibraryEntry) -> some View {
         if host.push == nil {
@@ -351,21 +357,44 @@ private struct AIConversationSearchRow: View {
     private(set) var unknownCount = 0
     private(set) var error: String?
     let loading = LoadingState()
-    private var generation = UUID()
-    func run(_ key: SearchKey, hasCriteria: Bool,
-             operation: () async throws -> ([LibraryEntry], [AIConversationSearchHit], Int)) async {
+    private(set) var authorityRevision = 0
+    @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var accountChange: AnyCancellable?
+
+    init(service: AppDataService = .shared) {
+        accountChange = MainActorNotifications.observe(.readingContinuationInvalidated, object: service) { [weak self] in
+            guard let self else { return }
+            generation = UUID(); reset(); authorityRevision &+= 1
+        }
+    }
+
+    private func reset() {
+        if let request = loading.request { loading.finish(request) }
+        completedKey = nil; error = nil; entries = []; conversations = []; unknownCount = 0
+    }
+
+    func observe(_ key: SearchKey, hasCriteria: Bool,
+                 invalidations: () async throws -> AsyncThrowingStream<Void, Error>,
+                 search: () async throws -> LibraryQueryRules.SearchOutcome,
+                 conversations: () async throws -> [AIConversationSearchHit]) async {
+        guard !Task.isCancelled else { return }
         let token = UUID(); generation = token
-        guard hasCriteria else { if let request = loading.request { loading.finish(request) }; completedKey = nil; error = nil; entries = []; conversations = []; unknownCount = 0; return }
+        guard hasCriteria else { reset(); return }
         let request = loading.begin(); defer { loading.finish(request) }
         do {
-            let (books, talks, unknown) = try await operation()
-            try Task.checkCancellation()
-            guard generation == token else { return }
-            entries = books; conversations = talks; unknownCount = unknown; error = nil; completedKey = key
+            let stream = try await invalidations()
+            var talks: [AIConversationSearchHit]?
+            for try await _ in stream {
+                guard generation == token, !Task.isCancelled else { return }
+                let books = try await search()
+                if talks == nil { talks = try await conversations() }
+                guard generation == token, !Task.isCancelled else { return }
+                entries = books.entries; unknownCount = books.unknownCount
+                self.conversations = talks ?? []
+                error = nil; completedKey = key
+                loading.finish(request)
+            }
         } catch is CancellationError { }
-        catch {
-            guard generation == token, !Task.isCancelled else { return }
-            self.error = ReaderMessages.error(error)
-        }
+        catch { if generation == token, !Task.isCancelled { self.error = ReaderMessages.error(error) } }
     }
 }

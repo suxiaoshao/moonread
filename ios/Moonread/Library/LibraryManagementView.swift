@@ -45,7 +45,7 @@ struct LibraryManagementView: View {
                       perform: { model.removingShelf = shelf })
             ]
             return .init("shelf-" + shelf.id,
-                         action: shelf.error == nil ? { model.path.append(.folder(LibraryLocation(shelfID: shelf.id))) } : nil,
+                         action: shelf.error == nil ? { model.shell.path.append(.folder(LibraryLocation(shelfID: shelf.id))) } : nil,
                          disclosure: shelf.error == nil, actions: actions, allowsFullSwipe: false) {
                 VStack(alignment: .leading, spacing: 12) {
                     ManagedShelfRow(shelf: shelf)

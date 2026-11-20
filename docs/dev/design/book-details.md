@@ -1,12 +1,12 @@
 # 小说详情与章节阅读百分比
 
-状态：2026-10-01，本地功能已接入，实际验证见[验证记录](../engineering/verification.md)。小说信息和单书统计共用详情，支持信息编辑、作者/标签筛选及章节累计估算覆盖。封面 SwiftData 外部存储与自动同步已接入，签名与真实云端证据见 verification；回看次数和正文分布尚未实现，统计事实已接入自动同步，真实双设备仍待验收。
+小说信息与单书统计共用详情，支持信息编辑、作者与标签筛选及章节累计覆盖估算。真机与云端验证见[验证记录](../engineering/verification.md)。
 
 ## 一个详情页面
 
 原生导航页面依次展示小封面、完整书名、作者、已知字数/章节数，其下为通栏的主题实心主按钮“开始阅读／继续阅读”（从阅读进入时为“返回阅读”），再显示标签和简介，再显示我的阅读、累计时长/天数/日期，然后是与统计页语义相同的时间范围（期间时长与阅读日、节奏图或月历、默认收起的阅读时段），文件信息默认收起，整书「清除阅读数据」放在详情最末；从阅读器进入时隐藏该操作。
 
-详情允许书名换行，封面约 64×90pt。阅读按钮下方提供“补全资料”和“找封面”：标准字号一行两个，辅助功能字号纵向排列、各占一行。标签自动换行，标签与简介字号不高于作者行，展开简介在正文下方左对齐。没有作者、标签或简介时省略对应内容，不放占位提示。作者筛选、标签筛选和阅读按钮分别响应点击，不将整行自动变为链接。统计入口继承期间，首次定位到我的阅读；切换期间不再次自动滚回。
+详情允许书名换行，封面约 64×90pt。阅读按钮下方提供“补全资料”和“找封面”：标准字号一行两个，辅助功能字号纵向排列、各占一行。标签自动换行，标签与简介字号不高于作者行。简介按当前列宽和动态字号排版，放得下三行时直接显示，溢出时由系统 DisclosureGroup 显示「简介」标签和三行预览，点标签行原地切换全文。没有作者、标签或简介时省略对应内容，不放占位提示。作者筛选、标签筛选和阅读按钮分别响应点击，不将整行自动变为链接。统计入口继承期间，首次定位到我的阅读；切换期间不再次自动滚回。
 
 ## 哪些内容允许编辑
 
@@ -39,23 +39,23 @@
 
 ## 封面如何保存
 
-封面为 SwiftData 外部存储数据与不可变资源引用，归完整正文 SHA；不改 TXT，不向原目录写旁车文件。用户主图不是缓存。
+封面由当前用户库的原图与不可变资源引用组成，归完整正文 SHA；不改 TXT，不向原目录写旁车文件。用户主图不是缓存。
 
 | 内容 | 位置与生命周期 |
 | --- | --- |
-| 主图 | `UserCover.bytes` 的 `.externalStorage` 属性，由 SwiftData 管理邻接附件 |
+| 主图 | 用户库 `cover_asset.bytes` 保存原图，`cover_candidate` 引用资产 |
 | 引用 | SHA 下的元信息字段保存资源 ID、图片 SHA、格式和尺寸 |
 | 缩略图/读出副本 | 本机可重建缓存；删缓存不影响用户主图 |
 | 选图草稿 | 应用临时目录；保存先写入附件，再事务提交引用，取消清理草稿 |
-| 云端 | SwiftData 自动同步附件；未到达时用预设装帧兜底，不另建上传队列 |
+| 云端 | CKSyncEngine 传输封面记录与资产；附件未到达时显示预设装帧 |
 
 PhotosPicker/系统文件选择器取得图片后，由 ImageIO 校正方向并降采样，主图最长边 1600px；不透明图保存 JPEG，含透明通道图保存 PNG。保留主图比例，封面框居中展示，首版没有手动裁切、旋转或滤镜。重新编码不保留定位等无关原图元数据。
 
-替换使用不可变资源 ID；失败保留旧引用，附件暂缺时使用预设装帧（无有效 SHA 则用固定暖灰文字封面）。缓存副本可从 SwiftData 重新读出。封面引用与附件可能分批到达：显示兜底先呈现，不阻塞开书。封面业务加载层提供等待/加载/可展示状态并共享请求，监听 SwiftData 保存、持久存储远端变化与 CloudKit 导入完成事件；附件到达后同一书架/详情视图自动换成图片。页面不猜重试时间。缓存按资源 ID、内容哈希和尺寸区分，旧资源或取消请求不能回写新状态。本地保存通知与真实云附件事件的验证边界见[验证记录](../engineering/verification.md)；不能把本地事务当作云端多记录原子提交。
+替换使用不可变资源 ID；失败保留旧引用，附件暂缺时使用预设装帧（无有效 SHA 则用固定暖灰文字封面）。缓存副本可从用户库原图重建。封面引用与附件可能分批到达：显示兜底先呈现，不阻塞开书。封面业务加载层提供等待/加载/可展示状态并共享请求，在本地保存或同步写入后刷新资源；附件到达后同一书架/详情视图自动换成图片。页面不猜重试时间。缓存按资源 ID、内容哈希和尺寸区分，旧资源或取消请求不能回写新状态。本地保存通知与真实云附件事件的验证边界见[验证记录](../engineering/verification.md)；不能把本地事务当作云端多记录原子提交。
 
-作者、简介、标签、状态与封面跟随阅读数据同步开关，原 TXT 继续走 iCloud Documents。字段修订与标签成员合并复用已有同步机制。Swift 管理图片与平台传输，Rust 管理正文身份与计算，SwiftData 业务层管理字段、引用与合并。
+作者、简介、标签、状态与封面跟随阅读数据同步开关，原 TXT 继续走 iCloud Documents。字段修订与标签成员合并复用已有同步机制。Swift 管理图片与平台传输，Rust 管理正文身份与计算，用户库写入层管理字段、引用与合并。
 
-平台依据：[Apple 文件目录](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html)、[PhotosPickerItem](https://developer.apple.com/documentation/photosui/photospickeritem)、[SwiftData 外部存储](https://developer.apple.com/documentation/swiftdata/schema/attribute/option/externalstorage)。云端边界见[iCloud 接入实施](../data/sync.md)。
+平台依据：[Apple 文件目录](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html)、[PhotosPickerItem](https://developer.apple.com/documentation/photosui/photospickeritem)。云端边界见[iCloud 接入实施](../data/sync.md)。
 
 ## 入口统一
 
@@ -90,7 +90,7 @@ PhotosPicker/系统文件选择器取得图片后，由 ImageIO 校正方向并�
 
 ## 数据、加载与职责
 
-文件名、路径和下载状态归真实来源；补充信息归完整正文 SHA，同正文多来源共用。SwiftData 保存小说信息；Rust 查询对象内的 TEMP `book_metadata` 仅为计算输入，阅读片段使用 `visit_id`，当前版本见[数据与来源](../data/README.md)，后续格式演进保持旧数据可读并测试迁移。
+文件名、路径和下载状态归真实来源；补充信息归完整正文 SHA，同正文多来源共用。当前用户库保存小说信息，书籍详情通过固定查询读取，阅读片段使用 `visit_id`，当前版本见[数据与来源](../data/README.md)，后续格式演进保持旧数据可读并测试迁移。
 
 ### 编辑前的正文身份
 

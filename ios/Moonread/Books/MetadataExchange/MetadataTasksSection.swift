@@ -6,96 +6,256 @@ extension UTType {
     static var metadataImportTypes: [UTType] { [.moonreadMetadata, .json, .zip, UTType(filenameExtension: "jsonl") ?? .plainText, .plainText] }
 }
 struct MetadataTasksSection: View {
-    let service: AppDataService
+    private var task: MetadataExchangeModel { .shared }
     @Environment(\.theme) private var theme
     @State private var exporting = false
     @State private var picker = false
     @State private var pickerError: String?
-    @State private var selectedFile: ImportFile?
-    private struct ImportFile: Identifiable { let id = UUID(); let url: URL }
+    @State private var showingImport = false
+    @State private var confirmingRemoval = false
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label { Text("小说信息", tableName: "MetadataExchange") } icon: { Image(systemName: "doc.text") }.font(.headline)
             Text("导入或导出小说信息；可编辑清单，也可从 TXT 生成。", tableName: "MetadataExchange")
                 .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
             ViewThatFits(in: .horizontal) { HStack(spacing: 10) { buttons }; VStack(spacing: 10) { buttons } }
+            if let pickerError { Text(verbatim: pickerError).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
+            if task.hasTask {
+                ThemedDivider()
+                if task.phase == .completed { completedTask }
+                else { activeTask }
+            }
+            exportTaskSummary
             Link(destination: URL(string: "https://suxiaoshao.github.io/moonread/metadata-format/")!) {
                 HStack { Text("了解信息格式", tableName: "MetadataExchange"); Image(systemName: "chevron.right").font(.caption) }
             }.font(.subheadline).foregroundStyle(Color(uiColor: theme.accent))
-            if let pickerError { Text(verbatim: pickerError).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
         }
         .fileImporter(isPresented: $picker, allowedContentTypes: UTType.metadataImportTypes) { result in
             switch result {
-            case .success(let url): selectedFile = .init(url: url)
+            case .success(let url): task.receive(url); showingImport = task.hasTask
             case .failure(let error): if (error as NSError).code != NSUserCancelledError { pickerError = ReaderMessages.error(error) }
             }
         }
-        .sheet(isPresented: $exporting) { MetadataExportView(service: service).presentationSizing(.page) }
-        .sheet(item: $selectedFile) { file in MetadataImportView(service: service, file: file.url).presentationSizing(.page) }
+        .sheet(isPresented: $exporting) { MetadataExportView(task: task.exportTask).presentationSizing(.page) }
+        .sheet(isPresented: $showingImport) { MetadataImportView(model: task).presentationSizing(.page) }
+        .alert(Text("移除导入记录？", tableName: "MetadataExchange"), isPresented: $confirmingRemoval) {
+            Button(role: .cancel) {} label: { Text("取消", tableName: "MetadataExchange") }
+            Button(role: .destructive) {
+                if task.phase == .completed { task.clear() }
+            } label: { Text("移除记录", tableName: "MetadataExchange") }
+        } message: {
+            Text("只移除任务记录和临时资料包，已导入的资料不会删除。", tableName: "MetadataExchange")
+        }
     }
     @ViewBuilder private var buttons: some View {
+        Button {
+            pickerError = nil
+            picker = true
+        } label: {
+            Label { Text("导入信息", tableName: "MetadataExchange") }
+                icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
+        }.buttonStyle(MetadataActionButtonStyle()).disabled(!task.canStartNew).accessibilityIdentifier("importMetadata")
         Button { exporting = true } label: {
-            Label { Text("导出信息", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
+            Label { Text("导出信息", tableName: "MetadataExchange") }
+                icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
         }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("exportMetadata")
-        Button { pickerError = nil; picker = true } label: {
-            Label { Text("导入信息", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
-        }.buttonStyle(MetadataActionButtonStyle(prominent: true)).accessibilityIdentifier("importMetadata")
+    }
+
+    private var activeTask: some View {
+        let phase = task.displayPhase
+        let (completed, total) = task.displayedProgress
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Group {
+                    switch phase {
+                    case .receiving, .preparing:
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small).accessibilityHidden(true)
+                            phaseTitle
+                        }
+                    case .saving, .renaming: phaseTitle
+                    case .review: taskLabel("doc.text")
+                    case .stopped: taskLabel("stop.circle")
+                    case .paused: taskLabel("pause.circle")
+                    case .failed: taskLabel("exclamationmark.circle")
+                    case .interrupted: taskLabel("arrow.clockwise")
+                    case .idle, .completed: EmptyView()
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                taskAction(Text("查看", tableName: "MetadataExchange"))
+            }
+            switch phase {
+            case .receiving, .preparing:
+                detail(Text("可以关闭页面，稍后查看。", tableName: "MetadataExchange"))
+            case .saving, .renaming:
+                if total > 0 {
+                    ProgressView(value: Double(completed), total: Double(total))
+                        .tint(Color(uiColor: theme.accent)).accessibilityHidden(true)
+                    if phase == .renaming {
+                        detail(Text("已处理 \(completed) / \(total) 个改名", tableName: "MetadataExchange"))
+                    } else {
+                        detail(Text("已保存 \(completed) / \(total) 本", tableName: "MetadataExchange"))
+                    }
+                } else {
+                    ProgressView().controlSize(.small)
+                        .accessibilityLabel(phaseTitle)
+                }
+            case .review:
+                detail(Text("预览已准备好，等待你确认。", tableName: "MetadataExchange"))
+            case .stopped, .paused, .failed:
+                if task.result != nil || task.knownRemainingWrites != nil {
+                    detail(Text("已保存 \(task.savedCount) 本", tableName: "MetadataExchange"))
+                } else if let error = task.error {
+                    detail(Text(verbatim: error).lineLimit(2))
+                } else if !task.hasCompleteInput {
+                    detail(Text("资料包尚未接收完整", tableName: "MetadataExchange"))
+                }
+            case .interrupted:
+                detail(Text(task.hasCompleteInput ? "请重新预览并确认。" : "资料包尚未接收完整", tableName: "MetadataExchange"))
+            case .idle, .completed:
+                EmptyView()
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var exportTaskSummary: some View {
+        ExportTaskSummary(task: task.exportTask, open: { exporting = true }) { output in
+            if output.count > 0 {
+                Text("已导出 \(output.count) 条小说信息", tableName: "MetadataExchange")
+            } else {
+                Text("没有可导出的小说信息", tableName: "MetadataExchange")
+            }
+        }
+    }
+
+    private var completedTask: some View {
+        let issues = task.renameIssueCount
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Label {
+                    if task.savedCount == 0 && (task.renamedCount > 0 || issues > 0) {
+                        Text("已改名 \(task.renamedCount) 个文件", tableName: "MetadataExchange")
+                    } else {
+                        Text("已导入 \(task.savedCount) 本", tableName: "MetadataExchange")
+                    }
+                } icon: {
+                    Image(systemName: issues > 0 ? "exclamationmark.circle" : "checkmark.circle")
+                        .foregroundStyle(Color(uiColor: issues > 0 ? theme.warning : theme.success))
+                }.font(.subheadline.weight(.medium))
+                if issues > 0 {
+                    detail(Text("\(issues) 个改名需要查看", tableName: "MetadataExchange"))
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            taskAction(Text("查看结果", tableName: "MetadataExchange"))
+            Menu {
+                Button(role: .destructive) { confirmingRemoval = true } label: {
+                    Text("移除记录", tableName: "MetadataExchange")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .accessibilityLabel(Text("更多操作", tableName: "MetadataExchange"))
+            }.tint(Color(uiColor: theme.accent))
+        }
+    }
+
+    private var phaseTitle: Text {
+        Text(task.displayPhase.title, tableName: "MetadataExchange").font(.subheadline.weight(.medium))
+    }
+
+    private func taskLabel(_ symbol: String) -> some View {
+        Label { phaseTitle } icon: { Image(systemName: symbol) }
+    }
+
+    private func detail<Content: View>(_ content: Content) -> some View {
+        content.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+    }
+
+    private func taskAction(_ title: Text) -> some View {
+        Button { showingImport = true } label: { title.font(.subheadline) }
+            .buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.accent))
     }
 }
 
 struct MetadataExportView: View {
-    let service: AppDataService
+    let task: MetadataExportTask
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.horizontalSizeClass) private var width
     @State private var scope: String
     @State private var format = MetadataFormat.jsonl
     @State private var shelves: [LibraryShelf] = []
-    @State private var output: MetadataExportResult?
-    @State private var busy = false
-    @State private var completed = 0
-    @State private var total: Int?
-    @State private var work: Task<Void, Never>?
-    @State private var error: String?
+    @State private var shelvesError: String?
+    @State private var loadedShelves = false
+    @State private var shelvesReload = 0
+    @State private var sharingError: String?
     @State private var sharing: LibraryExport?
-    init(service: AppDataService, shelfID: String? = nil) { self.service = service; _scope = State(initialValue: shelfID ?? "") }
+    private let initialShelfName: String?
+    private var validScope: Bool { scope.isEmpty || shelves.contains { $0.id == scope } }
+
+    init(task: MetadataExportTask, shelfID: String? = nil, shelfName: String? = nil) {
+        self.task = task
+        initialShelfName = shelfName
+        _scope = State(initialValue: shelfID ?? "")
+    }
+
     var body: some View {
-        NavigationStack {
-            content.themedPage().navigationTitle(Text(busy ? "正在导出" : output != nil || error != nil ? "导出结果" : "导出小说信息", tableName: "MetadataExchange"))
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() }.toolbarGlyph().disabled(busy) } }
-                .modifier(MetadataTaskBar { footer })
+        ExportTaskSheet(title: Text(task.phase == .idle || task.phase == .running ? "导出小说信息" : "导出结果", tableName: "MetadataExchange"),
+                        sharing: $sharing, onShared: { [file = task.output?.file] in
+                            guard let file, task.output?.file === file else { return }
+                            finish()
+                        }) {
+            content
+        } footer: {
+            footer
         }
-        .interactiveDismissDisabled(busy)
-        .task { do { shelves = try await service.shelves() } catch { self.error = ReaderMessages.error(error) } }
-        .onDisappear { work?.cancel() }
-        .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) { if let sharing { LibraryShareSheet(files: sharing) } }
+        .alert(Text("无法分享导出文件", tableName: "MetadataExchange"), isPresented: Binding(
+            get: { sharingError != nil }, set: { if !$0 { sharingError = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            if let sharingError { Text(verbatim: sharingError) }
+        }
     }
+
     @ViewBuilder private var content: some View {
-        if busy {
-            VStack(spacing: 16) {
-                if let total, total > 0 {
-                    Text("正在导出 \(completed) / \(total) 本", tableName: "MetadataExchange").font(.title2.weight(.semibold)).multilineTextAlignment(.center)
-                    ProgressView(value: Double(completed), total: Double(max(1, total))) { Text("导出进度", tableName: "MetadataExchange") }
-                } else { ProgressView { Text("正在准备导出…", tableName: "MetadataExchange") } }
-            }.padding(24).frame(maxWidth: 430).frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error {
-            MetadataStatusView(symbol: "exclamationmark.triangle", title: String(localized: "导出失败", table: "MetadataExchange"), message: error)
+        switch task.phase {
+        case .idle:
+            configuration.task(id: shelvesReload) { await loadShelves() }
+        case .running:
+            ExportRunningView(title: Text("正在导出", tableName: "MetadataExchange"), stopping: task.stopping) {
+                if let total = task.total, task.completed < total {
+                    ProgressView(value: Double(task.completed), total: Double(total)) {
+                        Text(task.progressText, tableName: "MetadataExchange").monospacedDigit()
+                    }.tint(Color(uiColor: theme.accent))
+                } else {
+                    ProgressView { Text(task.progressText, tableName: "MetadataExchange") }
+                }
+            }
+        case .failed:
+            MetadataStatusView(symbol: task.phase.symbol,
+                               title: String(localized: "导出失败", table: "MetadataExchange"),
+                               message: task.error)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let output {
-            if output.count == 0 {
-                MetadataStatusView(symbol: "tray", title: String(localized: "没有可导出的小说信息", table: "MetadataExchange"), message: String(localized: "所选范围没有已建立索引的小说。建立索引后可再次导出。", table: "MetadataExchange"))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else { resultContent(output) }
-        } else { configuration }
+        case .completed:
+            if let output = task.output { resultContent(output) }
+        }
     }
+
     private var configuration: some View {
         Form {
             Section {
                 Picker(selection: $scope) {
                     Text("全部书架", tableName: "MetadataExchange").tag("")
                     ForEach(shelves, id: \.id) { Text(verbatim: $0.id == "builtin" ? String(localized: "我的书架") : $0.name).tag($0.id) }
+                    if !validScope {
+                        if !loadedShelves, let initialShelfName { Text(verbatim: initialShelfName).tag(scope) }
+                        else { Text("所选书架已不可用", tableName: "MetadataExchange").tag(scope) }
+                    }
                 } label: { Text("范围", tableName: "MetadataExchange") }
+                    .disabled(!loadedShelves)
+                if let shelvesError {
+                    Text(verbatim: shelvesError).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
+                    Button { shelvesReload += 1 } label: { Text("重试", tableName: "MetadataExchange") }
+                }
             } header: { Text("导出范围", tableName: "MetadataExchange") } footer: { Text("包含子文件夹；同一正文的信息只导出一次。", tableName: "MetadataExchange").foregroundStyle(Color(uiColor: theme.secondary)) }
             .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section {
@@ -108,22 +268,52 @@ struct MetadataExportView: View {
         }
     }
     private var footer: some View {
-        HStack {
-            if width == .regular { Spacer(minLength: 0) }
-            Group {
-                if busy { Button { work?.cancel() } label: { Text("取消", tableName: "MetadataExchange").frame(maxWidth: .infinity) }.buttonStyle(MetadataActionButtonStyle()) }
-                else if error != nil { Button { startExport() } label: { Text("重试", tableName: "MetadataExchange").frame(maxWidth: .infinity) }.buttonStyle(MetadataActionButtonStyle(prominent: true)) }
-                else if let output, output.count == 0 { Button { self.output = nil } label: { Text("返回选择范围", tableName: "MetadataExchange").frame(maxWidth: .infinity) }.buttonStyle(MetadataActionButtonStyle()) }
-                else {
-                    Button {
-                        if let output { do { sharing = try output.shareCopy() } catch { self.error = ReaderMessages.error(error) } }
-                        else { startExport() }
-                    } label: { Text(output == nil ? "导出" : "分享或存储", tableName: "MetadataExchange").frame(maxWidth: .infinity) }
-                        .buttonStyle(MetadataActionButtonStyle(prominent: true)).accessibilityIdentifier("metadataGenerateExport")
+        VStack(spacing: 0) {
+            ThemedDivider()
+            VStack(spacing: 8) {
+                switch task.phase {
+                case .idle:
+                    Button { task.start(shelfID: scope.isEmpty ? nil : scope, format: format) } label: {
+                        Text("导出", tableName: "MetadataExchange").frame(maxWidth: .infinity)
+                    }.buttonStyle(MetadataActionButtonStyle(prominent: true))
+                        .accessibilityIdentifier("metadataGenerateExport").disabled(loadedShelves && !validScope)
+                case .running:
+                    Button(role: .destructive) { task.cancel() } label: {
+                        Label { Text("停止导出", tableName: "MetadataExchange") } icon: { Image(systemName: "stop.circle") }
+                            .frame(maxWidth: .infinity)
+                    }.buttonStyle(MetadataActionButtonStyle(destructive: true)).disabled(task.stopping)
+                case .failed:
+                    Button { task.retry() } label: {
+                        Text("重试", tableName: "MetadataExchange").frame(maxWidth: .infinity)
+                    }.buttonStyle(MetadataActionButtonStyle(prominent: true))
+                    finishButton(Text("关闭"))
+                case .completed:
+                    if let output = task.output, output.count > 0 {
+                        Button {
+                            do { sharing = try output.shareCopy() }
+                            catch { sharingError = ReaderMessages.error(error) }
+                        } label: {
+                            Text("分享或存储", tableName: "MetadataExchange").frame(maxWidth: .infinity)
+                        }.buttonStyle(MetadataActionButtonStyle(prominent: true))
+                            .accessibilityIdentifier("metadataGenerateExport")
+                    }
+                    finishButton(Text("完成", tableName: "MetadataExchange"))
                 }
-            }.frame(maxWidth: width == .regular ? 240 : .infinity)
-        }.padding(.horizontal, 20).padding(.vertical, 12)
+            }.frame(maxWidth: 460).padding(.horizontal, 20).padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+        }
     }
+
+    private func finishButton(_ title: Text) -> some View {
+        Button(action: finish) { title.frame(maxWidth: .infinity) }
+            .buttonStyle(MetadataActionButtonStyle())
+    }
+
+    private func finish() {
+        task.clear()
+        dismiss()
+    }
+
     private func resultContent(_ output: MetadataExportResult) -> some View {
         ViewThatFits(in: .vertical) {
             exportSummary(output)
@@ -132,7 +322,11 @@ struct MetadataExportView: View {
     }
     private func exportSummary(_ output: MetadataExportResult) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            MetadataStatusView(symbol: "checkmark", title: String(localized: "已导出 \(output.count) 条小说信息", table: "MetadataExchange"), message: String(localized: "文件已生成，可以分享或存储到“文件”。", table: "MetadataExchange"))
+            MetadataStatusView(symbol: output.count > 0 ? "checkmark.circle" : "tray",
+                title: output.count > 0 ? String(localized: "已导出 \(output.count) 条小说信息", table: "MetadataExchange")
+                    : String(localized: "没有可导出的小说信息", table: "MetadataExchange"),
+                message: output.count > 0 ? String(localized: "文件已生成，可以分享或存储到“文件”。", table: "MetadataExchange")
+                    : String(localized: "所选范围没有已建立索引的小说。建立索引后可再次导出。", table: "MetadataExchange"))
                 .fixedSize(horizontal: false, vertical: true)
             if !output.skipped.isEmpty {
                 NavigationLink {
@@ -159,20 +353,15 @@ struct MetadataExportView: View {
             Text("已索引但未下载的小说照常导出已有资料；本次不下载正文或自动建立索引。", tableName: "MetadataExchange").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
         }.padding(20).frame(maxWidth: 690).frame(maxWidth: .infinity)
     }
-    private func startExport() {
-        guard !busy else { return }
-        output = nil; error = nil; completed = 0; total = nil; busy = true
-        let selectedScope = scope.isEmpty ? nil : scope, selectedFormat = format
-        work = Task {
-            do {
-                let value = try await service.exportMetadata(shelfID: selectedScope, format: selectedFormat) { done, count in
-                    await MainActor.run { completed = done; total = count }
-                }
-                try Task.checkCancellation()
-                output = value
-            } catch is CancellationError { output = nil }
-            catch { self.error = ReaderMessages.error(error) }
-            busy = false; work = nil
+    private func loadShelves() async {
+        shelvesError = nil
+        do {
+            let available = try await task.service.shelves()
+            try Task.checkCancellation()
+            shelves = available
+            loadedShelves = true
+        } catch {
+            if !Task.isCancelled { shelvesError = ReaderMessages.error(error) }
         }
     }
 }
@@ -193,6 +382,93 @@ struct MetadataActionButtonStyle: PrimitiveButtonStyle {
     }
 }
 /// One native scroll-edge registration for this feature's task actions.
+struct ExportTaskSummary<Request: Sendable, Output: Sendable, ResultTitle: View>: View {
+    @Environment(\.theme) private var theme
+    let task: ExportTask<Request, Output>
+    var runningDetail: Text?
+    let open: () -> Void
+    @ViewBuilder let resultTitle: (Output) -> ResultTitle
+
+    var body: some View {
+        if task.phase != .idle {
+            ThemedDivider()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Label {
+                        if let output = task.output { resultTitle(output) }
+                        else { Text(task.phase.title, tableName: "MetadataExchange") }
+                    } icon: {
+                        Image(systemName: task.phase.symbol)
+                            .foregroundStyle(Color(uiColor: task.phase == .completed ? theme.success : task.phase == .failed ? theme.warning : theme.secondary))
+                    }.font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading)
+                    Button(action: open) {
+                        Text(task.phase == .running ? "查看" : "查看结果", tableName: "MetadataExchange").font(.subheadline)
+                    }.buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.accent))
+                }
+                if task.phase == .running {
+                    if let total = task.total, task.completed < total {
+                        ProgressView(value: Double(task.completed), total: Double(total))
+                            .tint(Color(uiColor: theme.accent)).accessibilityHidden(true)
+                    }
+                    (runningDetail ?? Text(task.progressText, tableName: "MetadataExchange"))
+                        .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                }
+            }
+        }
+    }
+}
+
+struct ExportTaskSheet<Content: View, Footer: View>: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: Text
+    @Binding var sharing: LibraryExport?
+    let onShared: @MainActor @Sendable () -> Void
+    @ViewBuilder let content: Content
+    @ViewBuilder let footer: Footer
+
+    var body: some View {
+        NavigationStack {
+            content.themedPage()
+                .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        SystemToolbarButton("关闭", role: .close) { dismiss() }.toolbarGlyph()
+                            .accessibilityIdentifier("closeExportTask")
+                    }
+                }
+                .modifier(MetadataTaskBar { footer })
+        }
+        .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
+            if let sharing { LibraryShareSheet(files: sharing, onShared: onShared) }
+        }
+    }
+}
+
+struct ExportRunningView<Progress: View>: View {
+    @Environment(\.theme) private var theme
+    let title: Text
+    let stopping: Bool
+    @ViewBuilder let progress: Progress
+
+    var body: some View {
+        GeometryReader { viewport in
+            ScrollView {
+                VStack(spacing: 16) {
+                    Image(systemName: "square.and.arrow.up").font(.largeTitle)
+                        .foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
+                    title.font(.title.weight(.semibold)).accessibilityAddTraits(.isHeader)
+                    progress
+                    if !stopping {
+                        Text("可以关闭页面，稍后查看。", tableName: "MetadataExchange")
+                            .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                }.multilineTextAlignment(.center).padding(24).frame(maxWidth: 430)
+                    .frame(maxWidth: .infinity, minHeight: viewport.size.height)
+            }
+        }
+    }
+}
+
 struct MetadataTaskBar<Bar: View>: ViewModifier {
     @ViewBuilder let bar: Bar
     @ViewBuilder func body(content: Content) -> some View {

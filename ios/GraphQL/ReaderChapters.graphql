@@ -1,0 +1,22 @@
+fragment HeadingFields on ChapterHeading {
+  start
+  title
+  level
+}
+
+query ChapterAt($bookID: ID!, $offset: UInt64!) {
+  chapterAt(bookID: $bookID, offset: $offset) { ...HeadingFields }
+}
+
+query ChapterStructure($bookID: ID!) {
+  chapterStructure(bookID: $bookID) {
+    complete
+    entries {
+      heading { ...HeadingFields }
+      wordCount
+      countComplete
+      parentStart
+      parentTitle
+    }
+  }
+}

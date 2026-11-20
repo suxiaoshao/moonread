@@ -1,0 +1,291 @@
+scalar UInt64
+scalar Int64
+
+type Query {
+  systemBookCatalogue: [SystemCatalogueBook!]!
+  statisticsOverview(firstDay: Int64!, lastDay: Int64!, target: InformationTarget): ReadingStatisticsOverview!
+  statisticsActivities(firstDay: Int64!, lastDay: Int64!, target: InformationTarget): [ReadingStatisticsActivity!]!
+  statisticsWidget(today: Int64!, weekStart: Int64!): ReadingStatisticsWidget!
+  searchCandidates(shelfID: ID, path: String): [SearchFile!]!
+  bookFilterOptions(shelfID: ID): SearchOptions!
+  bookInformation(target: InformationTarget!, sourceFileID: ID, includeRecordSource: Boolean!): BookInformation!
+  shelfBookCards(shelfID: ID!): [ShelfBookCard!]!
+  shelfTagGroups(shelfID: ID!): [ShelfTagGroup!]!
+  folderPage(shelfID: ID!, path: String!): [FolderEntry!]!
+  folderDestinations(shelfID: ID!, path: String!): [FolderDestination!]!
+  readerOpening(bookID: ID!): ReaderOpening!
+  chapterAt(bookID: ID!, offset: UInt64!): ChapterHeading
+  chapterStructure(bookID: ID!): ChapterStructure!
+  recentReading(limit: Int!): [RecentReadingCard!]!
+}
+
+type RecentReadingCard {
+  readingKey: ID!
+  bodyID: ID
+  file: RecentReadingFile!
+  position: UInt64!
+  byteCount: UInt64!
+  lastRead: Int64!
+  preferred: Boolean!
+  chapterTitle: String
+  metadata: RecentReadingMetadata
+}
+
+type RecentReadingFile {
+  id: ID!
+  shelfID: ID!
+  shelfName: String!
+  relativePath: String!
+  parentPath: String!
+  name: String!
+  size: UInt64!
+  modified: Int64!
+  needsDownload: Boolean!
+}
+
+type RecentReadingMetadata {
+  author: String!
+  cover: RecentReadingCover
+}
+
+type RecentReadingCover {
+  id: ID!
+  sha256: String!
+  fileExtension: String!
+  width: Int!
+  height: Int!
+}
+
+type ChapterHeading {
+  start: UInt64!
+  title: String!
+  level: Int!
+}
+
+type ChapterStructure {
+  complete: Boolean!
+  entries: [ChapterStructureEntry!]!
+}
+
+type ChapterStructureEntry {
+  heading: ChapterHeading!
+  wordCount: UInt64!
+  countComplete: Boolean!
+  parentStart: UInt64
+  parentTitle: String
+}
+
+type ReaderOpening {
+  sessionID: ID!
+  title: String!
+  readingKey: ID!
+  encoding: String!
+  bytes: UInt64!
+  chunks: Int!
+  position: UInt64!
+  started: Boolean!
+  readable: Boolean!
+  generation: UInt64!
+  bytesRead: UInt64!
+  sourceBytes: UInt64!
+}
+
+type FolderEntry {
+  file: RecentReadingFile!
+  lastRead: Int64!
+  folder: FolderGroup
+  book: FolderBookCard
+}
+
+type FolderGroup {
+  descendantCount: UInt64!
+  previews: [FolderCover!]!
+}
+
+type FolderCover {
+  fileID: ID!
+  name: String!
+  readingKey: ID
+  author: String
+  cover: RecentReadingCover
+}
+
+type FolderBookCard {
+  readingKey: ID
+  bodyID: ID
+  position: UInt64!
+  byteCount: UInt64!
+  preferred: Boolean!
+  chapterTitle: String
+  metadata: RecentReadingMetadata
+}
+
+type FolderDestination {
+  id: ID!
+  shelfID: ID!
+  shelfName: String!
+  relativePath: String!
+  parentPath: String!
+  name: String!
+  size: UInt64!
+  modified: Int64!
+  lastRead: Int64!
+  descendantCount: UInt64!
+}
+
+type ShelfBookCard {
+  file: RecentReadingFile!
+  lastRead: Int64!
+  book: FolderBookCard!
+}
+
+enum ShelfTagKind {
+  TAG
+  UNTAGGED
+  UNINDEXED
+}
+
+type ShelfTagGroup {
+  kind: ShelfTagKind!
+  tag: String!
+  fileIDs: [ID!]!
+}
+
+input InformationTarget {
+  fileID: ID
+  bookID: ID
+  readingKey: ID
+}
+
+enum BookInformationKind {
+  MISSING
+  UNIDENTIFIED
+  PENDING
+  IDENTIFIED
+}
+
+type BookInformation {
+  kind: BookInformationKind!
+  fileID: ID
+  readingKey: ID
+  aliases: [ID!]!
+  body: InformationBody
+  metadata: InformationMetadata
+  sources: [InformationSource!]!
+}
+
+type InformationBody {
+  id: ID!
+  title: String!
+  encoding: String!
+  byteCount: UInt64!
+  chunkCount: Int!
+  position: UInt64!
+  wordCount: UInt64!
+  chapterCount: UInt64!
+  currentChapter: String
+}
+
+type InformationMetadata {
+  author: String!
+  synopsis: String!
+  status: String
+  hasPosition: Boolean!
+  tags: [String!]!
+  cover: RecentReadingCover
+}
+
+type InformationSource {
+  file: RecentReadingFile!
+  readingKey: ID
+  bodyID: ID
+  position: UInt64!
+  lastRead: Int64!
+  byteCount: UInt64!
+  preferred: Boolean!
+}
+
+type SearchFile {
+  file: RecentReadingFile!
+  directory: Boolean!
+  readingKey: ID
+  bodyID: ID
+  lastRead: Int64!
+  hasPosition: Boolean!
+  author: String
+  synopsis: String
+  tags: [String!]!
+  status: String
+  stored: Boolean!
+}
+
+type SearchOptions {
+  authors: [String!]!
+  tags: [String!]!
+}
+
+type ReadingStatisticsOverview {
+  totalDurationMs: UInt64!
+  books: [ReadingStatisticsBook!]!
+  days: [ReadingStatisticsDay!]!
+}
+
+type ReadingStatisticsBook {
+  readingKey: ID!
+  bodyID: ID
+  title: String!
+  author: String
+  cover: RecentReadingCover
+  durationMs: UInt64!
+  firstReadMs: Int64!
+  lastReadMs: Int64!
+  lastFormalMs: Int64!
+  readingDays: UInt64!
+}
+
+type ReadingStatisticsDay {
+  day: Int64!
+  durationMs: UInt64!
+  bookCount: UInt64!
+}
+
+type ReadingStatisticsActivity {
+  kind: String!
+  recordID: ID!
+  readingKey: ID!
+  bodyID: ID
+  sessionID: ID!
+  title: String!
+  localDay: Int64!
+  utcOffsetSeconds: Int!
+  preview: Boolean!
+  startedMs: Int64!
+  endedMs: Int64!
+  durationMs: UInt64!
+  firstExposureStart: UInt64!
+}
+
+type ReadingStatisticsWidget {
+  hasReadingHistory: Boolean!
+  todayDurationMs: UInt64!
+  weekDurationMs: UInt64!
+  streakDays: UInt64!
+  days: [ReadingStatisticsDay!]!
+}
+
+
+type SystemCatalogueBook {
+  readingKey: ID!
+  title: String!
+  author: String
+  tags: [String!]!
+  cover: RecentReadingCover
+  sourceShelfIDs: [ID!]!
+  sourceCount: UInt64!
+  reconnectRequired: Boolean!
+  needsDownload: Boolean!
+  percentage: Float
+  chapterTitle: String
+  recentRank: Int
+  naturalOrdinal: UInt64!
+}

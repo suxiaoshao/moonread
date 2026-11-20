@@ -4,7 +4,7 @@ import SwiftUI
 /// breathe at reading size. It never contributes characters to the novel.
 struct ReaderTitlePage: View {
     let title: String
-    var information: BookDetails? = nil
+    var information: ReaderCoverInformation? = nil
     var contentSHA256: String? = nil
     var showDetails: (() -> Void)? = nil
     @Environment(\.theme) private var theme
@@ -12,7 +12,7 @@ struct ReaderTitlePage: View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 Spacer(minLength: 24)
-                BookCoverView(title: title, cover: information?.metadata.cover, contentSHA256: information?.metadata.sha ?? contentSHA256, author: information?.metadata.author)
+                BookCoverView(title: title, cover: information?.cover, contentSHA256: information?.sha ?? contentSHA256, author: information?.author)
                     .frame(width: 70, height: 100).accessibilityHidden(true)
                 Text(verbatim: title)
                     .font(.system(.largeTitle, design: .serif).weight(.medium))
@@ -25,8 +25,8 @@ struct ReaderTitlePage: View {
                     .frame(width: 32, height: 1).padding(.top, 28)
                     .accessibilityHidden(true)
                 VStack(spacing: 8) {
-                    if let information {
-                        if !information.metadata.author.isEmpty { Text(verbatim: information.metadata.author).lineLimit(1) }
+                    if let author = information?.author, !author.isEmpty { Text(verbatim: author).lineLimit(1) }
+                    if let information = information?.details {
                         if let body = information.body, body.wordCount > 0 { Text("\(body.wordCount) 字 · \(body.chapterCount) 章").lineLimit(1) }
                         if !information.metadata.tags.isEmpty { Text(verbatim: information.metadata.tags.prefix(3).joined(separator: " · ")).lineLimit(1) }
                         if !information.metadata.synopsis.isEmpty { Text(verbatim: information.metadata.synopsis).lineLimit(2) }

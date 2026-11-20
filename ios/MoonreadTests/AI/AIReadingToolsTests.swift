@@ -70,8 +70,8 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let b = AnnotationCandidate(
       id: "b", ancestors: [], content: .init(start: 0, end: 12, excerpt: "第一章 月", note: "乙"),
       created: 2, bookmark: false)
-    try await store.receiveFixture(key: book.fixtureSHA256, mark: "m", candidate: a)
-    try await store.receiveFixture(key: book.fixtureSHA256, mark: "m", candidate: b)
+    try store.seedAnnotation(key: book.fixtureSHA256, mark: "m", candidate: a)
+    try store.seedAnnotation(key: book.fixtureSHA256, mark: "m", candidate: b)
     let result = try await invoke(
       tools, "get_mark", ["bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "m"))])
     XCTAssertEqual(result.object["data"]?.object["hasConflict"], .bool(true))
@@ -99,7 +99,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let candidate = AnnotationCandidate(
       id: "note-page", ancestors: [], content: .init(start: 0, end: 9, excerpt: "第一章", note: note),
       created: 1, bookmark: false)
-    try await users.receiveFixture(key: book.fixtureSHA256, mark: "paged", candidate: candidate)
+    try users.seedAnnotation(key: book.fixtureSHA256, mark: "paged", candidate: candidate)
     let firstNote = try await invoke(
       tools, "get_mark",
       [

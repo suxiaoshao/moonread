@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import PhotosUI
 import UniformTypeIdentifiers
 
@@ -23,6 +24,7 @@ final class BookInformationModel {
     private(set) var resolution: BookDetailsResult?
     private(set) var entry: LibraryEntry?
     private(set) var chapters: [ChapterEntry] = []
+    private(set) var coverageError: String?
     private(set) var preparation: EditPreparation = .idle
     private var actionError: String?
     private var task: Task<Void, Never>?
@@ -55,25 +57,29 @@ final class BookInformationModel {
     private(set) var loadedIdentity: Identity?
     private var requestedIdentity: Identity?
     private var loadRevision = UUID()
+    private var observingRevision: UUID?
+    private(set) var requestRevision = 0
+    @ObservationIgnored private var accountChange: AnyCancellable?
     @ObservationIgnored private let service: AppDataService
     @ObservationIgnored private let readInformation: @MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetailsResult)
-    @ObservationIgnored private let readChapters: @MainActor (String) async throws -> [ChapterEntry]
+    // Coverage is a separate §13.5 consumer. The boundary remains usable
+    // independently of the information read (including existing test fixtures).
+    @ObservationIgnored private let readChapters: (@MainActor (String) async throws -> [ChapterEntry])?
     init(service: AppDataService = .shared,
          readInformation: (@MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetailsResult))? = nil,
          readChapters: (@MainActor (String) async throws -> [ChapterEntry])? = nil) {
         self.service = service
         self.readInformation = readInformation ?? { try await Self.read($0, service: service) }
-        self.readChapters = readChapters ?? { try await service.chapters($0).items }
+        self.readChapters = readChapters
+        accountChange = MainActorNotifications.observe(.readingContinuationInvalidated, object: service) { [weak self] in
+            guard let self else { return }
+            loadRevision = UUID(); observingRevision = nil
+            clearInformation()
+            requestRevision &+= 1
+        }
     }
     private static func read(_ route: StatisticsRoute, service: AppDataService) async throws -> (LibraryEntry?, BookDetailsResult) {
-        let details = try await service.bookDetails(route.target)
-        let entry: LibraryEntry?
-        if case .missing = details { entry = nil }
-        else if let file = route.fileID { entry = try await service.libraryEntry(file) }
-        else if !route.fromReader, case .identified(let identity, _) = details, case .associated = identity.body {
-            entry = try await service.libraryEntries(nil).first { $0.readingIdentity == identity.key && !$0.directory }
-        } else { entry = nil }
-        return (entry, details)
+        try await service.bookInformation(route.target, fileID: route.fileID, includeRecordSource: !route.fromReader)
     }
     func contentSHA(for route: StatisticsRoute) -> String? {
         if case .record(.formal(let sha)) = route.target { return sha }
@@ -81,34 +87,95 @@ final class BookInformationModel {
         return details?.metadata.sha
     }
     func matches(_ route: StatisticsRoute) -> Bool { loadedIdentity == Identity(route) }
-    func load(_ route: StatisticsRoute) async {
-        let identity = Identity(route), revision = UUID()
+    private func clearInformation() {
+        loadedIdentity = nil
+        task?.cancel(); task = nil
+        draft?.cancel()
+        preparation = .idle
+        entry = nil; resolution = nil; releaseCoverage(); error = nil
+    }
+
+    private func begin(_ identity: Identity) -> UUID {
+        let revision = UUID()
         loadRevision = revision
         if requestedIdentity != identity {
-            requestedIdentity = identity; loadedIdentity = nil
-            task?.cancel(); task = nil; preparation = .idle
-            entry = nil; resolution = nil; chapters = []; error = nil
+            clearInformation()
+            requestedIdentity = identity
         }
+        return revision
+    }
+
+    private func accepts(_ identity: Identity, revision: UUID) -> Bool {
+        loadRevision == revision && requestedIdentity == identity && !Task.isCancelled
+    }
+
+    private func publish(_ value: (LibraryEntry?, BookDetailsResult), identity: Identity) {
+        entry = value.0; resolution = value.1; loadedIdentity = identity
+        if case .missing = value.1 { error = ReaderMessages.error(ReaderError.NotFound) }
+        else { error = nil }
+    }
+
+    private func publishError(_ failure: Error) {
+        if failure is UserSyncCompatibilityError {
+            clearInformation()
+        }
+        error = ReaderMessages.error(failure)
+    }
+
+    func retryInformation() { requestRevision &+= 1 }
+
+    func observe(_ route: StatisticsRoute) async {
+        let identity = Identity(route), revision = begin(identity)
+        observingRevision = revision
+        defer { if observingRevision == revision { observingRevision = nil } }
         do {
-            let (entry, details) = try await readInformation(route)
-            guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
-            self.entry = entry; resolution = details; loadedIdentity = identity; error = nil
-            if case .missing = details { error = ReaderMessages.error(ReaderError.NotFound); return }
-            if let book = readableBook {
+            let updates = try await service.bookInformationUpdates(route.target, fileID: route.fileID,
+                                                                  includeRecordSource: !route.fromReader)
+            for try await update in updates {
+                guard accepts(identity, revision: revision) else { return }
+                do { publish(try update.resolved(), identity: identity) }
+                catch {
+                    if case .missingSource = update { clearInformation() }
+                    publishError(error)
+                }
+            }
+        } catch is CancellationError { }
+        catch { if accepts(identity, revision: revision) { publishError(error) } }
+    }
+
+    func load(_ route: StatisticsRoute) async {
+        let identity = Identity(route), revision = begin(identity)
+        do {
+            let value = try await readInformation(route)
+            guard accepts(identity, revision: revision) else { return }
+            publish(value, identity: identity)
+            if let readChapters, let book = readableBook {
                 let chapters = try await readChapters(book.id)
-                guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
+                guard accepts(identity, revision: revision) else { return }
                 self.chapters = chapters
-            } else { self.chapters = [] }
-        } catch {
-            guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
-            self.error = ReaderMessages.error(error)
-            if error is UserSyncCompatibilityError { resolution = nil; draft = nil }
-        }
+            } else { chapters = [] }
+        } catch is CancellationError { }
+        catch { if accepts(identity, revision: revision) { publishError(error) } }
+    }
+
+    func releaseCoverage() { chapters = []; coverageError = nil }
+
+    func observeCoverage(bookID: String) async {
+        do {
+            try await service.observeChapterCoverage(bookID) { [weak self] result in
+                guard let self, readableBook?.id == bookID, !Task.isCancelled else { return }
+                switch result {
+                case .success(let outline): chapters = outline?.items ?? []; coverageError = nil
+                case .failure(let error): coverageError = ReaderMessages.error(error)
+                }
+            }
+        } catch is CancellationError { }
+        catch { if readableBook?.id == bookID && !Task.isCancelled { coverageError = ReaderMessages.error(error) } }
     }
 
     func edit(_ route: StatisticsRoute) {
         guard matches(route), canEdit else { return }
-        if let details { preparation = .editing(BookMetadataDraft(base: details.metadata)) }
+        if let details { preparation = .editing(BookMetadataDraft(base: details.metadata, service: service)) }
         else if entry?.needsDownload == true { preparation = .confirmingDownload(route) }
         else { prepareEditing(route) }
     }
@@ -141,7 +208,7 @@ final class BookInformationModel {
                         let details = try result.requireIdentified()
                         guard isPreparing(context), !Task.isCancelled else { return }
                         resolution = result
-                        preparation = .editing(BookMetadataDraft(base: details.metadata))
+                        preparation = .editing(BookMetadataDraft(base: details.metadata, service: service))
                         break
                     }
                     if snapshot.preparation.isFailed { throw CocoaError(.fileReadCorruptFile) }
@@ -176,6 +243,7 @@ final class BookInformationModel {
         var edited = base; edited.status = status
         do {
             try await service.saveMetadata(base: base, edited: edited)
+            if observingRevision == loadRevision { return }
             let next = try await service.bookDetails(identity.target)
             guard loadedIdentity == identity, !Task.isCancelled else { return }
             resolution = next
@@ -188,28 +256,57 @@ final class BookMetadataDraft: Identifiable {
     let id = UUID()
     let base: BookMetadata
     var value: BookMetadata
+    var newTag = ""
     var error: String?
     var saving = false
-    var choosingImage = false
+    private(set) var choosingImage = false
+    var presentsPhotoPicker = false
+    var presentsFilePicker = false
+    let service: AppDataService
     private var imageRequest = UUID()
+    @ObservationIgnored private var imageTask: Task<Void, Never>?
     private var closed = false
-    init(base: BookMetadata) { self.base = base; value = base }
-    var changed: Bool { value != base }
-    func image(_ data: Data) async {
-        guard !closed else { return }
+    init(base: BookMetadata, service: AppDataService = .shared) {
+        self.base = base; value = base; self.service = service
+    }
+    var changed: Bool { value != base || !newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var blocksInteractiveDismissal: Bool {
+        !closed && (changed || saving || choosingImage || presentsPhotoPicker || presentsFilePicker)
+    }
+    enum LeaveAction { case close, confirmDiscard }
+    func requestLeave() -> LeaveAction { changed ? .confirmDiscard : .close }
+
+    @discardableResult
+    func chooseImage(_ read: @escaping @Sendable () async throws -> Data?) -> Task<Void, Never>? {
+        guard !closed, !saving else { return nil }
+        imageTask?.cancel()
         let request = UUID(); imageRequest = request; choosingImage = true
-        defer { if imageRequest == request { choosingImage = false } }
-        do {
-            let cover = try await AppDataService.shared.makeCover(data)
-            guard !closed, imageRequest == request, !Task.isCancelled else { await AppDataService.shared.discardCoverDraft(cover); return }
-            discardNewCover(); value.cover = cover
-        } catch { if imageRequest == request { self.error = ReaderMessages.error(error) } }
+        let task = Task {
+            defer { if imageRequest == request { choosingImage = false; imageTask = nil } }
+            do {
+                guard let data = try await read(), !closed, imageRequest == request, !Task.isCancelled else { return }
+                let cover = try await service.makeCover(data)
+                guard !closed, imageRequest == request, !Task.isCancelled else { await service.discardCoverDraft(cover); return }
+                discardNewCover(); value.cover = cover
+            } catch is CancellationError { }
+            catch { if imageRequest == request { self.error = ReaderMessages.error(error) } }
+        }
+        imageTask = task
+        return task
     }
-    func discardNewCover() {
-        if let cover = value.cover, cover != base.cover { Task { await AppDataService.shared.discardCoverDraft(cover) } }
+    @discardableResult private func discardNewCover() -> Task<Void, Never>? {
+        guard let cover = value.cover, cover != base.cover else { return nil }
+        return Task { [service] in await service.discardCoverDraft(cover) }
     }
-    func removeCover() { imageRequest = UUID(); choosingImage = false; discardNewCover(); value.cover = nil }
-    func cancel() { closed = true; imageRequest = UUID(); discardNewCover() }
+    private func stopChoosingImage() {
+        imageRequest = UUID(); imageTask?.cancel(); imageTask = nil; choosingImage = false
+    }
+    func removeCover() { stopChoosingImage(); discardNewCover(); value.cover = nil }
+    @discardableResult func cancel() -> Task<Void, Never>? {
+        guard !closed else { return nil }
+        closed = true; stopChoosingImage()
+        return discardNewCover()
+    }
 }
 
 struct BookMetadataEditor: View {
@@ -219,14 +316,12 @@ struct BookMetadataEditor: View {
     @Environment(\.theme) private var theme
     @FocusState private var focused: Bool
     @State private var photo: PhotosPickerItem?
-    @State private var filePicker = false
     @State private var discard = false
-    @State private var newTag = ""
     @State private var suggestions: [String] = []
     @ViewBuilder private var coverActions: some View {
-        PhotosPicker(selection: $photo, matching: .images) { Label("从照片选择", systemImage: "photo") }
+        Button("从照片选择", systemImage: "photo") { draft.presentsPhotoPicker = true }
             .buttonStyle(ThemedSecondaryButtonStyle()).disabled(draft.choosingImage)
-        Button("从文件选择", systemImage: "folder") { filePicker = true }
+        Button("从文件选择", systemImage: "folder") { draft.presentsFilePicker = true }
             .buttonStyle(ThemedSecondaryButtonStyle()).disabled(draft.choosingImage)
     }
     var body: some View {
@@ -262,10 +357,10 @@ struct BookMetadataEditor: View {
                         }
                     }
                     HStack {
-                        TextField("添加标签", text: $newTag).focused($focused).keyboardInputRegion().onSubmit(addTag)
+                        TextField("添加标签", text: $draft.newTag).focused($focused).keyboardInputRegion().onSubmit(addTag)
                             .accessibilityIdentifier("bookTagField")
                         Button("添加", systemImage: "plus", action: addTag).labelStyle(.iconOnly)
-                            .disabled(newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .disabled(draft.newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     if !suggestions.isEmpty {
                         Menu("已有标签") {
@@ -283,7 +378,12 @@ struct BookMetadataEditor: View {
                 .navigationTitle("编辑小说信息").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        SystemToolbarButton("取消", role: .cancel) { if draft.changed { discard = true } else { dismiss() } }
+                        SystemToolbarButton("取消", role: .cancel) {
+                            switch draft.requestLeave() {
+                            case .close: dismiss()
+                            case .confirmDiscard: discard = true
+                            }
+                        }
                             .disabled(draft.saving)
                     }
                     ToolbarItem(placement: .confirmationAction) {
@@ -291,42 +391,38 @@ struct BookMetadataEditor: View {
                             addTag(); focused = false; draft.saving = true
                             Task {
                                 defer { draft.saving = false }
-                                do { try await AppDataService.shared.saveMetadata(base: draft.base, edited: draft.value); dismiss() }
+                                do { try await draft.service.saveMetadata(base: draft.base, edited: draft.value); dismiss() }
                                 catch { draft.error = ReaderMessages.error(error) }
                             }
                         }.disabled(draft.saving || draft.choosingImage).accessibilityIdentifier("saveBookMetadata")
                     }
                 }
                 .alert("放弃未保存的修改？", isPresented: $discard) {
-                    Button("放弃修改", role: .destructive) { dismiss() }
+                    Button("放弃修改", role: .destructive) { draft.cancel(); dismiss() }
                     Button("取消", role: .cancel) {}
                 }
-                .fileImporter(isPresented: $filePicker, allowedContentTypes: [.image]) { result in
-                    Task {
-                        do {
-                            let url = try result.get(), scoped = url.startAccessingSecurityScopedResource()
-                            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                            let data = try await Task.detached { try Data(contentsOf: url) }.value
-                            await draft.image(data)
-                        } catch { draft.error = ReaderMessages.error(error) }
+                .photosPicker(isPresented: $draft.presentsPhotoPicker, selection: Binding(get: { photo }, set: { item in
+                    photo = item
+                    if let item { draft.chooseImage { try await item.loadTransferable(type: Data.self) } }
+                }), matching: .images)
+                .fileImporter(isPresented: $draft.presentsFilePicker, allowedContentTypes: [.image]) { result in
+                    draft.chooseImage {
+                        let url = try result.get(), scoped = url.startAccessingSecurityScopedResource()
+                        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                        return try await Task.detached { try Data(contentsOf: url) }.value
                     }
                 }
-                .task(id: photo) {
-                    guard let photo else { return }
-                    do { if let data = try await photo.loadTransferable(type: Data.self) { await draft.image(data) } }
-                    catch { draft.error = ReaderMessages.error(error) }
-                }
-                .task { suggestions = (try? await AppDataService.shared.metadataOptions(shelfID: nil).tags) ?? [] }
+                .task { suggestions = (try? await draft.service.metadataOptions(shelfID: nil).tags) ?? [] }
                 .alert("暂时无法完成", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
                     Button("知道了", role: .cancel) { draft.error = nil }
                 } message: { Text(draft.error ?? "") }
-        }.interactiveDismissDisabled(draft.changed || draft.saving || draft.choosingImage)
+        }.interactiveDismissDisabled(draft.blocksInteractiveDismissal)
             .onDisappear { draft.cancel() }
     }
     private func addTag() {
-        let value = newTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = draft.newTag.trimmingCharacters(in: .whitespacesAndNewlines)
         if !value.isEmpty, !draft.value.tags.contains(value) { draft.value.tags.append(value) }
-        newTag = ""
+        draft.newTag = ""
     }
 }
 
@@ -337,7 +433,6 @@ struct BookInformationSections: View {
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
-    @State private var expandedSynopsis = false
     /// Search entered from an open book's details is pushed above the suspended reader.
     @State private var readerSearch: AppSearchScope?
     @Environment(\.returnToReading) private var returnToReading
@@ -347,10 +442,13 @@ struct BookInformationSections: View {
             Button { dismiss() } label: { Text("返回阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         } else if let entry = model.entry, let library {
-            Button { library.open(entry) } label: { Text(entry.lastRead == 0 ? "开始阅读" : "继续阅读").frame(maxWidth: .infinity) }
+            Button {
+                let metadata = model.details?.metadata
+                library.open(entry.withMetadata(metadata?.sha == entry.readingIdentity?.formalSHA256 ? metadata : nil))
+            } label: { Text(entry.lastRead == 0 ? "开始阅读" : "继续阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         } else if let book = model.readableBook, let library {
-            Button { library.path.append(.reader(OpeningRequest(target: .book(book.id)))) } label: { Text("继续阅读").frame(maxWidth: .infinity) }
+            Button { library.shell.path.append(.reader(OpeningRequest(target: .book(book.id)))) } label: { Text("继续阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         }
     }
@@ -358,7 +456,7 @@ struct BookInformationSections: View {
     private func search(_ token: AppSearchSeed) {
         guard let library else { return }
         let scope = AppSearchScope(seeds: [token])
-        if target.fromReader { readerSearch = scope } else { library.path.append(.search(scope)) }
+        if target.fromReader { readerSearch = scope } else { library.shell.path.append(.search(scope)) }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -385,19 +483,12 @@ struct BookInformationSections: View {
                 }
             }
             if let synopsis = model.details?.metadata.synopsis, !synopsis.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(verbatim: synopsis).font(.subheadline).lineLimit(expandedSynopsis ? nil : 3)
-                        .foregroundStyle(Color(uiColor: theme.secondary))
-                    if synopsis.count > 100 || synopsis.filter({ $0 == "\n" }).count > 2 {
-                        Button(expandedSynopsis ? "收起" : "展开简介") { expandedSynopsis.toggle() }
-                            .font(.caption).frame(minHeight: LayoutTokens.hit)
-                    }
-                }
+                BookSynopsis(synopsis: synopsis).id(synopsis)
             }
             VStack(alignment: .leading, spacing: 12) {
                 Text("我的阅读").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
                 readingCard
-            }.padding(.top, 8).id("myReading")
+            }.id("myReading")
         }.frame(maxWidth: .infinity, alignment: .leading).id("bookInformation")
         .navigationDestination(item: $readerSearch) { scope in
             if let library {
@@ -443,12 +534,17 @@ struct BookInformationSections: View {
             }
             if let error = model.error, model.details == nil {
                 Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
-                Button("重试") { Task { await model.load(target) } }
+                Button("重试") { model.retryInformation() }
             } else if model.matches(target), model.contentSHA(for: target) == nil {
                 Label("正文身份尚未确定", systemImage: "info.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             } else if model.details == nil { ProgressView() }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+            .task(id: model.details == nil ? nil : model.readableBook?.id) {
+                model.releaseCoverage()
+                if model.details != nil, let id = model.readableBook?.id { await model.observeCoverage(bookID: id) }
+            }
+            .onDisappear { model.releaseCoverage() }
     }
     private func positionLabel(_ position: UInt64, _ bytes: UInt64) -> some View {
         Text("读到全书 \((Double(position) / Double(max(1, bytes))).formatted(.percent.precision(.fractionLength(0))))")
@@ -456,8 +552,47 @@ struct BookInformationSections: View {
     private func coverageLabel(_ position: UInt64) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("本章覆盖 \(model.chapters.last(where: { $0.startUtf8 <= position })?.coverageLabel(readingPrefix: false) ?? "—")")
-            if model.chapters.isEmpty { Text("本章覆盖尚未计算完成，不影响继续阅读。").font(.caption) }
+            if let error = model.coverageError { Text(verbatim: error).font(.caption) }
+            else if model.chapters.isEmpty { Text("本章覆盖尚未计算完成，不影响继续阅读。").font(.caption) }
         }
+    }
+}
+
+private struct BookSynopsis: View {
+    let synopsis: String
+    @Environment(\.theme) private var theme
+    @State private var expanded = false
+    @State private var fullHeight: CGFloat = 0
+    @State private var previewHeight: CGFloat = 0
+    private var overflows: Bool { fullHeight > previewHeight + 0.5 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if overflows {
+                DisclosureGroup(isExpanded: $expanded) {
+                    EmptyView()
+                } label: {
+                    Text("简介").frame(minHeight: LayoutTokens.hit, alignment: .leading)
+                }
+            }
+            synopsisText(limit: overflows && expanded ? nil : 3)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(alignment: .topLeading) {
+            ZStack(alignment: .topLeading) {
+                synopsisText()
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { fullHeight = $0 }
+                synopsisText(limit: 3)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { previewHeight = $0 }
+            }.hidden().accessibilityHidden(true)
+        }
+    }
+
+    private func synopsisText(limit: Int? = nil) -> some View {
+        Text(verbatim: synopsis).font(.subheadline).lineLimit(limit)
+            .foregroundStyle(Color(uiColor: theme.secondary))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -473,7 +608,7 @@ struct BookReadingDataClearSection: View {
                 Task {
                     if !target.fromReader { await book.finishPreparationForDataDeletion() }
                     await manager.load()
-                    manager.deleting = [key]
+                    manager.requestDelete([key])
                 }
             } label: {
                 Text("清除本书阅读数据").frame(maxWidth: .infinity)

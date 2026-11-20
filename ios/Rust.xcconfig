@@ -10,6 +10,7 @@ MOONREAD_RUST_TARGET[sdk=iphoneos*][arch=arm64] = aarch64-apple-ios
 MOONREAD_RUST_TARGET[sdk=iphonesimulator*][arch=arm64] = aarch64-apple-ios-sim
 
 // Simulator builds use the Apple Silicon target only.
+EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64
 MOONREAD_RUST_TARGET_FLAGS[sdk=iphoneos*] = --target aarch64-apple-ios
 MOONREAD_RUST_TARGET_FLAGS[sdk=iphonesimulator*] = --target aarch64-apple-ios-sim
 MOONREAD_BINDGEN_TARGET[sdk=iphoneos*] = aarch64-apple-ios

@@ -7,7 +7,13 @@ enum StoreShotScene: String, CaseIterable {
     case shelf = "R05", notes = "R06", statistics = "R07", annotation = "R08"
     case search = "R09", backup = "R10", recap = "R11", mint = "R12", bamboo = "R13"
     case listening = "R15"
-    static var requested: Self? { StoreShotCapture.requested.flatMap { Self(rawValue: $0.scene) } }
+    static func scene(for capture: StoreShotCapture) -> Self? {
+        switch capture.scene {
+        case "M01", "M02": .backup
+        default: Self(rawValue: capture.scene)
+        }
+    }
+    static var requested: Self? { StoreShotCapture.requested.flatMap(scene(for:)) }
     static let statisticsDate = Date(timeIntervalSince1970: 1_792_929_600) // 2026-10-25 12:00 UTC
 }
 enum StoreShotPage: String, CaseIterable {

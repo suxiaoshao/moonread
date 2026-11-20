@@ -1,6 +1,7 @@
 import Combine
 import BackgroundTasks
 import os
+import GRDB
 import SwiftUI
 
 extension Notification.Name { static let libraryIdentityChanged = Notification.Name("Moonread.libraryIdentityChanged") }
@@ -18,12 +19,12 @@ struct IdentityInventory: Sendable {
 extension AppDataService {
     func identityInventory(_ shelfID: String, scannedOnly: Bool = false) async throws -> IdentityInventory {
         try await refreshIndexedSourceDecodings(shelfID)
-        let core = try textCore()
+        let core = try indexStore()
         let value = try core.libraryIdentityInventory(shelfId: shelfID)
         return try IdentityInventory(shelf: libraryShelf(shelfID), total: Int(clamping: value.total), pending: value.pending,
                                      eligiblePaths: scannedOnly ? (indexScanIsCurrent(shelfID) ? (indexScanFiles[shelfID] ?? []) : []) : nil)
     }
-    func identityCore() throws -> ReaderCore { try textCore() }
+    func identityCore() throws -> ReaderIndex { try indexStore() }
 }
 
 /// Coordinated hash and decode surround the single synced policy resolution.
@@ -32,7 +33,7 @@ private final class IdentityFileWork: @unchecked Sendable {
     private let cancellation = OSAllocatedUnfairLock(initialState: false)
     var isCancelled: Bool { cancellation.withLock { $0 } }
     func cancel() { cancellation.withLock { $0 = true }; read.cancel() }
-    func run(file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderCore, includeCloud: Bool, service: AppDataService) async throws {
+    func run(file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderIndex, includeCloud: Bool, service: AppDataService) async throws {
         try await withTaskCancellationHandler {
             try await Task.detached(priority: .utility) { [self] in
                 try Task.checkCancellation()
@@ -55,7 +56,7 @@ private final class IdentityFileWork: @unchecked Sendable {
                 }
                 let raw = try await read.hash(at: url)
                 guard raw.size == file.size, raw.modifiedMilliseconds == file.modified else { throw ReaderError.SourceChanged }
-                let decoding = try await service.prepareSourceDecoding(raw: raw, fileID: file.id)
+                let decoding = try await service.prepareSourceDecoding(raw: raw)
                 let identity = try await read.identify(at: url, raw: raw, decoding: decoding)
                 try read.checkCancellation()
                 var resolved = file; resolved.decoding = decoding
@@ -89,7 +90,7 @@ enum FullIndexSystemCallback {
 }
 
 /// Retry/admission deduplication only; validity and pending identity remain Rust-owned.
-struct IndexInput: Hashable {
+struct IndexSourceStamp: Hashable {
     let id: String
     let size: UInt64
     let modified: Int64
@@ -102,7 +103,7 @@ struct IndexFailure: Identifiable {
     let message: String
     var id: String { file.id }
     func matches(_ other: SourceFileSnapshot) -> Bool {
-        IndexInput(file) == IndexInput(other)
+        IndexSourceStamp(file) == IndexSourceStamp(other)
     }
 }
 
@@ -120,23 +121,24 @@ final class FullIndexController {
     }()
     static let processingID = "dev.moonread.Moonread.full-index.processing"
     static let continuedPrefix = "dev.moonread.Moonread.full-index.continued."
-    private struct QueuedRequest: Codable { var shelf: String; var includeCloud: Bool; var scannedOnly: Bool? = nil }
-    private struct Request: Codable {
-        var schemaVersion = 1; var shelf: String; var includeCloud: Bool; var resume: Bool
-        // Optional addition keeps saved v1 requests readable.
+    private struct QueuedRequest: Codable, Sendable { var shelf: String; var includeCloud: Bool; var scannedOnly: Bool? = nil }
+    private struct Options: Codable, Sendable { let includeCloud: Bool; let scannedOnly: Bool? }
+    private struct Request: Sendable {
+        var shelf: String; var includeCloud: Bool; var resume: Bool
         var queued: [QueuedRequest]?
         var scannedOnly: Bool? = nil
     }
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let service: AppDataService
     @ObservationIgnored private var request: Request?
+    @ObservationIgnored private var taskStore: DataSession?
     @ObservationIgnored private var runner: Task<Void, Never>?
     @ObservationIgnored private var work: IdentityFileWork?
     @ObservationIgnored private var background: BGTask?
     @ObservationIgnored private var continuedID: String?
     @ObservationIgnored private var foreground = true
     @ObservationIgnored private var observers: [AnyCancellable] = []
-    @ObservationIgnored private var admissions: [String: [String: IndexInput]] = [:]
+    @ObservationIgnored private var admissions: [String: [String: IndexSourceStamp]] = [:]
     private enum Counts {
         case unknown
         case known(indexed: Int, total: Int)
@@ -245,7 +247,6 @@ final class FullIndexController {
     init(defaults: UserDefaults = .standard, service: AppDataService = .shared, registerTasks: Bool = true) {
         self.defaults = defaults; self.service = service
         automatic = defaults.bool(forKey: "Moonread.fullIndex.automatic")
-        if let data = defaults.data(forKey: "Moonread.fullIndex.request.v1"), let saved = try? JSONDecoder().decode(Request.self, from: data), saved.schemaVersion == 1 { request = saved; state = .idle(.init(shelf: saved.shelf)) }
         guard registerTasks else { return }
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processingID, using: nil,
             launchHandler: FullIndexSystemCallback.launch { self.attach($0) })
@@ -256,11 +257,45 @@ final class FullIndexController {
         }
     }
     private var constrained: Bool { ProcessInfo.processInfo.isLowPowerModeEnabled || [.serious,.critical].contains(ProcessInfo.processInfo.thermalState) }
-    private func save() { if let request, let data = try? JSONEncoder().encode(request) { defaults.set(data, forKey: "Moonread.fullIndex.request.v1") } }
+    func restoreTasks(_ store: DataSession) throws {
+        guard taskStore == nil else { return }
+        let saved: Request? = try store.readDeviceTask { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT shelf,options,resume FROM main.full_index_request WHERE id=1") else { return nil }
+            let options = try JSONDecoder().decode(Options.self, from: row["options"])
+            let queue = try Data.fetchAll(db, sql: "SELECT item FROM main.full_index_queue ORDER BY position").map {
+                try JSONDecoder().decode(QueuedRequest.self, from: $0)
+            }
+            return Request(shelf: row["shelf"], includeCloud: options.includeCloud, resume: row["resume"],
+                           queued: queue, scannedOnly: options.scannedOnly)
+        }
+        taskStore = store
+        if let saved { request = saved; state = .idle(.init(shelf: saved.shelf)) }
+    }
+
+    private func save() {
+        guard let request, let taskStore else { return }
+        do {
+            try taskStore.writeDeviceTask { db in
+                let options = Options(includeCloud: request.includeCloud, scannedOnly: request.scannedOnly)
+                try db.execute(sql: """
+                    INSERT INTO main.full_index_request VALUES(1,?,?,?)
+                    ON CONFLICT(id) DO UPDATE SET shelf=excluded.shelf, options=excluded.options, resume=excluded.resume
+                    """, arguments: [request.shelf,try JSONEncoder().encode(options),request.resume])
+                try db.execute(sql: "DELETE FROM main.full_index_queue")
+                for (position, item) in (request.queued ?? []).enumerated() {
+                    try db.execute(sql: "INSERT INTO main.full_index_queue VALUES(?,?)",
+                                   arguments: [position,try JSONEncoder().encode(item)])
+                }
+            }
+        } catch {
+            state = .failed(ReaderMessages.error(error), state.progress)
+        }
+    }
+
     func start(_ shelf: String, includeCloud requestedCloud: Bool, userInitiated: Bool, scannedOnly: Bool = false, files: [SourceFileSnapshot]? = nil) {
         let includeCloud = !scannedOnly && requestedCloud
         if let files {
-            let inputs = Dictionary(uniqueKeysWithValues: files.filter { includeCloud || !$0.needsDownload }.map { ($0.id, IndexInput($0)) })
+            let inputs = Dictionary(uniqueKeysWithValues: files.filter { includeCloud || !$0.needsDownload }.map { ($0.id, IndexSourceStamp($0)) })
             if !userInitiated && !inputs.isEmpty && inputs.allSatisfy({ admissions[shelf]?[$0.key] == $0.value }) { return }
             admissions[shelf] = inputs
         }
@@ -286,6 +321,17 @@ final class FullIndexController {
         resume()
     }
     private func attach(_ task: BGTask) {
+        if taskStore == nil {
+            Task {
+                do {
+                    try restoreTasks(try await service.indexStore().session)
+                    attachPrepared(task)
+                } catch { task.setTaskCompleted(success: false) }
+            }
+        } else { attachPrepared(task) }
+    }
+
+    private func attachPrepared(_ task: BGTask) {
         guard request?.resume == true, background == nil else { task.setTaskCompleted(success: false); return }
         background = task
         task.expirationHandler = FullIndexSystemCallback.expiration {
@@ -326,9 +372,13 @@ final class FullIndexController {
         var progress = state.progress; progress.lastFile = nil
         state = .active(IndexRun(progress: progress))
         runner = Task {
+            let catalogueBatch = await service.beginSystemReadingBatch()
             var completed = false
             var finishedShelf = false
+            var committed = false
             defer {
+                let changed = committed
+                Task { await service.endSystemReadingBatch(catalogueBatch, committed: changed) }
                 work = nil; runner = nil
                 if case .active = state {
                     var progress = state.progress; progress.lastFile = nil
@@ -346,7 +396,7 @@ final class FullIndexController {
                 }
             }
             do {
-                var attempted = Set<IndexInput>()
+                var attempted = Set<IndexSourceStamp>()
                 while !Task.isCancelled {
                     if constrained { break }
                     updateStep(.inventory)
@@ -362,7 +412,7 @@ final class FullIndexController {
                         task.progress.totalUnitCount = Int64(max(total,1)); task.progress.completedUnitCount = Int64(indexed)
                     }
                     guard let next = inventory.admittedPending.first(where: { file in
-                        (request.includeCloud || !file.needsDownload) && !attempted.contains(IndexInput(file)) && !failures.contains { $0.matches(file) }
+                        (request.includeCloud || !file.needsDownload) && !attempted.contains(IndexSourceStamp(file)) && !failures.contains { $0.matches(file) }
                     }) else {
                         finishedShelf = true
                         completed = inventory.admittedPending.allSatisfy { !request.includeCloud && $0.needsDownload }
@@ -379,7 +429,7 @@ final class FullIndexController {
                         updateProgress { $0.lastFile = nil }
                         continue  // Foreground work may have changed this source.
                     }
-                    attempted.insert(IndexInput(next))
+                    attempted.insert(IndexSourceStamp(next))
                     let nextWork = IdentityFileWork(); work = nextWork
                     do {
                         let core = try await service.identityCore()
@@ -387,13 +437,14 @@ final class FullIndexController {
                             await MainActor.run { self.updateStep(.processing(next)) }
                             try await nextWork.run(file: next, shelf: inventory.shelf, core: core, includeCloud: request.includeCloud, service: service)
                         }
+                        committed = true
                         updateProgress { $0.failures.removeAll { $0.id == next.id } }
                         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
                     } catch {
                         if Task.isCancelled { break }
                         if nextWork.isCancelled {
                             updateProgress { $0.lastFile = nil }
-                            attempted.remove(IndexInput(next))
+                            attempted.remove(IndexSourceStamp(next))
                         } else {
                             updateProgress {
                                 $0.failures.removeAll { $0.id == next.id }

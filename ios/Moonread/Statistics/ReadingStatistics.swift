@@ -30,120 +30,89 @@ extension AppDataService {
         return StatisticsPreferences(enabled: sourceDefaults.object(forKey: "Moonread.statisticsEnabled") as? Bool ?? true, generation: UInt64(sourceDefaults.integer(forKey: "Moonread.statisticsGeneration")))
     }
     func setStatisticsEnabled(_ enabled: Bool) async throws {
-        let generation = statisticsPreferences().generation + 1
-        try await userStore().setRecording(generation: generation, enabled: enabled)
-        try await userStore(pending: true).setRecording(generation: generation, enabled: enabled)
-        sourceDefaults.set(enabled, forKey: "Moonread.statisticsEnabled")
-        sourceDefaults.set(Int(generation), forKey: "Moonread.statisticsGeneration")
-        scheduleSystemReadingCatalog(statisticsChanged: true)
-        NotificationCenter.default.post(name: .statisticsPreferencesChanged, object: nil)
+        try await changeReadingCapture(enabled: enabled)
     }
-    func saveReading(_ slices: [ReadingSlice], generation: UInt64) async throws {
-        let preferences = statisticsPreferences()
-        var facts: [(String, String, String)] = [], pendingFacts: [(String, String, String)] = []
-        var leases: [String: UUID] = [:]
-        for slice in slices {
-            let identity = try userKey(slice.bookId)
-            let key = identity.storageKey
-            leases[key] = localReadingWriteLease(key)
-            let book = try await snapshot(slice.bookId).book
-            let value: [String: Any] = ["content_key": key, "title": book.title, "device": userDevice,
-                "slice": try JSONSerialization.jsonObject(with: Data(encodeReadingSlice(value: slice).utf8))]
-            let fact = (slice.id, key, String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self))
-            switch identity { case .pending: pendingFacts.append(fact); case .formal: facts.append(fact) }
-        }
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        facts = facts.filter { leases[$0.1] == localReadingWriteLease($0.1) }
-        pendingFacts = pendingFacts.filter { leases[$0.1] == localReadingWriteLease($0.1) }
-        try await userStore().saveFacts(facts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
-        try await userStore(pending: true).saveFacts(pendingFacts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
-        scheduleSystemReadingCatalog(statisticsChanged: true)
-        NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["keys": Array(leases.keys)])
-    }
-    struct StatisticsRead<Value: Sendable>: Sendable {
-        let value: Value
-        let key: ReadingKey?
-        let compatibilityNotice: String?
-        let version: String
-    }
-    enum StatisticsResult<Value: Sendable>: Sendable {
-        case identityPending(fileID: String)
-        case ready(StatisticsRead<Value>)
 
-        func requireReady() throws -> StatisticsRead<Value> {
-            guard case .ready(let result) = self else { throw ReaderError.ImportBusy }
-            return result
-        }
-    }
-    private func statisticsTarget(book: String?) throws -> StatisticsTarget {
-        try book.map { .book(.record(key: try parseReadingKey(value: $0))) } ?? .all
-    }
-    func statisticsQuery(first: Int64, last: Int64, book: String? = nil, fields: UserProjectionDomain = .metadata, scope: String = "statistics") async throws -> UserQueryOutput {
-        try await statisticsQuery(first: first, last: last, target: statisticsTarget(book: book), fields: fields, scope: scope)
-    }
-    func statisticsQuery(first: Int64, last: Int64, target: StatisticsTarget, fields: UserProjectionDomain = .metadata, scope: String = "statistics") async throws -> UserQueryOutput {
-        guard first <= last else { throw ReaderError.InvalidRange }
-        let source: UserQuerySource = switch target {
-        case .all: .fixed(records: .all, facts: .all)
-        case .book(let book): .book(book, facts: true)
-        }
-        return try await readingQueryResult(source, options: .init(statisticsRange: first...last, scope: scope, fields: fields))
-    }
-    private func readStatistics<Value: Sendable>(first: Int64, last: Int64, target: StatisticsTarget,
-        fields: UserProjectionDomain, project: @escaping @Sendable (ReaderQuery, ReadingKey?) throws -> Value) async throws -> StatisticsResult<Value> {
-        let input = try await statisticsQuery(first: first, last: last, target: target, fields: fields)
-        let key: ReadingKey?
-        switch input.resolution {
-        case .resolved(let record): key = record.key
-        case .unidentified(let file): return .identityPending(fileID: file)
-        case .missing: throw ReaderError.NotFound
-        case nil: key = nil
-        }
-        let work = Task.detached(priority: Task.currentPriority) {
-            try Task.checkCancellation()
-            return try project(input.query, key)
-        }
-        let value = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+    func readingSegmentAuthor(_ lease: ReadingLease) async throws -> ReadingSegmentAuthor {
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
-        return .ready(.init(value: value, key: key, compatibilityNotice: input.compatibilityNotice, version: input.statisticsVersion))
+        let index = try relationalUserIndex()
+        guard lease.writeAdmission == index.lease else { throw CancellationError() }
+        let owner = try index.session.readingInstallationID()
+        try index.session.prepareReadingHistory(index.lease, owner: owner)
+        return .init(ownerInstanceId: owner, sessionId: UUID().uuidString.lowercased(),
+                     title: try index.readingCaptureTitle(bookID: lease.id), device: userDevice)
     }
-    func statisticsRead(first: Int64, last: Int64, target: StatisticsTarget) async throws -> StatisticsResult<StatisticsOverview> {
-        try await readStatistics(first: first, last: last, target: target, fields: .metadata) {
-            try $0.statisticsOverview(firstDay: first, lastDay: last, contentKey: $1)
+
+    private func segmentAdmission(_ batch: ReadingSegmentBatch, index: ReaderIndex, preferences: StatisticsPreferences) -> Bool {
+        preferences.enabled && batch.generation == preferences.generation && batch.admission == index.lease
+    }
+
+    func saveReadingSegments(_ batch: ReadingSegmentBatch) async throws {
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let preferences = statisticsPreferences()
+        let index = try relationalUserIndex()
+        let keys = try index.writeReadingSegments([batch], owner: index.session.readingInstallationID()) {
+            segmentAdmission($0, index: index, preferences: preferences)
         }
+        guard !keys.isEmpty else { return }
+        NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["keys": Array(keys)])
     }
-    func statisticsRead(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsRead<StatisticsOverview> {
-        try await statisticsRead(first: first, last: last, target: statisticsTarget(book: book)).requireReady()
+
+    #if DEBUG
+    // Synthetic released-history fixtures only. Production records segments.
+    func saveReading(_ slices: [ReadingSlice], generation: UInt64, admission offered: DataSessionLease? = nil) async throws {
+        guard !slices.isEmpty else { return }
+        let admission = try offered ?? indexStore().lease
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let preferences = statisticsPreferences()
+        let index = try relationalUserIndex()
+        guard preferences.enabled, generation == preferences.generation, admission == index.lease else { return }
+        let keys = try index.writeReadingFacts(slices, device: userDevice)
+        guard !keys.isEmpty else { return }
+        NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["keys": Array(keys)])
     }
-    func statistics(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsOverview {
-        try await statisticsRead(first: first, last: last, book: book).value
-    }
-    func activitiesRead(first: Int64, last: Int64, target: StatisticsTarget) async throws -> StatisticsResult<[ReadingActivity]> {
-        try await readStatistics(first: first, last: last, target: target, fields: []) {
-            try $0.readingActivities(firstDay: first, lastDay: last, contentKey: $1)
-        }
-    }
-    func activitiesRead(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsRead<[ReadingActivity]> {
-        try await activitiesRead(first: first, last: last, target: statisticsTarget(book: book)).requireReady()
-    }
-    func activities(first: Int64, last: Int64, book: String? = nil) async throws -> [ReadingActivity] {
-        try await activitiesRead(first: first, last: last, book: book).value
-    }
-    func statisticsCompatibilityNotice(book: String? = nil) async throws -> String? {
-        // Compatibility covers the whole resolved book/all-books scope, even
-        // though this no-output request carries no history into Rust.
-        try await statisticsQuery(first: 0, last: 0, book: book, fields: []).compatibilityNotice
-    }
+    #endif
     func deleteStatistics(book: String? = nil, session: String? = nil) async throws {
-        _ = try await statisticsCompatibilityNotice(book: book)
-        let generation = statisticsPreferences().generation + 1
-        try await userStore().clear(book: book, session: session, newGeneration: generation)
-        try await userStore(pending: true).clear(book: book, session: session, newGeneration: generation)
-        sourceDefaults.set(Int(generation), forKey: "Moonread.statisticsGeneration")
-        scheduleSystemReadingCatalog(statisticsChanged: true)
-        NotificationCenter.default.post(name: .statisticsPreferencesChanged, object: nil)
-        scheduleSystemReadingCatalog(statisticsChanged: true)
-        NotificationCenter.default.post(name: .statisticsChanged, object: nil)
+        try await changeReadingCapture(clear: (book,session))
+    }
+
+    private func changeReadingCapture(enabled: Bool? = nil, clear: (String?,String?)? = nil) async throws {
+        let configuration = userCloudConfigurationRevision
+        let handoff = try await ReadingActivityRecorder.pauseForMutation(service: self)
+        do {
+            await acquireUserDataOperation()
+            let next: StatisticsPreferences
+            do {
+                defer { releaseUserDataOperation() }
+                try Task.checkCancellation()
+                guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
+                let previous = statisticsPreferences()
+                let index = try relationalUserIndex(), owner = try index.session.readingInstallationID()
+                if let (book, sessionID) = clear {
+                    try index.clearReadingHistory(book: book, session: sessionID,
+                        through: handoff.through, tail: handoff.batch.map { [$0] } ?? [], owner: owner) {
+                        segmentAdmission($0, index: index, preferences: previous)
+                    }
+                } else if let batch = handoff.batch {
+                    _ = try index.writeReadingSegments([batch], owner: owner) {
+                        segmentAdmission($0, index: index, preferences: previous)
+                    }
+                }
+                next = .init(enabled: enabled ?? previous.enabled, generation: previous.generation + 1)
+                sourceDefaults.set(next.enabled, forKey: "Moonread.statisticsEnabled")
+                sourceDefaults.set(Int(next.generation), forKey: "Moonread.statisticsGeneration")
+                scheduleSystemWidgetStatistics(immediate: true)
+                NotificationCenter.default.post(name: .statisticsPreferencesChanged, object: nil)
+                NotificationCenter.default.post(name: .statisticsChanged, object: nil)
+            }
+            await ReadingActivityRecorder.finishMutation(handoff.id, preferences: next)
+        } catch {
+            await ReadingActivityRecorder.finishMutation(handoff.id, preferences: nil)
+            throw error
+        }
     }
 }
 
@@ -151,24 +120,46 @@ extension AppDataService {
 @MainActor @Observable
 final class StatisticsWriter {
     static let shared = StatisticsWriter()
-    private let save: @MainActor ([ReadingSlice], UInt64) async throws -> Void
-    init(save: @escaping @MainActor ([ReadingSlice], UInt64) async throws -> Void = { slices, generation in
-        try await AppDataService.shared.saveReading(slices, generation: generation)
-    }) { self.save = save }
+    private let save: @MainActor (ReadingSegmentBatch, ReadingLease) async throws -> Void
+    private struct Write { var batch: ReadingSegmentBatch; let lease: ReadingLease }
+    private var queued = [Write]()
     private var task: Task<Void, Never>?
     private(set) var error: String?
+
+    private init() {
+        save = { batch, lease in try await lease.service.saveReadingSegments(batch) }
+    }
+
+    init(save: @escaping @MainActor (ReadingSegmentBatch) async throws -> Void) {
+        self.save = { batch, _ in try await save(batch) }
+    }
+
     func report(_ error: Error) { self.error = ReaderMessages.error(error) }
 
-    func enqueue(_ slices: [ReadingSlice], generation: UInt64, lease: ReadingLease) {
-        guard !slices.isEmpty else { return }
-        let previous = task
+    func enqueue(_ values: [ReadingSegment], generation: UInt64, lease: ReadingLease) {
+        guard !values.isEmpty else { return }
+        let batch = ReadingSegmentBatch(bookID: lease.id, values: values, generation: generation, admission: lease.writeAdmission)
+        if let last = queued.indices.last, queued[last].lease === lease, queued[last].batch.generation == generation {
+            // Only queued, not yet started, locally generated revisions are
+            // coalesced. Different IDs/visits keep their original order.
+            var updates = queued[last].batch.values
+            for value in values {
+                if let existing = updates.last, existing.header.id == value.header.id,
+                   existing.header.revision < value.header.revision, !existing.header.sealed {
+                    updates[updates.count - 1] = value
+                } else { updates.append(value) }
+            }
+            queued[last].batch = .init(bookID: batch.bookID, values: updates, generation: generation, admission: batch.admission)
+        } else { queued.append(.init(batch: batch, lease: lease)) }
+        guard task == nil else { return }
         task = Task { [self] in
-            await previous?.value
-            do { try await save(slices, generation) }
-            catch { report(error) }
-            // Keep the identity alive only through this attempt. Task completion
-            // releases its captures on both success and failure.
-            withExtendedLifetime(lease) { }
+            while !queued.isEmpty {
+                let work = queued.removeFirst()
+                do { try await save(work.batch, work.lease) }
+                catch { report(error) }
+                withExtendedLifetime(work.lease) {}
+            }
+            task = nil
         }
     }
     func drain() async { await task?.value }
@@ -206,7 +197,10 @@ final class ReadingActivityRecorder {
     private let writer: StatisticsWriter
     private let time: @MainActor () -> ReadingActivityTime
     private var startToken: UUID?
-    private var clock: ReadingClock?
+    private static var mutation: UUID?
+    private var clock: ReadingSegmentState?
+    private var author: ReadingSegmentAuthor?
+    private let captureAuthor: @MainActor (ReadingLease) async throws -> ReadingSegmentAuthor
     private var lease: ReadingLease?
     private var timer: Task<Void, Never>?
     private var generation: UInt64 = 0
@@ -224,16 +218,17 @@ final class ReadingActivityRecorder {
     }) { self.init(writer: writer, time: { .current() }, preferences: preferences) }
 
     init(writer: StatisticsWriter, time: @escaping @MainActor () -> ReadingActivityTime,
+         captureAuthor: @escaping @MainActor (ReadingLease) async throws -> ReadingSegmentAuthor = { try await $0.service.readingSegmentAuthor($0) },
          preferences: @escaping @MainActor () async throws -> StatisticsPreferences) {
-        self.writer = writer; self.time = time; self.preferences = preferences
+        self.writer = writer; self.time = time; self.preferences = preferences; self.captureAuthor = captureAuthor
     }
 
     /// Invalidates suspended starts before the next attempt is scheduled.
     func prepareStart(_ attempt: UUID) {
         guard !stopped else { return }
         visibility = ReaderStatisticsVisibility(body: false)
-        if clock != nil { sample() }
-        timer?.cancel(); timer = nil; clock = nil; lease = nil; viewport = nil
+        endVisit()
+        timer?.cancel(); timer = nil; clock = nil; author = nil; lease = nil; viewport = nil
         startToken = attempt
     }
 
@@ -241,6 +236,7 @@ final class ReadingActivityRecorder {
         guard !stopped, !Task.isCancelled, startToken == attempt else { return }
         do {
             ReaderOpenDiagnostics.mark(attempt, "statisticsPreferences.queued")
+            let capture = try await captureAuthor(lease)
             let value = try await preferences()
             ReaderOpenDiagnostics.mark(attempt, "statisticsPreferences.mainResumed")
             guard !stopped, !Task.isCancelled, startToken == attempt else { return }
@@ -248,7 +244,8 @@ final class ReadingActivityRecorder {
             self.lease = lease; self.viewport = viewport
             enabled = value.enabled; generation = value.generation
             // No clock exists while preferences are loading: never backdate reading.
-            clock = ReadingClock(bookId: lease.id)
+            author = capture
+            resetClock(newSession: false)
             sample()
             timer = Task { [weak self] in
                 while !Task.isCancelled {
@@ -277,19 +274,66 @@ final class ReadingActivityRecorder {
         sample(interaction: true, capture: false)
     }
 
-    func breakVisit() {
-        sample()
-        guard let clock, let lease else { return }
-        enqueue(clock.breakVisit(), lease: lease)
-    }
+    func breakVisit() { endVisit() }
 
     func flush() async {
-        sample()
-        guard let clock, let lease else { return }
-        // Explicit flush joins accepted writes. Display queries use breakVisit
-        // without joining the writer; mandatory persistence boundaries keep this API.
-        enqueue(clock.breakVisit(), lease: lease)
+        endVisit()
         await writer.drain()
+    }
+
+    @discardableResult
+    private func endVisit(enqueue: Bool = true) -> [ReadingSegment] {
+        guard Self.mutation == nil, let lease else { return [] }
+        var values = observe()
+        if let previous = clock {
+            clock = nil
+            do {
+                let step = try breakReadingSegmentVisit(previous: previous, nextVisitId: UUID().uuidString.lowercased())
+                clock = step.next
+                values += step.segmentUpdates
+            } catch { writer.report(error); resetClock() }
+        }
+        if enqueue { writer.enqueue(values, generation: generation, lease: lease) }
+        return values
+    }
+
+    struct Mutation: Sendable {
+        let id: UUID
+        let through: Int64
+        let batch: ReadingSegmentBatch?
+        // Keep a departing reader alive until its final synchronous commit.
+        let lease: ReadingLease?
+    }
+
+    static func pauseForMutation(service: AppDataService) async throws -> Mutation {
+        guard mutation == nil else { throw CancellationError() }
+        let id = UUID()
+        let current = owner?.lease?.service === service ? owner : nil
+        let lease = current?.lease
+        let values = current?.endVisit(enqueue: false) ?? []
+        let batch = if let current, let lease, !values.isEmpty {
+            ReadingSegmentBatch(bookID: lease.id, values: values, generation: current.generation, admission: lease.writeAdmission)
+        } else { nil as ReadingSegmentBatch? }
+        mutation = id
+        // Join already accepted writes outside the user's operation gate.
+        await (current?.writer ?? .shared).drain()
+        return .init(id: id, through: Int64(Date().timeIntervalSince1970 * 1000), batch: batch, lease: lease)
+    }
+
+    static func finishMutation(_ id: UUID, preferences: StatisticsPreferences?) {
+        guard mutation == id else { return }
+        mutation = nil
+        guard let owner, !owner.stopped else { return }
+        if let preferences { owner.enabled = preferences.enabled; owner.generation = preferences.generation }
+        owner.resetClock()
+        owner.sample()
+    }
+
+    private func resetClock(newSession: Bool = true) {
+        guard var author else { return }
+        if newSession { author.sessionId = UUID().uuidString.lowercased(); self.author = author }
+        do { clock = try beginReadingSegment(author: author, visitId: UUID().uuidString.lowercased(), limits: readingSegmentLimits()) }
+        catch { writer.report(error) }
     }
 
     func bodyReadable(through readerViewport: ReadingViewportAccess? = nil) -> Bool {
@@ -298,44 +342,46 @@ final class ReadingActivityRecorder {
     }
 
     func sample(interaction: Bool = false, capture: Bool = true) {
-        guard !stopped, let clock, let lease else { return }
-        // UIKit can present/dismiss without a SwiftUI update. Every sampling
-        // path (including capture:false interaction) reads the current chain.
+        guard let lease else { return }
+        writer.enqueue(observe(interaction: interaction, capture: capture), generation: generation, lease: lease)
+    }
+
+    private func observe(interaction: Bool = false, capture: Bool = true) -> [ReadingSegment] {
+        guard Self.mutation == nil, !stopped, let previous = clock else { return [] }
         let visible = capture ? viewport?.statisticsRange() : (range.1 > range.0 ? range : nil)
         if capture, let visible { range = visible }
         let instant = time(), now = instant.date
-        let slices = clock.update(moment: ReadingMoment(
-            monotonicMs: UInt64(instant.uptime * 1000),
-            unixMs: Int64(now.timeIntervalSince1970 * 1000),
-            utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: now)),
-            readable: enabled && bodyReadable() && visible != nil,
-            interaction: interaction, automaticMoving: viewport?.controller?.autoReading?.running == true,
-            automaticMilliseconds: viewport?.controller?.autoReading?.milliseconds ?? 0, preview: preview, startUtf8: range.0, endUtf8: range.1))
-        enqueue(slices, lease: lease)
-    }
-
-    private func enqueue(_ slices: [ReadingSlice], lease: ReadingLease) {
-        effectiveReadingMilliseconds += slices.reduce(0) { total, slice in
-            total + slice.exposures.reduce(0) { $0 + $1.durationMs }
-        }
-        writer.enqueue(slices, generation: generation, lease: lease)
+        clock = nil // Rust consumes the prior state, including on failure.
+        do {
+            let step = try advanceReadingSegment(previous: previous, moment: ReadingMoment(
+                monotonicMs: UInt64(instant.uptime * 1000),
+                unixMs: Int64(now.timeIntervalSince1970 * 1000),
+                utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: now)),
+                readable: enabled && bodyReadable() && visible != nil,
+                interaction: interaction, automaticMoving: viewport?.controller?.autoReading?.running == true,
+                automaticMilliseconds: viewport?.controller?.autoReading?.milliseconds ?? 0, preview: preview,
+                startUtf8: range.0, endUtf8: range.1),
+                segmentSeed: UUID().uuidString.lowercased(), nextVisitId: UUID().uuidString.lowercased())
+            clock = step.next
+            effectiveReadingMilliseconds += step.chargedDeltaMs
+            return step.segmentUpdates
+        } catch { writer.report(error); resetClock(); return [] }
     }
 
     func reloadPreferences() async {
-        sample()
         let token = startToken
-        guard let preferences = try? await preferences(), !stopped, !Task.isCancelled, startToken == token else { return }
+        guard let preferences = try? await preferences(), !stopped, !Task.isCancelled, startToken == token,
+              Self.mutation == nil, preferences.enabled != enabled || preferences.generation != generation else { return }
         enabled = preferences.enabled; generation = preferences.generation
-        // A clear/pause starts a new recording session, never retries a pre-clear open interval.
-        if let lease { clock = ReadingClock(bookId: lease.id) }
+        resetClock()
         sample()
     }
 
     func stop() {
         guard !stopped else { return }
-        visibility = ReaderStatisticsVisibility(body: false); sample(); stopped = true
+        visibility = ReaderStatisticsVisibility(body: false); endVisit(); stopped = true
         startToken = nil
-        timer?.cancel(); timer = nil; clock = nil; lease = nil; viewport = nil
+        timer?.cancel(); timer = nil; clock = nil; author = nil; lease = nil; viewport = nil
     }
 }
 
@@ -404,7 +450,7 @@ extension AppDataService {
     /// Synthetic events live exclusively in the isolated UI-test store.
     func createStatisticsFixture(bookID: String? = nil) async throws {
         guard testSession != nil else { return }
-        let core = try textCore(), now = Date()
+        let core = try indexStore(), now = Date()
         guard try await statistics(first: 0, last: 100_000).books.isEmpty else { return }
         let entries = try core.sourceFiles(shelfId: "builtin").filter { $0.bookId != nil && (bookID == nil || $0.bookId == bookID) }.prefix(3)
         for (index, entry) in entries.enumerated() {

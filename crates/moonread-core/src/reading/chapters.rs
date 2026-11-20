@@ -18,12 +18,13 @@ pub(crate) struct ChapterScanner {
     line_too_long: bool,
 }
 
-pub(crate) struct IndexedChapter {
-    pub(crate) start_utf8: u64,
-    pub(crate) title: String,
-    pub(crate) level: u32,
-    pub(crate) start_char_count: u64,
-    pub(crate) body_char_count: u64,
+#[derive(Clone, Debug, Eq, PartialEq, uniffi::Record)]
+pub struct IndexedChapter {
+    pub start_utf8: u64,
+    pub title: String,
+    pub level: u32,
+    pub start_char_count: u64,
+    pub body_char_count: u64,
 }
 
 impl ChapterScanner {
@@ -383,5 +384,3 @@ mod chapter_tests {
         }
     }
 }
-
-// Business projections are exported only by ReaderQuery.

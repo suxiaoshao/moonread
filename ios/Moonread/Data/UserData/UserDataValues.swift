@@ -18,9 +18,9 @@ struct AnnotationCandidate: Codable, Equatable, Identifiable, Sendable {
     var mergedInto: String? = nil
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: UserSyncJSON.Key.self)
-        try c.encode(id, forKey: .init("id")); try c.encode(ancestors, forKey: .init("ancestors"))
+        try c.encode(id, forKey: .init("id")); try c.encode(ancestors.sorted(), forKey: .init("ancestors"))
         try c.encode(content, forKey: .init("content")); try c.encode(created, forKey: .init("created"))
-        try c.encode(bookmark, forKey: .init("bookmark")); try c.encode(relatedMarks, forKey: .init("relatedMarks"))
+        try c.encode(bookmark, forKey: .init("bookmark")); try c.encode(relatedMarks.sorted(), forKey: .init("relatedMarks"))
         try c.encode(mergedInto, forKey: .init("mergedInto"))
     }
 }
@@ -33,6 +33,7 @@ struct AnnotationEdit: Sendable {
     var note: String
     var marks: [ReaderMark]
     var baselines: [String: [AnnotationCandidate]]
+    var writeAdmission: DataSessionLease? = nil
 }
 struct StoredValue: Codable, Sendable {
     var updated: Int64
@@ -46,12 +47,13 @@ struct PositionSourceHint: Codable, Equatable, Sendable {
     var file_name: String
     var byte_size: UInt64?
     var decoding: String
-    var isValid: Bool {
-        return (try? validateRelativePath(path: relative_path, allowRoot: false)) != nil && relative_path.utf8.count <= 4096 &&
+    var hasValidShape: Bool {
+        (try? validateRelativePath(path: relative_path, allowRoot: false)) != nil && relative_path.utf8.count <= 4096 &&
             relative_path.split(separator: "/").last.map(String.init) == file_name &&
             file_name.utf8.count <= 1024 && decoding.utf8.count <= 64 && file_name.lowercased().hasSuffix(".txt") &&
             (byte_size.map { $0 <= UInt64(Int64.max) } ?? true)
     }
+    var isValid: Bool { hasValidShape && (try? normalizeSourceDecoding(decoding: decoding)) == decoding }
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: UserSyncJSON.Key.self)
         try c.encode(source_kind, forKey: .init("source_kind")); try c.encode(relative_path, forKey: .init("relative_path"))
@@ -131,7 +133,7 @@ struct ClearValue: Codable, Sendable {
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: UserSyncJSON.Key.self)
         try c.encode(book, forKey: .init("book")); try c.encode(session, forKey: .init("session"))
-        try c.encode(through, forKey: .init("through")); try c.encode(ids, forKey: .init("ids"))
+        try c.encode(through, forKey: .init("through")); try c.encode(ids.sorted(), forKey: .init("ids"))
     }
 }
 struct UserDataConflict: LocalizedError {
@@ -146,9 +148,28 @@ struct MarkDeletion: Sendable {
     let deleted: Bool
 }
 
+struct MarkBaseline: Sendable {
+    let heads: [AnnotationCandidate]
+    let key: String
+    let admission: DataSessionLease
+}
+
+struct MarkUndo: Sendable {
+    let baseline: MarkBaseline
+    let content: AnnotationContent?
+}
+
 /// Whole edit candidates use separate CloudKit objects. Automatic property merging
 /// cannot destroy a sibling edit or mix its range with another edit's comment.
 enum AnnotationReduction {
+    struct Change {
+        let markID: String
+        let baseline: [AnnotationCandidate]
+        let content: AnnotationContent?
+        var related: Set<String> = []
+        var mergedInto: String? = nil
+    }
+
     static func heads(_ values: [AnnotationCandidate]) -> [AnnotationCandidate] {
         let superseded = values.reduce(into: Set<String>()) { $0.formUnion($1.ancestors) }
         var seen = Set<String>()
@@ -158,5 +179,58 @@ enum AnnotationReduction {
     static func conflicts(_ values: [AnnotationCandidate]) -> Bool {
         guard let first = values.first else { return false }
         return values.dropFirst().contains { $0.content != first.content || $0.bookmark != first.bookmark }
+    }
+
+    static func successor(baseline: [AnnotationCandidate], content: AnnotationContent?, bookmark: Bool,
+                          related: Set<String>, mergedInto: String?) -> AnnotationCandidate {
+        let ancestors = baseline.reduce(into: Set<String>()) { $0.insert($1.id); $0.formUnion($1.ancestors) }
+        return AnnotationCandidate(id: UUID().uuidString, ancestors: ancestors, content: content,
+            created: baseline.map(\.created).min() ?? UInt64(Date().timeIntervalSince1970 * 1000), bookmark: bookmark,
+            relatedMarks: baseline.reduce(into: related) { $0.formUnion($1.relatedMarks) }, mergedInto: mergedInto)
+    }
+
+    static func editingBundle(_ edit: AnnotationEdit, groups: [String: [AnnotationCandidate]]) -> [String: [AnnotationCandidate]] {
+        var ids = Set(edit.baselines.keys).union([edit.id])
+        var from = edit.startUtf8, to = edit.endUtf8
+        while true {
+            let previous = ids, previousFrom = from, previousTo = to
+            for (mark, heads) in groups {
+                let contents = heads.filter { !$0.bookmark }.compactMap(\.content)
+                if ids.contains(mark) || heads.contains(where: { !$0.relatedMarks.isDisjoint(with: ids) }) ||
+                    contents.contains(where: { $0.start < to && $0.end > from }) {
+                    ids.insert(mark)
+                    for head in heads { ids.formUnion(head.relatedMarks) }
+                    for content in contents { from = min(from, content.start); to = max(to, content.end) }
+                }
+            }
+            if previous == ids && previousFrom == from && previousTo == to { break }
+        }
+        return Dictionary(uniqueKeysWithValues: ids.map { ($0, groups[$0] ?? []) })
+    }
+
+    static func checkBaseline(_ current: [AnnotationCandidate], expected: [AnnotationCandidate]) throws {
+        guard Set(current.map(\.id)) == Set(expected.map(\.id)) else { throw UserDataConflict(candidates: current) }
+    }
+
+    static func changes(_ edit: AnnotationEdit, current: [String: [AnnotationCandidate]],
+                        resolving expected: [String: [AnnotationCandidate]]? = nil,
+                        content: AnnotationContent?) throws -> [Change] {
+        let baseline: [String: [AnnotationCandidate]]
+        if let expected {
+            guard Set(current.keys) == Set(expected.keys) else { throw UserDataConflict(candidates: current.values.flatMap { $0 }) }
+            for (mark, heads) in expected { try checkBaseline(current[mark, default: []], expected: heads) }
+            baseline = expected
+        } else {
+            guard !edit.baselines.values.contains(where: conflicts), !current.values.contains(where: conflicts),
+                  Set(current.keys) == Set(edit.baselines.keys).union([edit.id]) else {
+                throw UserDataConflict(candidates: current.values.flatMap { $0 })
+            }
+            // Ordinary edit deliberately uses the shown heads, not siblings
+            // that arrived after opening the editor.
+            baseline = edit.baselines
+        }
+        let related = Set(baseline.keys).subtracting([edit.id])
+        return [.init(markID: edit.id, baseline: baseline[edit.id] ?? [], content: content, related: related)] +
+            related.sorted().map { .init(markID: $0, baseline: baseline[$0] ?? [], content: nil, related: [edit.id], mergedInto: edit.id) }
     }
 }

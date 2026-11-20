@@ -142,7 +142,7 @@ final class ReaderDeviceControls {
         Self.orientations[scene.session.persistentIdentifier] = mask
         scene.windows.forEach { $0.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations() }
         let requested = settings.orientation
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { [weak self] _ in
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { @Sendable [weak self] _ in
             Task { @MainActor in
                 guard let self, self.active, self.settings.orientation == requested, requested != .system else { return }
                 self.orientationFailed()

@@ -48,7 +48,11 @@ extension ReaderSession {
                         if let frame = update.1 { publishFrame(frame, id: id, attempt: attempt, monitor: token) }
                         if let candidate = resume?.candidate { presentContinuation(candidate) }
                         guard current(id, attempt: attempt, monitor: token) else { return }
-                        refreshChapter(at: anchor, bookID: id)
+                        if let frame = update.1, frame.status == .ready, frame.cursor == anchor {
+                            chapter = frame.chapter
+                        } else {
+                            refreshChapter(at: anchor, bookID: id)
+                        }
                     }
                     updateOpening()
                     if value.preparation.isComplete {

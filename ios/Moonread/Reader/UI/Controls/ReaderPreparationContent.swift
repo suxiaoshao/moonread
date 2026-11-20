@@ -4,7 +4,7 @@ import UIKit
 struct ReaderPreparationContent: View {
     let session: ReaderSession
     let route: ReaderRoute
-    var information: BookDetails? = nil
+    var information: ReaderCoverInformation? = nil
     var statusOnly = false
     let changeEncoding: (String?) -> Void
     @Environment(\.theme) private var theme

@@ -38,8 +38,8 @@ final class ReaderSessionReaderSelectionTests: ReaderSelectionFixture {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let file = root.appendingPathComponent("边界合成.txt")
     try Data(("甲段。\n" + String(repeating: "合成正文。\n", count: 12000)).utf8).write(to: file)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let imported = try core.importBook(filePath: file.path, title: "合成")
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
+    let imported = try importBookFixture(core, filePath: file.path, title: "合成")
     let service = AppDataService(core: core)
     let session = ReaderSession(
       service: service,

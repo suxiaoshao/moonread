@@ -21,22 +21,28 @@ extension UserDataStore {
         for row in try modelContext.fetch(FetchDescriptor<UserValue>()) where row.key.hasPrefix("opened/") { result.insert(String(row.key.dropFirst(7))) }
         return result.filter { if let key = try? parseReadingKey(value: $0), case .pending = key { return true }; return false }
     }
-    func requirePendingReadable(key: String) throws {
+    private func requirePendingNonFactReadable(key: String) throws {
         try requireValueReadable("position/" + key)
         try requireValueReadable("opened/" + key)
         guard try blockedMarks(key: key).isEmpty else { throw UserSyncCompatibilityError() }
-        try requireStatisticsReadable(book: key)
-        let facts = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key }))
-        for row in facts { try UserSyncJSON.validateFact(row.payload, id: row.id) }
     }
+    private func readablePendingFacts(key: String) throws -> [ReadingFact] {
+        try requirePendingNonFactReadable(key: key)
+        try requireStatisticsReadable(book: key)
+        let facts = try factRows(keys: [key])
+        for row in facts { try UserSyncJSON.validateFact(row.payload, id: row.id) }
+        return facts
+    }
+    func requirePendingReadable(key: String) throws { _ = try readablePendingFacts(key: key) }
     func exportPending(key: String) throws -> UserDataTransfer {
-        try requirePendingReadable(key: key)
+        try requirePendingNonFactReadable(key: key)
+        let rows = try factRows(keys: [key])
+        var input = try factsInput(rows: rows, keys: [key])
+        let visible = Set(try input.prepare(requireReadable: true).facts.map(\.id))
         let positions = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == key })).map(\.payload)
         let operations = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.contentKey == key }))
             .map { UserDataTransfer.Operation(id: $0.id, mark: $0.markID, payload: $0.payload) }
-        let visible = Set(try visibleFacts(key: key).compactMap { ($0["slice"] as? [String: Any])?["id"] as? String })
-        let facts = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key })).filter { visible.contains($0.id) }
-            .map { UserDataTransfer.Fact(id: $0.id, payload: $0.payload) }
+        let facts = rows.filter { visible.contains($0.id) }.map { UserDataTransfer.Fact(id: $0.id, payload: $0.payload) }
         return UserDataTransfer(opened: try storedValue("opened/" + key).map { try encode($0) }, positions: positions, operations: operations, facts: facts)
     }
     // Shared immutable-record intake for pending promotion and portable backup.
@@ -65,14 +71,16 @@ extension UserDataStore {
         }
         if rows.isEmpty { modelContext.insert(AnnotationOperation(id: id, contentKey: key, markID: mark, payload: payload)) }
     }
-    func mergeFactRecord(key: String, id: String, payload: String) throws {
-        try UserSyncJSON.validateFact(payload, id: id)
+    func mergeFactRecord(key: String, fact: UserSyncJSON.ValidatedFact, addVersion: Bool = false) throws {
+        let id = fact.id
         let rows = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.id == id }))
         for row in rows {
-            try UserSyncJSON.validateFact(row.payload, id: row.id)
-            guard row.contentKey == key, Self.samePayload(row.payload, payload) else { throw UserSyncCompatibilityError() }
+            let old = try UserSyncJSON.validateFact(row.payload, id: row.id)
+            guard row.contentKey == key, Self.sameFactPayload(old, fact) else { throw UserSyncCompatibilityError() }
         }
-        if rows.isEmpty { modelContext.insert(ReadingFact(id: id, contentKey: key, payload: payload)) }
+        if rows.isEmpty {
+            modelContext.insert(ReadingFact(id: id, contentKey: key, payload: addVersion ? try fact.versioned() : fact.payload))
+        }
     }
     func importPending(_ transfer: UserDataTransfer, from: String, to: String) throws {
         try transaction {
@@ -80,7 +88,7 @@ extension UserDataStore {
             // Validate the complete snapshot before any insert. A failure rolls back all kinds.
             for value in transfer.positions { _ = try UserSyncJSON.storedValue(value, key: "position/" + from) }
             for value in transfer.operations { _ = try UserSyncJSON.annotation(value.payload, id: value.id) }
-            for value in transfer.facts { try UserSyncJSON.validateFact(value.payload, id: value.id) }
+            let facts = try transfer.facts.map { try UserSyncJSON.validateFact($0.payload, id: $0.id) }
             if let opened = transfer.opened {
                 _ = try UserSyncJSON.storedValue(opened, key: "opened/" + from)
                 try mergeValueRecord(key: "opened/" + to, device: "pending-promotion", payload: opened)
@@ -93,19 +101,17 @@ extension UserDataStore {
                 let mark = value.mark.hasPrefix("bookmark/" + from + "/") ? "bookmark/" + to + "/" + value.mark.split(separator: "/").last! : value.mark
                 try mergeOperationRecord(key: to, id: value.id, mark: mark, payload: UserSyncJSON.versioned(value.payload))
             }
-            for value in transfer.facts { try mergeFactRecord(key: to, id: value.id, payload: UserSyncJSON.versioned(value.payload)) }
+            for fact in facts { try mergeFactRecord(key: to, fact: fact, addVersion: true) }
 
         }
     }
     func removePending(key: String) throws {
         try transaction {
-            try requirePendingReadable(key: key)
+            let facts = try readablePendingFacts(key: key)
             let positions = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == key }))
             let operations = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.contentKey == key }))
-            let facts = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key }))
             for row in positions { _ = try UserSyncJSON.storedValue(row.payload, key: "position/" + key) }
             for row in operations { _ = try UserSyncJSON.annotation(row.payload, id: row.id) }
-            for row in facts { try UserSyncJSON.validateFact(row.payload, id: row.id) }
             let openedKey = "opened/" + key
             for row in try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == openedKey })) { modelContext.delete(row) }
             for row in positions { modelContext.delete(row) }

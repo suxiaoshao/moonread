@@ -1,0 +1,18 @@
+{
+  "schemaNamespace": "MoonreadQueries",
+  "input": {
+    "operationSearchPaths": ["GraphQL/*.graphql"],
+    "schemaSearchPaths": ["GraphQL/*.graphqls"]
+  },
+  "output": {
+    "testMocks": { "none": {} },
+    "schemaTypes": {
+      "path": "Moonread/Data/Queries/Generated",
+      "moduleType": { "embeddedInTarget": { "name": "Moonread" } }
+    },
+    "operations": { "inSchemaModule": {} }
+  },
+  "options": {
+    "selectionSetInitializers": { "operations": true }
+  }
+}

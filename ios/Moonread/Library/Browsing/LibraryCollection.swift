@@ -14,6 +14,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
     let layout: LibraryLayout
     let theme: ThemeSurface
     let disabled: Bool
+    let retryObservation: () -> Void
     var showsEmpty = false
     @Binding var editing: EditMode
     @Binding var selection: Set<String>
@@ -326,6 +327,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
 
         @objc private func refreshFiles() {
             guard let config = configuration else { refresh.endRefreshing(); return }
+            config.retryObservation()
             Task { await config.model.refresh(showIndicator: false); refresh.endRefreshing() }
         }
     }
@@ -344,7 +346,7 @@ private struct FolderOverview: View {
                 Text(verbatim: error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
             }
             if location.path.isEmpty {
-                Button { model.path.append(.allBooks(location.shelfID)) } label: {
+                Button { model.shell.path.append(.allBooks(location.shelfID)) } label: {
                     HStack(spacing: LayoutTokens.compact) {
                         Label("全部小说", systemImage: "books.vertical").font(.subheadline.weight(.medium)).foregroundStyle(Color(uiColor: theme.accent))
                         Spacer()

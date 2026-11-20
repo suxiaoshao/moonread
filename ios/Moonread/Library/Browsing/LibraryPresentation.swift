@@ -1,11 +1,11 @@
 import SwiftUI
 
-enum LibraryGrouping: String {
+enum LibraryGrouping: String, Sendable {
     case name, tags
 }
 
-extension LibraryTagGroup: Identifiable {
-    public var id: String {
+extension CatalogueTagSection: Identifiable {
+    var id: String {
         switch kind {
         case .tag: "tag:" + tag
         case .untagged: "untagged"
@@ -103,7 +103,7 @@ struct LibraryBookTile: View {
                     Group {
                         if case .folder(let folder) = entry.item {
                             LibraryFolderCover(previews: folder.coverPreviews).aspectRatio(0.7, contentMode: .fit)
-                        } else { BookCoverView(title: entry.title, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).aspectRatio(0.7, contentMode: .fit) }
+                        } else { BookCoverView(title: entry.title, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).aspectRatio(0.7, contentMode: .fit) }
                     }
                         .overlay {
                             if selected {
@@ -249,7 +249,7 @@ struct LibraryLocationAction: View {
     let model: LibraryModel
     let entry: LibraryEntry
     var body: some View {
-        Button("所在文件夹", systemImage: "folder") { model.path.append(.folder(entry.parent)) }
+        Button("所在文件夹", systemImage: "folder") { model.shell.path.append(.folder(entry.parent)) }
             .accessibilityIdentifier("library-result-path")
     }
 }

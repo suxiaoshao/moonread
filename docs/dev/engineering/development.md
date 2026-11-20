@@ -23,6 +23,8 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 项目级 [SwiftUI Expert skill](../../../.agents/skills/swiftui-expert-skill/SKILL.md) 用于 SwiftUI 开发与审阅。来源为 [AvdLee/SwiftUI-Agent-Skill](https://github.com/AvdLee/SwiftUI-Agent-Skill)，固定 `4.2.0` / `9692ec5c3e78a0acc7757de2dbe8e64e519a72fb`，保留上游 [MIT 许可](../../../.agents/skills/swiftui-expert-skill/LICENSE)；更新时显式选择版本。
 
+固定查询的 schema／操作文档在 `ios/GraphQL/`。修改后在 `ios/` 用 Apollo iOS CLI 2.5.0 执行 `apollo-ios-cli generate`；生成的 Swift 文件提交到 `Moonread/Data/Queries/Generated/`，新增文件加入 App 的 Sources。App 只链接 `ApolloAPI`，查询由 Swift 执行，不在构建时下载生成工具或启动 GraphQL 服务。
+
 ## 本地化
 
 界面支持简体中文 `zh-Hans`、台湾繁体中文 `zh-Hant` 与英文 `en`。`ios/Moonread/Localizable.xcstrings` 的源键保留简体，繁体翻译按 OpenCC `s2twp` 生成并人工校正台湾用语（設定、檔案、資料夾、字型、匯入、複製、回饋）。不要转换源键、格式占位符、协议／模型 ID、用户命名或小说正文；英文数量文案保留单复数。新增文案同步补齐三语，不直接把中文动态 String 当界面值。
@@ -46,7 +48,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让常规依赖版本更新 PR 指向当前版本分支。
 - Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 PR 的 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 `hotfix/x.y.z` 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。
-- 当前常规依赖更新目标为 `release/1.7`，以 `.github/dependabot.yml` 为准；新版本分支切换后需核对实际配置。
+- 当前常规依赖更新目标为 `release/1.8`，以 `.github/dependabot.yml` 为准；新版本分支切换后需核对实际配置。
 
 签名配置、小说原件、构建产物与凭据不随代码推送。CI、仓库保护、模板及依赖更新见[仓库与持续集成](repository.md)，测试范围与推送前要求见[测试原则](verification.md#测试原则)。
 
@@ -61,7 +63,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - 主 App 的 `Prune unused math fonts` 阶段依赖 SwiftPM 已复制的资源 bundle，在 Release 签名前只保留 Latin Modern Math 的 OTF、metrics plist 与三份许可证；上游依赖不变。该阶段每次构建执行，防止增量复制恢复未用字体，缺少必需资源时构建失败。Debug 的 SwiftPM 资源 bundle 有独立临时签名，不做裁剪。
 - UniFFI 从 [uniffi.toml](../../../crates/moonread-core/uniffi.toml) 读取输出名称；使用 `--no-format` 写入临时目录；三个预期输出全部成功生成后逐文件 `cmp`，缺失或内容变化才替换正式文件，内容相同保留原 mtime。失败不能回退旧绑定，生成目录与 CI DerivedData 成套缓存；不跳过当前 Rust 构建。
 - 链接明确指定 `libmoonread_core.a`，避免同目录动态库被优先选中或把 Mac 路径带进 iPhone。
-- Rust 输出位于仓库默认的 `target/`，绑定位于 `build/ios/Generated/<Configuration>/`，均不提交。模拟器只编译 `aarch64-apple-ios-sim`（arm64）。
+- Rust 输出位于仓库默认的 `target/`，绑定位于 `build/ios/Generated/<Configuration>/`，均不提交。模拟器使用 `aarch64-apple-ios-sim`（arm64）。`ios/Rust.xcconfig` 对模拟器 SDK 排除 x86_64，使 Xcode 在选择通用 iOS Simulator 目的地时也只链接 arm64。
 - Xcode 构建缓存只用两份：模拟器构建和测试统一 `-derivedDataPath build/DerivedData`，真机构建统一 `build/DeviceDerivedData`。不按任务另建缓存目录；任务的日志、截图等验证记录可以放在 `build/<任务名>/`，任务合并后删除。
 - 不使用 git worktree；在主目录切分支，共用 `target`、`build/DerivedData` 和 `build/DeviceDerivedData`。
 - Nix 默认路径为 `/nix/var/nix/profiles/default/bin/nix`；非标准安装可在本地 `LocalSigning.xcconfig` 覆盖 `MOONREAD_NIX`。
@@ -182,7 +184,9 @@ xcodebuild -project ios/Moonread.xcodeproj -scheme Moonread \
 
 1.3 按可独立试用的功能批次组织 PR；重大功能或 UI 先完成本地相关测试和真机试用，由用户确认后一次推送开 PR，CI 运行全量测试，合并仍由用户安排。
 
-需要让本机真机试用包读取用户现有的正式 iCloud 数据时，按当轮已确认的验收顺序使用 Release 配置，复制主 App 的 entitlements 到忽略的 `build/`，仅在该副本加入 `com.apple.developer.icloud-container-environment=Production`，通过现有的主 App 参数 `MOONREAD_ENTITLEMENTS` 指向该副本（绝对路径），扩展沿用自己的权限文件；不修改或提交普通 Debug 的权限配置。覆盖安装前用 `codesign -d --entitlements :-` 检查实际签名的环境确为 Production、容器为 `iCloud.dev.moonread.Moonread`，并确认 `get-task-allow` 与本次使用的开发/分发描述文件一致（本机开发调试签名为 true，分发签名为 false）。自动签名如不允许该组合，停止报告，不改用 Development 云数据。核验后用 `devicectl` 覆盖安装并启动，保留 App 和数据，不卸载；连接、解锁或人工授权由用户处理。试用安装不等于发版或合并。
+本机 Debug 和 Release 的阅读数据默认都使用 Development；App Store 工作流归档时指定 `MOONREAD_READING_CLOUD_ENVIRONMENT=Production`，并核对导出 IPA 的配置与签名。真机试用包使用 Release 优化时也应核对签名的 CloudKit 环境与 Info.plist 的 `MoonreadReadingCloudEnvironment` 一致。两种环境不共用关系库。
+
+需要让本机真机试用包读取用户现有的正式 iCloud 数据时，按当轮已确认的验收顺序使用 Release 配置，复制主 App 的 entitlements 到忽略的 `build/`，仅在该副本加入 `com.apple.developer.icloud-container-environment=Production`，通过现有的主 App 参数 `MOONREAD_ENTITLEMENTS` 指向该副本（绝对路径），同时指定 `MOONREAD_READING_CLOUD_ENVIRONMENT=Production`；扩展沿用自己的权限文件。覆盖安装前用 `codesign -d --entitlements :-` 检查实际签名的环境确为 Production、容器为 `iCloud.dev.moonread.Moonread`，并确认 `get-task-allow` 与本次使用的开发/分发描述文件一致（本机开发调试签名为 true，分发签名为 false）。自动签名如不允许该组合，停止报告，不改用 Development 云数据。核验后用 `devicectl` 覆盖安装并启动，保留 App 和数据，不卸载；连接、解锁或人工授权由用户处理。试用安装不等于发版或合并。
 
 ### Personal Team 本地试用包
 

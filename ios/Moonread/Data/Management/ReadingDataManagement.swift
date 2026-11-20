@@ -17,26 +17,47 @@ struct ReadingBackupPreview: Sendable {
 extension AppDataService {
     /// Serializes only local writes/pending transfer/deletion across actor awaits.
     func acquireUserDataOperation() async {
-        if userDataOperationBusy { await withCheckedContinuation { userDataOperationWaiters.append($0) } }
+        if userDataOperationBusy {
+            await withCheckedContinuation { continuation in
+                userDataOperationWaiters.append(.init(id: nil) { _ in continuation.resume() })
+            }
+        }
         else { userDataOperationBusy = true }
     }
+    func acquireCancellableUserDataOperation() async throws {
+        try Task.checkCancellation()
+        guard userDataOperationBusy else { userDataOperationBusy = true; return }
+        let id = UUID()
+        let acquired = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled { continuation.resume(returning: false); return }
+                userDataOperationWaiters.append(.init(id: id) { continuation.resume(returning: $0) })
+            }
+        } onCancel: {
+            Task { await self.cancelUserDataOperationWait(id) }
+        }
+        guard acquired else { throw CancellationError() }
+        // Once handed over, the caller owns the gate even if cancellation raced the handoff.
+    }
+    private func cancelUserDataOperationWait(_ id: UUID) {
+        guard let index = userDataOperationWaiters.firstIndex(where: { $0.id == id }) else { return }
+        userDataOperationWaiters.remove(at: index).resume(false)
+    }
     func releaseUserDataOperation() {
-        if !userDataOperationWaiters.isEmpty { userDataOperationWaiters.removeFirst().resume() }
+        if !userDataOperationWaiters.isEmpty { userDataOperationWaiters.removeFirst().resume(true) }
         else { userDataOperationBusy = false }
     }
     func localReadingWriteLease(_ key: String) -> UUID {
-        if let token = localReadingWriteLeases[key] { return token }
-        let token = UUID(); localReadingWriteLeases[key] = token; return token
+        let key = DataIdentity.canonical(key)
+        if let token = metadataImportDeletionTokens[key] { return token }
+        let token = UUID()
+        metadataImportDeletionTokens[key] = token
+        return token
     }
     func readingDataInventory() async throws -> ReadingDataInventory {
         let configuration = userCloudConfigurationRevision
-        let store = try await userStore()
-        var value = try await store.readingDataInventory()
-        let pending = try await userStore(pending: true).readingDataInventory()
-        value.pending += pending.pending
-        value.unsupported += pending.unsupported
-        value.diagnostics += pending.diagnostics
-        let core = try textCore()
+        let core = try relationalUserIndex()
+        var value = try await core.session.readUsersForPublication(core.lease) { try RelationalReadingData.inventory($0) }
         for i in value.items.indices {
             let key = value.items[i].id
             do {
@@ -93,28 +114,27 @@ extension AppDataService {
         value.configuration = configuration
         return value
     }
-    func allReadingDataKeys() async throws -> Set<String> {
-        let formal = try await userStore().allReadingDataKeys()
-        return try await userStore(pending: true).allReadingDataKeys().union(formal)
+    func allReadingDataKeysForDeletion() async throws -> (keys: Set<String>, configuration: UUID) {
+        let configuration = userCloudConfigurationRevision
+        return (try relationalUserIndex().bookKeysForUserDeletion(), configuration)
     }
     /// Inspect only task/source metadata; never materialize or open the original.
     func pendingReadingData(_ key: String) throws -> PendingReadingData {
         guard case let .pending(id) = try parseReadingKey(value: key) else { throw ReadingDataError.invalid }
         var result = PendingReadingData(id: key, bookID: id)
         do {
-            let status = try textCore().importStatus(bookId: id)
+            let status = try indexStore().importStatus(bookId: id)
             result.title = status.text.title; result.phase = status.phase
         } catch ReaderError.NotFound { return result }
         // A completed task can transfer its facts without the original file.
         // Stale or missing source descriptors must not block that attempt.
         if result.phase == .complete { return result }
-        guard let bytes = sourceDefaults.data(forKey: importSourceKey(id)) else { return result }
-        let source = try JSONDecoder().decode(ImportSource.self, from: bytes)
+        guard let source = try indexStore().importSource(id) else { return result }
         result.source = source.relativePath
         let rootBookmark: Data
         if let fileID = source.fileID {
             do {
-                let file = try textCore().sourceFileLocation(fileId: fileID)
+                let file = try indexStore().sourceFileLocation(fileId: fileID)
                 let shelf = try libraryShelf(file.shelfId)
                 result.shelfID = shelf.builtin ? nil : shelf.id; result.shelfName = shelf.name
                 result.source = file.relativePath; rootBookmark = Data(shelf.bookmark)
@@ -139,51 +159,36 @@ extension AppDataService {
     }
     func continuePendingReadingData(_ key: String) async throws {
         let item = try pendingReadingData(key)
-        try await userStore(pending: true).requirePendingReadable(key: key)
-        try await userStore().requirePendingReadable(key: key)
+        let index = try relationalUserIndex()
+        try index.session.readUsers(index.lease) { try RelationalReadingData.requirePendingReadable($0, key: key) }
         guard item.canResume else { throw ReadingDataError.changed }
         try resumeImport(item.bookID)
     }
     func deleteReadingData(_ keys: Set<String>, configuration expected: UUID? = nil) async throws -> Bool {
+        guard !keys.isEmpty else { return true }
         let configuration = expected ?? userCloudConfigurationRevision
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        for key in keys { _ = try parseReadingKey(value: key) }
+        let selectedSHAs = Set<String>(try keys.compactMap {
+            if case let .formal(sha) = try parseReadingKey(value: $0) { return sha }
+            return nil
+        })
         // Finish writes before checking live readers; completed/failed batches
         // no longer own reading leases or need a separate discard operation.
         await managementStatisticsWriter().drain()
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        let effective = try textCore().resolveReadingKeys(keys: keys.map { try parseReadingKey(value: $0) })
-        let busyKeys = keys.union(effective.map { serializeReadingKey(key: $0.effective) })
-        guard !readingDataIsBusy(busyKeys) else { throw ReadingDataError.busy }
-        let pending = try await userStore(pending: true)
-        let formal = try await userStore()
-        let pendingKeys = try await pending.allReadingDataKeys()
-        let owned = try await formal.allReadingDataKeys().union(pendingKeys)
-        let resolutions = try textCore().resolveReadingKeys(keys: owned.map { try parseReadingKey(value: $0) })
-        let aliases = keys.union(resolutions.filter { keys.contains(serializeReadingKey(key: $0.effective)) }.map { serializeReadingKey(key: $0.original) })
-        // A stop between these commits leaves formal data visible and retryable.
-        // No durable receipt can later delete data that has arrived since then.
-        try await pending.deleteReadingData(keys: aliases)
-        try await formal.deleteReadingData(keys: keys.union(aliases))
-        for key in keys.union(aliases) { localReadingWriteLeases[key] = UUID() }
-        for alias in aliases {
-            if case let .pending(id) = try parseReadingKey(value: alias) { promotedUserKeys.remove(id); pendingPromotionIDs.remove(id) }
-        }
-        queryCache.removeAll(); cancelRecentRestoration(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
+        let index = try relationalUserIndex()
+        let deleted = try index.deleteUserBooks(keys, activeReadingIDs: activeReadingIDsForDeletion()) { ReadingDataError.busy }
+        for key in deleted { metadataImportDeletionTokens[key] = nil }
+        cancelRecentRestoration(); dataChanged()
         NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
+        // User data is already committed. Only the original formal selection
+        // authorizes offline cache eviction, never an expanded alias or SHA.
+        guard identityMayRun() else { return selectedSHAs.isEmpty }
         do {
-            // Retain every other book's untransferred pending data before the
-            // existing completed-job reclaim, including jobs not yet recovered.
-            let remaining = try await pending.allReadingDataKeys()
-            pendingPromotionIDs.formUnion(try remaining.compactMap {
-                if case let .pending(id) = try parseReadingKey(value: $0) { return id }
-                return nil
-            })
-            guard identityMayRun() else { return false }
-            try reclaimImports(textCore())
-            return try clearDeletedReadingBodyCaches(keys)
-        } catch { return false }
+            try reclaimImports(index)
+            return try clearDeletedReadingBodyCaches(selectedSHAs, index: index)
+        } catch { return selectedSHAs.isEmpty }
     }
     private func managementStatisticsWriter() async -> StatisticsWriter {
         if let dataManagementWriter { return dataManagementWriter }
@@ -210,8 +215,10 @@ extension AppDataService {
     private func snapshotReadingDataForBackup(directory: URL, writerVersion: String) async throws -> BackupManifest {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
-        guard try await userStore(pending: true).pendingKeys().isEmpty else { throw ReadingDataError.pendingIdentity }
-        return try await userStore().snapshotForBackup(directory: directory, writerVersion: writerVersion)
+        let index = try relationalUserIndex()
+        return try await index.session.readUsersForPublication(index.lease) {
+            try RelationalReadingData.export($0, directory: directory, writerVersion: writerVersion)
+        }
     }
     func readingBackupShareCopy(_ url: URL) async throws -> LibraryExport {
         let source = url.deletingLastPathComponent()
@@ -279,19 +286,27 @@ extension AppDataService {
     }
     func refreshReadingBackupPreview(_ staging: BackupStaging) async throws -> ReadingBackupPreview {
         guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        let preview = try await userStore().validateBackup(directory: staging.directory, manifest: staging.manifest)
-        let core = try textCore(); var linked = 0
+        let plan = try UserBackupRestore(directory: staging.directory, manifest: staging.manifest)
+        let core = try relationalUserIndex()
+        let preview = try core.session.readUsers(core.lease) { try plan.preview($0) }
+        var linked = 0
         for key in preview.keys { if try !core.sourceFilesForSha(sha: key).isEmpty { linked += 1 } }
         guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         return .init(staging: staging, preview: preview, linked: linked)
     }
     func importReadingBackup(_ preview: ReadingBackupPreview) async throws {
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
-        try await userStore().mergeBackup(directory: preview.staging.directory, manifest: preview.staging.manifest)
-        queryCache.removeAll(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
-        NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
+        let lease = try indexStore().lease
+        let plan = try UserBackupRestore(directory: preview.staging.directory, manifest: preview.staging.manifest)
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+        let index = try relationalUserIndex()
+        guard index.lease == lease else { throw ReadingDataError.changed }
+        try index.session.writeUsers(index.lease) { try plan.merge($0, scope: index.lease.scope) }
+        dataChanged()
+        NotificationCenter.default.post(name: .statisticsChanged, object: nil)
         // Reuse the existing received-data refresh (including ThemeStore.load).
         NotificationCenter.default.post(name: .cloudDataReceived, object: nil)
         // Reader metadata has one invalidation event, shared with CloudKit imports.

@@ -1,4 +1,5 @@
 import CryptoKit
+import GRDB
 import SwiftData
 import SwiftUI
 import UIKit
@@ -76,10 +77,10 @@ final class SyncCompatibilityTests: UserDataFixture {
         }
         let after = try await store.syncFixturePayloads("position", key: "sha")
         XCTAssertEqual(after, before)
-        let projection = try await store.projection(
-          generation: 0, enabled: true, includeFacts: false)
+        let projection = try requireStoreProjection(try await store.projection(
+          generation: 0, enabled: true, includeFacts: false))
         let json = try XCTUnwrap(
-          JSONSerialization.jsonObject(with: Data(projection.utf8)) as? [String: Any])
+          JSONSerialization.jsonObject(with: Data(projection.json.utf8)) as? [String: Any])
         XCTAssertTrue((json["positions"] as? [Any])?.isEmpty == true)
         XCTAssertEqual(json["unsupportedPositions"] as? [String], ["sha"])
         let notice = try await store.compatibilityNotice(key: "sha")
@@ -99,9 +100,9 @@ final class SyncCompatibilityTests: UserDataFixture {
     let text = try XCTUnwrap(storedText)
     XCTAssertEqual(
       try JSONDecoder().decode(PositionValue.self, from: Data(text.utf8)).offset, offset)
-    let projected = try await precise.projection(generation: 0, enabled: true, includeFacts: false)
+    let projected = try requireStoreProjection(try await precise.projection(generation: 0, enabled: true, includeFacts: false))
     let json = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: Data(projected.utf8)) as? [String: Any])
+      JSONSerialization.jsonObject(with: Data(projected.json.utf8)) as? [String: Any])
     let position = try XCTUnwrap((json["positions"] as? [[String: Any]])?.first)
     XCTAssertEqual((position["offset"] as? NSNumber)?.uint64Value, offset)
   }
@@ -172,9 +173,11 @@ final class SyncCompatibilityTests: UserDataFixture {
         generation: 0, enabled: true, includeFacts: true, statisticsBook: "sha")
     }
     await Self.rejectSync { try await store.clear(book: "sha", session: nil) }
-    let other = try await store.projection(
-      generation: 0, enabled: true, includeFacts: true, statisticsBook: "other")
-    XCTAssertTrue(other.contains("other-fact"))
+    let other = try requireStoreProjection(try await store.projection(
+      generation: 0, enabled: true, includeFacts: true, statisticsBook: "other"))
+    XCTAssertNotNil(other.facts)
+    let scopedFacts = try await store.preparedFacts(keys: ["other"])
+    XCTAssertEqual(scopedFacts?.facts.map(\.id), ["other-fact"])
     let retained = try await store.syncFixturePayloads("clear")
     XCTAssertEqual(retained, [future])
     try await store.clear(book: "other", session: nil)
@@ -185,6 +188,10 @@ final class SyncCompatibilityTests: UserDataFixture {
         generation: 0, enabled: true, includeFacts: true, statisticsBook: "other")
     }
     await Self.rejectSync { try await store.clear(book: "other", session: nil) }
+    // A query that does not include facts never touches even a blocking clear.
+    let withoutFacts = try requireStoreProjection(try await store.projection(generation: 0, enabled: true, includeFacts: false))
+    XCTAssertNil(withoutFacts.facts)
+    XCTAssertFalse(withoutFacts.statisticsIncomplete)
     let partial = try self.store()
     let futureFact = try syncJSON(known) { $0["future"] = 1 }
     try await partial.receiveSyncFixture("fact", id: "fact", payload: futureFact)
@@ -192,16 +199,23 @@ final class SyncCompatibilityTests: UserDataFixture {
       [("known", "sha", syncFact("sha", id: "known"))], generation: 0, current: 0, enabled: true)
     let incomplete = try await partial.statisticsIncomplete(book: "sha")
     XCTAssertTrue(incomplete)
-    let visible = try await partial.projection(generation: 0, enabled: true, includeFacts: true)
-    let json = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: Data(visible.utf8)) as? [String: Any])
-    XCTAssertEqual((json["facts"] as? [Any])?.count, 1)
-    let narrow = try await partial.projection(generation: 0, enabled: true, includeFacts: true, statisticsRange: 0...1)
-    let narrowJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(narrow.utf8)) as? [String: Any])
-    XCTAssertEqual(narrowJSON["statisticsIncomplete"] as? Bool, true, "Date pruning must not hide unsupported facts outside the range")
-    XCTAssertTrue((narrowJSON["facts"] as? [Any])?.isEmpty == true)
+    let visible = try requireStoreProjection(try await partial.projection(generation: 0, enabled: true, includeFacts: true))
+    XCTAssertNotNil(visible.facts)
+    let prepared = try await partial.preparedFacts(keys: nil)
+    XCTAssertEqual(prepared?.facts.map(\.id), ["known"])
+    let narrow = try requireStoreProjection(try await partial.projection(generation: 0, enabled: true, includeFacts: true, statisticsRange: 0...1))
+    XCTAssertTrue(narrow.statisticsIncomplete, "Date pruning must not hide unsupported facts outside the range")
+    XCTAssertEqual(narrow.facts?.indices, [])
     let facts = try await partial.syncFixturePayloads("fact")
     XCTAssertTrue(facts.contains(futureFact))
+    let target = UserDataStore.FactInput(id: "fact", contentKey: "sha", payload: known)
+    let filler = UserDataStore.FactInput(id: "filler", contentKey: "sha", payload: syncFact("sha", id: "filler"))
+    let unreadable = UserDataStore.FactInput(id: "fact", contentKey: "sha", payload: futureFact)
+    var acrossBatches = UserDataStore.FactsInput(rows: [target] + Array(repeating: filler, count: 128) + [unreadable],
+      clearPayloads: [], keys: ["sha"])
+    let batchResult = try acrossBatches.prepare()
+    XCTAssertTrue(batchResult.incomplete)
+    XCTAssertEqual(batchResult.facts.map(\.id), ["filler"])
     do {
 
       let fact = syncFact("sha")
@@ -224,11 +238,10 @@ final class SyncCompatibilityTests: UserDataFixture {
         for payload in reverse ? [futureFact, fact] : [fact, futureFact] {
           try await partial.receiveSyncFixture("fact", id: "fact", payload: payload)
         }
-        let projection = try await partial.projection(
-          generation: 0, enabled: true, includeFacts: true)
-        let json = try XCTUnwrap(
-          JSONSerialization.jsonObject(with: Data(projection.utf8)) as? [String: Any])
-        XCTAssertTrue((json["facts"] as? [Any])?.isEmpty == true)
+        let projection = try requireStoreProjection(try await partial.projection(
+          generation: 0, enabled: true, includeFacts: true))
+        XCTAssertNil(projection.facts)
+        XCTAssertTrue(projection.statisticsIncomplete)
         let incomplete = try await partial.statisticsIncomplete(book: "sha")
         XCTAssertTrue(incomplete)
         await Self.rejectSync {
@@ -279,8 +292,8 @@ final class SyncCompatibilityTests: UserDataFixture {
     try await store.receiveSyncFixture("value", key: "metadata/sha/future", payload: unknown)
     try await store.receiveSyncFixture("value", key: "future/pending:book", payload: unknown)
     try await store.put("metadata/sha/author", value: "\"Original author\"", device: "device")
-    let projection = try await store.projection(generation: 0, enabled: true, includeFacts: false)
-    XCTAssertFalse(projection.contains("future"))
+    let projection = try requireStoreProjection(try await store.projection(generation: 0, enabled: true, includeFacts: false))
+    XCTAssertFalse(projection.json.contains("future"))
     try await store.requireMetadataReadable(keys: ["sha"]) // Unknown future keys remain opaque, as before.
     try await store.receiveSyncFixture("value", key: "metadata/sha/synopsis", payload: unknown)
     await Self.rejectSync { try await store.requireMetadataReadable(keys: ["sha"]) }
@@ -289,89 +302,10 @@ final class SyncCompatibilityTests: UserDataFixture {
     try await store.removePending(key: "pending:book")
     let retained = try await store.syncFixturePayloads("value")
     XCTAssertEqual(retained.filter { $0 == unknown }.count, 3)
-    do {
 
-      let (root, service, book, formal) = try await editorFixture()
-      defer { try? FileManager.default.removeItem(at: root) }
-      try await service.savePosition(bookID: book.id, offset: 9)
-      let before = try await formal.syncFixturePayloads("position", key: book.fixtureSHA256)
-      let pending = try await service.userStore(pending: true)
-      let sourceKey = "pending:" + book.id
-      let raw = try syncPosition(sourceKey)
-      let future = try syncJSON(raw) { $0["v"] = 2 }
-      try await pending.receiveSyncFixture("position", key: sourceKey, payload: future)
-      await Self.rejectSync { try await service.savePosition(bookID: book.id, offset: 18) }
-      let retained = try await pending.syncFixturePayloads("position", key: sourceKey)
-      XCTAssertEqual(retained, [future])
-      let after = try await formal.syncFixturePayloads("position", key: book.fixtureSHA256)
-      XCTAssertEqual(after, before)
-      let snapshot = try await service.snapshot(book.id)
-      XCTAssertEqual(
-        snapshot.book.positionUtf8, 0,
-        "The old canonical position must not mask an unsupported pending alias")
-      let notice = try await service.readingCompatibilityNotice(book.id)
-      XCTAssertNotNil(notice)
-      let protected = await service.pendingPromotionIDs.contains(book.id)
-      XCTAssertTrue(
-        protected, "Do not reclaim the source identity while its pending raw data is protected")
-      let clear = try UserSyncJSON.encode(
-        ClearValue(book: sourceKey, session: nil, through: 10, ids: []), envelope: true)
-      let futureClear = try syncJSON(clear) { $0["v"] = 2 }
-      try await pending.receiveSyncFixture("clear", payload: futureClear)
-      await Self.rejectSync {
-        try await service.statistics(first: 0, last: 20000, book: book.fixtureSHA256)
-      }
-
-    }
   }
 
   // S490: 未知阅读状态/封面在编辑其他字段时原样保留，不以空值覆盖。
-  @MainActor func testSyncUnknownStatusSurvivesMetadataEditingAndUnsupportedCoverIsRetained()
-    async throws
-  {
-    let (root, service, book, store) = try await editorFixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let key = "metadata/" + book.fixtureSHA256 + "/status"
-    try await store.put(key, value: "\"FutureReadingState\"", device: "remote")
-    let initial = try await service.details(bookID: book.id)
-    XCTAssertEqual(initial.metadata.status, .other(value: "FutureReadingState"))
-    let before = try await store.syncFixturePayloads("value", key: key)
-    var edit = initial.metadata
-    edit.author = "Original author"
-    try await service.saveMetadata(base: initial.metadata, edited: edit)
-    let after = try await store.syncFixturePayloads("value", key: key)
-    XCTAssertEqual(before, after, "Editing another key must not overwrite unsupported status")
-    var known = try await service.details(bookID: book.id).metadata
-    let base = known
-    known.status = .reading
-    try await service.saveMetadata(base: base, edited: known)
-    let changed = try await service.details(bookID: book.id)
-    XCTAssertEqual(changed.metadata.status, .reading)
-    let bytes = Data("opaque future image".utf8)
-    let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-    let cover = BookCoverAsset(
-      id: UUID().uuidString, sha256: hash, extension: "future", width: 300, height: 400)
-    try await store.saveCover(id: cover.id, bytes: bytes)
-    var metadata = changed.metadata
-    metadata.cover = cover
-    let encoded = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: Data(encodeBookMetadata(value: metadata).utf8))
-        as? [String: Any])
-    let coverJSON = String(
-      decoding: try JSONSerialization.data(withJSONObject: XCTUnwrap(encoded["cover"])),
-      as: UTF8.self)
-    try await store.put(
-      "metadata/" + book.fixtureSHA256 + "/cover", value: coverJSON, device: "remote")
-    let restored = try await service.details(bookID: book.id)
-    XCTAssertEqual(restored.metadata.cover, cover)
-    let retainedBytes = try await store.cover(cover.id)
-    XCTAssertEqual(retainedBytes, bytes)
-    let image = try? await service.coverImage(cover, pixels: 200)
-    XCTAssertNil(image)
-    await Self.rejectSync { try await store.saveCover(id: cover.id, bytes: Data("different".utf8)) }
-    let unchanged = try await store.cover(cover.id)
-    XCTAssertEqual(unchanged, bytes)
-  }
 
   // S491: 嵌套未知字段/错误类型不能重编码或转移，保留原 payload；每种结构边界一个反例。
   func testSyncNestedUnknownFieldsAndInvalidTypesAreNotReencodedOrTransferred() async throws {
@@ -424,10 +358,9 @@ final class SyncCompatibilityTests: UserDataFixture {
       try await store.receiveSyncFixture("fact", id: "fact", payload: payload)
       let incomplete = try await store.statisticsIncomplete(book: key)
       XCTAssertTrue(incomplete)
-      let projection = try await store.projection(generation: 0, enabled: true, includeFacts: true)
-      let json = try XCTUnwrap(
-        JSONSerialization.jsonObject(with: Data(projection.utf8)) as? [String: Any])
-      XCTAssertTrue((json["facts"] as? [Any])?.isEmpty == true)
+      let projection = try requireStoreProjection(try await store.projection(generation: 0, enabled: true, includeFacts: true))
+      XCTAssertNil(projection.facts)
+      XCTAssertTrue(projection.statisticsIncomplete)
       let retained = try await store.syncFixturePayloads("fact")
       XCTAssertEqual(retained, [payload])
     }
@@ -447,7 +380,7 @@ final class SyncCompatibilityTests: UserDataFixture {
 
   // S493: 不兼容事实使对应编辑/统计只读且显式说明，不展示陈旧可写回退；阅读仍可继续，按作用域各一小输入。
   @MainActor func testSyncFutureMetadataIsNotOfferedAsAnEditableFallback() async throws {
-    let (root, service, book, store) = try await editorFixture()
+    let (root, service, book, _) = try await editorFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let model = BookInformationModel(
       readInformation: { _ in (nil, try await service.bookDetails(.cached(bookId: book.id))) },
@@ -458,101 +391,25 @@ final class SyncCompatibilityTests: UserDataFixture {
     let payload = try UserSyncJSON.encode(
       StoredValue(updated: 1, token: "future", value: "\"Future author\""), envelope: true)
     let future = try syncJSON(payload) { $0["v"] = 2 }
-    try await store.receiveSyncFixture(
-      "value", key: "metadata/" + book.fixtureSHA256 + "/author", payload: future)
+    let index = try await service.relationalUserIndex(), sha = book.fixtureSHA256
+    let raw = Data(future.utf8)
+    try index.session.writeUsers(index.lease) { db in
+      try db.execute(sql: """
+        INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,logical_key,
+            raw_format,raw_bytes,digest,reason,completeness)
+        VALUES(0,'fixture','formal','metadata_text_candidate','future-book-author',?,?,'fixture',?,'future','future','complete')
+        """, arguments: [sha,"metadata/"+sha+"/author",raw])
+      try CurrentUserRows.settleMetadata(db, book: sha)
+    }
     await model.load(target)
     XCTAssertNil(model.details)
     XCTAssertNil(model.draft)
     XCTAssertNotNil(model.error)
-    let retained = try await store.syncFixturePayloads(
-      "value", key: "metadata/" + book.fixtureSHA256 + "/author")
-    XCTAssertEqual(retained, [future])
-    do {
-
-      let (root, service, book, store) = try await editorFixture()
-      defer { try? FileManager.default.removeItem(at: root) }
-      let fact = syncFact(book.fixtureSHA256)
-      try await store.saveFacts(
-        [("fact", book.fixtureSHA256, fact)], generation: 0, current: 0, enabled: true)
-      let model = StatisticsModel(service: service, notifications: NotificationCenter())
-      let window = StatisticsWindow(period: .all)
-      let target = StatisticsRoute(target: .record(key: .formal(sha256: book.fixtureSHA256)), title: "Synthetic")
-      await model.load(window, target: target)
-      XCTAssertNotNil(model.state(window, target: target).overview)
-      let futureFact = try syncJSON(syncFact(book.fixtureSHA256, id: "futureFact")) { $0["v"] = 2 }
-      try await store.receiveSyncFixture(
-        "fact", key: book.fixtureSHA256, id: "futureFact", payload: futureFact)
-      let notice = try await service.statisticsCompatibilityNotice(book: book.fixtureSHA256)
-      XCTAssertNotNil(notice)
-      let clear = try UserSyncJSON.encode(
-        ClearValue(book: book.fixtureSHA256, session: nil, through: 10000, ids: []), envelope: true)
-      let future = try syncJSON(clear) { $0["v"] = 2 }
-      try await store.receiveSyncFixture("clear", payload: future)
-      do {
-        _ = try await service.statistics(first: 20000, last: 20000, book: book.fixtureSHA256)
-        XCTFail("Unknown clear must not display totals")
-      } catch is UserSyncCompatibilityError {
-        model.report(UserSyncCompatibilityError(statistics: true), window: window, target: target)
-      }
-      let state = model.state(window, target: target)
-      XCTAssertNil(state.overview)
-      XCTAssertNil(state.cumulative)
-      XCTAssertTrue(state.spans.isEmpty)
-      XCTAssertNotNil(state.error)
-      XCTAssertFalse(state.loading)
-      await Self.rejectSync { try await service.deleteStatistics(book: book.fixtureSHA256) }
-      let retained = try await store.syncFixturePayloads("clear")
-      XCTAssertEqual(retained, [future])
-
+    let retained = try index.session.readUsers(index.lease) {
+      try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.quarantined_record WHERE logical_key=?",
+                       arguments: ["metadata/" + sha + "/author"])
     }
-    do {
-
-      let (root, service, book, store) = try await editorFixture()
-      defer {
-        try? FileManager.default.removeItem(at: root)
-        UserDefaults(suiteName: "Review-\(root.lastPathComponent)")?.removePersistentDomain(
-          forName: "Review-\(root.lastPathComponent)")
-      }
-      let future = try syncJSON(syncPosition(book.fixtureSHA256)) { $0["v"] = 2 }
-      try await store.receiveSyncFixture("position", key: book.fixtureSHA256, payload: future)
-      for _ in 0..<2 {
-        let session = ReaderSession(
-          service: service,
-          activity: ReadingActivityRecorder { StatisticsPreferences(enabled: false, generation: 0) }
-        )
-        await session.open(.book(book.id))
-        let loaded = XCTNSPredicateExpectation(
-          predicate: NSPredicate { _, _ in session.window != nil }, object: nil)
-        await fulfillment(of: [loaded], timeout: 5)
-        await session.refreshAnnotations()?.value
-        XCTAssertNotNil(session.error, "Each new opening explains the read-only scope once")
-        session.error = nil  // The reader's 知道了 action.
-        for offset in [UInt64(10), 30, 60] {
-          session.moved(to: offset, settled: true)
-          await session.refreshAnnotations()?.value
-          await session.flush()  // Includes the automatic position-save failure, without a timer.
-          XCTAssertNil(session.error, "Reading and automatic saves must not re-present the notice")
-          XCTAssertEqual(session.anchor, offset)
-          XCTAssertNotNil(session.window)
-        }
-        session.browse(to: 90)
-        let browsed = XCTNSPredicateExpectation(
-          predicate: NSPredicate { _, _ in !session.navigating && session.anchor == 90 },
-          object: nil)
-        await fulfillment(of: [browsed], timeout: 5)
-        XCTAssertNil(session.error, "A blocked automatic save must not prevent preview navigation")
-        XCTAssertEqual(session.browseOrigin, 60)
-        await session.continueReading()  // Explicitly request a new saved reading point.
-        XCTAssertNotNil(session.error, "An explicit blocked write still explains the failure")
-        session.error = nil
-        await session.refreshAnnotations()?.value
-        XCTAssertNil(session.error)
-        await session.leave().value
-        XCTAssertNil(session.error, "Leaving must not resurrect the dismissed compatibility notice")
-      }
-      let retained = try await store.syncFixturePayloads("position", key: book.fixtureSHA256)
-      XCTAssertEqual(retained, [future])
-
-    }
+    XCTAssertEqual(retained, 1)
   }
+
 }

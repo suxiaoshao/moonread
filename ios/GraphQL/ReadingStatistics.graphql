@@ -1,0 +1,24 @@
+query StatisticsOverview($firstDay: Int64!, $lastDay: Int64!, $target: InformationTarget) {
+  statisticsOverview(firstDay: $firstDay, lastDay: $lastDay, target: $target) {
+    totalDurationMs
+    books {
+      readingKey bodyID title author durationMs firstReadMs lastReadMs lastFormalMs readingDays
+      cover { id sha256 fileExtension width height }
+    }
+    days { day durationMs bookCount }
+  }
+}
+
+query StatisticsActivities($firstDay: Int64!, $lastDay: Int64!, $target: InformationTarget) {
+  statisticsActivities(firstDay: $firstDay, lastDay: $lastDay, target: $target) {
+    kind recordID readingKey bodyID sessionID title localDay utcOffsetSeconds preview
+    startedMs endedMs durationMs firstExposureStart
+  }
+}
+
+query StatisticsWidget($today: Int64!, $weekStart: Int64!) {
+  statisticsWidget(today: $today, weekStart: $weekStart) {
+    hasReadingHistory todayDurationMs weekDurationMs streakDays
+    days { day durationMs bookCount }
+  }
+}

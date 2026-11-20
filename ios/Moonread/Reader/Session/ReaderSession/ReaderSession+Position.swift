@@ -27,12 +27,13 @@ extension ReaderSession {
         saveTask?.cancel()
         guard hasLocalReadingInteraction else { return }
         let position = anchor
+        let admission = readingLease?.writeAdmission
         saveTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(350))
                 try Task.checkCancellation()
                 guard self?.isLeaving == false else { return }
-                try await self?.service.savePosition(bookID: id, offset: position)
+                try await self?.service.savePosition(bookID: id, offset: position, admission: admission)
             } catch is CancellationError { } catch { self?.reportAutomaticReadingError(error) }
         }
         // Window requests are independent of reported/saved reading positions.

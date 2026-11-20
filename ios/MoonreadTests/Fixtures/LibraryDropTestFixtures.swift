@@ -101,7 +101,7 @@ final class CallbackURLProvider: NSItemProvider {
 @MainActor class LibraryDropFixture: XCTestCase {
   struct Fixture {
     let root: URL, books: URL
-    let core: ReaderCore
+    let core: ReaderIndex
     let service: AppDataService
     func write(_ name: String) throws -> URL {
       let url = root.appendingPathComponent(name)
@@ -121,7 +121,7 @@ final class CallbackURLProvider: NSItemProvider {
   }
   func fixture() async throws -> Fixture {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     let books = root.appendingPathComponent("books")
     let service = AppDataService(core: core, libraryDirectory: books)
     try await service.prepareLibrary()
@@ -154,7 +154,7 @@ final class CallbackURLProvider: NSItemProvider {
       size: 0, modified: 0, lastRead: 0,
       item: directory ? .folder(row: .init(childBookCount: 0, coverPreviews: [])) :
         .book(row: .init(resolution: .unidentified(fileId: path), needsDownload: false,
-          positionUtf8: 0, byteCount: 0, chapterTitle: nil, preferred: false, metadata: nil)))
+          positionUtf8: 0, byteCount: 0, chapterTitle: nil, preferred: false, metadata: nil, cardMetadata: nil)))
   }
 
 }

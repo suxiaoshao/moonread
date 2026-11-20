@@ -55,10 +55,6 @@ extension UserDataStore {
         }
         return result
     }
-    func sourceDecodingSnapshot() throws -> SourceDecodingSnapshot {
-        let snapshot = try valueSnapshot(prefix: "source-decoding/")
-        return SourceDecodingSnapshot(values: snapshot.values, blocked: snapshot.blocked)
-    }
     func values(key: String? = nil) throws -> [String: StoredValue] { try valueSnapshot(key: key).values }
     func requireValueReadable(_ key: String) throws {
         guard try !valueSnapshot(key: key).blocked.contains(key) else { throw UserSyncCompatibilityError() }
@@ -94,8 +90,7 @@ extension UserDataStore {
         let rows = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == key && $0.device == device }))
         for row in rows { _ = try UserSyncJSON.storedValue(row.payload, key: key) }
         let latest = try values(key: key)[key]?.updated ?? 0
-        guard latest < Int64.max else { throw UserSyncCompatibilityError() }
-        let stored = StoredValue(updated: max(Int64(Date().timeIntervalSince1970 * 1000), latest + 1), token: UUID().uuidString, value: value)
+        let stored = try valueWrite(value, latest: latest)
         let payload = try encode(stored)
         if key.hasPrefix("position/") {
             let contentKey = String(key.dropFirst(9))
@@ -103,16 +98,16 @@ extension UserDataStore {
             for row in old { _ = try UserSyncJSON.storedValue(row.payload, key: key) }
             modelContext.insert(UserPosition(contentKey: contentKey, payload: payload))
             for row in old { modelContext.delete(row) }
-        } else if let row = rows.first { row.payload = payload; for duplicate in rows.dropFirst() { modelContext.delete(duplicate) } }
-        else { modelContext.insert(UserValue(key: key, device: device, payload: payload)) }
+        } else { replaceValue(key, device: device, rows: rows, payload: payload) }
         return stored
     }
-    struct CoverWrite: Sendable { let id: String; let bytes: Data }
-    func putValues(_ values: [String: String], device: String, cover: CoverWrite? = nil) throws {
-        try transaction {
-            if let cover { try saveCoverWithoutSave(id: cover.id, bytes: cover.bytes) }
-            for (key, value) in values { try putWithoutSave(key, value: value, device: device) }
-        }
+    private func valueWrite(_ value: String, latest: Int64) throws -> StoredValue {
+        guard latest < Int64.max else { throw UserSyncCompatibilityError() }
+        return StoredValue(updated: max(Int64(Date().timeIntervalSince1970 * 1000), latest + 1), token: UUID().uuidString, value: value)
+    }
+    private func replaceValue(_ key: String, device: String, rows: [UserValue], payload: String) {
+        if let row = rows.first { row.payload = payload; for duplicate in rows.dropFirst() { modelContext.delete(duplicate) } }
+        else { modelContext.insert(UserValue(key: key, device: device, payload: payload)) }
     }
     func allValues(prefix: String) throws -> [String: String] {
         let snapshot = try valueSnapshot(prefix: prefix)
@@ -125,21 +120,5 @@ extension UserDataStore {
         try valueSnapshot(prefix: "shelf-reference/").values.map { key, stored in
             ShelfReference(id: String(key.dropFirst("shelf-reference/".count)), value: try JSONDecoder().decode(ShelfReferenceValue.self, from: Data(stored.value.utf8)))
         }
-    }
-
-    struct RecentPosition: Sendable, Equatable {
-        let contentKey: String
-        let token: String
-        let updated: Int64
-        let hint: PositionSourceHint?
-    }
-    /// Unsupported records are retained and excluded individually; they cannot
-    /// suppress recovery for unrelated keys or become editable through recovery.
-    func recentRestorationPositions(limit: Int, excluding: Set<String> = []) throws -> [RecentPosition] {
-        try valueSnapshot(prefix: "position/").values.compactMap { key, stored in
-            let value = try decode(PositionValue.self, stored.value)
-            guard let key = try? parseReadingKey(value: value.content_key), case .formal = key, !excluding.contains(value.content_key) else { return nil }
-            return RecentPosition(contentKey: value.content_key, token: stored.token, updated: stored.updated, hint: value.source_hint)
-        }.sorted { ($0.updated, $0.contentKey) > ($1.updated, $1.contentKey) }.prefix(max(0, limit)).map { $0 }
     }
 }

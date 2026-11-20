@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @Bindable var model: LibraryModel
+    @State private var recentUse: RecentReadingUse?
     @Environment(AIService.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
@@ -41,12 +42,15 @@ struct LibraryView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if model.showsImportTip, themes.loaded, model.libraryPath.isEmpty, model.selectedTab == .library {
+            if model.showsImportTip, themes.loaded, model.shell.libraryPath.isEmpty, model.shell.selectedTab == .library {
                 TipView(Onboarding.shared.imports).tipViewStyle(ThemedTipStyle()).padding(.horizontal)
                     .accessibilityIdentifier("libraryImportTip")
             }
         }
-        .task { await model.load() }
+        .task {
+            if recentUse == nil { recentUse = model.recentReading.use(limit: RecentReadingStore.homeLimit) }
+            await model.load()
+        }
         .modifier(PageLoadingOverlay(request: !themes.loaded || model.busy || model.nativeRefreshing ? nil : (!model.homeReady ? model.loading.request : (model.explicitRefresh ? model.refreshing.request : nil)),
                                      hasContent: !model.shelves.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh))
     }
@@ -59,6 +63,9 @@ struct LibraryView: View {
                             homeHeader("继续阅读", showsAll: following.isEmpty)
                             ContinueReadingRow(model: model, entry: current).contextMenu { recentMenu(current) }
                         }
+                    }
+                    if let error = model.recentReading.failure {
+                        RecentReadingRetry(message: error) { model.recentReading.retry() }
                     }
                     ShelfRecoverySummary(model: model)
                     if sizeClass == .regular && geometry.size.width >= 720 {
@@ -133,7 +140,7 @@ struct LibraryView: View {
     }
 
     @ViewBuilder private func recentMenu(_ entry: LibraryEntry) -> some View {
-        Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))) }
+        Button("小说详情", systemImage: "info.circle") { model.shell.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))) }
         Button("从最近移除", systemImage: "minus.circle") { Task { await model.hideRecent(entry) } }
     }
 }
@@ -168,7 +175,7 @@ private struct ContinueReadingRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 16) {
-                BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).frame(width: 60, height: 84)
+                BookCoverView(title: entry.title, compact: true, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).frame(width: 60, height: 84)
                     .overlay { LibraryFileAvailability(entry: entry, compact: true) }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(verbatim: entry.title).font(.title3.weight(.semibold)).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2)
@@ -186,7 +193,7 @@ private struct ContinueReadingRow: View {
                     }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                 }
             }
-            Button { model.systemReading.submit(.continueReading) } label: {
+            Button { model.openRecent(entry) } label: {
                 Text("继续阅读").frame(maxWidth: .infinity)
             }.buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("library-file-\(entry.name)")
         }.padding(16).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 20))
@@ -196,23 +203,38 @@ private struct ContinueReadingRow: View {
 struct RecentBookRow: View {
     let model: LibraryModel
     let entry: LibraryEntry
+    var inFullList = false
     @Environment(\.theme) private var theme
     var body: some View {
         Button { model.open(entry) } label: {
-            HStack(spacing: 15) {
-                BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).frame(width: 44, height: 62)
-                VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: inFullList ? 12 : 15) {
+                BookCoverView(title: entry.title, compact: true, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).frame(width: 44, height: 62)
+                VStack(alignment: .leading, spacing: inFullList ? 4 : 7) {
                     Text(verbatim: entry.title).font(.body.weight(.medium)).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(1)
-                    HStack {
-                        Text(entry.chapterTitle ?? String(localized: "继续阅读")).lineLimit(1); Spacer(minLength: 8)
-                        Text(Double(entry.positionUtf8) / Double(max(1, entry.byteCount)), format: .percent.precision(.fractionLength(1))).monospacedDigit()
+                    HStack(spacing: inFullList ? 8 : nil) {
+                        if inFullList {
+                            chapter.frame(maxWidth: .infinity, alignment: .leading)
+                            progress.fixedSize()
+                        } else {
+                            chapter
+                            Spacer(minLength: 8)
+                            progress
+                        }
                     }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                 }
-            }.padding(.vertical, 6).contentShape(.rect)
+            }.padding(.vertical, inFullList ? 0 : 6)
+                .frame(maxWidth: inFullList ? .infinity : nil, alignment: .leading)
+                .contentShape(.rect)
         }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
             .overlay(alignment: .leading) {
                 LibraryFileAvailability(entry: entry, compact: true).frame(width: 44, height: 62)
             }
+    }
+    private var chapter: some View {
+        Text(entry.chapterTitle ?? String(localized: "继续阅读")).lineLimit(1)
+    }
+    private var progress: Text {
+        Text(Double(entry.positionUtf8) / Double(max(1, entry.byteCount)), format: .percent.precision(.fractionLength(1))).monospacedDigit()
     }
 }
 
@@ -228,7 +250,7 @@ private struct RecentCoverTile<Actions: View>: View {
     var body: some View {
         Menu { actions } label: {
             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-                BookCoverView(title: entry.title, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).aspectRatio(0.7, contentMode: .fit)
+                BookCoverView(title: entry.title, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).aspectRatio(0.7, contentMode: .fit)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: entry.title).font(.subheadline.weight(.medium))
                         .foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2, reservesSpace: true)

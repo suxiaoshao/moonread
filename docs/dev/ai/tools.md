@@ -72,7 +72,7 @@
 
 结果 `data={bookRef,outlineComplete:bool,items:[{chapterRef,title,level:0|1,parentChapterRef?,range:{startUtf8,endUtf8},wordCount,countComplete,estimatedCoveredCharacters?}]}`。
 
-依据：`AppDataService.chapters` → `ReaderQuery.chapterOutline`。章节结束用下一有效条目起点/正文终点计算；卷条目与章条目可能层级重叠，不能声称每项互不相交。返回用户更正后的目录，删除的标题不出现；分页前统一解析有效目录。未完整准备先进入下方确认流程。
+依据：`AppDataService.chapters` （实现见 `Data/Queries/ReaderChapterQuery.swift`）。章节结束用下一有效条目起点/正文终点计算；卷条目与章条目可能层级重叠，不能声称每项互不相交。返回用户更正后的目录，删除的标题不出现；分页前统一解析有效目录。未完整准备先进入下方确认流程。
 
 ### 5. `read` — 有界正文读取
 
@@ -137,7 +137,7 @@
 
 `summary` 返回 `{durationMs,bookCount,readingDays,recordingEnabledOnDevice,dateBasis:"recorded_local_day"}`；days 返回 `{date,durationMs,bookCount}` 列表；books 返回 `{bookRef,title,durationMs,firstReadAt,lastReadAt,readingDays}`；sessions 返回 `{sessionRef,startedAt,endedAt,recordedDate,utcOffsetSeconds,preview,durationMs,bookRef?,title,sourceRef?}`；chapters 返回 `data.chapters={bookRef,items,outlineComplete}`，含有效章节身份、字数、估算已覆盖字数与 `estimatedCoveragePercent`。
 
-与现有统计页一致：日期按阅读发生地保存的 local_day，不接受一个 timezone 来悄悄重排历史。环境工具的当前时区只用于解释“今天”等相对日期。多设备同时阅读如实累计，不做时间重叠去重；阅读时长不能断言喜好，覆盖率是估算。summary、分页总计由业务层算，不从当前一页让模型相加。
+与现有统计页一致：日期按阅读发生地保存的 local_day，不接受一个 timezone 来悄悄重排历史。环境工具的当前时区只用于解释“今天”等相对日期。多设备同时阅读如实累计，不做时间重叠去重；阅读时长不能断言喜好，覆盖率是估算。summary、分页总计由业务层算，不从当前一页让模型相加。时段使用已结算的时长；结果带 `incomplete: true` 时，只代表当前可理解的记录，不能把缺失数据当作零。
 
 依据：`AppDataService.statistics/activities/chapters`、`statistics.rs`；现有 AIReadingTools 已对结果分页。章节覆盖和原文缺失保留区分。
 

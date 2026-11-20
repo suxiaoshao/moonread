@@ -61,6 +61,7 @@ struct ReaderSelectionTip: Tip {
     var enabled: Bool { completed && tipsEnabled }
     static let completionKey = "Moonread.onboarding.completed.v1"
     private(set) var completed: Bool
+    var hasCompletedIntroduction: Bool { defaults.bool(forKey: Self.completionKey) }
     enum Destination { case importBook, story(LibraryEntry), library }
     private var destination: Destination?
     private enum Key {
@@ -339,14 +340,14 @@ struct FirstRunOnboarding: View {
         guard !working else { return }
         working = true; defer { working = false }
         complete(destination: .importBook)
-        library.selectedTab = .library
+        library.shell.selectedTab = .library
     }
     private func finishSample() async {
         guard canFinishWithLibrary, !working else { return }
         working = true; defer { working = false }
         do {
             let entry = hasBooks || directoryFailed ? nil : try await library.welcomeStoryForIntroduction()
-            library.selectedTab = .library
+            library.shell.selectedTab = .library
             complete(destination: entry.map { .story($0) } ?? .library)
         } catch { self.error = ReaderMessages.error(error) }
     }

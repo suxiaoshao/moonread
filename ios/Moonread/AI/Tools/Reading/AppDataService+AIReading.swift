@@ -21,27 +21,23 @@ extension AppDataService {
   func aiLibraryEntries(_ location: LibraryLocation, sort: LibrarySort) async throws
     -> [LibraryEntry]
   {
-    let query = try await catalogueQuery(location, recursive: false)
-    let metadata = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: false), booksOnly: false)
-    let byID = Dictionary(uniqueKeysWithValues: metadata.map { ($0.entry.id, $0.resolvedMetadata) })
-    try await requireAIMetadataReadable(location, recursive: false)
-    return try query.libraryEntries(shelfId: location.shelfID, parentPath: location.path, sort: sort).map { entry in
-      entry.withMetadata(byID[entry.id] ?? nil)
-    }
+    let scope = catalogueScope(location, recursive: false)
+    return try await fixedReaderRead { try $0.aiCatalogue(scope, folder: location, sort: sort) }
   }
   func aiLibraryBooks(_ shelf: String) async throws -> [LibraryEntry] {
-    let location = LibraryLocation(shelfID: shelf)
-    let candidates = try await catalogueQuery(location, recursive: true).librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: true)
-    try await requireAIMetadataReadable(location, recursive: true)
-    return candidates.map { candidate in
-      candidate.entry.withMetadata(candidate.resolvedMetadata)
-    }
+    let scope = catalogueScope(.init(shelfID: shelf), recursive: true)
+    return try await fixedReaderRead { try $0.aiCatalogue(scope, folder: nil, sort: .name) }
   }
   func aiBookID(sha: String) throws -> String {
-    try textCore().textIdForSha(sha: sha)
+    try indexStore().textIdForSha(sha: sha)
   }
   func aiMarks(sha: String) async throws -> [String: [AnnotationCandidate]] {
-    try await userStore().candidates(key: sha)
+    _ = try parseSha256(value: sha)
+    return try await fixedReaderRead { index in
+      try index.session.readUsers(index.lease) { db in
+        try AnnotationRows.snapshot(db, key: sha, reducing: false, settled: true).groups
+      }
+    }
   }
   func aiSearchBatch(_ job: SearchJob) throws -> SearchBatch { try job.nextBatch() }
   /// Uses the same import lease as readers, without setting preferred source/position

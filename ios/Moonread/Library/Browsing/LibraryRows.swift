@@ -68,7 +68,7 @@ struct LibraryFileRow: View {
                     HStack(spacing: LayoutTokens.control) {
                         if case .folder(let folder) = entry.item {
                             LibraryFolderCover(previews: folder.coverPreviews).frame(width: coverSize.width, height: coverSize.height)
-                        } else { BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).frame(width: coverSize.width, height: coverSize.height) }
+                        } else { BookCoverView(title: entry.title, compact: true, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).frame(width: coverSize.width, height: coverSize.height) }
                         VStack(alignment: .leading, spacing: 4) {
                             Text(highlighted).font(.body.weight(.medium)).lineLimit(1)
                             if showPath {

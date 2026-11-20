@@ -85,12 +85,18 @@ private struct ReadingWidgetView: View {
 
 struct CatalogueWidgetProvider: TimelineProvider {
     var statistics = false
+    private func entry() -> SystemWidgetEntry {
+        guard let file = try? SystemReadingSnapshotFile.shared() else { return .init(snapshot: nil) }
+        guard statistics else { return .init(snapshot: try? file.read()) }
+        let value = try? file.readStatistics()
+        return .init(snapshot: value.map { .init(storeScope: $0.storeScope, appearance: $0.appearance, statistics: $0.statistics) })
+    }
     func placeholder(in context: Context) -> SystemWidgetEntry { .sample }
     func getSnapshot(in context: Context, completion: @escaping (SystemWidgetEntry) -> Void) {
-        completion(context.isPreview ? .sample : .init(snapshot: try? SystemReadingSnapshotFile.shared().read()))
+        completion(context.isPreview ? .sample : entry())
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<SystemWidgetEntry>) -> Void) {
-        let entry = context.isPreview ? SystemWidgetEntry.sample : .init(snapshot: try? SystemReadingSnapshotFile.shared().read())
+        let entry = context.isPreview ? SystemWidgetEntry.sample : entry()
         guard statistics else { completion(.init(entries: [entry], policy: .never)); return }
         let midnight = Calendar.current.dateInterval(of: .day, for: entry.date)?.end ?? entry.date
         let expiry = entry.statistics?.isCurrent(at: entry.date) == true ? entry.statistics!.validUntil : midnight

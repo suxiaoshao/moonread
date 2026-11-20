@@ -1,0 +1,10 @@
+query SearchCandidates($shelfID: ID, $path: String) {
+  searchCandidates(shelfID: $shelfID, path: $path) {
+    file { id shelfID shelfName relativePath parentPath name size modified needsDownload }
+    directory readingKey bodyID lastRead hasPosition author synopsis tags status stored
+  }
+}
+
+query BookFilterOptions($shelfID: ID) {
+  bookFilterOptions(shelfID: $shelfID) { authors tags }
+}

@@ -1,3 +1,4 @@
+import GRDB
 import CryptoKit
 import SwiftData
 import XCTest
@@ -52,8 +53,8 @@ extension AppDataService {
 @MainActor class RecentReadingRestorationFixture: XCTestCase {
   struct Fixture {
     let root: URL, directory: URL
-    let core: ReaderCore, service: AppDataService
-    let store: UserDataStore, pending: UserDataStore
+    let core: ReaderIndex, service: AppDataService
+    let rows: UserRowsFixture
     let suite: String
     func clean() {
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -70,22 +71,11 @@ extension AppDataService {
         at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
       try data.write(to: url)
     }
-    func makeStore() throws -> UserDataStore {
-      let schema = UserDataStore.schema
-      return UserDataStore(
-        modelContainer: try ModelContainer(
-          for: schema,
-          configurations: [
-            ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-          ]))
-    }
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("cache").path)
-    let store = try makeStore()
-    let pending = try makeStore()
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("cache"))
+    let rows = UserRowsFixture(index: core)
     let suite = "RecentRestore-" + UUID().uuidString
     let service = AppDataService(
-      core: core, libraryDirectory: directory, sourceDefaultsSuite: suite,
-      userStoreFactory: { name, _ in name == "pending-users.store" ? pending : store })
+      core: core, libraryDirectory: directory, sourceDefaultsSuite: suite)
     await service.restorationFixture(active: false)
     try core.saveLibraryShelf(
       id: "builtin", name: "Synthetic library",
@@ -93,8 +83,7 @@ extension AppDataService {
         options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil),
       location: "local", builtin: true)
     return Fixture(
-      root: root, directory: directory, core: core, service: service, store: store,
-      pending: pending, suite: suite)
+      root: root, directory: directory, core: core, service: service, rows: rows, suite: suite)
   }
   func scan(_ f: Fixture) async throws {
     let files = try AppDataService.libraryDirectoryItems(f.directory)
@@ -109,17 +98,14 @@ extension AppDataService {
     _ f: Fixture, key: String, hint: PositionSourceHint?, time: Int64 = 123456, offset: UInt64 = 12,
     token: String = "original"
   ) async throws {
-    let value = PositionValue(content_key: key, offset: offset, source_hint: hint)
-    let stored = StoredValue(updated: time, token: token, value: try UserSyncJSON.encode(value))
-    try await f.store.receiveSyncFixture(
-      "position", key: key, payload: UserSyncJSON.encode(stored, envelope: true))
+    try f.rows.seedPosition(key, offset: offset, hint: hint, time: time, token: token)
   }
-  func snapshot(_ store: UserDataStore) async throws -> [[String]] {
-    var result: [[String]] = []
-    for kind in ["position", "value", "mark", "fact", "clear"] {
-      result.append(try await store.syncFixturePayloads(kind))
+  func snapshot(_ f: Fixture) throws -> [String] {
+    try f.core.session.readUsers(f.core.lease) { db in
+      try String.fetchAll(db, sql: """
+        SELECT book_key||'/'||token||'/'||offset FROM usr.position_candidate ORDER BY partition,book_key,record_id
+        """)
     }
-    return result
   }
   func restore(_ f: Fixture, retry: Bool = false) async {
     await f.service.restorationFixture(active: true)

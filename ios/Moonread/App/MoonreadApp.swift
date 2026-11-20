@@ -1,7 +1,7 @@
 import SwiftUI
-import CloudKit
 import CoreSpotlight
 import UIKit
+import CloudKit
 
 @main
 struct MoonreadApp: App {
@@ -12,30 +12,138 @@ struct MoonreadApp: App {
     @State private var cloud = CloudStore()
     @State private var ai = AIService()
     @State private var tipJar = TipJar()
+    private enum Startup {
+        case preparing, failed(String), ready
+    }
+    @State private var startup = Startup.preparing
+    @State private var importProgress: LegacyImportProgress?
+    @State private var startupAttempt = 0
+    @State private var startupFiles: [LibraryImportFile] = []
+    @State private var startupSystemRequest: SystemReadingRequest?
+    private static let upgradeNoticeKey = "Moonread.readingDataUpgradeNotice.v1"
+    @State private var showsUpgradeNotice = false
     @Environment(\.scenePhase) private var scenePhase
 
-    init() { _ = Onboarding.shared }
+    init() {
+        let onboarding = Onboarding.shared
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.upgradeNoticeKey) else { return }
+        let directory = URL.applicationSupportDirectory
+            .appending(path: AppDataService.shared.userDirectoryName, directoryHint: .isDirectory)
+        let hasReleasedStore = ["user-data.store", "pending-users.store", "reader.sqlite3"].contains {
+            FileManager.default.fileExists(atPath: directory.appending(path: $0).path)
+        }
+        if onboarding.hasCompletedIntroduction || hasReleasedStore {
+            _showsUpgradeNotice = State(initialValue: true)
+        } else {
+            // A new install won't become eligible after it completes the introduction.
+            defaults.set(true, forKey: Self.upgradeNoticeKey)
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
-            #if DEBUG
-            if CloudSchemaPreparation.requested { CloudSchemaPreparationScreen() }
-            else { configuredAppContent }
-            #else
-            configuredAppContent
-            #endif
+            ZStack { configuredAppContent }
+                .alert("阅读数据已更新", isPresented: $showsUpgradeNotice) {
+                    Button("onboarding.continue") {
+                        UserDefaults.standard.set(true, forKey: Self.upgradeNoticeKey)
+                    }
+                } message: {
+                    Text("月读改进了阅读数据的保存和同步方式。请把其他设备上的月读也更新到这个版本，旧版本上新记的进度、批注和统计不会同步过来。")
+                }
         }
     }
     @ViewBuilder private var configuredAppContent: some View {
         #if READER_OPEN_DIAGNOSTICS
         if ReaderOpenDiagnostics.benchmark { ReaderOpenBenchmarkView().environment(ai).environment(themes) }
-        else { appContent }
+        else { startupContent }
         #else
-        appContent
+        startupContent
         #endif
     }
+    private var startupContent: some View {
+        Group {
+            switch startup {
+            case .preparing:
+                StartupThemeHost(themes: themes) {
+                    if let importProgress { LegacyImportPage(progress: importProgress) }
+                }
+                .ignoresSafeArea(.container)
+            case .failed(let reason):
+                StartupThemeHost(themes: themes) {
+                    ContentUnavailableView {
+                        Label("暂时无法准备阅读数据", systemImage: "externaldrive.badge.exclamationmark")
+                    } description: {
+                        VStack(spacing: 8) {
+                            Text(verbatim: reason)
+                            Text("原有数据已保留。")
+                        }
+                    } actions: {
+                        Button("重试") { importProgress = nil; startup = .preparing; startupAttempt += 1 }
+                            .accessibilityIdentifier("retryUserMigration")
+                    }
+                }
+                .ignoresSafeArea(.container)
+            case .ready:
+                appContent
+            }
+        }
+        .task(id: startupAttempt) {
+            guard case .preparing = startup else { return }
+            let (updates, source) = AsyncStream<LegacyImportProgress>.makeStream(bufferingPolicy: .bufferingNewest(1))
+            let service = library.service
+            let preparation = Task {
+                defer { source.finish() }
+                try await service.prepareUserAuthorityForStartup { _ = source.yield($0) }
+            }
+            defer { preparation.cancel() }
+            do {
+                for await progress in updates { importProgress = progress }
+                try Task.checkCancellation()
+                try await preparation.value
+                let taskStore = try await service.indexStore().session
+                try library.fullIndex.restoreTasks(taskStore)
+                try MetadataExchangeModel.shared.restoreTask(taskStore)
+                await library.service.installUserScopePresentation(prepare: { [weak library] in
+                    try await library?.prepareUserScopeChange()
+                }, finish: { [weak library, weak themes] rebound in
+                    library?.finishUserScopeChange(rebound: rebound)
+                    if rebound { Task { await themes?.load() } }
+                })
+                try Task.checkCancellation()
+                startup = .ready
+                if let request = startupSystemRequest {
+                    startupSystemRequest = nil
+                    library.systemReading.submit(request)
+                }
+                let files = startupFiles; startupFiles = []
+                for file in files { openURL(file) }
+            } catch is CancellationError { }
+            catch { startup = .failed(ReaderMessages.error(error)) }
+        }
+        .onOpenURL { url in
+            if url.scheme == "moonread" {
+                do { deliverSystemRequest(try SystemReadingRequest(url: url)) }
+                catch { library.error = ReaderMessages.error(error) }
+            } else {
+                let file = LibraryImportFile(url: url)
+                if case .ready = startup { openURL(file) }
+                else { startupFiles.append(file) }
+            }
+        }
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+            do { deliverSystemRequest(.openSearchBook(try SystemReadingBookID(rawValue: id))) }
+            catch { library.error = ReaderMessages.error(error) }
+        }
+    }
+
+    private func deliverSystemRequest(_ request: SystemReadingRequest) {
+        if case .ready = startup { library.systemReading.submit(request) }
+        else { startupSystemRequest = request }
+    }
     private var indexedAppContent: some View {
-        MoonreadRoot(library: library, themes: themes)
+        MoonreadRoot(library: library, themes: themes, defersIntroduction: showsUpgradeNotice)
             .environment(cloud).environment(ai).environment(tipJar).environment(readerSettings)
             .task { await tipJar.listenForTransactions() }
             .task { await ai.load() }
@@ -85,9 +193,6 @@ struct MoonreadApp: App {
                 if closed { library.systemReading.resume() }
                 if closed { Task { await library.coordinatePendingIndexes() } }
             }
-            .onChange(of: library.fullIndex.running) { _, running in
-                if !running { Task { await library.service.scheduleSystemReadingCatalog(immediate: true) } }
-            }
             .onChange(of: library.fullIndex.automatic) { _, enabled in
                 if enabled { Task { await library.coordinatePendingIndexes(all: true) } }
             }
@@ -100,7 +205,6 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { note in
                 Task {
                     await library.reloadBooks()
-                    await library.service.scheduleSystemReadingCatalog(immediate: !library.fullIndex.running)
                     if let id = library.fullIndex.shelfID { await library.refreshIndexSummary(id) }
                     if let message = note.object as? String { library.error = message }
                 }
@@ -108,17 +212,11 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: SystemReadingIntentDelivery.notification).receive(on: DispatchQueue.main)) { _ in
                 library.systemReading.receiveIntent()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await CloudSyncCoordinator.shared.localDataChanged() }
-            }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true) }
+                Task { await library.service.scheduleSystemWidgetStatistics(immediate: true) }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange).receive(on: DispatchQueue.main)) { _ in
-                Task { await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true) }
+                Task { await library.service.scheduleSystemWidgetStatistics(immediate: true) }
             }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: DispatchQueue.main)) { _ in
                 // Calendar/region settings can change while the App stays active.
@@ -127,47 +225,50 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .cloudStatusChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await cloud.updateStatus(); await library.refreshShelfRecovery() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .readingCloudStatusChanged).receive(on: DispatchQueue.main)) { _ in
+                Task { await cloud.updateReadingStatus() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .CKAccountChanged).receive(on: DispatchQueue.main)) { _ in
+                Task { await cloud.identityChanged() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
+                if cloud.status.enabled { Task { await cloud.localDataChanged() } }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .recentReadingRestored).receive(on: DispatchQueue.main)) { _ in
                 Task { try? await library.reload() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
-                Task { await themes.load(); try? await library.reload(); await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true) }
+                Task { await themes.load(); try? await library.reload() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .NSUbiquityIdentityDidChange).receive(on: DispatchQueue.main)) { _ in
-                Task { library.startCloudDiscovery(reset: true); await cloud.identityChanged(); await library.refresh(); await cloud.refresh() }
+                Task { library.startCloudDiscovery(reset: true); await library.refresh(); await cloud.updateStatus() }
             }
             .onReceive(NotificationCenter.default.publisher(for: ReaderBuiltinFonts.changed).receive(on: DispatchQueue.main)) { _ in
                 readerSettings.refreshBuiltinFonts()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .CKAccountChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await cloud.identityChanged() }
             }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 library.systemReading.sceneActive = phase == .active
                 library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
-                    Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
+                    Task { await cloud.scene(active: false) }
+                    MetadataExchangeModel.shared.sceneDidEnterBackground()
+                    library.shell.dataManagement.backupExport.sceneDidEnterBackground()
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences(); await readerSettings.flush() }
                     Task { await AppDataService.shared.pauseImports() }
                 }
                 if phase == .active {
+                    Task { await cloud.scene(active: true) }
                     readerSettings.refreshBuiltinFonts()
                     Task { await library.service.refreshSystemWidgetConfigurations() }
                     Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }
                     Task {
-                        await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
+                        await library.service.resumeSystemReadingPublication()
                         await AppDataService.shared.resumePausedImports(); await library.refresh()
                         if Onboarding.shared.completed { await library.receiveSharedInbox() }
                         await cloud.refresh()
                     }
                 }
             }
-            .onContinueUserActivity(CSSearchableItemActionType) { activity in
-                guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
-                do { library.systemReading.submit(.openSearchBook(try SystemReadingBookID(rawValue: id))) }
-                catch { library.error = ReaderMessages.error(error) }
-            }
-            .onOpenURL(perform: openURL)
 
     }
 
@@ -176,14 +277,14 @@ struct MoonreadApp: App {
         if let scene = StoreShotScene.requested {
             do {
                 switch scene {
-                case .shelf: library.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
-                case .backup: library.openSettings(target: .data)
-                case .statistics: library.selectedTab = .statistics
+                case .shelf: library.shell.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
+                case .backup: library.shell.openSettings(target: .data)
+                case .statistics: library.shell.selectedTab = .statistics
                 case .recap:
                     let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                     await ai.load()
                     try await ai.seedStoreShotRecap(fixture)
-                    library.selectedTab = .conversations
+                    library.shell.selectedTab = .conversations
                 case .widget: break
                 default:
                     let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
@@ -195,41 +296,88 @@ struct MoonreadApp: App {
             return
         }
         guard let page = StoreShotPage.requested else { return }
-        library.selectedTab = page == .settings ? .settings : .library
+        library.shell.selectedTab = page == .settings ? .settings : .library
         do {
             switch page {
             case .settings, .libraryHome: break
-            case .readerSettings: library.libraryPath = [.screenshotReaderSettings]
+            case .readerSettings: library.shell.libraryPath = [.screenshotReaderSettings]
             case .bookDetails, .reader:
                 let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                 guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
                     .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
                 if page == .bookDetails {
-                    library.libraryPath = [.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))]
+                    library.shell.libraryPath = [.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))]
                 } else { library.open(entry) }
             }
         } catch { library.error = ReaderMessages.error(error) }
     }
     #endif
 
-    private func openURL(_ url: URL) {
-        if url.scheme == "moonread" {
-            do { library.systemReading.submit(try SystemReadingRequest(url: url)) }
-            catch { library.error = ReaderMessages.error(error) }
-            return
-        }
-        let access = LibraryImportFile(url: url)
+    private func openURL(_ access: LibraryImportFile) {
+        let url = access.url
         Task {
             defer { access.finish() }
             guard await library.load() else { return }
-            library.selectedTab = .library
+            library.shell.selectedTab = .library
             if url.pathExtension.lowercased() == "moonread-backup" {
-                library.openSettings(target: .data)
-                await library.dataManagement.prepareImport(url)
+                library.shell.openSettings(target: .data)
+                await library.shell.dataManagement.prepareImport(url)
             } else { library.receiveSystemURLs([url]) }
         }
     }
 
+}
+
+private struct StartupThemeHost<Content: View>: View {
+    let themes: ThemeStore
+    @ViewBuilder let content: () -> Content
+    @Environment(\.colorScheme) private var systemScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        let plans = try! resolveThemes(value: themes.snapshot, system: systemScheme == .dark ? .dark : .light,
+                                       highContrast: contrast == .increased)
+        let theme = ThemeSurface(plan: plans.app)
+        NativeThemeHost(theme: theme) {
+            ZStack {
+                Color(uiColor: theme.canvas).ignoresSafeArea()
+                content()
+            }.themeScope(theme)
+        }
+    }
+}
+
+private struct LegacyImportPage: View {
+    let progress: LegacyImportProgress
+    @Environment(\.theme) private var theme
+    @ScaledMetric(relativeTo: .title2) private var iconSize = 60.0
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                VStack(spacing: 20) {
+                    Image(systemName: "tray.and.arrow.down")
+                        .font(.system(size: iconSize)).symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
+                    Text("正在导入阅读数据").font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                }
+                switch progress {
+                case .preparing:
+                    ProgressView("正在准备导入").controlSize(.small)
+                case .rows(let processed, let total):
+                    VStack(spacing: 12) {
+                        ProgressView(value: Double(processed), total: Double(total))
+                            .progressViewStyle(.linear).accessibilityHidden(true)
+                        Text("已处理 \(processed.formatted()) / \(total.formatted()) 条")
+                            .font(.footnote.monospacedDigit()).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                case .finishing:
+                    ProgressView("正在整理阅读数据").controlSize(.small)
+                }
+            }
+            .multilineTextAlignment(.center).frame(maxWidth: 360).padding(24).frame(maxWidth: .infinity)
+        }.defaultScrollAnchor(.center, for: .alignment)
+    }
 }
 
 private struct MoonreadRoot: View {
@@ -237,6 +385,7 @@ private struct MoonreadRoot: View {
     @Environment(AIService.self) private var ai
     @Bindable var library: LibraryModel
     let themes: ThemeStore
+    let defersIntroduction: Bool
     @Environment(\.colorScheme) private var systemScheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -258,10 +407,11 @@ private struct MoonreadRoot: View {
         // Observe outside the UIKit host's content closure. The app navigation
         // stays mounted while the full-screen introduction is presented.
         let introductionCompleted = Onboarding.shared.completed
-        NativeThemeHost(theme: library.path.last?.isReader == true ? readerTheme : appTheme) {
+        NativeThemeHost(theme: library.shell.path.last?.isReader == true ? readerTheme : appTheme) {
             tabs
+            .disabled(library.changingUserScope)
             .modifier(ReadingReviewAfterReading(library: library))
-            .fullScreenCover(isPresented: Binding(get: { !introductionCompleted }, set: { _ in }), onDismiss: finishIntroduction) {
+            .fullScreenCover(isPresented: Binding(get: { !introductionCompleted && !defersIntroduction }, set: { _ in }), onDismiss: finishIntroduction) {
                 FirstRunOnboarding().interactiveDismissDisabled()
             }
             // Library sheets read the app theme, so they are presented inside its scope.
@@ -270,7 +420,7 @@ private struct MoonreadRoot: View {
             .environment(\.systemReadingRouter, library.systemReading)
             .environment(\.moonreadReduceMotion, reduceMotion)
             .environment(\.readerTheme, readerTheme)
-            .onChange(of: library.libraryPath) { _, _ in library.returnedToLibrary() }
+            .onChange(of: library.shell.libraryPath) { _, _ in library.returnedToLibrary() }
             .onReceive(NotificationCenter.default.publisher(for: .libraryFilesChanged).receive(on: DispatchQueue.main)) { _ in library.retryPendingCloudDiscovery(); library.scheduleRefresh() }
             .alert("暂时无法完成", isPresented: Binding(get: { themes.error != nil }, set: { if !$0 { themes.error = nil } })) {
                 Button("知道了", role: .cancel) { themes.error = nil }
@@ -279,13 +429,16 @@ private struct MoonreadRoot: View {
             .alert("字体需要下载", isPresented: Binding(get: { readerSettings.fontNotice != nil }, set: { if !$0 { readerSettings.fontNotice = nil } })) {
                 Button("知道了", role: .cancel) { readerSettings.fontNotice = nil }
             } message: { Text(readerSettings.fontNotice ?? "") }
-            .alert("阅读遇到问题", isPresented: Binding(get: { library.readerExitError != nil }, set: { if !$0 { library.readerExitError = nil } })) {
-                Button("知道了", role: .cancel) { library.readerExitError = nil }
-            } message: { Text(library.readerExitError ?? "") }
+            .alert("阅读遇到问题", isPresented: Binding(get: { library.shell.readerExitError != nil }, set: { if !$0 { library.shell.readerExitError = nil } })) {
+                Button("知道了", role: .cancel) { library.shell.readerExitError = nil }
+            } message: { Text(library.shell.readerExitError ?? "") }
         }
         .ignoresSafeArea()
         .overlay {
-            MoonLaunchCover(ready: localDeadlineReached || ((themes.loaded || themes.error != nil) && (library.homeReady || library.error != nil)))
+            MoonLaunchCover(
+                canvas: Color(uiColor: appTheme.canvas),
+                ready: localDeadlineReached || ((themes.loaded || themes.error != nil) && (library.homeReady || library.error != nil))
+            )
                 .environment(\.moonreadReduceMotion, reduceMotion)
                 .ignoresSafeArea()
         }
@@ -305,13 +458,14 @@ private struct MoonreadRoot: View {
         switch Onboarding.shared.takeDestination() {
         case .importBook: library.chooseFiles(.novels(LibraryLocation(shelfID: "builtin")))
         case .story(let entry): library.open(entry)
-        case .library: library.libraryPath.append(.folder(LibraryLocation(shelfID: "builtin")))
+        case .library: library.shell.libraryPath.append(.folder(LibraryLocation(shelfID: "builtin")))
         case nil: break
         }
     }
 
     private var tabs: some View {
-        TabView(selection: $library.selectedTab) {
+        @Bindable var shell = library.shell
+        return TabView(selection: $shell.selectedTab) {
             Tab("书架", systemImage: "books.vertical", value: AppTab.library) { libraryStack }
             if ai.availability.isAvailable {
                 Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { AIConversationsView() }
@@ -322,27 +476,30 @@ private struct MoonreadRoot: View {
         }
         .modifier(AppSearchActivation())
         .onChange(of: ai.availability.isAvailable, initial: true) { _, available in
-            library.updateAvailableTabs(aiAvailable: available)
+            library.shell.updateAvailableTabs(aiAvailable: available)
         }
     }
     private var libraryStack: some View {
-        NavigationStack(path: $library.libraryPath) {
+        @Bindable var shell = library.shell
+        return NavigationStack(path: $shell.libraryPath) {
             LibraryView(model: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(LibrarySourceTabVisibility(path: library.libraryPath))
+        }.modifier(LibrarySourceTabVisibility(path: library.shell.libraryPath))
     }
     private var statisticsStack: some View {
-        NavigationStack(path: $library.statisticsPath) {
+        @Bindable var shell = library.shell
+        return NavigationStack(path: $shell.statisticsPath) {
             StatisticsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(LibrarySourceTabVisibility(path: library.statisticsPath))
+        }.modifier(LibrarySourceTabVisibility(path: library.shell.statisticsPath))
     }
     private var searchStack: some View {
-        NavigationStack(path: $library.searchPath) {
-            AppSearchView(model: library, search: library.search).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(LibrarySourceTabVisibility(path: library.searchPath))
-        .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
+        @Bindable var shell = library.shell
+        return NavigationStack(path: $shell.searchPath) {
+            AppSearchView(model: library, search: library.shell.search).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
+        }.modifier(LibrarySourceTabVisibility(path: library.shell.searchPath))
+        .modifier(AppSearchField(model: library, search: library.shell.search, quickEntry: true))
     }
     private var settingsStack: some View {
-        SettingsView(library: library, navigation: library.settingsNavigation)
+        SettingsView(library: library, navigation: library.shell.settingsNavigation)
     }
 
 
@@ -360,8 +517,8 @@ struct LibraryDestination: View {
         switch route {
         case .reader(let reader):
             ReaderScreen(route: reader.target, openingRequest: reader) { error, milliseconds in
-                library.readerExitError = error
-                if error == nil { library.reviewCandidate = ReadingReviewCandidate(milliseconds: milliseconds) }
+                library.shell.readerExitError = error
+                if error == nil { library.shell.reviewCandidate = ReadingReviewCandidate(milliseconds: milliseconds) }
                 // The reader calls back after its final position is saved.
                 // A destination's onAppear can run before that write finishes.
                 Task { await library.reloadBook(reader.target) }
@@ -383,9 +540,9 @@ struct LibraryDestination: View {
     }
 }
 
-/// Continue the system's static launch artwork in the first app frame. Keep
-/// this outside the themed host so its initial colors match the launch screen.
+/// Continue the system's launch artwork over the resolved app canvas.
 private struct MoonLaunchCover: View {
+    let canvas: Color
     let ready: Bool
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @State private var departing = false
@@ -395,9 +552,7 @@ private struct MoonLaunchCover: View {
         ZStack {
             if !finished {
                 ZStack {
-                    Color("LaunchBackground")
-                    // The rendered app icon at 120pt, exactly as in the storyboard,
-                    // so opening the app continues from the icon that was tapped.
+                    canvas
                     Image("LaunchSeal").resizable().scaledToFit()
                         .frame(width: 120, height: 120)
                 }

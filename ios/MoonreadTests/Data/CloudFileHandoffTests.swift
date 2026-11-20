@@ -18,13 +18,13 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
       UserDefaults.standard.removePersistentDomain(forName: suite)
     }
     try FileManager.default.createDirectory(at: cloud, withIntermediateDirectories: true)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     try core.saveLibraryShelf(
       id: "builtin", name: "我的书架",
       bookmark: cloud.bookmarkData(
         options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil),
       location: "icloud", builtin: true)
-    UserDefaults(suiteName: suite)?.set("synthetic-account", forKey: "Moonread.cloudLibraryOwner")
+    try core.saveCloudDocumentsOwner("synthetic-account")
     let service = AppDataService(core: core, sourceDefaultsSuite: suite)
     try core.scanLibraryShelf(
       shelfId: "builtin",
@@ -56,12 +56,12 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
     let source = local.appendingPathComponent("book.txt")
     try Data("合成交接输入".utf8).write(to: source)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
     let roots = CloudLibraryRoots(
-      local: local, cloud: cloud, journal: root.appendingPathComponent("receipts.json"),
+      local: local, cloud: cloud,
       owner: "synthetic-owner")
     try await service.updateCloudLibrary(
       roots: roots, makeUbiquitous: { try FileManager.default.moveItem(at: $0, to: $1) })
@@ -70,8 +70,6 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
       FileManager.default.fileExists(atPath: cloud.appendingPathComponent("book.txt").path))
     let first = await service.cloudLibraryPublicationCount
     XCTAssertEqual(first, 1)
-    // A malformed journal proves the completed repeat does not even read the journal, much less coordinate/enumerate.
-    try Data("unread sentinel".utf8).write(to: roots.journal)
     try await service.updateCloudLibrary(roots: roots)
     let repeated = await service.cloudLibraryPublicationCount
     XCTAssertEqual(repeated, first)
@@ -80,7 +78,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     try Data("new pending input".utf8).write(to: local.appendingPathComponent("next.txt"))
     let intent = CloudHandoffReceipt(
       bytesHash: try CloudDocumentHandoff.bytesHash(local.appendingPathComponent("next.txt")))
-    try JSONEncoder().encode(["next.txt": intent]).write(to: roots.journal)
+    try core.saveCloudHandoffReceipts(["next.txt": intent], owner: roots.owner)
     let restarted = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     await restarted.restoreCloudLibraryRoot(owner: roots.owner)
     try await restarted.updateCloudLibrary(
@@ -91,33 +89,9 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
       FileManager.default.fileExists(atPath: local.appendingPathComponent("next.txt").path))
     XCTAssertTrue(
       FileManager.default.fileExists(atPath: cloud.appendingPathComponent("next.txt").path))
-    XCTAssertTrue(
-      try JSONDecoder().decode(
-        [String: CloudHandoffReceipt].self, from: Data(contentsOf: roots.journal)
-      ).isEmpty)
+    XCTAssertTrue(try core.cloudHandoffReceipts(owner: roots.owner).isEmpty)
   }
 
-  func testLegacyPublicationWithoutCopyEvidenceCannotDeleteOriginal() throws {
-    let fs = FileManager.default
-    let root = fs.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-    defer { try? fs.removeItem(at: root) }
-    let local = root.appendingPathComponent("local"), cloud = root.appendingPathComponent("cloud")
-    for directory in [local, cloud] {
-      try fs.createDirectory(at: directory, withIntermediateDirectories: true)
-      try Data("synthetic file".utf8).write(to: directory.appendingPathComponent("sample.txt"))
-    }
-    let source = local.appendingPathComponent("sample.txt")
-    let digest = try CloudDocumentHandoff.bytesHash(source)
-    let old = try JSONSerialization.data(withJSONObject: ["sample.txt": [
-      "copied": false, "published": true, "bytesHash": digest
-    ]])
-    var receipts = try JSONDecoder().decode([String: CloudHandoffReceipt].self, from: old)
-    XCTAssertThrowsError(try CloudDocumentHandoff.cleanup(local: local, cloud: cloud, receipts: &receipts, persist: { _ in }))
-    XCTAssertTrue(fs.fileExists(atPath: source.path))
-    XCTAssertEqual(receipts["sample.txt"]?.stage, .invalidLegacy)
-  }
-
-  // S367: 复制完成但 receipt 未提交时中断可重试，不因“目标存在”删除尚未确认原件。
   func testCloudHandoffIntentSurvivesCopyBeforeReceiptCompletion() throws {
     let fm = FileManager.default
     let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -173,15 +147,15 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     let second = local.appendingPathComponent("second.txt")
     try "第一章 月光\n\n这是合成交接测试正文。\n".write(to: source, atomically: true, encoding: .utf8)
     try Data("another unknown file".utf8).write(to: second)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
     let entry = try XCTUnwrap(
-      core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin").first {
+      core.catalogue("builtin", grouping: .name).entries.first {
         $0.name == "book.txt"
       })
-    let book = try core.importBook(filePath: source.path, title: "Synthetic")
+    let book = try importBookFixture(core, filePath: source.path, title: "Synthetic")
 
     try core.linkLibraryFile(fileId: entry.id, bookId: book.id)
     try await service.savePosition(bookID: book.id, offset: 9)
@@ -190,7 +164,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     edited.author = "合成作者"
     try await service.saveMetadata(base: base, edited: edited)
     let indexed = Dictionary(
-      uniqueKeysWithValues: try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
+      uniqueKeysWithValues: try core.catalogue("builtin", grouping: .name).entries
         .map { ($0.relativePath, $0.id) })
     var receipts: [String: CloudHandoffReceipt] = [:]
     try CloudDocumentHandoff.transfer(
@@ -217,15 +191,17 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     let migrated = try await service.libraryEntry(entry.id)
     XCTAssertEqual(migrated.bookId, book.id)
     XCTAssertEqual(migrated.positionUtf8, 9)
-    XCTAssertEqual(migrated.metadata?.author, "合成作者")
+    XCTAssertEqual(migrated.displayMetadata?.author, "合成作者")
     let recent = try await service.recentLibrary()
     XCTAssertEqual(recent.first?.id, entry.id)
     XCTAssertEqual(try core.libraryShelves().first?.location, "icloud")
     // Interrupt cleanup after one original is gone, then retry index + cleanup.
     try fm.removeItem(at: source)
     let owner = UUID().uuidString
-    UserDefaults(suiteName: suite)?.set(owner, forKey: "Moonread.cloudLibraryOwner")
-    let reopenedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    try core.saveCloudDocumentsOwner(owner)
+    try core.session.close()
+    let reopenedCore = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
+    defer { try? reopenedCore.session.close() }
     let restarted = AppDataService(
       core: reopenedCore, libraryDirectory: local, sourceDefaultsSuite: suite)
     await restarted.restoreCloudLibraryRoot(owner: owner)
@@ -235,26 +211,26 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     XCTAssertEqual(afterRestart.positionUtf8, 9)
     receipts = try JSONDecoder().decode(
       [String: CloudHandoffReceipt].self, from: JSONEncoder().encode(receipts))
-    try await service.publishCloudHandoff(
+    try await restarted.publishCloudHandoff(
       local: local, cloud: cloud, receipts: &receipts, persist: { _ in })
     try CloudDocumentHandoff.cleanup(
       local: local, cloud: cloud, receipts: &receipts, persist: { _ in })
     XCTAssertTrue(receipts.isEmpty)
     XCTAssertFalse(fm.fileExists(atPath: second.path))
-    let afterCleanup = try await service.libraryEntry(entry.id)
+    let afterCleanup = try await restarted.libraryEntry(entry.id)
     XCTAssertEqual(afterCleanup.positionUtf8, 9)
     XCTAssertTrue(fm.fileExists(atPath: cloud.appendingPathComponent("book.txt").path))
     try Data("modified after migration".utf8).write(to: cloud.appendingPathComponent("book.txt"))
     receipts = try JSONDecoder().decode([String: CloudHandoffReceipt].self, from: committedJournal)
     do {
-      try await service.publishCloudHandoff(
+      try await restarted.publishCloudHandoff(
         local: local, cloud: cloud, receipts: &receipts, persist: { _ in })
       XCTFail("An old receipt must not re-associate a modified destination")
     } catch {}
-    try await service.refreshLibraryShelf("builtin")
-    let changed = try await service.libraryEntry(entry.id)
+    try await restarted.refreshLibraryShelf("builtin")
+    let changed = try await restarted.libraryEntry(entry.id)
     XCTAssertEqual(changed.bookId, book.id)
-    let independent = try await service.snapshot(book.id)
+    let independent = try await restarted.snapshot(book.id)
     XCTAssertEqual(independent.book.positionUtf8, 9)
   }
 
@@ -274,14 +250,17 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
       try fm.createDirectory(at: local, withIntermediateDirectories: true)
       let source = local.appendingPathComponent("book.txt")
       try "第一章 月\n暂停任务的合成正文。\n".write(to: source, atomically: true, encoding: .utf8)
-      let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+      let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
       let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
       try await service.prepareLibrary()
       try await service.scanLibraryShelf("builtin")
       let entry = try XCTUnwrap(
-        core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin").first)
+        core.catalogue("builtin", grouping: .name).entries.first)
 
-      let control = try core.createImport(title: "Paused")
+      let bookmark = try local.bookmarkData(
+        options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+      let descriptor = ImportSource(rootBookmark: bookmark, relativePath: "book.txt", encoding: "utf-8", fileID: entry.id)
+      let control = try core.createImport(title: "Paused", source: descriptor)
       let pending = control.bookId()
       if preparedPrefix {
         try core.streamImport(
@@ -290,16 +269,6 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
       }
       control.pause()
       try core.failImport(control: control, error: .Paused)
-      try core.linkLibraryFile(fileId: entry.id, bookId: pending)
-      let bookmark = try local.bookmarkData(
-        options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-      let descriptor: [String: Any] = [
-        "rootBookmark": bookmark.base64EncodedString(), "relativePath": "book.txt",
-        "fileID": entry.id, "encoding": "utf-8",
-      ]
-      defaults.set(
-        try JSONSerialization.data(withJSONObject: descriptor),
-        forKey: "Moonread.importSource.library." + pending)
       let expectedOffset: UInt64 = preparedPrefix ? 9 : 0
       try await service.savePosition(bookID: pending, offset: expectedOffset)
       var receipts: [String: CloudHandoffReceipt] = [:]
@@ -335,7 +304,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     let cloud = root.appendingPathComponent("cloud")
     try fm.createDirectory(at: local, withIntermediateDirectories: true)
     try Data("first".utf8).write(to: local.appendingPathComponent("first.txt"))
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     let service = AppDataService(
       core: core, libraryDirectory: local, sourceDefaultsSuite: "NewFile-\(UUID().uuidString)")
     try await service.prepareLibrary()
@@ -354,11 +323,10 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     XCTAssertTrue(fm.fileExists(atPath: local.appendingPathComponent("second.txt").path))
     try await service.scanLibraryShelf("builtin")
     let first = try XCTUnwrap(
-      core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin").first {
+      core.catalogue("builtin", grouping: .name).entries.first {
         $0.name == "first.txt"
       })
-    let book = try core.importBook(
-      filePath: local.appendingPathComponent("first.txt").path, title: "Now identified")
+    let book = try importBookFixture(core, filePath: local.appendingPathComponent("first.txt").path, title: "Now identified")
 
     try core.linkLibraryFile(fileId: first.id, bookId: book.id)
     try CloudDocumentHandoff.transfer(
@@ -368,7 +336,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
       local: local, cloud: cloud, receipts: &receipts, persist: { _ in })
     let resolved = try await service.libraryEntry(first.id)
     XCTAssertEqual(resolved.bookId, book.id)
-    XCTAssertEqual(try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin").count, 2)
+    XCTAssertEqual(try core.catalogue("builtin", grouping: .name).entries.count, 2)
   }
 
   // S382: 删除原件前必须重绑仍暂停的任务源，防清理后任务不可恢复。
@@ -378,7 +346,6 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     let local = root.appendingPathComponent("local")
     let cloud = root.appendingPathComponent("cloud")
     let suite = "CloudSourceTest-\(UUID().uuidString)"
-    let key = "Moonread.importSource.library.task"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer {
       defaults.removePersistentDomain(forName: suite)
@@ -389,31 +356,29 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     try Data("original".utf8).write(to: source)
     let bookmark = try local.bookmarkData(
       options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-    let descriptor: [String: Any] = [
-      "rootBookmark": bookmark.base64EncodedString(), "relativePath": "book.txt",
-      "encoding": "gb18030",
-    ]
-    defaults.set(try JSONSerialization.data(withJSONObject: descriptor), forKey: key)
+    let descriptor = ImportSource(rootBookmark: bookmark, relativePath: "book.txt", encoding: "gb18030")
     var receipts: [String: CloudHandoffReceipt] = [:]
     try CloudDocumentHandoff.transfer(
       local: local, cloud: cloud, receipts: &receipts, removeOriginals: false,
       persist: { _ in }, makeUbiquitous: { try fm.moveItem(at: $0, to: $1) })
     XCTAssertTrue(fm.fileExists(atPath: source.path))
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
+    let control = try core.createImport(title: "Paused", source: descriptor)
+    control.pause()
+    try core.failImport(control: control, error: .Paused)
     let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
     try await service.publishCloudHandoff(
       local: local, cloud: cloud, receipts: &receipts, persist: { _ in })
-    let moved = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: key))) as? [String: Any])
-    let data = try XCTUnwrap(Data(base64Encoded: XCTUnwrap(moved["rootBookmark"] as? String)))
+    let moved = try XCTUnwrap(core.importSource(control.bookId()))
+    let data = moved.rootBookmark
     var stale = false
     let restored = try URL(
       resolvingBookmarkData: data, options: .withoutUI, bookmarkDataIsStale: &stale)
     XCTAssertEqual(restored.standardizedFileURL, cloud.standardizedFileURL)
-    XCTAssertEqual(moved["relativePath"] as? String, "book.txt")
-    XCTAssertEqual(moved["encoding"] as? String, "gb18030")
+    XCTAssertEqual(moved.relativePath, "book.txt")
+    XCTAssertEqual(moved.encoding, "gb18030")
     try CloudDocumentHandoff.transfer(
       local: local, cloud: cloud, receipts: &receipts, persist: { _ in })
     XCTAssertFalse(fm.fileExists(atPath: source.path))

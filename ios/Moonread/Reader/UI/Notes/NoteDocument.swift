@@ -7,9 +7,11 @@ struct NoteCandidates: Sendable {
     let key: String
     let groups: [String: [AnnotationCandidate]]
     let blocked: Set<String>
+    var unknownMarks = false
+    var admission: DataSessionLease? = nil
     func checked(_ ids: Set<String>?) throws -> [String: [AnnotationCandidate]] {
         let unreadable = ids.map { blocked.intersection($0) } ?? blocked
-        guard unreadable.isEmpty else { throw NoteReadError(count: unreadable.count) }
+        guard unreadable.isEmpty, !unknownMarks else { throw NoteReadError(count: unreadable.count + (unknownMarks ? 1 : 0)) }
         return groups.filter { ids?.contains($0.key) ?? true }
     }
 }
@@ -65,27 +67,20 @@ struct NoteDocument: Sendable {
     }
 }
 extension AppDataService {
-    func noteCandidates(_ id: String) async throws -> NoteCandidates {
-        try await promoteUserData(id)
-        let revision = userCloudConfigurationRevision
-        let key = try userKey(id).storageKey
-        let snapshot = try await userStore(for: key).noteCandidates(key: key)
-        guard revision == userCloudConfigurationRevision, key == (try userKey(id).storageKey) else { throw UserDataConflict(candidates: []) }
-        return snapshot
-    }
+    func noteCandidates(_ id: String) async throws -> NoteCandidates { try await annotationSnapshot(id) }
     func noteDocument(_ id: String, ids: Set<String>? = nil) async throws -> NoteDocument {
         let snapshot = try await noteCandidates(id)
         let groups = try snapshot.checked(ids)
-        let query = try await bookQuery(id), info = try query.bookInfo(bookId: id), core = try textCore()
+        let info = try await book(id)
         let details = try? await details(bookID: id)
+        let locations = try await noteLocationDetails(id, offsets: groups.values.flatMap { $0.compactMap { $0.content?.start } })
         var records: [NoteDocument.Record] = []
         for (markID, heads) in groups {
             let live = heads.filter { $0.content != nil }.sorted { $0.id < $1.id }
             for (index, head) in live.enumerated() {
                 guard let c = head.content else { continue }
                 let mark = ReaderMark(id: markID, kind: head.bookmark ? .bookmark : .annotation, startUtf8: c.start, endUtf8: c.end, excerpt: c.excerpt, note: c.note, created: head.created)
-                let chapter = try? query.chapterAt(bookId: id, offsetUtf8: c.start)
-                let percent = try? info.readingKey.formalSHA256.flatMap { try core.readingDataPercentage(sha: $0, offset: c.start) }
+                let (chapter, percent) = locations[c.start] ?? (nil,nil)
                 records.append(.init(id: head.id, mark: mark, chapter: chapter?.title, chapterStart: chapter?.startUtf8, percentage: percent, version: live.count > 1 ? index + 1 : nil, deletionVersion: heads.contains { $0.content == nil }))
             }
         }
@@ -94,10 +89,9 @@ extension AppDataService {
         return NoteDocument(title: details?.book?.title ?? info.title, author: author?.isEmpty == false ? author : nil, records: records)
     }
     func shareExcerpt(_ id: String, range: TextRange) async throws -> String {
-        let query = try await bookQuery(id), info = try query.bookInfo(bookId: id)
+        let info = try await book(id)
         let details = try? await details(bookID: id)
-        let chapter = try? query.chapterAt(bookId: id, offsetUtf8: range.startUtf8)
-        let percent = try? info.readingKey.formalSHA256.flatMap { try textCore().readingDataPercentage(sha: $0, offset: range.startUtf8) }
+        let (chapter, percent) = try await noteLocationDetails(id, offsets: [range.startUtf8])[range.startUtf8] ?? (nil,nil)
         let document = NoteDocument(title: details?.book?.title ?? info.title,
             author: details?.metadata.author.isEmpty == false ? details?.metadata.author : nil, records: [])
         let mark = ReaderMark(id: "excerpt", kind: .annotation, startUtf8: range.startUtf8,
@@ -106,29 +100,18 @@ extension AppDataService {
             version: nil, deletionVersion: false))
     }
     func noteLocations(_ id: String, marks: [ReaderMark]) async throws -> [String: String] {
-        let query = try await bookQuery(id), info = try query.bookInfo(bookId: id), core = try textCore()
+        let locations = try await noteLocationDetails(id, offsets: marks.map(\.startUtf8))
         var values: [String: String] = [:]
         for mark in marks {
-            let chapter = try? query.chapterAt(bookId: id, offsetUtf8: mark.startUtf8)
-            let percent = try? info.readingKey.formalSHA256.flatMap { try core.readingDataPercentage(sha: $0, offset: mark.startUtf8) }
+            let (chapter, percent) = locations[mark.startUtf8] ?? (nil,nil)
             values[mark.id] = [chapter?.title, percent.map { String(format: "%.0f%%", $0) }].compactMap { $0 }.joined(separator: " · ")
         }
         return values
     }
     func deleteNoteSelection(_ id: String, expected: NoteCandidates, ids: Set<String>) async throws {
-        try await promoteUserData(id)
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        let key = try userKey(id).storageKey
-        guard key == expected.key else { throw UserDataConflict(candidates: []) }
-        let groups = try expected.checked(ids)
-        guard ids == Set(groups.keys) else { throw UserDataConflict(candidates: []) }
-        let commands = ids.sorted().map { markID in
-            MarkDeletion(id: markID, key: key, baseline: groups[markID]!, content: groups[markID]!.first(where: { $0.content != nil })?.content, deleted: true)
-        }
-        let result = try await userStore(for: key).applyDeletions(commands, checkingBaseline: true)
-        for c in commands { if let tombstone = result[c.id] { undoCandidates[c.id] = ([tombstone], c.content) } }
-        dataChanged()
+        try await deleteSelectedAnnotations(id, expected: expected, ids: ids)
     }
+
 }
 
 struct NoteSharePayload: Identifiable {

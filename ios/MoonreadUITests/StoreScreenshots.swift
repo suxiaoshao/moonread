@@ -46,8 +46,20 @@ import UIKit
             if let id = readyID[capture.scene] { settled(ready(element(id), timeout: 40)) }
             else { readableBody(); settled(body()) }
         } else {
-            switch try XCTUnwrap(StoreShotScene(rawValue: capture.scene)) {
-            case .backup: settled(ready(app.buttons["exportAllReadingData"], timeout: 40))
+            switch try XCTUnwrap(StoreShotScene.scene(for: capture)) {
+            case .backup:
+                settled(ready(app.buttons["exportAllReadingData"], timeout: 40))
+                if capture.scene == "M01" || capture.scene == "M02" {
+                    ready(app.buttons["exportMetadata"]).tap()
+                    let generate = ready(app.buttons["metadataGenerateExport"])
+                    settled(generate)
+                    if capture.scene == "M02" {
+                        generate.tap()
+                        let resultLabel = language == "en" ? "Share or save" : "分享或存储"
+                        waitUntil(timeout: 40) { generate.exists && generate.label == resultLabel && generate.isHittable }
+                        settled(generate)
+                    }
+                }
             case .typography:
                 readableBody(); controls(); ready(app.buttons["readingSettings"]).tap()
                 ready(app.buttons["moreReadingSettings"]).tap()

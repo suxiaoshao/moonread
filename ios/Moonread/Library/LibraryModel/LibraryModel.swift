@@ -14,22 +14,20 @@ final class LibraryModel {
     private let layoutKey: String
     @ObservationIgnored private let defaults: UserDefaults
     /// Recents kept on the home page: the resume card plus a scrollable cover row in the grid.
-    static let homeRecentLimit = 10
+    let recentReading: RecentReadingStore
     var home = HomeSnapshot()
-    @ObservationIgnored var homeIndex = HomeSnapshot()
     @ObservationIgnored var libraryStructure: [SourceFileLocation]?
     var shelves: [LibraryShelf] { home.shelves }
-    var recents: [LibraryEntry] { home.recents }
+    var recents: [LibraryEntry] {
+        recentReading.value?.recentReading.prefix(Int(RecentReadingStore.homeLimit)).compactMap { try? $0.libraryEntry() } ?? []
+    }
     var homeReady = false
     var hasUserImportedBooks = false
     var showsImportTip: Bool { Onboarding.shared.enabled && !Onboarding.shared.imported && !hasUserImportedBooks && homeReady && (builtinDiscovery == .notRequired || adoptedDiscoveryRevision == discoveryRevision) }
     var homeRequest = UUID()
-    @ObservationIgnored var homeCovers: [CoverSubscription] = []
+    private(set) var changingUserScope = false
     var automaticRefreshDeferred = false
     var error: String?
-    /// A reader that closed with an error reports it here, after its position is saved.
-    var readerExitError: String?
-    var reviewCandidate: ReadingReviewCandidate?
     var busy: Bool { fileWork != nil }
     let loading = LoadingState()
     let refreshing = LoadingState()
@@ -38,40 +36,7 @@ final class LibraryModel {
     var explicitRefresh = false
     var readingInputRevision: UInt64 = 0
     var revision = 0
-    var selectedTab = AppTab.library {
-        didSet {
-            if selectedTab == .search && oldValue != .search { searchOrigin = oldValue }
-        }
-    }
-    /// Search is a quick entry: leaving it returns to the tab it was entered from.
-    var searchOrigin = AppTab.library
-    var libraryPath: [LibraryRoute] = []
-    var statisticsPath: [LibraryRoute] = []
-    var searchPath: [LibraryRoute] = []
-    var settingsNavigation = SettingsNavigation()
-    var path: [LibraryRoute] {
-        get {
-            return switch selectedTab {
-            case .library, .conversations: libraryPath
-            case .statistics: statisticsPath
-            case .settings: settingsNavigation.path
-            case .search: searchPath
-            }
-        }
-        set {
-            switch selectedTab {
-            case .library, .conversations: libraryPath = newValue
-            case .statistics: statisticsPath = newValue
-            case .settings: settingsNavigation.path = newValue
-            case .search: searchPath = newValue
-            }
-        }
-    }
-    let search = AppSearch()
-    var searchPresented = false
-    /// Cancel returns to the origin tab; iOS 26+ may already have done so. A dismissal
-    /// while a result page is pushed is not leaving Search.
-    let dataManagement: DataManagementModel
+    let shell: AppShellModel
     let fullIndex: FullIndexController
     var shelfRecovery = ShelfRecoverySnapshot()
     var shelfRecoveryRequest = UUID()
@@ -101,22 +66,19 @@ final class LibraryModel {
     func offerIndex(_ shelfID: String) async {
         guard let inventory = try? await service.identityInventory(shelfID), !inventory.local.isEmpty else { return }
         if fullIndex.automatic { pendingIndexScans.insert(shelfID); await coordinatePendingIndexes() }
-        else if (path.last?.isReader == true && importedBookToOpen == nil) || sheet != nil { deferredIndexPrompt = inventory }
+        else if (shell.path.last?.isReader == true && importedBookToOpen == nil) || sheet != nil { deferredIndexPrompt = inventory }
         else { indexPrompt = inventory }
     }
     func showDeferredIndexPrompt() {
-        if path.last?.isReader != true || importedBookToOpen != nil, sheet == nil, let prompt = deferredIndexPrompt { deferredIndexPrompt = nil; indexPrompt = prompt }
+        if shell.path.last?.isReader != true || importedBookToOpen != nil, sheet == nil, let prompt = deferredIndexPrompt { deferredIndexPrompt = nil; indexPrompt = prompt }
     }
     var sheet: LibrarySheet?
-    /// An AI quick task opened from the library; the session itself lives in AIService.
-    var aiRequest: AIQuickTaskRequest?
     private(set) var filePicker: LibraryFilePicker?
     var filePickerPresented = false
     private(set) var shelfScans: [String: UUID] = [:]
-    var explicitFileWork: Bool { fileWork != nil }
     var runningFileBatch: Bool { fileWork?.kind == .commands }
     var processingFiles: Bool { if case .running = fileWork?.stage { true } else { false } }
-    var canAcceptFileWork: Bool { fileWork == nil }
+    var canAcceptFileWork: Bool { !changingUserScope && fileWork == nil }
     var afterSheetDismiss: (() -> Void)?
     var pendingDecision: LibraryPendingDecision? {
         if case .awaitingDecision(let decision) = fileWork?.stage { decision } else { nil }
@@ -201,8 +163,9 @@ final class LibraryModel {
             try await service.adoptCloudDiscovery(items)
         }
         self.service = service
+        recentReading = RecentReadingStore(service: service)
         self.fullIndex = fullIndex ?? .shared
-        self.dataManagement = DataManagementModel(service: service)
+        self.shell = AppShellModel(service: service)
         self.lookupDropEntry = lookupDropEntry ?? { try await service.libraryEntry($0) }
         self.fileMutationReload = fileMutationReload
         self.defaults = defaults
@@ -233,6 +196,30 @@ final class LibraryModel {
     /// Bind before local publication. Account changes invalidate every in-flight snapshot.
     var refreshWork: Task<Void, Never>?
     var refreshAgain = false
+    func prepareUserScopeChange() async throws {
+        changingUserScope = true
+        try await systemReading.prepareForUserScopeChange()
+        try Task.checkCancellation()
+        for request in systemImports { request.files.forEach { $0.finish() } }
+        systemImports.removeAll()
+        cancelFilePicker(); cancelFileWork()
+        if fullIndex.shelfID != nil { fullIndex.cancel() }
+        await MetadataExchangeModel.shared.prepareUserScopeChange()
+        await waitForFileWork()
+        await fullIndex.waitForCompletion()
+        homeRequest = UUID()
+    }
+
+    func finishUserScopeChange(rebound: Bool) {
+        if rebound {
+            shell.libraryPath = []; shell.statisticsPath = []; shell.searchPath = []; shell.settingsNavigation.path = []
+            sheet = nil; indexPrompt = nil; deferredIndexPrompt = nil
+            releaseImportFailures()
+            MetadataExchangeModel.shared.invalidateUserScope()
+        }
+        changingUserScope = false
+        systemReading.finishUserScopeChange()
+    }
     func chooseFiles(_ picker: LibraryFilePicker) {
         guard canAcceptFileWork else { _ = rejectFileWork(); return }
         filePicker = picker; filePickerPresented = true
@@ -265,7 +252,7 @@ final class LibraryModel {
     func selectSource(_ url: URL, replacing: String? = nil, restoring reference: ShelfReference? = nil, scope: String? = nil) -> Bool {
         let access = LibraryImportFile(url: url)
         guard let work = acquire(.shelf) else { return rejectFileWork() }
-        let origin = path, tab = selectedTab
+        let origin = shell.path, tab = shell.selectedTab
         launch(work) {
             defer { access.finish() }
             let id: String
@@ -275,7 +262,7 @@ final class LibraryModel {
                 if replacing != nil { try? await self.service.requestShelfRecoveryGuidance(id) }
             }
             try await self.reload()
-            if self.selectedTab == tab, self.path == origin { self.path.append(.folder(LibraryLocation(shelfID: id))) }
+            if self.shell.selectedTab == tab, self.shell.path == origin { self.shell.path.append(.folder(LibraryLocation(shelfID: id))) }
             let request = UUID(); self.shelfScans[id] = request
             work.stage = .finished(.completed)
             self.finish(work)

@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import CryptoKit
+import GRDB
 
 struct BackupRecord: Codable, Sendable, Equatable {
     var key: String
@@ -102,6 +103,7 @@ enum ReadingDataError: LocalizedError {
 /// Row streaming is bounded independently of the ZIP budget. No whole archive/images in RAM.
 enum BackupRows {
     static let files = ["values", "positions", "annotations", "facts", "statistics-clears"]
+    static let historyV2Files = ["facts", "statistics-clears", "segments", "history-isolation"]
     static let maxRecord = 16 * 1024 * 1024
     // SwiftData retains inserted objects until atomic save; refuse a too-large transaction.
     static let maxCommitBytes: UInt64 = 128 * 1024 * 1024
@@ -146,7 +148,8 @@ enum BackupRows {
         guard let key, (try? parseReadingKey(value: key)) != nil else { return nil }
         return key
     }
-    static func validate(_ record: BackupRecord, kind: String, allowPending: Bool = false) throws {
+    @discardableResult
+    static func validate(_ record: BackupRecord, kind: String, allowPending: Bool = false) throws -> UserSyncJSON.ValidatedFact? {
         func owner(_ key: String) throws {
             if allowPending { _ = try parseReadingKey(value: key) } else { try formal(key) }
         }
@@ -163,20 +166,338 @@ enum BackupRows {
             guard !record.mark.isEmpty else { throw ReadingDataError.invalid }
             _ = try UserSyncJSON.annotation(record.payload, id: record.id)
         case "facts":
-            try owner(record.key); try UserSyncJSON.validateFact(record.payload, id: record.id)
-            let value = try JSONSerialization.jsonObject(with: Data(record.payload.utf8)) as? [String: Any]
-            guard let inner = value?["content_key"] as? String else { throw ReadingDataError.invalid }
+            try owner(record.key)
+            let fact = try UserSyncJSON.validateFact(record.payload, id: record.id, includeContentKey: true)
+            guard let inner = fact.payloadContentKey else { throw ReadingDataError.invalid }
             // Historical pending promotion keeps the original fact payload; the
-            // authoritative row key routes it (as visibleFacts already does).
+            // authoritative row key routes it.
             switch try parseReadingKey(value: inner) {
             case .pending: break
             case .formal: guard inner == record.key else { throw ReadingDataError.invalid }
             }
+            return fact
         case "statistics-clears":
             let value = try UserSyncJSON.decode(ClearValue.self, record.payload, as: UserSyncJSON.clear, envelope: true)
             if let key = value.book { _ = try parseReadingKey(value: key) }
         default: throw ReadingDataError.updateRequired
         }
+        return nil
+    }
+}
+
+/// An immutable plan from the portable package; apply only through the usr writer.
+struct UserBackupRestore: Sendable {
+    private enum Entry: Sendable {
+        case value(key: String, head: StoredValue, device: String)
+        case position(book: String, value: ReadingPositionRows.Position)
+        case annotation(book: String, mark: String, value: AnnotationCandidate)
+        case fact(book: String, value: FactImportColumns)
+        case segment(BackupRecord)
+        case clear(BackupRecord)
+        case isolation(ReadingHistoryBackup.Isolation)
+    }
+    private struct Attachment: Sendable { let id, sha: String; let bytes: Data }
+    private let entries: [Entry]
+    private let attachments: [Attachment]
+    private let keys: Set<String>
+
+    init(directory: URL, manifest: BackupManifest) throws {
+        let capabilities: Set<String> = manifest.formatVersion == 2 ? ["user-facts-v1", "reading-segments-v1"] : ["user-facts-v1"]
+        guard manifest.format == "moonread-backup", [1,2].contains(manifest.formatVersion),
+              manifest.identityVersion == "normalization-v1", manifest.scope == "all",
+              (manifest.formatVersion == 1 ? Set(manifest.requiredCapabilities).isSubset(of: capabilities)
+                                           : Set(manifest.requiredCapabilities) == capabilities) else { throw ReadingDataError.updateRequired }
+        var total: UInt64 = 0, byPath: [String: BackupMemberValue] = [:]
+        for member in manifest.members {
+            try Task.checkCancellation()
+            let (next, overflow) = total.addingReportingOverflow(member.size)
+            guard !overflow, next <= BackupRows.maxCommitBytes else { throw ReadingDataError.tooLarge }
+            total = next
+            try validateRelativePath(path: member.path, allowRoot: false)
+            guard byPath.updateValue(member, forKey: member.path) == nil else { throw ReadingDataError.invalid }
+            let actual = try backupMember(path: member.path, filePath: directory.appendingPathComponent(member.path).path)
+            guard actual.sha256 == member.sha256, actual.size == member.size, actual.records == member.records else {
+                throw ReadingDataError.invalid
+            }
+        }
+        var assets: [String: Attachment] = [:], entry: [Entry] = [], books = Set<String>()
+        var operations = [String: (book: String, mark: String, candidate: AnnotationCandidate)]()
+        var values = [String: StoredValue]()
+        for asset in manifest.assets {
+            guard let member = byPath[asset.path], asset.path == "assets/" + member.sha256 + ".bin", assets[asset.id] == nil else {
+                throw ReadingDataError.invalid
+            }
+            let bytes = try Data(contentsOf: directory.appendingPathComponent(asset.path))
+            guard DataIdentity.sha(bytes) == member.sha256 else { throw ReadingDataError.invalid }
+            assets[asset.id] = .init(id: asset.id, sha: member.sha256, bytes: bytes)
+        }
+        for key in manifest.titles.keys { try BackupRows.formal(key) }
+        for kind in ["values", "positions", "annotations"] {
+            let path = "records/" + kind + ".jsonl"
+            guard byPath[path] != nil else { throw ReadingDataError.invalid }
+            try BackupRows.forEach(directory.appendingPathComponent(path)) { row in
+                try Task.checkCancellation()
+                try BackupRows.validate(row, kind: kind)
+                if kind == "annotations" {
+                    let value = try UserSyncJSON.annotation(row.payload, id: row.id)
+                    if let prior = operations[row.id] {
+                        guard prior.book == row.key, prior.mark == row.mark, prior.candidate == value else { throw ReadingDataError.invalid }
+                        return
+                    }
+                    operations[row.id] = (row.key,row.mark,value)
+                    books.insert(row.key)
+                    entry.append(.annotation(book: row.key, mark: row.mark, value: value))
+                    return
+                }
+                let key = kind == "positions" ? "position/" + row.key : row.key
+                let head = try UserSyncJSON.storedValue(row.payload, key: key)
+                let identity = key + "\0" + head.token
+                if let prior = values[identity] {
+                    let equivalent = if key.hasPrefix("position/") { try PositionCandidate.sameUpdate(prior, head) }
+                        else { prior.updated == head.updated && prior.value == head.value }
+                    guard equivalent else { throw ReadingDataError.invalid }
+                    return
+                }
+                values[identity] = head
+                if let book = try BackupRows.valueKey(key) { books.insert(book) }
+                if key.hasPrefix("position/") {
+                    let position = try PositionCandidate(head)
+                    entry.append(.position(book: position.value.content_key,
+                        value: .init(value: position.value, updated: head.updated, token: head.token, device: kind == "values" ? row.device : nil)))
+                } else {
+                    if key.hasSuffix("/cover"),
+                       let cover = try JSONDecoder().decode(UserValueRows.Cover?.self, from: Data(head.value.utf8)),
+                       assets[cover.id]?.sha != cover.sha256 { throw ReadingDataError.missingAsset }
+                    entry.append(.value(key: key, head: head, device: row.device))
+                }
+            }
+        }
+        let historyFiles = manifest.formatVersion == 2 ? BackupRows.historyV2Files : ["facts","statistics-clears"]
+        for kind in historyFiles {
+            let path = "records/" + kind + ".jsonl"
+            guard byPath[path] != nil else { throw ReadingDataError.invalid }
+            try BackupRows.forEach(directory.appendingPathComponent(path)) { row in
+                try Task.checkCancellation()
+                switch kind {
+                case "facts":
+                    try BackupRows.formal(row.key)
+                    let batch = try decodeFactBatch(base: 0, payloads: [row.payload])
+                    guard let cue = batch.cues().first else { throw ReadingDataError.invalid }
+                    _ = try UserSyncJSON.bindFact(cue, id: row.id)
+                    let value = try batch.importColumns(ordinal: cue.ordinal)
+                    if case .formal = try parseReadingKey(value: value.payloadContentKey),
+                       value.payloadContentKey != row.key { throw ReadingDataError.invalid }
+                    guard let duration = value.durationMs, duration >= 0 else { throw ReadingDataError.invalid }
+                    entry.append(.fact(book: row.key, value: value))
+                case "segments":
+                    guard !row.id.isEmpty else { throw ReadingDataError.invalid }
+                    try BackupRows.formal(row.key)
+                    entry.append(.segment(row))
+                case "statistics-clears":
+                    if manifest.formatVersion == 1 {
+                        let old = try ReadingClearRows.decode(row.payload)
+                        guard old.v == 1 else { throw ReadingDataError.updateRequired }
+                        // 1.6 emitted no clear ID in the portable envelope.
+                        // Bind it to the same semantic ID as SwiftData migration.
+                        entry.append(.clear(.init(key: old.book ?? "", id: old.stableID, payload: row.payload)))
+                        if let book = old.book, case .formal = try parseReadingKey(value: book) { books.insert(book) }
+                        return
+                    }
+                    guard !row.id.isEmpty else { throw ReadingDataError.invalid }
+                    if !row.key.isEmpty, case .pending = try parseReadingKey(value: row.key) {
+                        guard try ReadingClearRows.decode(row.payload).v == 1 else { throw ReadingDataError.invalid }
+                        entry.append(.clear(row))
+                        return
+                    }
+                    entry.append(.clear(row))
+                default:
+                    let value = try JSONDecoder().decode(ReadingHistoryBackup.Isolation.self, from: Data(row.payload.utf8))
+                    try value.validate()
+                    if let book = value.book { books.insert(book) }
+                    entry.append(.isolation(value))
+                }
+                if !row.key.isEmpty { books.insert(row.key) }
+            }
+        }
+        self.entries = entry; self.keys = books; self.attachments = assets.values.sorted { $0.id < $1.id }
+    }
+
+    func preview(_ db: Database) throws -> BackupPreview {
+        var newer = 0
+        var annotations: [String: [AnnotationCandidate]] = [:]
+        for entry in entries {
+            switch entry {
+            case let .value(key, head, _):
+                if try UserValueRows.assessBackup(db, key: .init(key), head: head) { newer += 1 }
+            case let .position(book, value):
+                if try ReadingPositionRows.assessBackup(db, book: book, incoming: value) { newer += 1 }
+            case let .annotation(book, mark, value):
+                let duplicate = try AnnotationRows.assessBackup(db, book: book, mark: mark, value: value)
+                let key = book + "/" + mark
+                if annotations[key] == nil {
+                    annotations[key] = try AnnotationRows.snapshot(db, key: book, markID: mark, partition: 0).groups[mark] ?? []
+                }
+                if !duplicate { annotations[key, default: []].append(value) }
+            case .fact, .segment, .clear, .isolation: break
+            }
+        }
+        for attachment in attachments {
+            if try Bool.fetchOne(db, sql: """
+                SELECT EXISTS(SELECT 1 FROM usr.cover_asset WHERE legacy_cover_id=? AND availability='available' AND expected_sha IS NOT ?)
+                """, arguments: [attachment.id,attachment.sha]) == true { throw ReadingDataError.invalid }
+        }
+        let conflicts = annotations.values.filter { AnnotationReduction.heads($0).count > 1 }.count
+        return .init(keys: keys, existingNewer: newer, conflicts: conflicts)
+    }
+
+    func merge(_ db: Database, scope: DataScope) throws {
+        _ = try preview(db)
+        for asset in attachments {
+            try Task.checkCancellation()
+            try UserValueRows.attach(db, id: asset.id, sha: asset.sha, bytes: asset.bytes)
+        }
+        if !attachments.isEmpty { try LegacyUserImport.reconcileCoverCompleteness(db) }
+        var history = ReadingHistoryRows.Changed(), exportClears = Set<String>(), exportSegments = Set<String>()
+        for entry in entries {
+            try Task.checkCancellation()
+            switch entry {
+            case let .value(key, head, device):
+                try UserValueRows.merge(db, key: .init(key), head: head, device: device, restoringBackup: true)
+            case let .position(book, value):
+                try ReadingPositionRows.mergeBackup(db, book: book, incoming: value)
+            case let .annotation(book, mark, value):
+                try AnnotationRows.mergeBackup(db, book: book, mark: mark, value: value)
+            case let .fact(book, value):
+                if try ReadingFactSettlement.ingest(db, value, book: book, partition: 0, scope: scope.key,
+                    origin: .init(source: "backup", id: value.slice.id, upgrade: .local)) {
+                    history.facts.insert(ReadingFactRows.identity(value.slice.id))
+                }
+            case let .segment(record):
+                try ReadingHistoryTransport.stageSegment(db, id: record.id, book: record.key, payload: record.payload,
+                    fetched: false, sourceID: record.id, scope: scope, changed: &history)
+                exportSegments.insert(record.id)
+            case let .clear(record):
+                try ReadingHistoryTransport.stageClear(db, id: record.id, book: record.key.isEmpty ? nil : record.key,
+                    payload: record.payload, source: "backup", sourceID: record.id, changed: &history, upgrade: .local)
+                exportClears.insert(record.id)
+            case let .isolation(value):
+                try value.restore(db, changed: &history)
+            }
+        }
+        try history.settle(db, scope: scope)
+        for id in history.facts {
+            try ReadingHistoryTransport.enqueueFact(db, id: id, scope: scope)
+        }
+        try ReadingSegmentRows.enqueueSealed(db, ids: exportSegments, scope: scope)
+        for id in exportClears {
+            if let value = try ReadingClearRows.load(db, partition: 0, id: id) {
+                try ReadingHistoryTransport.enqueueClear(db, id: id, value: value, scope: scope)
+            }
+        }
+    }
+}
+
+/// Exports raw evidence, not the selected heads/day totals. Isolation travels
+/// losslessly; restoring active evidence never recreates a local owner flag.
+enum ReadingHistoryBackup {
+    struct Isolation: Codable, Sendable {
+        let source, sourceID, type, id, format, digest, reason, completeness: String
+        let book, session, device, logicalKey: String?
+        let version: Int?
+        let bytes: Data
+
+        init(_ row: Row) {
+            source = row["source"]; sourceID = row["source_id"]; type = row["source_type"]; id = row["record_id"]
+            format = row["raw_format"]; digest = row["digest"]; reason = row["reason"]; completeness = row["completeness"]
+            book = row["book_key"]; session = row["session_id"]; device = row["device_id"]; logicalKey = row["logical_key"]
+            version = row["schema_version"]; bytes = row["raw_bytes"]
+        }
+
+        func validate() throws {
+            guard ["ReadingFact","reading_fact","ReadingSegment","reading_segment","StatisticsClear","statistics_clear"].contains(type),
+                  !id.isEmpty, DataIdentity.sha(bytes) == digest, completeness == "complete" else { throw ReadingDataError.invalid }
+            if let book { try BackupRows.formal(book) }
+        }
+
+        func restore(_ db: Database, changed: inout ReadingHistoryRows.Changed) throws {
+            try db.execute(sql: """
+                INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,schema_version,book_key,session_id,
+                    device_id,logical_key,raw_format,raw_bytes,digest,reason,completeness)
+                VALUES(0,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
+                """, arguments: [source,sourceID,type,id,version,book,session,device,logicalKey,format,bytes,digest,reason,completeness])
+            try UpgradeOrigins.recordInsertedIsolation(db, partition: 0, as: .local)
+            switch type {
+            case "ReadingFact", "reading_fact":
+                try ReadingHistoryTransport.withdrawSave(db, type: .fact, id: ReadingFactRows.identity(id))
+                changed.clearFacts.insert(id)
+            case "ReadingSegment", "reading_segment": changed.segments.insert(id)
+            default:
+                try ReadingHistoryTransport.recordIsolatedClearEffects(db, book: book, session: session, changed: &changed)
+            }
+        }
+    }
+
+    static let isolationTypes = ReadingSegmentRows.quarantineTypes + "," + ReadingFactRows.quarantineFactTypes + "," + ReadingFactRows.quarantineClearTypes
+
+    static func export(_ db: Database, directory: URL) throws -> [BackupMemberValue] {
+        let pending = ["reading_fact","reading_segment"].map {
+            "SELECT 1 FROM usr.\($0) WHERE partition=1"
+        } + ["SELECT 1 FROM usr.quarantined_record WHERE partition=1 AND source_type IN (\(isolationTypes))"]
+        // An unowned book-scoped reading record may not be exported as formal.
+        // An old paired clear applying only to pending evidence remains local;
+        // captured prefix effects already travel with the promoted formal ID.
+        guard try Bool.fetchOne(db, sql: "SELECT NOT EXISTS(" + pending.joined(separator: " UNION ALL ") + ")") == true
+        else { throw ReadingDataError.pendingIdentity }
+        var members = [BackupMemberValue]()
+        for kind in BackupRows.historyV2Files {
+            let path = "records/" + kind + ".jsonl", url = directory.appendingPathComponent(path)
+            try Data().write(to: url, options: .atomic)
+            let output = try FileHandle(forWritingTo: url); defer { try? output.close() }
+            func emit(_ row: BackupRecord) throws {
+                try Task.checkCancellation()
+                var data = try JSONEncoder().encode(row)
+                guard data.count <= BackupRows.maxRecord else { throw ReadingDataError.tooLarge }
+                data.append(10); try output.write(contentsOf: data)
+            }
+            switch kind {
+            case "facts":
+                let rows = try Row.fetchCursor(db, sql: """
+                    SELECT *,partition AS source_partition FROM usr.reading_fact WHERE partition=0 ORDER BY fact_id
+                    """)
+                while let row = try rows.next() {
+                    guard (row["schema_version"] as Int) == 1, (row["derivation_version"] as Int) == 1,
+                          (row["exposure_version"] as Int) == 1 else { throw ReadingDataError.updateRequired }
+                    let raw = try ReadingFactSettlement.Evidence(row)
+                    try emit(.init(key: raw.head.book, id: raw.head.id, device: raw.device, payload: raw.wire()))
+                }
+            case "segments":
+                let rows = try Row.fetchCursor(db, sql: "SELECT * FROM usr.reading_segment WHERE partition=0 ORDER BY segment_id")
+                while let row = try rows.next() {
+                    guard (row["schema_version"] as Int) == 1, (row["exposure_version"] as Int) == 1 else {
+                        throw ReadingDataError.updateRequired
+                    }
+                    let raw = try ReadingSegmentRows.Raw(row)
+                    try emit(.init(key: raw.book, id: raw.value.header.id, payload: encodeReadingSegment(bookKey: raw.book, segment: raw.value)))
+                }
+            case "statistics-clears":
+                for id in try String.fetchAll(db, sql: "SELECT record_id FROM usr.statistics_clear WHERE partition=0 ORDER BY record_id") {
+                    guard let clear = try ReadingClearRows.load(db, partition: 0, id: id) else { throw ReadingDataError.updateRequired }
+                    try emit(.init(key: clear.book ?? "", id: id, payload: ReadingClearRows.wire(clear)))
+                }
+            default:
+                let rows = try Row.fetchCursor(db, sql: """
+                    SELECT * FROM usr.quarantined_record WHERE partition=0 AND source_type IN (\(isolationTypes)) ORDER BY quarantine_id
+                    """)
+                while let row = try rows.next() {
+                    let value = Isolation(row)
+                    try value.validate()
+                    try emit(.init(key: value.book ?? "", id: value.id, payload: UserSyncJSON.encode(value)))
+                }
+            }
+            members.append(.init(try backupMember(path: path, filePath: url.path)))
+        }
+        return members
     }
 }
 
@@ -192,7 +513,7 @@ extension UserDataStore {
         default: throw ReadingDataError.invalid
         }
     }
-    func readingDataInventory() throws -> ReadingDataInventory {
+    func readingDataInventory(includingHistory: Bool = true) throws -> ReadingDataInventory {
         var items: [String: ReadingDataItem] = [:]
         var diagnostics: [String: ReadingDataDiagnostic] = [:]
         var pending = Set<String>()
@@ -203,7 +524,7 @@ extension UserDataStore {
                 var item = items[key] ?? .init(id: key); item.unsupported = true; items[key] = item
             }
         }
-        for kind in BackupRows.files {
+        for kind in includingHistory ? BackupRows.files : ["values","positions","annotations"] {
             let rows: [BackupRecord]
             do { rows = try backupRows(kind) }
             catch { report(nil, kind, .readFailure); continue }
@@ -237,14 +558,14 @@ extension UserDataStore {
         do { positions = try positionValues() } catch { report(nil, "positions", .readFailure) }
         for key in Array(items.keys) {
             do {
-                let facts = try visibleFacts(key: key)
-                items[key]?.title = facts.first?["title"] as? String ?? ""
+                let facts = includingHistory ? try visibleFacts(key: key) : nil
+                items[key]?.title = facts?.firstTitle ?? ""
                 let values = try allValues(prefix: "metadata/" + key + "/")
                 let chapters = try allValues(prefix: "chapter/" + key + "/")
                 let heads = try candidates(key: key, compacting: false)
                 let opened = try value("opened/" + key)
                 let live = opened != nil || positions["position/" + key] != nil || values.values.contains { $0 != "null" } || chapters.values.contains { $0 != "null" }
-                    || heads.values.contains { $0.contains { $0.content != nil } } || !facts.isEmpty
+                    || heads.values.contains { $0.contains { $0.content != nil } } || facts?.facts.isEmpty == false
                 if !live, items[key]?.unsupported == false { items.removeValue(forKey: key); continue }
                 items[key]?.author = values["metadata/" + key + "/author"].flatMap { try? JSONDecoder().decode(String.self, from: Data($0.utf8)) } ?? ""
                 items[key]?.tags = values.filter { $0.key.hasPrefix("metadata/" + key + "/tag-") }.values.compactMap { try? JSONDecoder().decode(String.self, from: Data($0.utf8)) }
@@ -255,10 +576,9 @@ extension UserDataStore {
                     items[key]?.sourceHint = position.source_hint
                     items[key]?.positionUtf8 = position.offset
                 }
-                items[key]?.hasStatistics = !facts.isEmpty
+                items[key]?.hasStatistics = facts?.facts.isEmpty == false
                 items[key]?.bookmarks = heads.values.filter { $0.contains { $0.bookmark && $0.content != nil } }.count
                 items[key]?.annotations = heads.values.filter { $0.contains { !$0.bookmark && $0.content != nil } }.count
-                items[key]?.title = facts.first?["title"] as? String ?? ""
             } catch {
                 // The raw pass already explained a malformed/future row. Do not
                 // relabel its generic projection barrier as another root cause.
@@ -279,14 +599,14 @@ extension UserDataStore {
         }
         return keys
     }
-    func snapshotForBackup(directory: URL, writerVersion: String) throws -> BackupManifest {
+    func snapshotForBackup(directory: URL, writerVersion: String, includingHistory: Bool = true) throws -> BackupManifest {
         try FileManager.default.createDirectory(at: directory.appendingPathComponent("records"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: directory.appendingPathComponent("assets"), withIntermediateDirectories: true)
         // This actor-isolated synchronous snapshot never suspends. The process-
         // wide projection cache epoch is not a consistency token for this store.
         var manifest = BackupManifest(createdAt: Int64(Date().timeIntervalSince1970 * 1000), writerVersion: writerVersion)
         var coverDigests: [String: String] = [:]
-        for kind in BackupRows.files {
+        for kind in includingHistory ? BackupRows.files : ["values","positions","annotations"] {
             let path = "records/" + kind + ".jsonl", url = directory.appendingPathComponent("records/" + kind + ".jsonl")
             FileManager.default.createFile(atPath: url.path, contents: nil)
             let output = try FileHandle(forWritingTo: url); defer { try? output.close() }
@@ -317,7 +637,7 @@ extension UserDataStore {
             }
             manifest.assets.append(.init(id: id, path: path))
         }
-        let inventory = try readingDataInventory()
+        let inventory = try readingDataInventory(includingHistory: includingHistory)
         guard inventory.pending == 0 else { throw ReadingDataError.pendingIdentity }
         if inventory.unsupported > 0 {
             if inventory.diagnostics.contains(where: { $0.reason == .newerFormat }) { throw ReadingDataError.updateRequired }
@@ -348,12 +668,12 @@ extension UserDataStore {
         let winners = try values()
         let oldOperations = Dictionary(grouping: try backupRows("annotations"), by: \.id)
         let oldFacts = Dictionary(grouping: try backupRows("facts"), by: \.id)
-        var identities: [String: BackupRecord] = [:]
+        var identities: [String: (record: BackupRecord, fact: UserSyncJSON.ValidatedFact?)] = [:]
         var keys = Set<String>(), newer = 0
         var annotations: [String: [AnnotationCandidate]] = [:]
         for kind in BackupRows.files {
             try BackupRows.forEach(directory.appendingPathComponent("records/" + kind + ".jsonl")) { row in
-                try BackupRows.validate(row, kind: kind)
+                let fact = try BackupRows.validate(row, kind: kind)
                 let key = kind == "values" ? try BackupRows.valueKey(row.key) : (kind == "statistics-clears" ? nil : row.key)
                 if let key { keys.insert(key) }
                 var identity = kind + "/" + row.id
@@ -372,15 +692,19 @@ extension UserDataStore {
                 }
                 if kind == "annotations" || kind == "facts" {
                     for old in (kind == "annotations" ? oldOperations[row.id] : oldFacts[row.id]) ?? [] {
-                        try BackupRows.validate(old, kind: kind)
-                        guard old.key == row.key, old.mark == row.mark, Self.samePayload(old.payload, row.payload) else { throw ReadingDataError.invalid }
+                        let oldFact = try BackupRows.validate(old, kind: kind)
+                        let same = if let oldFact, let fact { Self.sameFactPayload(oldFact, fact) }
+                            else { Self.samePayload(old.payload, row.payload) }
+                        guard old.key == row.key, old.mark == row.mark, same else { throw ReadingDataError.invalid }
                     }
                 }
                 if kind != "statistics-clears" {
                     if let old = identities[identity] {
                         let valueKey = kind == "positions" ? "position/" + row.key : (kind == "values" ? row.key : nil)
-                        guard old.key == row.key, old.mark == row.mark, Self.samePayload(old.payload, row.payload, valueKey: valueKey) else { throw ReadingDataError.invalid }
-                    } else { identities[identity] = row }
+                        let same = if let oldFact = old.fact, let fact { Self.sameFactPayload(oldFact, fact) }
+                            else { Self.samePayload(old.record.payload, row.payload, valueKey: valueKey) }
+                        guard old.record.key == row.key, old.record.mark == row.mark, same else { throw ReadingDataError.invalid }
+                    } else { identities[identity] = (row, fact) }
                 }
                 if kind == "annotations" {
                     let candidate = try UserSyncJSON.annotation(row.payload, id: row.id)
@@ -417,8 +741,15 @@ extension UserDataStore {
                   let right = try? UserSyncJSON.storedValue(b, key: valueKey) else { return false }
             return left.token == right.token && ((try? PositionCandidate.sameUpdate(left, right)) == true)
         }
-        guard let a = try? UserSyncJSON.versioned(a), let b = try? UserSyncJSON.versioned(b),
-              let left = try? JSONSerialization.jsonObject(with: Data(a.utf8)) as? NSDictionary,
+        guard let a = try? UserSyncJSON.versioned(a), let b = try? UserSyncJSON.versioned(b) else { return false }
+        return sameVersionedPayload(a, b)
+    }
+    static func sameFactPayload(_ a: UserSyncJSON.ValidatedFact, _ b: UserSyncJSON.ValidatedFact) -> Bool {
+        guard let a = try? a.versioned(), let b = try? b.versioned() else { return false }
+        return sameVersionedPayload(a, b)
+    }
+    private static func sameVersionedPayload(_ a: String, _ b: String) -> Bool {
+        guard let left = try? JSONSerialization.jsonObject(with: Data(a.utf8)) as? NSDictionary,
               let right = try? JSONSerialization.jsonObject(with: Data(b.utf8)) as? NSDictionary else { return false }
         return left.isEqual(right)
     }
@@ -450,7 +781,9 @@ extension UserDataStore {
                         try mergeValueRecord(key: row.key, device: row.device, payload: row.payload)
                     case "positions": try mergePositionRecord(key: row.key, payload: row.payload)
                     case "annotations": try mergeOperationRecord(key: row.key, id: row.id, mark: row.mark, payload: row.payload)
-                    case "facts": try mergeFactRecord(key: row.key, id: row.id, payload: row.payload)
+                    case "facts":
+                        guard let fact = try BackupRows.validate(row, kind: kind) else { throw ReadingDataError.invalid }
+                        try mergeFactRecord(key: row.key, fact: fact)
                     case "statistics-clears":
                         let old = try modelContext.fetch(FetchDescriptor<StatisticsClear>())
                         if !old.contains(where: { Self.samePayload($0.payload, row.payload) }) { modelContext.insert(StatisticsClear(payload: row.payload)) }
@@ -466,44 +799,255 @@ extension UserDataStore {
             try beforeSave()
         }
     }
-    func deleteReadingData(keys: Set<String>) throws {
-        guard !keys.isEmpty else { return }
-        for key in keys { _ = try parseReadingKey(value: key) }
-        // Explicit whole-book deletion uses ownership, never payload readability.
-        // Editing, promotion and backup intake retain their compatibility guards.
-        try transaction {
-            var coverIDs = Set<String>(), assetsSafe = true
-            let values = try modelContext.fetch(FetchDescriptor<UserValue>())
-            for row in values {
-                guard let key = try? BackupRows.valueKey(row.key), keys.contains(key) else { continue }
-                if row.key.hasSuffix("/cover") {
-                    if let value = try? UserSyncJSON.storedValue(row.payload, key: row.key) {
-                        if value.value != "null" {
-                            if let asset = try? JSONDecoder().decode(UserSyncJSON.CoverReference.self, from: Data(value.value.utf8)) { coverIDs.insert(asset.id) }
-                            else { assetsSafe = false }
-                        }
-                    } else { assetsSafe = false }
-                }
-                modelContext.delete(row)
-            }
-            for row in try modelContext.fetch(FetchDescriptor<UserPosition>()) where keys.contains(row.contentKey) { modelContext.delete(row) }
-            for row in try modelContext.fetch(FetchDescriptor<AnnotationOperation>()) where keys.contains(row.contentKey) { modelContext.delete(row) }
-            for row in try modelContext.fetch(FetchDescriptor<ReadingFact>()) where keys.contains(row.contentKey) { modelContext.delete(row) }
-            for row in try modelContext.fetch(FetchDescriptor<StatisticsClear>()) {
-                if let key = BackupRows.deletionKey(.init(key: "", payload: row.payload), kind: "statistics-clears"), keys.contains(key) { modelContext.delete(row) }
-            }
-            // Unknown references, including deleted ones, cannot prove an asset
-            // is unreferenced. Keep assets rather than guess at their ownership.
-            for row in values where !row.isDeleted && row.key.hasSuffix("/cover") {
-                guard let stored = try? UserSyncJSON.storedValue(row.payload, key: row.key) else { assetsSafe = false; break }
-                if stored.value != "null" {
-                    guard let asset = try? JSONDecoder().decode(UserSyncJSON.CoverReference.self, from: Data(stored.value.utf8)) else { assetsSafe = false; break }
-                    coverIDs.remove(asset.id)
-                }
-            }
-            if assetsSafe {
-                for cover in try modelContext.fetch(FetchDescriptor<UserCover>()) where coverIDs.contains(cover.id) { modelContext.delete(cover) }
+}
+
+/// Reading management joins public summaries to settled heads. Backup exports
+/// the raw portable evidence from the very same store, never those summaries.
+enum RelationalReadingData {
+    private static let portableValues = [
+        "metadata_text_candidate", "tag_candidate", "cover_candidate", "chapter_override_candidate",
+        "opened_candidate", "source_decoding_candidate", "palette_candidate",
+    ]
+    private static let bookValues = Array(portableValues.prefix(5)) + ["position_candidate", "annotation_candidate"]
+    private static let pendingTables = bookValues + ["reading_fact", "reading_segment"]
+
+    private static func reason(_ row: Row) -> ReadingDataDiagnostic.Reason {
+        let reason: String = row["reason"]
+        if reason == "unavailable-attachment" { return .readFailure }
+        if (row["schema_version"] as Int? ?? 0) > 1 || reason == "unknown-key" || reason.hasPrefix("future") {
+            return .newerFormat
+        }
+        return .unreadable
+    }
+
+    // Reader compatibility retains the old position / metadata / chapter /
+    // annotation scope. Pending resume separately checks history and clears.
+    static func requiresReaderNotice(_ db: Database, keys: String) throws -> Bool {
+        let tables = ["position_candidate", "metadata_text_candidate", "tag_candidate",
+                      "cover_candidate", "chapter_override_candidate", "annotation_candidate"]
+        let raw = tables.map { "SELECT 1 FROM usr.\($0) WHERE schema_version<>1 AND book_key IN (SELECT value FROM json_each(?1))" }
+        return try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(
+                SELECT 1 FROM usr.quarantined_record
+                WHERE book_key IN (SELECT value FROM json_each(?1))
+                  AND (source_type IN ('UserPosition',\(AnnotationRows.quarantineTypes),'position_candidate',
+                                      'metadata_text_candidate','tag_candidate','cover_candidate','chapter_override_candidate')
+                       OR logical_key GLOB 'position/*' OR logical_key GLOB 'metadata/*' OR logical_key GLOB 'chapter/*')
+                UNION ALL
+                \(raw.joined(separator: " UNION ALL "))
+            )
+            """, arguments: [keys]) == true
+    }
+
+    static func requirePendingReadable(_ db: Database, key: String) throws {
+        let tables = pendingTables.map { "SELECT 1 FROM usr.\($0) WHERE book_key=?1 AND schema_version<>1" }
+        let checks = tables + ["SELECT 1 FROM usr.quarantined_record WHERE book_key=?1"]
+        if try Bool.fetchOne(db, sql: "SELECT EXISTS(" + checks.joined(separator: " UNION ALL ") + ")", arguments: [key]) == true {
+            throw UserSyncCompatibilityError()
+        }
+        for partition in 0...1 {
+            try ReadingPositionRows.requirePromotionReadable(db, book: key, partition: partition)
+            try ReadingFactRows.requireReadableClears(db, partition: partition, book: key)
+        }
+    }
+
+    static func inventory(_ db: Database) throws -> ReadingDataInventory {
+        var items: [String: ReadingDataItem] = [:], diagnostics: [String: ReadingDataDiagnostic] = [:]
+        func report(_ key: String?, _ kind: String, _ reason: ReadingDataDiagnostic.Reason) {
+            let diagnostic = ReadingDataDiagnostic(bookKey: key, recordType: kind, reason: reason)
+            diagnostics[diagnostic.id] = diagnostic
+            if reason != .pending, let key, (try? BackupRows.formal(key)) != nil {
+                var item = items[key] ?? .init(id: key)
+                item.unsupported = true; items[key] = item
             }
         }
+        for row in try Row.fetchAll(db, sql: """
+            SELECT book_key,source_type,schema_version,reason FROM usr.quarantined_record
+            """) {
+            let key: String? = row["book_key"]
+            if let key, key.hasPrefix("pending:") { report(key, row["source_type"], .pending) }
+            report(key, row["source_type"], reason(row))
+        }
+        let typed = pendingTables.map { table in
+            "SELECT book_key,partition,schema_version,'\(table)' AS family FROM usr.\(table)"
+        }
+        for row in try Row.fetchAll(db, sql: """
+            SELECT DISTINCT book_key,partition,schema_version,family FROM (\(typed.joined(separator: " UNION ALL ")))
+            WHERE partition=1 OR schema_version<>1 OR book_key LIKE 'pending:%'
+            """) {
+            let key: String = row["book_key"], kind: String = row["family"], version: Int = row["schema_version"]
+            if key.hasPrefix("pending:") { report(key, kind, .pending) }
+            else if (row["partition"] as Int) == 1 { report(key, kind, .unreadable) }
+            if version != 1 { report(key, kind, version > 1 ? .newerFormat : .unreadable) }
+        }
+        let summary = try Row.fetchAll(db, sql: """
+            WITH marks AS (
+                SELECT h.book_key,
+                       count(DISTINCT CASE WHEN a.bookmark=1 THEN h.mark_id END) AS bookmarks,
+                       count(DISTINCT CASE WHEN a.bookmark=0 THEN h.mark_id END) AS annotations
+                FROM usr.annotation_current_head h JOIN usr.annotation_candidate a
+                  ON a.partition=h.partition AND a.record_id=h.candidate_id
+                WHERE h.partition=0 AND a.is_deleted=0 GROUP BY h.book_key
+            ), history AS (
+                SELECT book_key,1 AS has_statistics FROM usr.reading_contribution_head GROUP BY book_key
+            ), books AS (
+                SELECT book_key FROM usr.reading_current
+                UNION SELECT book_key FROM usr.metadata_current
+                UNION SELECT book_key FROM usr.chapter_override_current
+                UNION SELECT book_key FROM marks
+                UNION SELECT book_key FROM history
+            )
+            SELECT k.book_key,p.*,a.value_text AS author,
+              coalesce(c.is_empty=0,0) AS cover,coalesce(marks.bookmarks,0) AS bookmarks,
+              coalesce(marks.annotations,0) AS annotations,coalesce(history.has_statistics,0) AS has_statistics,
+              coalesce((
+                SELECT CASE n.kind WHEN 'fact' THEN f.title_at_reading ELSE s.title_at_reading END
+                FROM usr.reading_contribution_head n
+                LEFT JOIN usr.reading_fact f ON n.kind='fact' AND f.partition=n.source_partition AND f.fact_id=n.id
+                LEFT JOIN usr.reading_segment s ON n.kind='segment' AND s.partition=n.source_partition AND s.segment_id=n.id
+                WHERE n.book_key=k.book_key ORDER BY n.started_ms,n.kind,n.id LIMIT 1
+              ),'') AS history_title
+            FROM books k
+            LEFT JOIN usr.reading_current r ON r.book_key=k.book_key
+            LEFT JOIN usr.position_candidate p ON p.partition=r.position_partition AND p.record_id=r.position_id
+            LEFT JOIN usr.metadata_current md ON md.book_key=k.book_key
+            LEFT JOIN usr.metadata_text_candidate a ON a.partition=md.source_partition AND a.record_id=md.author_id
+            LEFT JOIN usr.cover_candidate c ON c.partition=md.source_partition AND c.record_id=md.cover_id
+            LEFT JOIN marks ON marks.book_key=k.book_key LEFT JOIN history ON history.book_key=k.book_key
+            WHERE length(k.book_key)=64 AND k.book_key NOT GLOB '*[^0-9a-f]*'
+              AND (r.book_key IS NOT NULL OR marks.book_key IS NOT NULL OR history.book_key IS NOT NULL
+                OR md.author_id IS NOT NULL OR md.synopsis_id IS NOT NULL OR md.status_id IS NOT NULL OR c.is_empty=0
+                OR EXISTS(SELECT 1 FROM usr.tag_current t WHERE t.book_key=k.book_key)
+                OR EXISTS(SELECT 1 FROM usr.chapter_override_current o WHERE o.book_key=k.book_key))
+            """)
+        let tags = try Row.fetchAll(db, sql: """
+            SELECT t.book_key,c.tag_text FROM usr.tag_current t JOIN usr.tag_candidate c
+              ON c.partition=t.source_partition AND c.record_id=t.candidate_id
+            WHERE c.is_deleted=0 ORDER BY t.book_key,t.member_key
+            """).reduce(into: [String: [String]]()) { rows, row in
+                if let tag = row["tag_text"] as String? { rows[row["book_key"] as String, default: []].append(tag) }
+            }
+        for row in summary {
+            let key: String = row[0]
+            var item = items[key] ?? .init(id: key)
+            item.title = row["history_title"]
+            item.author = (row["author"] as String?) ?? ""
+            item.tags = tags[key, default: []]
+            item.cover = row["cover"]; item.bookmarks = row["bookmarks"]; item.annotations = row["annotations"]
+            item.hasStatistics = row["has_statistics"]
+            if (row["record_id"] as String?) != nil {
+                let position = try ReadingPositionRows.decodedPosition(row)
+                item.positionUtf8 = position.value.offset; item.sourceHint = position.value.source_hint
+                item.lastRead = position.updated
+            }
+            items[key] = item
+        }
+        let issues = diagnostics.values.sorted { $0.id < $1.id }
+        return .init(items: items.values.sorted { $0.id < $1.id },
+                     pending: Set(issues.filter { $0.reason == .pending }.compactMap(\.bookKey)).count,
+                     unsupported: issues.filter { $0.reason != .pending }.count, diagnostics: issues)
+    }
+
+    static func export(_ db: Database, directory: URL, writerVersion: String) throws -> BackupManifest {
+        let pending = pendingTables.map {
+            "SELECT 1 FROM usr.\($0) WHERE partition=1 OR book_key LIKE 'pending:%'"
+        } + [
+            "SELECT 1 FROM usr.source_decoding_candidate WHERE partition=1",
+            "SELECT 1 FROM usr.palette_candidate WHERE partition=1",
+            "SELECT 1 FROM usr.quarantined_record WHERE book_key LIKE 'pending:%'"
+        ]
+        guard try Bool.fetchOne(db, sql: "SELECT NOT EXISTS(" + pending.joined(separator: " UNION ALL ") + ")") == true
+        else { throw ReadingDataError.pendingIdentity }
+        // The published archive excludes shelf descriptions and local
+        // preferences. Non-history evidence has no opaque restore member;
+        // fail closed instead of issuing a misleading complete backup.
+        if let row = try Row.fetchOne(db, sql: """
+            SELECT schema_version,reason FROM usr.quarantined_record
+            WHERE source_type NOT IN (\(ReadingHistoryBackup.isolationTypes),'shelf_reference_candidate')
+              AND (logical_key IS NULL OR logical_key NOT GLOB 'shelf-reference/*')
+            ORDER BY completeness='incomplete' DESC,coalesce(schema_version,0) DESC LIMIT 1
+            """) {
+            if (row["reason"] as String) == "unavailable-attachment" { throw ReadingDataError.missingAsset }
+            throw reason(row) == .newerFormat ? ReadingDataError.updateRequired : ReadingDataError.invalid
+        }
+        try FileManager.default.createDirectory(at: directory.appendingPathComponent("records"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: directory.appendingPathComponent("assets"), withIntermediateDirectories: true)
+        var manifest = BackupManifest(formatVersion: 2, createdAt: Int64(Date().timeIntervalSince1970 * 1000), writerVersion: writerVersion)
+        manifest.requiredCapabilities.append("reading-segments-v1")
+        var assets: [String: String] = [:], bytesWritten: UInt64 = 0
+        func budget(_ bytes: UInt64) throws {
+            guard bytes <= BackupRows.maxCommitBytes - bytesWritten else { throw ReadingDataError.tooLarge }
+            bytesWritten += bytes
+        }
+        func exportCover(_ cover: UserValueRows.Cover) throws {
+            if let sha = assets[cover.id] {
+                guard sha == cover.sha256 else { throw ReadingDataError.invalid }
+                return
+            }
+            guard let data = try UserValueRows.coverBytes(db, id: cover.id, sha: cover.sha256)
+            else { throw ReadingDataError.missingAsset }
+            guard DataIdentity.sha(data) == cover.sha256 else { throw ReadingDataError.invalid }
+            let path = "assets/" + cover.sha256 + ".bin", file = directory.appendingPathComponent(path)
+            if !FileManager.default.fileExists(atPath: file.path) {
+                try budget(UInt64(data.count))
+                try data.write(to: file, options: .atomic)
+                manifest.members.append(.init(try backupMember(path: path, filePath: file.path)))
+            }
+            assets[cover.id] = cover.sha256
+            manifest.assets.append(.init(id: cover.id, path: path))
+        }
+        for kind in ["values", "positions", "annotations"] {
+            let path = "records/" + kind + ".jsonl", file = directory.appendingPathComponent(path)
+            try Data().write(to: file, options: .atomic)
+            let output = try FileHandle(forWritingTo: file); defer { try? output.close() }
+            func emit(_ record: BackupRecord) throws {
+                try Task.checkCancellation()
+                try BackupRows.validate(record, kind: kind)
+                var data = try JSONEncoder().encode(record)
+                guard data.count <= BackupRows.maxRecord else { throw ReadingDataError.tooLarge }
+                data.append(10); try budget(UInt64(data.count))
+                try output.write(contentsOf: data)
+            }
+            if kind == "values" {
+                for table in portableValues {
+                    let rows = try Row.fetchCursor(db, sql: "SELECT * FROM usr.\(table) WHERE partition=0 ORDER BY record_id")
+                    while let row = try rows.next() {
+                        let (record, cover) = try UserValueRows.backupValue(db, row: row)
+                        try emit(record)
+                        if let cover { try exportCover(cover) }
+                    }
+                }
+            }
+            if kind != "annotations" {
+                let deviceCondition = kind == "values" ? "IS NOT NULL" : "IS NULL"
+                let rows = try Row.fetchCursor(db, sql: """
+                    SELECT * FROM usr.position_candidate WHERE partition=0 AND device_id \(deviceCondition) ORDER BY record_id
+                    """)
+                while let row = try rows.next() {
+                    guard (row["schema_version"] as Int) == 1 else { throw ReadingDataError.updateRequired }
+                    let position = try ReadingPositionRows.decodedPosition(row), key = position.value.content_key
+                    let head = try StoredValue(updated: position.updated, token: position.token, value: UserSyncJSON.encode(position.value))
+                    try emit(.init(key: kind == "positions" ? key : "position/" + key, device: position.device ?? "",
+                                   payload: UserSyncJSON.encode(head, envelope: true)))
+                }
+            } else {
+                let books = try String.fetchAll(db, sql: "SELECT DISTINCT book_key FROM usr.annotation_candidate WHERE partition=0 ORDER BY book_key")
+                for key in books {
+                    let view = try AnnotationRows.snapshot(db, key: key, reducing: false)
+                    for (mark, candidates) in try view.checked(nil).sorted(by: { $0.key < $1.key }) {
+                        for candidate in candidates.sorted(by: { $0.id < $1.id }) {
+                            try emit(.init(key: key, id: candidate.id, mark: mark,
+                                           payload: UserSyncJSON.encode(candidate, envelope: true)))
+                        }
+                    }
+                }
+            }
+            manifest.members.append(.init(try backupMember(path: path, filePath: file.path)))
+        }
+        let history = try ReadingHistoryBackup.export(db, directory: directory)
+        for member in history { try budget(member.size) }
+        manifest.members += history
+        manifest.titles = Dictionary(uniqueKeysWithValues: try inventory(db).items.filter { !$0.title.isEmpty }.map { ($0.id, $0.title) })
+        return manifest
     }
 }

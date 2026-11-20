@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 import Combine
 
-enum StatisticsTarget: Hashable {
+enum StatisticsTarget: Hashable, Sendable {
     case all, book(BookTarget)
 }
 
@@ -138,8 +138,8 @@ enum StatisticsBuckets {
     }
 }
 
-struct StatisticsSpan: Identifiable {
-    let id: String
+struct StatisticsSpan: Identifiable, Equatable, Sendable {
+    let id: StatisticsTimelineRow.ID
     let sessionID: String
     let key: ReadingKey
     let title: String
@@ -149,42 +149,52 @@ struct StatisticsSpan: Identifiable {
     let start: Int64
     var end: Int64
     var milliseconds: UInt64
-    var startClock: Double { Double(start + Int64(offset) * 1000 - day * 86_400_000) / 3_600_000 }
-    var endClock: Double { Double(end + Int64(offset) * 1000 - day * 86_400_000) / 3_600_000 }
+    var startClock: Double { (Double(start) + Double(offset) * 1000 - Double(day) * 86_400_000) / 3_600_000 }
+    var endClock: Double { (Double(end) + Double(offset) * 1000 - Double(day) * 86_400_000) / 3_600_000 }
     var time: String { "\(StatisticsDates.clock(start, offset: offset))–\(StatisticsDates.clock(end, offset: offset))" }
 
-    static func merge(_ rows: [ReadingActivity]) -> [Self] {
+    struct Timeline: Equatable, Sendable {
+        let spans: [StatisticsSpan]
+        let durationMs: UInt64
+    }
+
+    static func merge(_ rows: [StatisticsTimelineRow]) throws -> Timeline {
         var result: [Self] = []
+        var total: UInt64 = 0
         for row in rows {
-            if let last = result.last, last.sessionID == row.sessionId, last.key == row.contentKey,
-               last.day == row.localDay, last.offset == row.utcOffsetSeconds, last.preview == row.preview,
-               abs(last.end - row.startedMs) <= 2 {
-                result[result.count - 1].end = row.endedMs
-                result[result.count - 1].milliseconds += UInt64(row.endedMs - row.startedMs)
-            } else {
-                result.append(Self(id: row.id, sessionID: row.sessionId, key: row.contentKey, title: row.title,
-                    day: row.localDay, offset: row.utcOffsetSeconds, preview: row.preview,
-                    start: row.startedMs, end: row.endedMs, milliseconds: UInt64(row.endedMs - row.startedMs)))
+            try Task.checkCancellation()
+            total = try ReadingDayRows.sumMilliseconds([total,row.durationMs])
+            if let prior = result.last, prior.sessionID == row.sessionId, prior.key == row.contentKey,
+               prior.day == row.localDay, prior.offset == row.utcOffsetSeconds, prior.preview == row.preview {
+                let (gap, overflow) = row.startedMs.subtractingReportingOverflow(prior.end)
+                if !overflow, (-2...2).contains(gap) {
+                    result[result.count - 1].end = row.endedMs
+                    result[result.count - 1].milliseconds = try ReadingDayRows.sumMilliseconds([prior.milliseconds,row.durationMs])
+                    continue
+                }
             }
+            result.append(Self(id: row.id, sessionID: row.sessionId, key: row.contentKey, title: row.title,
+                day: row.localDay, offset: row.utcOffsetSeconds, preview: row.preview,
+                start: row.startedMs, end: row.endedMs, milliseconds: row.durationMs))
         }
-        return result
+        return .init(spans: result, durationMs: total)
     }
 }
 
 @MainActor @Observable
 final class StatisticsModel {
-    struct Scope: Hashable {
-        enum Purpose: Hashable { case overview, activities }
+    struct Scope: Hashable, Sendable {
+        enum Purpose: Hashable, Sendable { case overview, activities }
         let bounds: ClosedRange<Int64>
         let target: StatisticsTarget
         let cumulativeLast: Int64?
         var purpose: Purpose = .overview
     }
-    struct DetailContent {
+    struct DetailContent: Equatable {
         let cumulative: StatisticsBook?
         let spans: [StatisticsSpan]
     }
-    enum DetailLoad {
+    enum DetailLoad: Equatable {
         case notRequested, loading(previous: DetailContent?), ready(DetailContent), failed(String, previous: DetailContent?)
         var content: DetailContent? {
             switch self {
@@ -197,30 +207,30 @@ final class StatisticsModel {
             switch self { case .notRequested, .ready: true; case .loading, .failed: false }
         }
     }
-    enum Payload {
-        case overview(StatisticsOverview, DetailLoad), activities([StatisticsSpan]), identityPending(fileID: String)
+    enum Payload: Equatable {
+        case overview(StatisticsOverview, DetailLoad), activities(StatisticsSpan.Timeline), identityPending(fileID: String)
     }
-    struct Content {
+    struct Content: Equatable {
         var payload: Payload
         var readingKey: ReadingKey? = nil
         var compatibilityNotice: String? = nil
-        var inputVersion: String? = nil
 
         var overview: StatisticsOverview? { if case .overview(let value, _) = payload { return value }; return nil }
         var details: DetailLoad? { if case .overview(_, let value) = payload { return value }; return nil }
         var cumulative: StatisticsBook? { details?.content?.cumulative }
         var spans: [StatisticsSpan] {
-            if case .activities(let spans) = payload { return spans }
+            if case .activities(let timeline) = payload { return timeline.spans }
             return details?.content?.spans ?? []
         }
         var detailsLoaded: Bool { details?.isComplete != false }
+        var timelineDurationMs: UInt64 { if case .activities(let timeline) = payload { return timeline.durationMs }; return 0 }
         var waitingForIdentity: Bool { if case .identityPending = payload { return true }; return false }
         mutating func setDetails(_ details: DetailLoad) {
             if let overview { payload = .overview(overview, details) }
         }
     }
-    enum Freshness { case current, stale }
-    enum State {
+    enum Freshness: Equatable { case current, stale }
+    enum State: Equatable {
         case idle, loading(previous: Content?), ready(Content, Freshness), failed(String, previous: Content?)
         var content: Content? {
             switch self {
@@ -243,28 +253,25 @@ final class StatisticsModel {
     private(set) var dataRevision: UInt64 = 0
     @ObservationIgnored private var pending: [Scope: Task<Void, Never>] = [:]
     @ObservationIgnored private var requests: [Scope: UUID] = [:]
-    @ObservationIgnored private var cumulative: [Scope: (version: String, value: StatisticsBook?)] = [:]
+    @ObservationIgnored private var observationID: UUID?
     @ObservationIgnored private var observations: Set<AnyCancellable> = []
     @ObservationIgnored private let fetch: Fetch
     @ObservationIgnored private let service: AppDataService
-    @ObservationIgnored private let readsDetails: Bool
 
     init(service: AppDataService = .shared, notifications: NotificationCenter = .default, fetch: Fetch? = nil) {
-        self.service = service; readsDetails = fetch == nil
+        self.service = service
         self.fetch = fetch ?? { try await Self.read($0, service: service) }
-        for name in [Notification.Name.statisticsChanged, .statisticsPreferencesChanged, .bookMetadataChanged, .libraryIdentityChanged] {
-            MainActorNotifications.observe(name, center: notifications, transform: { @Sendable note in
-                (keys: (note.userInfo?["keys"] as? [String]).map(Set.init),
-                 files: (note.userInfo?["fileIDs"] as? [String]).map(Set.init),
-                 reset: name == .statisticsPreferencesChanged || note.userInfo?["reset"] as? Bool == true)
-            }) { [weak self] change in
-                self?.invalidate(keys: change.keys, files: change.files, reset: change.reset, metadataOnly: name == .bookMetadataChanged)
-            }.store(in: &observations)
-        }
+        MainActorNotifications.observe(.readingContinuationInvalidated, object: service, center: notifications) { [weak self] in
+            self?.restartObservation(reset: true)
+        }.store(in: &observations)
+        MainActorNotifications.observe(.statisticsPreferencesChanged, center: notifications) { [weak self] in
+            self?.restartObservation(reset: true)
+        }.store(in: &observations)
     }
-    func scope(_ window: StatisticsWindow, target: StatisticsRoute?) -> Scope {
-        Scope(bounds: window.bounds, target: target.map { .book($0.target) } ?? .all,
-              cumulativeLast: target == nil ? nil : StatisticsDates.day(Date()))
+    func scope(_ window: StatisticsWindow, target: StatisticsRoute?,
+               today: Int64 = StatisticsDates.day(StatisticsWindow.currentDate), calendar: Calendar = .current) -> Scope {
+        Scope(bounds: window.bounds(today: today, calendar: calendar), target: target.map { .book($0.target) } ?? .all,
+              cumulativeLast: target == nil ? nil : today)
     }
     func state(_ window: StatisticsWindow, target: StatisticsRoute?) -> State { state(scope(window, target: target)) }
     func state(_ scope: Scope) -> State { states[scope] ?? .idle }
@@ -272,79 +279,125 @@ final class StatisticsModel {
         request(scope(window, target: target))
     }
     @discardableResult func request(_ scope: Scope) -> Task<Void, Never>? {
-        if case .ready(_, .current) = states[scope] { return nil }
+        begin(scope)
+    }
+
+    private func begin(_ scope: Scope, observed: Bool = false, stillCurrent: @escaping @MainActor () -> Bool = { true },
+                       didLoad: @escaping @MainActor () -> Void = {}) -> Task<Void, Never>? {
+        if !observed, case .ready(_, .current) = states[scope] { return nil }
         if let task = pending[scope] { return task }
         let previous = states[scope]?.content
-        states[scope] = .loading(previous: previous)
+        // Live refresh leaves the displayed snapshot unchanged while the
+        // next read runs. A duplicate result needn't publish any state.
+        if !observed || previous == nil { states[scope] = .loading(previous: previous) }
         let id = UUID(), fetch = fetch
         requests[scope] = id
         let task = Task { [weak self] in
-            defer { if let self, self.requests[scope] == id { self.pending[scope] = nil } }
-            do {
-                var content = try await fetch(scope)
-                guard let self, !Task.isCancelled, self.requests[scope] == id else { return }
-                if let previous, previous.readingKey == content.readingKey,
-                   previous.inputVersion == content.inputVersion, case .ready(let details) = previous.details {
-                    content.setDetails(.ready(details))
+            guard let self else { return }
+            defer {
+                if self.requests[scope] == id {
+                    self.requests[scope] = nil
+                    self.pending[scope] = nil
                 }
-                let needsDetails = self.readsDetails && scope.cumulativeLast != nil && !content.detailsLoaded
-                guard needsDetails else { self.states[scope] = .ready(content, .current); return }
-                if previous == nil { self.states[scope] = .loading(previous: content) }
-                if let complete = try await self.details(scope, content: content) {
-                    guard !Task.isCancelled, self.requests[scope] == id else { return }
-                    self.states[scope] = .ready(complete, .current)
-                } else if !Task.isCancelled, self.requests[scope] == id {
-                    self.invalidate(scopes: [scope], reset: false)
+            }
+            @MainActor func current() -> Bool { !Task.isCancelled && self.requests[scope] == id && stillCurrent() }
+            do {
+                while current() {
+                    let content = try await fetch(scope)
+                    guard current() else { return }
+                    let needsDetails = scope.cumulativeLast != nil && !content.detailsLoaded
+                    guard needsDetails else {
+                        self.publish(.ready(content, .current), for: scope)
+                        return
+                    }
+                    if previous == nil {
+                        self.publish(.loading(previous: content), for: scope)
+                        didLoad()
+                    }
+                    // Detail and cumulative are read together. A changed
+                    // period/identity makes us start with a current period.
+                    let complete = try await self.details(scope, content: content)
+                    guard current() else { return }
+                    if let complete { self.publish(.ready(complete, .current), for: scope); return }
                 }
             } catch is CancellationError {
-                guard let self, self.requests[scope] == id else { return }
-                self.markStale(scope)
+                if self.requests[scope] == id, stillCurrent() { self.markStale(scope) }
             } catch {
-                guard let self, !Task.isCancelled, self.requests[scope] == id else { return }
-                let message = ReaderMessages.error(error)
-                var content = error is UserSyncCompatibilityError ? nil : self.states[scope]?.content
-                if case .loading(let previous) = content?.details { content?.setDetails(.failed(message, previous: previous)) }
-                self.states[scope] = .failed(message, previous: content)
+                guard current() else { return }
+                self.publishFailure(error, scope: scope)
             }
         }
         pending[scope] = task
         return task
     }
+
+    private func publish(_ state: State, for scope: Scope) {
+        if states[scope] != state { states[scope] = state }
+    }
+
+    private func publishFailure(_ error: Error, scope: Scope) {
+        let message = ReaderMessages.error(error)
+        let incompatibleHistory = error is UserSyncCompatibilityError
+        var content = incompatibleHistory ? nil : states[scope]?.content
+        if incompatibleHistory {
+            // In particular, a previous date window must not remain visible
+            // after the new read discovers an intersecting unknown clear.
+            states = [:]
+        }
+        if case .loading(let previous) = content?.details { content?.setDetails(.failed(message, previous: previous)) }
+        publish(.failed(message, previous: content), for: scope)
+    }
+
     func load(_ window: StatisticsWindow, target: StatisticsRoute?) async { await request(window, target: target)?.value }
     func load(_ scope: Scope) async { await request(scope)?.value }
-    func reload(_ window: StatisticsWindow, target: StatisticsRoute?) async {
-        invalidate(scopes: [scope(window, target: target)], reset: false)
-        await load(window, target: target)
-    }
-    func invalidate(keys: Set<String>? = nil, files: Set<String>? = nil, reset: Bool = false, metadataOnly: Bool = false) {
-        let scopes = Set(states.keys).union(pending.keys).filter { scope in
-            guard let keys else { return true }
-            if metadataOnly, let overview = states[scope]?.overview {
-                return overview.books.contains { keys.contains($0.contentKey.storageKey) }
-            }
-            switch scope.target {
-            case .all, .book(.cached): return true
-            case .book(.file(let id)):
-                return (files?.contains(id) ?? true) || (states[scope]?.key.map(keys.contains) ?? false)
-            case .book(.record(let key)):
-                return keys.contains(key.storageKey) || (states[scope]?.key.map(keys.contains) ?? false)
-            }
-        }
-        invalidate(scopes: Set(scopes), reset: reset)
-        if reset { cumulative.removeAll() }
-    }
-    private func markStale(_ scope: Scope) {
-        states[scope] = states[scope]?.content.map { .ready($0, .stale) } ?? .idle
-    }
-    private func invalidate(scopes: Set<Scope>, reset: Bool) {
-        guard !scopes.isEmpty else { return }
+
+    func restartObservation(reset: Bool = false) {
+        cancel()
+        if reset { states = [:] }
+        else { for scope in Array(states.keys) { markStale(scope) } }
         dataRevision &+= 1
-        for scope in scopes {
-            requests[scope] = nil; pending.removeValue(forKey: scope)?.cancel()
-            if reset { states[scope] = .idle } else { markStale(scope) }
+    }
+
+    func observe(_ scope: Scope, retaining prior: Scope? = nil, didLoad: @escaping @MainActor () -> Void = {}) async {
+        guard !Task.isCancelled else { return }
+        cancel()
+        let retained = states.filter { $0.key == scope || $0.key == prior }
+        if states.count != retained.count { states = retained }
+        let ticket = UUID()
+        observationID = ticket
+        defer {
+            if observationID == ticket { observationID = nil }
         }
+        do {
+            let changes = try await service.statisticsChanges(overview: scope.purpose == .overview)
+            for try await stamp in changes.events {
+                guard !Task.isCancelled, observationID == ticket else { return }
+                guard changes.isCurrent(stamp) else { continue }
+                let read = begin(scope, observed: true, stillCurrent: { [weak self] in
+                    self?.observationID == ticket && changes.isCurrent(stamp)
+                }, didLoad: didLoad)
+                await withTaskCancellationHandler { await read?.value } onCancel: { read?.cancel() }
+                guard !Task.isCancelled, observationID == ticket, changes.isCurrent(stamp) else { continue }
+                if states[scope]?.content != nil {
+                    // Keep only the new result; on a parameter change the
+                    // old scope survives only until there is a replacement.
+                    if states.count > 1 { states = states.filter { $0.key == scope } }
+                    didLoad()
+                }
+            }
+        } catch is CancellationError { }
+        catch {
+            guard !Task.isCancelled, observationID == ticket else { return }
+            publishFailure(error, scope: scope)
+        }
+    }
+
+    private func markStale(_ scope: Scope) {
+        let stale: State = states[scope]?.content.map { .ready($0, .stale) } ?? .idle
+        publish(stale, for: scope)
     }
     func cancel() {
+        observationID = nil
         for (scope, task) in pending {
             requests[scope] = nil; task.cancel(); markStale(scope)
         }
@@ -352,8 +405,8 @@ final class StatisticsModel {
     }
     func report(_ error: Error, window: StatisticsWindow, target: StatisticsRoute?) {
         let scope = scope(window, target: target)
-        if error is UserSyncCompatibilityError { invalidate(keys: nil, reset: true) }
-        states[scope] = .failed(ReaderMessages.error(error), previous: states[scope]?.content)
+        if let task = pending.removeValue(forKey: scope) { requests[scope] = nil; task.cancel() }
+        publishFailure(error, scope: scope)
     }
     func clearError(_ window: StatisticsWindow, target: StatisticsRoute?) {
         let scope = scope(window, target: target)
@@ -362,41 +415,26 @@ final class StatisticsModel {
     private static func read(_ scope: Scope, service: AppDataService) async throws -> Content {
         let first = scope.bounds.lowerBound, last = scope.bounds.upperBound
         if scope.purpose == .activities {
-            switch try await service.activitiesRead(first: first, last: last, target: scope.target) {
+            switch try await service.statisticsTimelineRead(first: first, last: last, target: scope.target) {
             case .identityPending(let file): return .init(payload: .identityPending(fileID: file))
-            case .ready(let value): return .init(payload: .activities(StatisticsSpan.merge(value.value)), readingKey: value.key,
-                                                 compatibilityNotice: value.compatibilityNotice, inputVersion: value.version)
+            case .ready(let value): return .init(payload: .activities(value.value), readingKey: value.key,
+                                                 compatibilityNotice: value.compatibilityNotice)
             }
         }
         switch try await service.statisticsRead(first: first, last: last, target: scope.target) {
         case .identityPending(let file): return .init(payload: .identityPending(fileID: file))
         case .ready(let value):
             return .init(payload: .overview(value.value, scope.cumulativeLast == nil ? .notRequested : .loading(previous: nil)),
-                         readingKey: value.key, compatibilityNotice: value.compatibilityNotice, inputVersion: value.version)
+                         readingKey: value.key, compatibilityNotice: value.compatibilityNotice)
         }
     }
     private func details(_ scope: Scope, content: Content) async throws -> Content? {
-        guard let last = scope.cumulativeLast, let overview = content.overview, let version = content.inputVersion else { return content }
+        guard let last = scope.cumulativeLast, let overview = content.overview else { return content }
+        let expected = AppDataService.StatisticsRead(value: overview, key: content.readingKey, compatibilityNotice: content.compatibilityNotice)
+        guard let read = try await service.statisticsDetails(first: scope.bounds.lowerBound, last: scope.bounds.upperBound,
+            cumulativeLast: last, target: scope.target, matching: expected) else { return nil }
         var result = content
-        let totalScope = Scope(bounds: 0...last, target: scope.target, cumulativeLast: nil)
-        let total: StatisticsBook?
-        if scope.bounds == totalScope.bounds { total = overview.books.first }
-        else if let cached = cumulative[totalScope], cached.version == version { total = cached.value }
-        else {
-            guard case .ready(let read) = try await service.statisticsRead(first: 0, last: last, target: scope.target),
-                  read.version == version, read.key == content.readingKey else { return nil }
-            total = read.value.books.first
-            if cumulative.count >= 16 { cumulative.removeAll() }
-            cumulative[totalScope] = (version, total)
-        }
-        try Task.checkCancellation()
-        var spans: [StatisticsSpan] = []
-        if let first = overview.days.suffix(7).first?.day, let last = overview.days.last?.day {
-            guard case .ready(let read) = try await service.activitiesRead(first: first, last: last, target: scope.target),
-                  read.version == version, read.key == content.readingKey else { return nil }
-            spans = StatisticsSpan.merge(read.value)
-        }
-        result.setDetails(.ready(.init(cumulative: total, spans: spans)))
+        result.setDetails(.ready(.init(cumulative: read.cumulative, spans: read.timeline.spans)))
         return result
     }
 }

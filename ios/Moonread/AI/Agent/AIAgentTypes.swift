@@ -3,6 +3,9 @@ import AISDKProviderUtils
 import Foundation
 import SwiftAISDK
 
+// Apollo also exports a JSONValue alias. AI messages use the provider wire value.
+typealias JSONValue = AISDKProvider.JSONValue
+
 /// UI-independent runtime values. Provider credentials never enter this envelope.
 enum AIAgentStatus: String, Codable, Sendable {
   case idle, running, waitingDataSharing, waitingConfirmation, compacting, completed, stopped, interrupted, failed,

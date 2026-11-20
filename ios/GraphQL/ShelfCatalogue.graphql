@@ -1,0 +1,14 @@
+query ShelfBookCards($shelfID: ID!) {
+  shelfBookCards(shelfID: $shelfID) {
+    file { id shelfID shelfName relativePath parentPath name size modified needsDownload }
+    lastRead
+    book {
+      readingKey bodyID position byteCount preferred chapterTitle
+      metadata { author cover { id sha256 fileExtension width height } }
+    }
+  }
+}
+
+query ShelfTagGroups($shelfID: ID!) {
+  shelfTagGroups(shelfID: $shelfID) { kind tag fileIDs }
+}

@@ -7,15 +7,16 @@ struct StatisticsView: View {
     private let destination: Destination
     private var target: StatisticsRoute? { if case .book(let route) = destination { return route }; return nil }
     @Environment(\.theme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model = StatisticsModel()
     @State private var window = StatisticsWindow()
     @State private var lastCalendarDate = StatisticsWindow.currentDate
+    @State private var publishedRange: DisplayRange?
     @State private var sortByDuration = false
     @State private var showAllBooks = false
     @State private var openedDay: StatisticsDayRoute?
     @State private var deleteBook = false
-    @State private var visible = false
-    @State private var information = BookInformationModel()
+    @State private var information: BookInformationModel
     @State private var positionedAtReading = false
     @State private var aiRequest: AIQuickTaskRequest?
     @State private var removingTask: AISessionSummary?
@@ -23,6 +24,7 @@ struct StatisticsView: View {
 
     init(library: LibraryModel, target: StatisticsRoute? = nil) {
         self.library = library
+        _information = State(initialValue: BookInformationModel(service: library.service))
         destination = target.map(Destination.book) ?? .all
         let initial = target?.window ?? StatisticsWindow()
         _window = State(initialValue: initial)
@@ -36,7 +38,24 @@ struct StatisticsView: View {
         })
     }
 
-    private var statisticsState: StatisticsModel.State { model.state(window, target: target) }
+    private var requestedRange: DisplayRange {
+        let calendar = Calendar.current
+        let today = StatisticsDates.day(StatisticsWindow.currentDate, calendar: calendar)
+        return .init(window: window, today: today, label: window.label(today: today),
+                     scope: model.scope(window, target: target, today: today, calendar: calendar))
+    }
+    private var displayedRange: DisplayRange {
+        let request = requestedRange
+        if model.state(request.scope).content == nil,
+           let publishedRange, publishedRange.scope.target == request.scope.target,
+           model.state(publishedRange.scope).overview != nil {
+            return publishedRange
+        }
+        return request
+    }
+    private var readingState: StatisticsModel.State { model.state(requestedRange.scope) }
+    private var statisticsState: StatisticsModel.State { model.state(displayedRange.scope) }
+    private var showingPreviousRange: Bool { displayedRange.scope != requestedRange.scope }
     private var orderedBooks: [StatisticsBook] {
         let books = statisticsState.overview?.books ?? []
         return sortByDuration ? books.sorted {
@@ -48,10 +67,22 @@ struct StatisticsView: View {
     private var total: UInt64 { statisticsState.overview?.totalDurationMs ?? 0 }
 
     var body: some View {
+        let request = requestedRange
         ScrollViewReader { proxy in
         contentList
-        .task(id: LoadRequest(scope: model.scope(window, target: target), target: target, dataRevision: model.dataRevision)) {
-            await model.load(window, target: target)
+        .task(id: LoadRequest(range: request, dataRevision: model.dataRevision)) {
+            await model.observe(request.scope, retaining: publishedRange?.scope) {
+                if publishedRange != request { publishedRange = request }
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { model.restartObservation() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in
+            model.restartObservation()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange).receive(on: DispatchQueue.main)) { _ in
+            model.restartObservation()
         }
         .onChange(of: readingSectionReady, initial: true) { _, ready in
             if ready, !positionedAtReading {
@@ -60,10 +91,10 @@ struct StatisticsView: View {
                 withTransaction(transaction) { proxy.scrollTo("myReading", anchor: .top) }
             }
         }
-        .task(id: target.map(BookInformationModel.Identity.init)) {
-            if let target { await information.load(target) }
+        .task(id: InformationRequest(identity: target.map(BookInformationModel.Identity.init), revision: information.requestRevision)) {
+            if let target { await information.observe(target) }
         }
-        .sheet(item: $information.draft, onDismiss: { Task { if let target { await information.load(target) } } }) { draft in
+        .sheet(item: $information.draft) { draft in
             BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "").themeScope(theme)
                 .readerToolPresentation()
         }
@@ -84,37 +115,29 @@ struct StatisticsView: View {
             Button("知道了", role: .cancel) { information.error = nil }
         } message: { Text(information.error ?? "") }
         .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { _ in
-            Task { if let target { await information.load(target) }; await library.reloadBooks() }
+            Task { await library.reloadBooks() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
-            Task {
-                if let target { await information.load(target) }
-            }
-        }
-        .onChange(of: library.revision) { _, _ in
-            if visible, let target { Task { await information.load(target) } }
-        }
-        .onAppear { visible = true }
-        .onDisappear { visible = false; information.cancelPreparation(); model.cancel() }
-        // A pull reloads everything this page shows: for one book that includes the
-        // file index (availability) and its information, then the statistics.
+        .onDisappear { information.cancelPreparation(); model.cancel() }
+        // The index refresh commits availability; the detail observation
+        // sees that commit. Retry also reconnects a failed observation.
         .refreshable {
-            if let target {
+            if target != nil {
+                information.retryInformation()
                 await library.refresh(showIndicator: false)
-                await information.load(target)
             }
-            await model.reload(window, target: target)
+            model.restartObservation()
         }
         .alert("清除本书的阅读统计？", isPresented: $deleteBook) {
             Button("清除统计", role: .destructive) {
-                guard let key = statisticsState.key else { return }
+                guard let key = readingState.key else { return }
                 Task { do { try await AppDataService.shared.deleteStatistics(book: key) } catch { model.report(error, window: window, target: target) } }
             }
             Button("取消", role: .cancel) {}
         } message: { Text("正文、续读位置、书签和笔记会保留。") }
-        .alert("暂时无法完成", isPresented: Binding(get: { statisticsState.error != nil && statisticsState.overview != nil }, set: { if !$0 { model.clearError(window, target: target) } })) {
+        .alert("暂时无法完成", isPresented: Binding(get: { readingState.error != nil && statisticsState.overview != nil && !showingPreviousRange }, set: { if !$0 { model.clearError(window, target: target) } })) {
+            Button("重试") { model.restartObservation() }
             Button("知道了", role: .cancel) { model.clearError(window, target: target) }
-        } message: { Text(statisticsState.error ?? "") }
+        } message: { Text(readingState.error ?? "") }
         .accessibilityIdentifier(target == nil ? "statisticsOverview" : "statisticsBook")
         }
     }
@@ -165,7 +188,7 @@ struct StatisticsView: View {
         }
         .navigationDestination(item: $openedDay) { StatisticsDayView(route: $0) }
         .navigationDestination(isPresented: $showAllBooks) {
-            StatisticsBookList(books: orderedBooks, maximum: orderedBooks.map(\.durationMs).max() ?? 1, window: window)
+            StatisticsBookList(books: orderedBooks, maximum: orderedBooks.map(\.durationMs).max() ?? 1, window: displayedRange.window)
         }
     }
 
@@ -181,6 +204,7 @@ struct StatisticsView: View {
                 }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("statisticsPeriod")
                 VStack(alignment: .leading, spacing: 8) {
                     summaryRangeHeader
+                    if showingPreviousRange { previousRangeCaption }
                     if let overview = statisticsState.overview {
                         Text(StatisticsDates.duration(total)).font(.title.weight(.semibold)).monospacedDigit()
                         Text("\(activeDays(overview)) 个阅读日 · \(overview.books.count) 本书")
@@ -206,7 +230,14 @@ struct StatisticsView: View {
             }
             statisticsStatus
             if let overview = statisticsState.overview {
-                if target != nil { periodNavigation }
+                if target != nil {
+                    periodNavigation
+                    if showingPreviousRange { previousRangeCaption }
+                }
+                if showingPreviousRange, let error = readingState.error {
+                    Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive))
+                    Button("重试") { model.restartObservation() }
+                }
                 if overview.books.isEmpty {
                     ContentUnavailableView {
                         Label("暂无阅读记录", systemImage: "book.closed")
@@ -226,7 +257,7 @@ struct StatisticsView: View {
                 ContentUnavailableView {
                     Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
                 } description: { Text(error) } actions: {
-                    Button("重试") { Task { await model.load(window, target: target) } }
+                    Button("重试") { model.restartObservation() }
                 }.frame(maxWidth: .infinity, minHeight: 230)
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
             } else if statisticsState.content?.waitingForIdentity == true {
@@ -241,7 +272,7 @@ struct StatisticsView: View {
 
     @ViewBuilder private var deletionSection: some View {
         if let target, !target.fromReader, let details = information.details {
-            BookReadingDataClearSection(book: information, target: target, key: details.metadata.sha, manager: library.dataManagement)
+            BookReadingDataClearSection(book: information, target: target, key: details.metadata.sha, manager: library.shell.dataManagement)
         }
     }
 
@@ -252,7 +283,7 @@ struct StatisticsView: View {
                 HStack {
                     if !overview.preferences.enabled { Label("阅读统计已暂停", systemImage: "pause.circle") }
                     Spacer()
-                    Button("统计设置") { library.openSettings(target: .statistics) }
+                    Button("统计设置") { library.shell.openSettings(target: .statistics) }
                 }
                 if statisticsState.compatibilityNotice != nil || StatisticsWriter.shared.error != nil {
                     DisclosureGroup {
@@ -294,7 +325,7 @@ struct StatisticsView: View {
                 Button("分析阅读", systemImage: "sparkles") { aiRequest = statisticsRequest }
                     .disabled(statisticsRequest == nil).accessibilityIdentifier("analyzeReading")
             }
-            Button("统计设置", systemImage: "gearshape") { library.openSettings(target: .statistics) }
+            Button("统计设置", systemImage: "gearshape") { library.shell.openSettings(target: .statistics) }
             if target != nil {
                 Button("清除本书统计", systemImage: "trash", role: .destructive) { deleteBook = true }
             }
@@ -313,13 +344,27 @@ struct StatisticsView: View {
                                   object: AITaskObject(title: title, subtitle: information.matches(target) ? information.details.flatMap { $0.metadata.author.isEmpty ? nil : $0.metadata.author } : nil, cover: information.matches(target) ? information.details?.metadata.cover : nil),
                                   attachments: [attachment])
     }
-    private struct LoadRequest: Hashable {
+    private struct DisplayRange: Hashable {
+        let window: StatisticsWindow
+        let today: Int64
+        let label: String
         let scope: StatisticsModel.Scope
-        let target: StatisticsRoute?
+    }
+    private struct LoadRequest: Hashable {
+        let range: DisplayRange
         let dataRevision: UInt64
+    }
+    private var previousRangeCaption: some View {
+        Text("当前仍显示：\(displayedRange.label)")
+            .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
     }
     private var statisticsRequest: AIQuickTaskRequest? {
         AIQuickTaskRequest.statistics(window: window, target: target, information: information)
+    }
+
+    private struct InformationRequest: Hashable {
+        let identity: BookInformationModel.Identity?
+        let revision: Int
     }
 
     private var readingSectionReady: Bool {
@@ -363,8 +408,9 @@ struct StatisticsView: View {
         }.foregroundStyle(Color(uiColor: theme.secondary)).padding(.vertical, 4)
     }
     private func periodSummary(_ overview: StatisticsOverview) -> some View {
-        let today = StatisticsDates.day(StatisticsWindow.currentDate)
-        let rhythm = StatisticsRhythm(window: window, days: overview.days, today: today, book: target == nil ? nil : statisticsState.key) { openedDay = $0 }
+        let range = displayedRange
+        let rhythm = StatisticsRhythm(period: range.window.period, bounds: range.scope.bounds, days: overview.days,
+                                      today: range.today, book: target == nil ? nil : statisticsState.key) { openedDay = $0 }
         return VStack(alignment: .leading, spacing: 18) {
             if target != nil {
                 VStack(alignment: .leading, spacing: 6) {
@@ -401,7 +447,7 @@ struct StatisticsView: View {
                 .accessibilityLabel(window.period == .month ? Text("上一月") : Text("上一年"))
                 .accessibilityIdentifier("statisticsPreviousPeriod")
             }
-            Text(window.label).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+            Text(requestedRange.label).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                 .multilineTextAlignment(window.period.browsable ? .center : .leading)
                 .frame(maxWidth: .infinity, alignment: window.period.browsable ? .center : .leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -422,7 +468,7 @@ struct StatisticsView: View {
                 Button { window.shift(-1) } label: { Image(systemName: "chevron.left").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit) }
                     .accessibilityLabel("上一时段")
             }
-            Text(window.label).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+            Text(requestedRange.label).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                 .frame(maxWidth: .infinity, alignment: .leading).accessibilityIdentifier("statisticsRange")
             if window.period.browsable {
                 Button { window.shift(1) } label: { Image(systemName: "chevron.right").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit) }
@@ -443,7 +489,7 @@ struct StatisticsView: View {
             }
             VStack(spacing: 0) {
                 ForEach(Array(orderedBooks.prefix(5)), id: \.contentKey) { book in
-                    StatisticsBookRow(book: book, maximum: orderedBooks.map(\.durationMs).max() ?? 1, window: window)
+                    StatisticsBookRow(book: book, maximum: orderedBooks.map(\.durationMs).max() ?? 1, window: displayedRange.window)
                         .buttonStyle(.plain).padding(16)
                     if book.contentKey != orderedBooks.prefix(5).last?.contentKey { ThemedDivider() }
                 }

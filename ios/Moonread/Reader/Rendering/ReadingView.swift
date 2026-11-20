@@ -39,7 +39,7 @@ struct ReadingView: UIViewControllerRepresentable {
     var allowsSelection = true
     var allowsChapterEditing = true
     var coverTitle: String? = nil
-    var coverInformation: BookDetails? = nil
+    var coverInformation: ReaderCoverInformation? = nil
     var showBookDetails: () -> Void = {}
     var showingCover = false
     var coverChanged: (Bool) -> Void = { _ in }

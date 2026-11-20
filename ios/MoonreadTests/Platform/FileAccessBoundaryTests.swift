@@ -42,7 +42,7 @@ final class FileAccessBoundaryReaderIntegrationTests: ReaderIntegrationFixture {
     let text = "第一章 月光\n正文。\n第二章 灯下\n另一段正文。\n"
     try text.write(to: actual.appendingPathComponent("测试.txt"), atomically: true, encoding: .utf8)
     try text.write(to: nested.appendingPathComponent("嵌套.txt"), atomically: true, encoding: .utf8)
-    let core = try ReaderCore(dataDirectory: temporary.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: temporary.appendingPathComponent("db"))
     let service = AppDataService(
       core: core, libraryDirectory: alias.appendingPathComponent("Documents"))
     try await service.prepareLibrary()

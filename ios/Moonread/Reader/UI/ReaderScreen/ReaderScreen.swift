@@ -12,7 +12,7 @@ struct ReaderScreen: View {
     let onExit: (String?, UInt64) -> Void
     @State private var reviewExitIsNormal = false
     @State private var session = ReaderSession()
-    @State var coverInformation: BookDetails?
+    @State var coverInformation: ReaderCoverInformation?
     @State private var coverRequest = UUID()
     @Environment(LibraryModel.self) private var library
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -281,8 +281,12 @@ struct ReaderScreen: View {
                 session?.editor = nil; session?.chapterDraft = nil
                 if let current = toolSession?.editor { toolSession?.finishEditing(current.id) }
             }
-            if coverInformation == nil, let metadata = openingRequest?.metadataHint {
-                coverInformation = BookDetails(metadata: metadata, body: nil)
+            if coverInformation == nil {
+                if let metadata = openingRequest?.metadataHint {
+                    coverInformation = .details(BookDetails(metadata: metadata, body: nil))
+                } else if let hint = openingRequest?.coverHint {
+                    coverInformation = .hint(hint)
+                }
             }
             await session.open(route, request: openingRequest)
         }
@@ -302,15 +306,6 @@ struct ReaderScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
             session.notesChanged() // CloudSync also posts bookMetadataChanged once for this import.
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .statisticsChanged).receive(on: DispatchQueue.main)) { notification in
-            // Keep clear/import invalidation alive even while the directory is
-            // closed. Ordinary appends retain validated values until replacement.
-            let reset = notification.userInfo?["reset"] as? Bool == true
-            Task {
-                await tools.refreshChapterStatistics(reset: reset,
-                    presented: !session.isLeaving && !navigationPresentation.isSuspended && nativeHost.presentsChapterList)
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .cloudReadingPositionsReceived).receive(on: DispatchQueue.main)) { _ in
             Task { await session.refreshSyncedContinuation() }
@@ -340,7 +335,7 @@ struct ReaderScreen: View {
             battery.start()
             session.activity.update(visibility: statisticsVisibility, preview: session.browseOrigin != nil)
         }
-        .onChange(of: library.selectedTab) { _, _ in sendTool(.sourceChanged); synchronizeNativePresentation() }
+        .onChange(of: library.shell.selectedTab) { _, _ in sendTool(.sourceChanged); synchronizeNativePresentation() }
         .onChange(of: automatic?.panelRequest) { _, _ in
             guard scenePhase == .active, !session.isLeaving, !sheetPresented,
                   !session.viewportAccess.hasBlockingPresentation(allowingReaderAccessory: false),
@@ -582,10 +577,10 @@ struct ReaderScreen: View {
             let next = try await AppDataService.shared.details(bookID: id)
             guard !Task.isCancelled, coverRequest == request, session.readingID == id,
                   session.book?.readingKey.formalSHA256 == sha else { return }
-            coverInformation = next
+            coverInformation = .details(next)
         } catch { /* Keep the last successful value; failure is not a cover deletion. */ }
         listening?.updateCover(title: session.book?.title ?? route.title, sha: session.book?.readingKey.formalSHA256,
-            author: coverInformation?.metadata.author, cover: coverInformation?.metadata.cover, service: session.service)
+            author: coverInformation?.author, cover: coverInformation?.cover, service: session.service)
     }
 
     private var bookDetailsTarget: StatisticsRoute {
@@ -606,13 +601,13 @@ struct ReaderScreen: View {
     }
     private var rootPresentation: ReaderPresentationTarget { nativeHost.showing }
     private var sourceLocation: (tab: AppTab, depth: Int)? {
-        (openingRequest?.id ?? session.opening.request?.id).flatMap { library.readerDestinationLocation($0) }
+        (openingRequest?.id ?? session.opening.request?.id).flatMap { library.shell.readerDestinationLocation($0) }
     }
     private var sourceDepth: Int? { sourceLocation?.depth }
-    private var sourceSelected: Bool { sourceLocation.map { $0.tab == library.selectedTab } ?? true }
+    private var sourceSelected: Bool { sourceLocation.map { $0.tab == library.shell.selectedTab } ?? true }
     private var sourceRoutePresent: Bool {
         guard let id = openingRequest?.id ?? session.opening.request?.id else { return true }
-        return library.containsReaderDestination(id)
+        return library.shell.containsReaderDestination(id)
     }
     private var readerNativeReady: Bool {
         sourceRoutePresent && sourceSelected && sourceCurrent && session.opening.navigationSettled && render.sourcePage == nil
@@ -757,8 +752,9 @@ struct ReaderScreen: View {
         if action != .shareExcerpt { session.beganReadingInteraction() }
         if action == .removeAnnotations {
             guard !session.isLeaving, let bookID = session.readingID else { return }
+            let admission = session.readingLease?.writeAdmission
             Task {
-                await tools.removeAnnotations(bookID: bookID, start: start, end: end)
+                await tools.removeAnnotations(bookID: bookID, start: start, end: end, admission: admission)
                 guard !session.isLeaving else { return }
                 if let error = tools.error { session.error = error; tools.error = nil }
                 session.notesChanged()
@@ -899,8 +895,8 @@ struct ReaderScreen: View {
             nativeHost.update(toolTarget == .dock ? render : nil,
                 cause: leaving ? .leaveReader : page ? .replaceContainer : .toolClosed, force: leaving)
             ReaderSceneDiagnostics.record("presentation.project", opening: opening, fields: [
-                "sourceTab": String(describing: library.selectedTab), "sourceCurrent": sourceCurrent,
-                "sourceRouteCount": library.path.count, "sourcePage": String(describing: render.sourcePage),
+                "sourceTab": String(describing: library.shell.selectedTab), "sourceCurrent": sourceCurrent,
+                "sourceRouteCount": library.shell.path.count, "sourcePage": String(describing: render.sourcePage),
                 "navigationSettled": session.opening.navigationSettled, "location": String(describing: render.compact),
                 "desired": String(describing: desired), "toolRequested": String(describing: nativeHost.showing),
                 "toolPhase": nativeHost.phase.rawValue, "token": nativeHost.token?.id.uuidString ?? "none"])

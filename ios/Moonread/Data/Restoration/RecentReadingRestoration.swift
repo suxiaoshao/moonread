@@ -60,7 +60,7 @@ final class RecentRestorationWork: @unchecked Sendable {
         let decoding: String
     }
     let fileID: String
-    private let core: ReaderCore
+    private let core: ReaderIndex
     private let candidate: RecentRestorationPolicy.Candidate
     private let contentKey: String
     private let mayDownload: Bool
@@ -70,7 +70,7 @@ final class RecentRestorationWork: @unchecked Sendable {
     private var cancelled = false
     private var control: ImportControl?
 
-    init(core: ReaderCore, candidate: RecentRestorationPolicy.Candidate, contentKey: String, mayDownload: Bool, service: AppDataService) {
+    init(core: ReaderIndex, candidate: RecentRestorationPolicy.Candidate, contentKey: String, mayDownload: Bool, service: AppDataService) {
         self.core = core; self.candidate = candidate; self.contentKey = contentKey; fileID = candidate.file.id
         self.mayDownload = mayDownload; self.service = service
     }
@@ -97,7 +97,7 @@ final class RecentRestorationWork: @unchecked Sendable {
         if availability.isUbiquitousItem == true, availability.ubiquitousItemDownloadingStatus != .current, !mayDownload { throw ReaderError.NotFound }
         let raw = try await read.hash(at: file)
         guard raw.size == candidate.file.size, raw.modifiedMilliseconds == candidate.file.modified else { throw ReaderError.SourceChanged }
-        let decoding = try await service.prepareSourceDecoding(raw: raw, fileID: candidate.file.id)
+        let decoding = try await service.prepareSourceDecoding(raw: raw)
         let identity = try await read.identify(at: file, raw: raw, decoding: decoding)
         guard identity.contentSha256 == contentKey else { throw ReaderError.NotFound }
         return try await read.coordinate(at: file) { [self] url in
@@ -150,10 +150,10 @@ final class RecentRestorationWork: @unchecked Sendable {
 
 extension AppDataService {
     func positionSourceHint(_ id: String) -> PositionSourceHint? {
-        guard let fileID = readingSourceIDs[id], let file = try? textCore().sourceFileSnapshots(fileId: fileID).first,
+        guard let fileID = readingSourceIDs[id], let file = try? indexStore().sourceFileSnapshots(fileId: fileID).first,
               let shelf = try? libraryShelf(file.shelfId) else { return nil }
         let kind: PositionSourceHint.Kind = shelf.builtin ? (shelf.location == "icloud" ? .managedICloud : .managedLocal) : .external
-        let actual = (try? textCore().importSourceByteCount(bookId: id)) ?? 0
+        let actual = (try? indexStore().importSourceByteCount(bookId: id)) ?? 0
         let size = actual > 0 ? actual : file.size
         return PositionSourceHint(source_kind: kind, relative_path: file.relativePath, file_name: file.name, byte_size: size > 0 ? size : nil, decoding: file.decoding)
     }
@@ -188,7 +188,7 @@ extension AppDataService {
         } while recentRestorationRequested && recentRestorationActive && !Task.isCancelled
     }
     private func restorationCandidates() throws -> [RecentRestorationPolicy.Candidate] {
-        let core = try textCore()
+        let core = try indexStore()
         let roots = Dictionary(uniqueKeysWithValues: try shelves().filter { $0.error == nil }.map { ($0.id, $0) })
         return try core.sourceFileSnapshots(fileId: nil).compactMap { file in
             guard let shelf = roots[file.shelfId] else { return nil }
@@ -196,11 +196,11 @@ extension AppDataService {
         }
     }
     private func restorationCandidate(_ id: String) throws -> RecentRestorationPolicy.Candidate? {
-        guard let file = try textCore().sourceFileSnapshots(fileId: id).first,
+        guard let file = try indexStore().sourceFileSnapshots(fileId: id).first,
               let shelf = try shelves().first(where: { $0.id == file.shelfId && $0.error == nil }) else { return nil }
         return .init(file: file, shelf: shelf)
     }
-    private func restorationFingerprint(_ files: [RecentRestorationPolicy.Candidate], position: UserDataStore.RecentPosition, decodings: SourceDecodingSnapshot) -> String {
+    private func restorationFingerprint(_ files: [RecentRestorationPolicy.Candidate], position: ReadingPositionRows.RestorationPosition, decodings: SourceDecodingSnapshot) -> String {
         var hash = SHA256()
         hash.update(data: Data(position.token.utf8))
         // A newly synced decoding can make an earlier failed candidate readable.
@@ -221,17 +221,20 @@ extension AppDataService {
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
     private func restoreRecentReadingPass() async throws {
-        let store = try await userStore()
-        let hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
-        let decodings = try await store.sourceDecodingSnapshot()
-        let positions = try await store.recentRestorationPositions(limit: RecentRestorationPolicy.recentKeyLimit, excluding: hidden)
+        let core = try relationalUserIndex()
+        let generation = recentRestorationGeneration
+        let limit = RecentRestorationPolicy.recentKeyLimit
+        let decodings = try currentSourceDecodings()
+        let positions = try core.recentRestorationPositions(limit: limit)
+        func stillSelected(_ position: ReadingPositionRows.RestorationPosition) throws -> Bool {
+            try core.recentRestorationPositions(limit: limit).contains(position)
+        }
         let keys = Set(positions.map(\.contentKey))
         recentRestorationAttempts = recentRestorationAttempts.filter { keys.contains($0.key) }
         let all = try restorationCandidates()
-        for position in positions where !hidden.contains(position.contentKey) {
+        for position in positions {
             try Task.checkCancellation()
             guard recentRestorationActive, let hint = position.hint else { continue }
-            let core = try textCore()
             if let id = try? core.textIdForSha(sha: position.contentKey), all.contains(where: { $0.file.bookId == id }) { continue }
             let candidates = RecentRestorationPolicy.candidates(hint: hint, files: all)
             let fingerprint = restorationFingerprint(candidates, position: position, decodings: decodings)
@@ -240,7 +243,10 @@ extension AppDataService {
             for candidate in candidates {
                 try Task.checkCancellation()
                 try await waitForReadingIdle()
-                let generation = recentRestorationGeneration
+                try Task.checkCancellation()
+                guard recentRestorationActive, generation == recentRestorationGeneration, try stillSelected(position) else {
+                    interrupted = true; break
+                }
                 let work = RecentRestorationWork(core: core, candidate: candidate, contentKey: position.contentKey,
                     mayDownload: RecentRestorationPolicy.canAutomaticallyDownload(hint: hint, candidate: candidate, files: all), service: self)
                 recentRestorationWork = work
@@ -251,18 +257,14 @@ extension AppDataService {
                     if let recentRestorationBeforeCommit { await recentRestorationBeforeCommit() }
                     try Task.checkCancellation(); try work.checkCancellation()
                     try await work.validateResult(result)
-                    let currentHidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
-                    let current = try await store.recentRestorationPositions(limit: RecentRestorationPolicy.recentKeyLimit, excluding: currentHidden)
                     guard recentRestorationActive, !work.isCancelled, generation == recentRestorationGeneration,
-                          current.contains(where: { $0.contentKey == position.contentKey && $0.token == position.token }),
-                          !(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []).contains(position.contentKey),
+                          try stillSelected(position),
                           !readingSourceIDs.values.contains(candidate.file.id),
                           identityMayRun(),
                           let fresh = try restorationCandidate(candidate.file.id),
                           restorationFingerprint([fresh], position: position, decodings: decodings) == restorationFingerprint([candidate], position: position, decodings: decodings)
                     else { interrupted = true; break }
                     guard try core.linkRestoredLibraryFile(file: candidate.file, decoding: result.decoding, bookId: result.bookID, contentSha256: position.contentKey) else { interrupted = true; break }
-                    queryCache.removeAll()
                     NotificationCenter.default.post(name: .recentReadingRestored, object: nil)
                     break
                 } catch is CancellationError {

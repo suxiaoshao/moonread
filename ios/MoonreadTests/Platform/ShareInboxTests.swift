@@ -142,7 +142,7 @@ final class ShareInboxTests: ShareInboxFixture {
   func testSharedRootImportConflictsCancelAndResume() async throws {
     let (root, inbox) = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+    let core = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
     let books = root.appendingPathComponent("books")
     let service = AppDataService(core: core, libraryDirectory: books)
     let model = LibraryModel(service: service, fileMutationReload: {})
@@ -173,7 +173,7 @@ final class ShareInboxTests: ShareInboxFixture {
     XCTAssertNotNil(model.sharedImportResult)
     XCTAssertTrue(model.sharedImportResult?.contains("skip.pdf") == true)
     XCTAssertFalse(
-      model.libraryPath.contains { $0.isReader }, "Multiple input files do not open a reader")
+      model.shell.libraryPath.contains { $0.isReader }, "Multiple input files do not open a reader")
     XCTAssertEqual(try Data(contentsOf: first), bytes)
   }
 

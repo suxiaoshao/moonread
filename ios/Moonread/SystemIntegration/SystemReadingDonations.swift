@@ -2,34 +2,44 @@
 import Foundation
 import WidgetKit
 
-private struct SystemReadingDonationState: Codable {
-    var schemaVersion = 1
-    var scope: String
-    var bookIDs: [String] = []
-}
-
 extension AppDataService {
-    /// One platform work chain keeps revoke/donate ordering explicit without
-    /// making the App's storage actor wait for system services.
+    /// Independent, bounded platform consumers. After a suspension each
+    /// chain uses the latest published envelope, rather than queueing one
+    /// task and holding one catalogue for every revision.
     func systemReadingSnapshotPublished(_ snapshot: SystemReadingSnapshot) {
-        guard libraryDirectoryOverride == nil, testSession == nil else { return }
-        let previousIndex = systemSpotlightTask
-        systemSpotlightTask = Task { [weak self] in
-            await previousIndex?.value
-            guard await self?.systemSnapshotIsCurrent(snapshot) == true else { return }
-            do { try await self?.reconcileSystemSpotlight(snapshot) }
+        guard libraryDirectoryOverride == nil, testSession == nil, systemSnapshotIsCurrent(snapshot) else { return }
+        if systemSpotlightTask == nil {
+            systemSpotlightTask = Task { [weak self] in await self?.submitLatestSystemSpotlight() }
+        }
+        if systemExposureTask == nil {
+            systemExposureTask = Task { [weak self] in await self?.submitLatestSystemExposure() }
+        }
+    }
+
+    private func submitLatestSystemSpotlight() async {
+        defer { systemSpotlightTask = nil }
+        var submitted: UUID?
+        while let snapshot = systemCatalog?.displaySnapshot, snapshot.generation != submitted, !Task.isCancelled {
+            submitted = snapshot.generation
+            do { try await reconcileSystemSpotlight(snapshot) }
             catch {
-                await self?.reportSystemSpotlightProgress(String(localized: "系统搜索提交失败，请重试。"))
-                await self?.recordSystemExposureError(error)
+                if systemSnapshotIsCurrent(snapshot) {
+                    reportSystemSpotlightProgress(String(localized: "系统搜索提交失败，请重试。"))
+                    recordSystemExposureError(error)
+                }
             }
         }
-        let previous = systemExposureTask
-        systemExposureTask = Task { [weak self] in
-            await previous?.value
-            guard await self?.requestSystemWidgetReload(snapshot) == true else { return }
-            // Siri donation/revocation keeps its own order; it cannot hold up
-            // Core Spotlight's independent index submissions.
-            await self?.reconcileSystemReadingDonations(snapshot)
+    }
+
+    private func submitLatestSystemExposure() async {
+        defer { systemExposureTask = nil }
+        var submitted: UUID?
+        while let snapshot = systemCatalog?.displaySnapshot, snapshot.generation != submitted, !Task.isCancelled {
+            submitted = snapshot.generation
+            guard await requestSystemWidgetReload(snapshot) else { continue }
+            // Siri revoke remains ordered, independent of Spotlight.
+            await reconcileSystemReadingDonations(snapshot)
+            await donatePendingSystemReading(snapshot)
         }
     }
 
@@ -40,6 +50,7 @@ extension AppDataService {
         }) async -> Bool {
         guard systemSnapshotIsCurrent(snapshot) else { return false }
         let kinds = SystemReadingWidgetModel.reloadKinds(from: systemWidgetReloadSnapshot, to: snapshot)
+            .filter { $0 != SystemReadingWidgetModel.statisticsKind }
         if !kinds.isEmpty {
             await reload(kinds)
             // A skipped publication never advances this comparison baseline.
@@ -56,28 +67,24 @@ extension AppDataService {
         systemReadingLastError = Self.systemReadingRefreshMessage(error)
         NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
     }
-    private func donationState() -> SystemReadingDonationState {
-        if let data = sourceDefaults.data(forKey: "Moonread.systemReadingDonations.v1"),
-           let value = try? JSONDecoder().decode(SystemReadingDonationState.self, from: data), value.schemaVersion == 1 { return value }
-        return .init(scope: "")
-    }
-    private func saveDonationState(_ value: SystemReadingDonationState) throws {
-        sourceDefaults.set(try JSONEncoder().encode(value), forKey: "Moonread.systemReadingDonations.v1")
+    func clearLegacyDonations() async throws {
+        try await IntentDonationManager.shared.deleteDonations(matching: .intentType(OpenSystemBookIntent.self))
     }
     private func reconcileSystemReadingDonations(_ snapshot: SystemReadingSnapshot) async {
         guard systemCatalog?.scope == snapshot.storeScope else { return }
-        var state = donationState()
         do {
+            let index = try indexStore()
+            var state = try index.systemSubmission("siri")
             if state.scope != snapshot.storeScope {
                 try await IntentDonationManager.shared.deleteDonations(matching: .intentType(OpenSystemBookIntent.self))
                 state = .init(scope: snapshot.storeScope)
-                try saveDonationState(state)
+                try index.saveSystemSubmission("siri", state: state)
             }
             let allowed = Set(snapshot.books.filter(\.allowsAutomaticExposure).map(\.id))
-            for id in state.bookIDs where !allowed.contains(id) {
+            for id in state.ids where !allowed.contains(id) {
                 try await IntentDonationManager.shared.deleteDonations(matching: .entityIdentifier(EntityIdentifier(for: SystemBookEntity.self, identifier: id)))
-                state.bookIDs.removeAll { $0 == id }
-                try saveDonationState(state)
+                state.ids.removeAll { $0 == id }
+                try index.saveSystemSubmission("siri", state: state)
             }
         } catch {
             // IDs remain recorded until a revoke succeeds; next foreground/publication retries.
@@ -85,29 +92,34 @@ extension AppDataService {
             recordSystemExposureError(error)
         }
     }
-    func systemReadingBegan(_ bookID: String) async {
-        guard libraryDirectoryOverride == nil, testSession == nil, systemCatalog != nil, case .formal(let sha) = try? userKey(bookID) else { return }
-        scheduleSystemReadingCatalog(immediate: true)
-        await waitForSystemReadingCatalog()
-        guard let catalog = systemCatalog, !catalog.accountPending,
-              let snapshot = try? catalog.file.read(),
-              let book = snapshot.books.first(where: { $0.id == "book:" + sha && $0.allowsAutomaticExposure }) else { return }
-        let previous = systemExposureTask
-        systemExposureTask = Task { [weak self] in
-            await previous?.value
-            await self?.donateSystemReading(book, scope: snapshot.storeScope)
-        }
+    func systemReadingBegan(_ bookID: String) {
+        guard libraryDirectoryOverride == nil, testSession == nil, systemCatalog?.accountPending == false,
+              case .formal(let sha) = try? userKey(bookID) else { return }
+        // Only the latest actually opened book needs a suggestion. A reader
+        // never waits for a catalogue, thumbnail or platform callback.
+        systemCatalog?.pendingDonation = SystemReadingLink.bookIDPrefix + sha
+        scheduleSystemReadingCatalog()
     }
+
+    private func donatePendingSystemReading(_ snapshot: SystemReadingSnapshot) async {
+        guard systemSnapshotIsCurrent(snapshot), systemCatalog?.accountPending == false,
+              let target = systemCatalog?.pendingDonation else { return }
+        systemCatalog?.pendingDonation = nil
+        guard let book = snapshot.books.first(where: { $0.id == target && $0.allowsAutomaticExposure }) else { return }
+        await donateSystemReading(book, scope: snapshot.storeScope)
+    }
+
     private func donateSystemReading(_ book: SystemReadingSnapshot.Book, scope: String) async {
         let policy = systemExposurePolicy()
         guard policy.systemSearchEnabled, systemCatalog?.scope == scope, systemCatalog?.accountPending == false,
-              let snapshot = try? systemCatalog?.file.read(), snapshot.exposurePolicy == policy,
+              let snapshot = systemCatalog?.displaySnapshot, snapshot.exposurePolicy == policy,
               snapshot.books.contains(where: { $0.id == book.id && $0.allowsAutomaticExposure }) else { return }
-        var state = donationState()
-        guard state.scope == scope else { return } // A failed old-scope revocation must finish first.
         do {
+            let index = try indexStore()
+            var state = try index.systemSubmission("siri")
+            guard state.scope == scope else { return } // A failed old-scope revocation must finish first.
             // Record before awaiting the system, so an interrupted donation can still be revoked.
-            if !state.bookIDs.contains(book.id) { state.bookIDs.append(book.id); try saveDonationState(state) }
+            if !state.ids.contains(book.id) { state.ids.append(book.id); try index.saveSystemSubmission("siri", state: state) }
             _ = try await IntentDonationManager.shared.donate(intent: OpenSystemBookIntent(target: .init(book: book)))
             if systemCatalog?.scope != scope || systemCatalog?.accountPending == true || systemExposurePolicy() != policy {
                 try await IntentDonationManager.shared.deleteDonations(matching: .entityIdentifier(EntityIdentifier(for: SystemBookEntity.self, identifier: book.id)))

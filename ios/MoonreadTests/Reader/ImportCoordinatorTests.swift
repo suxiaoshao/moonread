@@ -15,17 +15,19 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     XCTAssertTrue(condition())
   }
 
-  // S337: 编码重试同一时刻只有一个任务，失败/离开后清理准入，晚到结果不能生成孤儿导入。
+  // S337: 编码重试同一时刻只有一个任务；晚到的租约不接管已离开的阅读页。
   @MainActor func testEncodingRestartAdmitsOnlyOneTaskAndKeepsFilePolicyConsistent() async throws {
 
     for outcome in ["success", "failure", "leave after allocation"] {
-      let (root, service, core, _, _, _, _, suite) = try singleBookFixture()
+      let (root, service, core, suite) = try introductionFixture()
       defer {
+        try? core.session.close()
         try? FileManager.default.removeItem(at: root)
         UserDefaults.standard.removePersistentDomain(forName: suite)
       }
       try Data("Chapter 1\nUn caf\u{e9} original sample.\n".utf8).write(
-        to: root.appendingPathComponent("a.txt"))
+        to: root.appendingPathComponent("library/a.txt"))
+      try await service.scanLibraryShelf("builtin")
       let file = try XCTUnwrap(
         core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
       let entered = expectation(description: outcome)
@@ -52,48 +54,51 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
       let previous = try XCTUnwrap(session.readingID)
       session.restart(encoding: "windows-1252")
       XCTAssertTrue(session.restartingEncoding, outcome)
+      let restart = try XCTUnwrap(session.restartTask)
       session.restart(encoding: "UTF-8")
       await fulfillment(of: [entered], timeout: 2)
       if outcome == "leave after allocation" { await session.leave().value }
       await gate.release()
-      let finished = XCTNSPredicateExpectation(
-        predicate: NSPredicate { _, _ in
-          !session.restartingEncoding
-            && (outcome != "success" || session.snapshot?.preparation.isComplete == true)
-        }, object: nil)
-      await fulfillment(of: [finished], timeout: 5)
+      await restart.value
+      try await service.waitForImportsIdle()
+      XCTAssertFalse(session.restartingEncoding)
+      let created = await probe.createdIDs
+      XCTAssertEqual(created.count, outcome == "failure" ? 0 : 1, outcome)
+
+      let source = try core.sourceFileLocation(fileId: file.id)
+      let policy = try core.sourceDecoding(fileId: file.id)
       if outcome == "success" {
         let current = try XCTUnwrap(session.readingID)
         XCTAssertNotEqual(current, previous, outcome)
         XCTAssertEqual(session.decodingPolicy, "windows-1252", outcome)
-        XCTAssertEqual(try core.sourceFileLocation(fileId: file.id).bookId, current, outcome)
-        XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "windows-1252", outcome)
-        let settled = XCTNSPredicateExpectation(
-          predicate: NSPredicate { _, _ in
-            (try? self.importJobIDs(root)) == [current]
-          }, object: nil)
-        await fulfillment(of: [settled], timeout: 5)
-        await session.leave().value
+        XCTAssertEqual(source.bookId, current, outcome)
+        XCTAssertEqual(policy, "windows-1252", outcome)
+        let currentSnapshot = try await service.snapshot(current)
+        XCTAssertTrue(currentSnapshot.preparation.isComplete)
       } else {
         XCTAssertEqual(session.readingID, previous, outcome)
         XCTAssertEqual(session.decodingPolicy, "auto", outcome)
         XCTAssertEqual(session.error != nil, outcome == "failure", outcome)
-        let settled = XCTNSPredicateExpectation(
-          predicate: NSPredicate { _, _ in
-            (try? self.importJobIDs(root)) == [previous]
-          }, object: nil)
-        await fulfillment(of: [settled], timeout: 5)
-        if outcome == "failure" { await session.leave().value }
+        if outcome == "failure" {
+          XCTAssertEqual(source.bookId, previous, outcome)
+          XCTAssertEqual(policy, "auto", outcome)
+        } else {
+          // A worker already admitted for this file can finish after the page
+          // closes. It stays attached to the file without taking over the page.
+          let completed = try XCTUnwrap(created.first)
+          XCTAssertEqual(source.bookId, completed, outcome)
+          XCTAssertEqual(policy, "windows-1252", outcome)
+          XCTAssertEqual(try core.importStatus(bookId: completed).phase, .complete)
+        }
       }
-      let created = await probe.createdIDs
-      XCTAssertEqual(created.count, outcome == "failure" ? 0 : 1, outcome)
+      await session.leave().value
     }
 
   }
 
   // S341: 完成书改解码后保存明确选择，原内容阅读数据仍保留；以 Swift 用户事实持久化为断言，解码算法归 Rust。
   @MainActor func testCompletedBookEncodingChangeRestoresDataAndPersistsChoice() async throws {
-    let (root, service, core, formal, pending, _, _, suite) = try singleBookFixture()
+    let (root, service, core, _, _, _, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -139,8 +144,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "UTF-8")
     XCTAssertEqual(try Data(contentsOf: path), Data(original.utf8))
     let reopenedService = AppDataService(
-      core: core, libraryDirectory: root, sourceDefaultsSuite: suite,
-      userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
+      core: core, libraryDirectory: root, sourceDefaultsSuite: suite)
     let reopened = try await reopenedService.aiPrepare(entry.source)
     let result = try await reopenedService.snapshot(reopened.id)
     XCTAssertEqual(result.book.fixtureSHA256, initial.book.fixtureSHA256)
@@ -148,29 +152,24 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     withExtendedLifetime([first, changed, restored, reopened]) {}
   }
 
-  // S374: 系统中断重开自动续接；升级后旧主动暂停键统一退役，不保留运行时分支。
+  // S374: 系统中断重开时，从持久来源自动续接原任务。
   @MainActor func testSystemInterruptedImportAutomaticallyResumesOnReopen() async throws {
     do {
-      let (root, _, _, source, id, defaults, suite) = try await Self.pausedSourceFixture()
+      let (root, _, original, source, id, defaults, suite) = try await Self.pausedSourceFixture()
       defer {
         defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
       }
-      let legacy = "Moonread.importUserPaused.v1.library." + id
-      let obsolete = "Moonread.importUserPaused.v1.previous-session.orphan"
-      defaults.set(true, forKey: legacy); defaults.set(true, forKey: obsolete)
-      defaults.set("kept", forKey: "UnrelatedFixturePreference")
-      let restartedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+      try original.session.close()
+      let restartedCore = try makeReaderIndexFixture(at: root.appendingPathComponent("db"))
+      defer { try? restartedCore.session.close() }
       let restarted = AppDataService(
         core: restartedCore, libraryDirectory: root.appendingPathComponent("local"),
         sourceDefaultsSuite: suite)
-      XCTAssertNil(defaults.object(forKey: legacy)); XCTAssertNil(defaults.object(forKey: obsolete))
-      XCTAssertEqual(defaults.string(forKey: "UnrelatedFixturePreference"), "kept")
       let lease = try await restarted.openSourceFile(source)
       XCTAssertEqual(lease.id, id)
       try await restarted.waitForImportFinish(id)
       XCTAssertEqual(try restartedCore.importStatus(bookId: id).phase, .complete)
-      XCTAssertNil(defaults.object(forKey: "Moonread.importUserPaused.v1.library." + id))
       withExtendedLifetime(lease) {}
     }
     do {
@@ -200,7 +199,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     try Data("第一章\n正文".utf8).write(to: folder.appendingPathComponent("小说.txt"))
     let service = AppDataService(
-      core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
+      core: try makeReaderIndexFixture(at: directory.appendingPathComponent("db")),
       libraryDirectory: directory.appendingPathComponent("books"))
     try await service.prepareLibrary()
     let entered = expectation(description: "Scanning selected shelf")
@@ -211,8 +210,8 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         await gate.wait()
         try await service.scanLibraryShelf(id)
       })
-    model.selectedTab = .library
-    model.path = [.manage]
+    model.shell.selectedTab = .library
+    model.shell.path = [.manage]
     model.chooseFiles(.folder(nil))
     // Match the system order: presentation ends before the result arrives.
     model.filePickerPresented = false
@@ -221,7 +220,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     await fulfillment(of: [entered], timeout: 2)
     let shelf = try XCTUnwrap(model.shelves.first { $0.name == "selected" })
     let location = LibraryLocation(shelfID: shelf.id)
-    XCTAssertEqual(model.path, [.manage, .folder(location)])
+    XCTAssertEqual(model.shell.path, [.manage, .folder(location)])
     XCTAssertNotNil(model.shelfScans[shelf.id])
     XCTAssertFalse(model.processingFiles, "The destination owns scan feedback after registration")
     let before = try await service.libraryEntries(location)
@@ -231,13 +230,13 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     try await waitForLibraryState { model.shelfScans.isEmpty }
     let entries = try await service.libraryEntries(location)
     XCTAssertEqual(entries.map(\.name), ["小说.txt"])
-    model.path = [.manage]
+    model.shell.path = [.manage]
     model.chooseFiles(.folder(nil))
     model.cancelFilePicker()
     model.sheetDidDismiss()
     model.completeFilePicker(.success([folder]))
     await Task.yield()
-    XCTAssertEqual(model.path, [.manage], "Cancellation cannot resume an earlier selection")
+    XCTAssertEqual(model.shell.path, [.manage], "Cancellation cannot resume an earlier selection")
     XCTAssertNil(model.filePicker)
     XCTAssertFalse(model.processingFiles)
   }
@@ -248,7 +247,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     defer { try? FileManager.default.removeItem(at: directory) }
     let books = directory.appendingPathComponent("books")
     let service = AppDataService(
-      core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
+      core: try makeReaderIndexFixture(at: directory.appendingPathComponent("db")),
       libraryDirectory: books)
     try await service.prepareLibrary()
     let model = LibraryModel(service: service)
@@ -272,6 +271,6 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         FileManager.default.fileExists(
           atPath: books.appendingPathComponent(file.lastPathComponent).path))
     }
-    XCTAssertEqual(model.path, [.folder(destination)])
+    XCTAssertEqual(model.shell.path, [.folder(destination)])
   }
 }

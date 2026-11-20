@@ -8,6 +8,7 @@
     </dict></array>
     <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>MoonreadCloudEnabled</key><string>$(MOONREAD_CLOUD_ENABLED)</string>
+    <key>MoonreadReadingCloudEnvironment</key><string>$(MOONREAD_READING_CLOUD_ENVIRONMENT)</string>
     <key>NSUbiquitousContainers</key><dict>
         <key>iCloud.dev.moonread.Moonread</key><dict>
             <key>NSUbiquitousContainerName</key><string>月读</string>
@@ -16,7 +17,7 @@
         </dict>
     </dict>
     <key>UIBackgroundModes</key><array><string>remote-notification</string><string>processing</string><string>audio</string></array>
-    <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>dev.moonread.Moonread.full-index.processing</string><string>dev.moonread.Moonread.full-index.continued.*</string></array>
+    <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>dev.moonread.Moonread.full-index.processing</string><string>dev.moonread.Moonread.full-index.continued.*</string><string>$(PRODUCT_BUNDLE_IDENTIFIER).metadata-import.continued.*</string><string>$(PRODUCT_BUNDLE_IDENTIFIER).metadata-export.continued.*</string><string>$(PRODUCT_BUNDLE_IDENTIFIER).reading-backup.continued.*</string></array>
     <key>CFBundleDocumentTypes</key>
     <array><dict>
         <key>CFBundleTypeName</key><string>TXT Novel</string>
@@ -31,6 +32,10 @@
     </dict></array>
     <key>LSSupportsOpeningDocumentsInPlace</key><true/>
     <key>UIFileSharingEnabled</key><true/>
+    <key>UILaunchScreen</key><dict>
+        <key>UIImageName</key><string>LaunchSeal</string>
+        <key>UIImageRespectsSafeAreaInsets</key><false/>
+    </dict>
     <key>UTExportedTypeDeclarations</key><array><dict>
         <key>UTTypeIdentifier</key><string>dev.moonread.library-item</string>
         <key>UTTypeDescription</key><string>Moonread Library Item Reference</string>

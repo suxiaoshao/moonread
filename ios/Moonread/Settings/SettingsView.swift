@@ -84,11 +84,27 @@ struct SettingsView: View {
         if sizeClass == .regular { settingsList.listStyle(.sidebar) }
         else { settingsList.listStyle(.insetGrouped).themedPage() }
     }
-    private func settingsLink<Label: View>(_ task: SettingsTask, @ViewBuilder label: () -> Label) -> some View {
-        NavigationLink(value: task, label: label).tag(task)
+    @ViewBuilder private func settingsLink<Label: View>(_ task: SettingsTask, @ViewBuilder label: () -> Label) -> some View {
+        if sizeClass == .regular {
+            let selected = navigation.selectedTask == task
+            Button {
+                navigation.select(task)
+            } label: {
+                label()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(selected ? Color(uiColor: theme.accentSurface) : .clear, in: .rect(cornerRadius: 10))
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+        } else {
+            NavigationLink(value: task, label: label).tag(task)
+        }
     }
     private var settingsList: some View {
-        List(selection: Binding<SettingsTask?>(get: { navigation.selectedTask }, set: { value in
+        List(selection: sizeClass == .regular ? nil : Binding<SettingsTask?>(get: { navigation.selectedTask }, set: { value in
             if let value { navigation.select(value) }
             else { navigation.selectedTask = nil }
         })) {
@@ -201,7 +217,7 @@ struct SettingsView: View {
 
 }
 
-/// Shared only by the settings home: native rows retain their navigation controls.
+/// Label shared by the compact settings list and the wide sidebar.
 private struct SettingsEntry: View {
     let title: LocalizedStringResource
     let symbol: String
@@ -211,20 +227,11 @@ private struct SettingsEntry: View {
     @ScaledMetric(relativeTo: .body) private var iconSize = 20.0
     var body: some View {
         HStack(spacing: 12) {
-            if selected {
-                Image(systemName: symbol).font(.system(size: iconSize))
-                    .frame(width: iconSize + 6).foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                LabeledContent { Text(verbatim: summary).foregroundStyle(.secondary) } label: {
-                    Text(title).foregroundStyle(.primary)
-                }
-            } else {
-                Image(systemName: symbol).font(.system(size: iconSize))
-                    .frame(width: iconSize + 6).foregroundStyle(Color(uiColor: theme.secondary))
-                    .accessibilityHidden(true)
-                LabeledContent { Text(verbatim: summary).foregroundStyle(Color(uiColor: theme.secondary)) } label: {
-                    Text(title).foregroundStyle(Color(uiColor: theme.ink))
-                }
+            Image(systemName: symbol).font(.system(size: iconSize))
+                .frame(width: iconSize + 6).foregroundStyle(Color(uiColor: selected ? theme.ink : theme.secondary))
+                .accessibilityHidden(true)
+            LabeledContent { Text(verbatim: summary).foregroundStyle(Color(uiColor: theme.secondary)) } label: {
+                Text(title).fontWeight(selected ? .semibold : nil).foregroundStyle(Color(uiColor: theme.ink))
             }
         }
     }
@@ -269,7 +276,7 @@ struct SettingsTaskContent: View {
         case .statistics: StatisticsSettingsView()
         case .system: SystemIntegrationSettingsView(library: library)
         case .library: LibraryManagementView(model: library)
-        case .data: DataManagementView(model: library.dataManagement).navigationBarTitleDisplayMode(.large)
+        case .data: DataManagementView(model: library.shell.dataManagement).navigationBarTitleDisplayMode(.large)
         case .cloud: CloudSettingsView()
         case .ai: if ai.availability.isAvailable { AISettingsView() }
         case .appearance: AppThemePreferencesView()
