@@ -220,21 +220,21 @@ import XCTest
     backFromReader()
     ready(file(sample))
     XCTAssertTrue((query.value as? String)?.hasSuffix("排版") == true)
-    XCTAssertTrue(
-      element("appSearchResults").staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "我的书架")).count > 0, "Returning must preserve the shelf condition summary")
     ready(app.buttons["searchFilters"]).tap()
-    ready(app.buttons["addSearchCondition"]).tap()
-    ready(app.buttons["阅读状态"]).tap()
+    ready(app.buttons.matching(identifier: "quickSearch-shelf").matching(
+      NSPredicate(format: "label CONTAINS %@", "我的书架")).firstMatch)
     // Closing a just-opened book can publish its first reading position here.
     // Exercise multi-select without assuming whether that async projection has arrived.
-    ready(app.buttons["阅读中"]).tap()
-    ready(app.buttons["未读"]).tap()
-    ready(app.buttons["saveSearchCondition"]).tap()
+    ready(app.buttons["quickSearchStatusMenu"]).tap()
+    ready(element("quickSearchStatus-reading")).tap()
+    ready(element("quickSearchStatus-unread")).tap()
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.89)).tap()
     ready(app.buttons["applySearchFilters"]).tap()
     ready(file(sample))
     XCTAssertTrue((query.value as? String)?.hasSuffix("排版") == true, "Applying filters keeps search text")
-    XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "未读")).count > 0)
-
+    ready(app.buttons["searchFilters"]).tap()
+    let status = ready(app.buttons["quickSearchStatusMenu"])
+    XCTAssertTrue((status.value as? String)?.contains("未读") == true)
   }
   func testU08BrowseTagAndUnindexedGroup() {
     launch()

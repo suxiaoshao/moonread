@@ -25,6 +25,32 @@ enum LibraryLayout: String {
     case list, grid
 }
 
+struct LibraryDisplayPicker: View {
+    @Binding var selection: LibraryLayout
+
+    var body: some View {
+        Picker("显示方式", selection: $selection) {
+            Label("列表", systemImage: "list.bullet").tag(LibraryLayout.list)
+            Label("网格", systemImage: "square.grid.3x3").tag(LibraryLayout.grid)
+        }
+        .pickerStyle(.inline)
+    }
+}
+
+struct LibraryDisplayMenu: View {
+    @Binding var selection: LibraryLayout
+
+    var body: some View {
+        Menu {
+            LibraryDisplayPicker(selection: $selection)
+        } label: {
+            Label("显示方式", systemImage: "ellipsis")
+        }
+        .toolbarGlyph()
+        .accessibilityIdentifier("libraryDisplayOptions")
+    }
+}
+
 /// Content headings scroll with the books, without List's pinned section gap.
 struct LibraryListHeading: ViewModifier {
     func body(content: Content) -> some View {

@@ -100,7 +100,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | AI 目录来源、字段与连接预算 | Swift `AIModelDirectoryPolicy` / `AIModelDirectoryDecoder` / `AIModelCatalog.option/resolve`，`AIConnectionService` 编排刷新 | A/S 完整结果决定自动发现集合，首次失败空列表；P 仅精确补已有型号规格，只有 metadata-only 预设用 P 生成列表，显式 false 不覆盖成 true；M 保留预算并与连接明确上限取小值；ChatGPT 独立。目录缓存不进 CloudKit；无来源的旧目录与已取回快照分开，授权与目录失败独立，Keychain 编码保持旧字段；用途与端点适配仍由 `AINativeCapabilities` 单源判断，见[模型目录](../ai/model-catalog.md) | 单源解析与裁决 |
 | AI 连接余额与额度 | Swift `AIConnectionUsageService` / `AIUsageAdapter` | 查询能力、官方端点及字段语义由 adapter 单源决定；usage service 独占详情访问、刷新、快照、冷却和迟到响应校验。凭据、代际及网络准入继续由 `AIConnectionService` / `AIAvailability` 管理；列表不触发查询，快照只在内存。见[连接余额与额度](../ai/providers.md#连接余额与额度) | 单一查询 owner |
 | 查询范围、身份/metadata 关联、目录后代最近时间、最近副本选择 | 2c Swift 固定查询 | 数据库事实需要完整范围；不能从限量 recents 反推目录，不复建旧 TEMP 或通用查询门面 | 旧 Rust 查询已移除 |
-| 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `LibraryQueryRules`（`Library/Search/LibraryQueryRules.swift` 与共享系统元数据 profile） | 条件树区分组与对应类型的谓词，只在搜索会话内存在；三值求值、无标签、自定义多键排序与摘要使用同一查询；书架书名/作者的全拼与首字母复用共享 `pinyinSpellings`，与 Entity/Spotlight 使用同一系统默认普通话转写，不加词典或 Rust 副本；UI 原文匹配与 AI/建议模式显式保留，64 项上限仅属于系统词表 | 单源匹配与排序 |
+| 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `LibraryQueryRules`（`Library/Search/LibraryQueryRules.swift` 与共享系统元数据 profile） | 条件树区分组与对应类型的谓词，搜索、编辑草稿与虚拟书架共用此结构；三值求值、无标签、自定义多键排序与摘要使用同一查询；书架书名/作者的全拼与首字母复用共享 `pinyinSpellings`，与 Entity/Spotlight 使用同一系统默认普通话转写，不加词典或 Rust 副本；UI 原文匹配与 AI/建议模式显式保留，64 项上限仅属于系统词表 | 单源匹配与排序 |
+| 虚拟书架的保存和删改 | Swift `SavedFilters` / user.sqlite `local_saved_filter` | 仅当前在本机打开的账户用户库。保留结构化条件与排序，复用 `LibraryQueryRules` 实时打开结果；搜索输入仍在会话内 | 本机定义与查询分离 |
 | 文件自然比较、目录/全书/标签自然排序 | Rust `library/order.rs`（从 bookshelf 提取） | 已服务 SQL 查询和目录；按完整快照一次计算 | Swift 搜索使用批量 ordinal 和同名分档，不复制自然 comparator |
 | 搜索排名组合、AI 名称字典序/recent 平手顺序 | Swift `LibraryQueryRules.swift` | 与匹配结果一同完成，AI 原生字符串比较不迁语言 | 单源组合排序 |
 | 拼音 key、字母分组及组内 localized collation | Swift `LibraryPresentation.swift::LibraryNameGroup` | 唯一实现且依赖 Foundation；不是原文件自然序副本 | 原位保留 |

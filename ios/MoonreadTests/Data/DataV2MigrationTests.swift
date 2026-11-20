@@ -182,6 +182,36 @@ struct DataV2MigrationTests {
         try check.close()
     }
 
+    @Test func upgradesVersionSevenUserStoreForLocalSavedFilters() throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let layout = DataLayout(applicationSupport: root)
+        let first = try DataSession(layout: layout)
+        _ = try first.activate(.signedOut)
+        try first.close()
+        let old = try DatabaseQueue(path: layout.user(.local).path)
+        try old.write { db in
+            try db.execute(sql: """
+                DROP TABLE local_saved_filter;
+                INSERT INTO local_shelf_recovery VALUES ('fixture', 'binding', X'01');
+                PRAGMA user_version=7;
+                """)
+        }
+        try old.close()
+
+        let upgraded = try DataSession(layout: layout)
+        defer { try? upgraded.close() }
+        let (lease, _) = try upgraded.activate(.signedOut)
+        let (version, filters, recovery) = try upgraded.read(lease) { db in
+            (try DataV2Schema.version(db, in: "usr"),
+             try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.local_saved_filter"),
+             try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.local_shelf_recovery WHERE key='fixture'"))
+        }
+        #expect(version == DataV2Schema.userVersion)
+        #expect(filters == 0)
+        #expect(recovery == 1)
+    }
+
     private func container() throws -> ModelContainer {
         let schema = Schema([UserValue.self, UserPosition.self, AnnotationOperation.self, ReadingFact.self, StatisticsClear.self, UserCover.self])
         return try ModelContainer(for: schema, configurations: [.init(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)])

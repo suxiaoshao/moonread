@@ -75,6 +75,16 @@ final class AppShellModel {
         selectedTab = searchOrigin
     }
 
+    func openNewSavedFilter(_ id: UUID, replacing source: UUID?) {
+        if let source, path.last == .savedFilter(source) {
+            path[path.count - 1] = .savedFilter(id)
+        } else {
+            libraryPath = [.savedFilter(id)]
+            selectedTab = .library
+            searchPresented = false
+        }
+    }
+
     func readerDestinationLocation(_ id: UUID) -> (tab: AppTab, depth: Int)? {
         for (tab, path) in [(AppTab.library, libraryPath), (.statistics, statisticsPath),
                             (.search, searchPath), (.settings, settingsNavigation.path)] {

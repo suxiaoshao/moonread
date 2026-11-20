@@ -420,12 +420,21 @@ private struct MoonreadRoot: View {
             .environment(\.systemReadingRouter, library.systemReading)
             .environment(\.moonreadReduceMotion, reduceMotion)
             .environment(\.readerTheme, readerTheme)
+            .task(id: library.savedFilters.revision) { await library.savedFilters.load() }
             .onChange(of: library.shell.libraryPath) { _, _ in library.returnedToLibrary() }
             .onReceive(NotificationCenter.default.publisher(for: .libraryFilesChanged).receive(on: DispatchQueue.main)) { _ in library.retryPendingCloudDiscovery(); library.scheduleRefresh() }
             .alert("暂时无法完成", isPresented: Binding(get: { themes.error != nil }, set: { if !$0 { themes.error = nil } })) {
                 Button("知道了", role: .cancel) { themes.error = nil }
                 if !themes.loaded { Button("重试") { Task { await themes.load() } } }
             } message: { Text(themes.error ?? "") }
+            .alert("虚拟书架暂时不可用", isPresented: Binding(get: {
+                library.savedFilters.error != nil
+            }, set: { if !$0 { library.savedFilters.error = nil } })) {
+                Button("知道了", role: .cancel) { library.savedFilters.error = nil }
+                if library.savedFilters.snapshot == nil {
+                    Button("重试") { Task { await library.savedFilters.load() } }
+                }
+            } message: { Text(library.savedFilters.error ?? "") }
             .alert("字体需要下载", isPresented: Binding(get: { readerSettings.fontNotice != nil }, set: { if !$0 { readerSettings.fontNotice = nil } })) {
                 Button("知道了", role: .cancel) { readerSettings.fontNotice = nil }
             } message: { Text(readerSettings.fontNotice ?? "") }
@@ -526,6 +535,8 @@ struct LibraryDestination: View {
         case .folder(let location): LibraryFolderView(model: library, location: location)
         case .allBooks(let shelfID): LibraryAllBooksView(model: library, shelfID: shelfID)
         case .recent: RecentLibraryView(model: library)
+        case .savedFilters: SavedFilterIndex(model: library)
+        case .savedFilter(let id): SavedFilterDestination(model: library, id: id)
         case .manage: LibraryManagementView(model: library)
         case .statistics(let target): StatisticsView(library: library, target: target)
         case .conversation(let id, let anchor):

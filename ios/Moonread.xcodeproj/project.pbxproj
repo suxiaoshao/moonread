@@ -422,6 +422,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */; };
 		154000000000000000000002 = {isa = PBXBuildFile; fileRef = 154000000000000000000001; };
 		154000000000000000000004 = {isa = PBXBuildFile; fileRef = 154000000000000000000003; };
+		154000000000000000000006 = {isa = PBXBuildFile; fileRef = 154000000000000000000005; };
+		154000000000000000000008 = {isa = PBXBuildFile; fileRef = 154000000000000000000007; };
 		6D93C1035BB54BA388AEDB7C /* ReaderAutoReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA37E7E44EF4E73B8BC6A70 /* ReaderAutoReading.swift */; };
 		1656D9DC94AB4BC4942732E9 /* ReaderAutoReadingContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0918A2524BAB480FBC176B72 /* ReaderAutoReadingContent.swift */; };
 		4E0E29F1DC0561D0B77D8FF9 /* AIReadingToolContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39712BEE4760B7D9851DD914 /* AIReadingToolContracts.swift */; };
@@ -932,6 +934,8 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuationBanner.swift"; sourceTree = "<group>"; };
 		154000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookSearchQuery.swift"; sourceTree = "<group>"; };
 		154000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookSearchEditor.swift"; sourceTree = "<group>"; };
+		154000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedFilters.swift; sourceTree = "<group>"; };
+		154000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedFilterViews.swift; sourceTree = "<group>"; };
 		FDA37E7E44EF4E73B8BC6A70 /* ReaderAutoReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderAutoReading.swift; sourceTree = "<group>"; };
 		0918A2524BAB480FBC176B72 /* ReaderAutoReadingContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderAutoReadingContent.swift"; sourceTree = "<group>"; };
 		39712BEE4760B7D9851DD914 /* AIReadingToolContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingToolContracts.swift"; sourceTree = "<group>"; };
@@ -1927,6 +1931,8 @@ D35000000000000000000001,
 				B14000000000000000000003 /* AppSearch.swift */,
 				154000000000000000000003 /* BookSearchEditor.swift */,
 				154000000000000000000001 /* BookSearchQuery.swift */,
+				154000000000000000000005 /* SavedFilters.swift */,
+				154000000000000000000007 /* SavedFilterViews.swift */,
 				660000000000000000000001 /* LibraryQueryRules.swift */,
 			);
 			path = "Search";
@@ -2453,6 +2459,8 @@ E51000000000000000000009,D41000000000000000000001,
                 D50610000000000000000001 /* UserDataBackup.swift in Sources */,
 				660000000000000000000002,
 				154000000000000000000004,
+				154000000000000000000006,
+				154000000000000000000008,
 				154000000000000000000002,
                 FD64F53149DE5DBFB6AA04F1,
                 344233D679E94ACDA4FA2A11,

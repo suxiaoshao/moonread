@@ -125,6 +125,7 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 | 旧手选升级待办 | `source_decoding_migration` 只保留旧库已确认原始 SHA 的待办。来源阶段内，接受的 epoch 候选与导入 seed 同事务保存。来源阶段收口后直接消费待办。两条路径都在用户库事务成功后清待办 |
 | 本机阅读与书架恢复 | user.sqlite 的 `local_resume`、`local_hidden_book`、`local_preferred_file`、`local_shelf_recovery`。随用户库切换，不同步 |
 | 分享接收 | App Group `ShareInbox`，原字节与 `schemaVersion: 1` 清单。已发布项跨启动保留 |
+| 虚拟书架 | 当前账户的本机 user.sqlite（`local_saved_filter`）；保存名称、条件树、排序键，随用户库切换，不进 CloudKit |
 | 当前配色/明暗、按配色纹理开关、排版/模式、设备控制、动效、记录开关 | 本机 UserDefaults；不随配色方案一起同步 |
 | 缩略图及图片读出副本 | 本机可重建缓存，用户封面原图由当前用户库管理 |
 | 统计汇总、章节覆盖 | 由用户库事实和正文索引按需投影 |
