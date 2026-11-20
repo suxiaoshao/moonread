@@ -15,6 +15,7 @@ final class LibraryModel {
     @ObservationIgnored private let defaults: UserDefaults
     /// Recents kept on the home page: the resume card plus a scrollable cover row in the grid.
     let recentReading: RecentReadingStore
+    let savedFilters: SavedFilters
     var home = HomeSnapshot()
     @ObservationIgnored var libraryStructure: [SourceFileLocation]?
     var shelves: [LibraryShelf] { home.shelves }
@@ -164,6 +165,7 @@ final class LibraryModel {
         }
         self.service = service
         recentReading = RecentReadingStore(service: service)
+        savedFilters = SavedFilters(service: service)
         self.fullIndex = fullIndex ?? .shared
         self.shell = AppShellModel(service: service)
         self.lookupDropEntry = lookupDropEntry ?? { try await service.libraryEntry($0) }
@@ -212,6 +214,7 @@ final class LibraryModel {
 
     func finishUserScopeChange(rebound: Bool) {
         if rebound {
+            savedFilters.rebind()
             shell.libraryPath = []; shell.statisticsPath = []; shell.searchPath = []; shell.settingsNavigation.path = []
             sheet = nil; indexPrompt = nil; deferredIndexPrompt = nil
             releaseImportFailures()

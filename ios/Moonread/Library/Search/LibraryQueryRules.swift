@@ -12,6 +12,8 @@ extension LibraryQueryRules {
         var status: String?
         var nameOrder = false
         var configuration = BookSearchConfiguration()
+        var virtualShelf = false
+        var booksOnly: Bool { virtualShelf || configuration.booksOnly }
     }
     struct SearchMetadata {
         let author: String
@@ -95,7 +97,7 @@ extension LibraryQueryRules {
     static func searchOutcome(_ candidates: [LibrarySearchCandidate], spec: SearchSpec) -> SearchOutcome {
         let literal = spec.profile == .library
         let query = literal ? literalQuery(spec.query) : spec.query
-        if literal && query.isEmpty && spec.author == nil && spec.tags.isEmpty && spec.status == nil && !spec.configuration.booksOnly { return .init(entries: [], unknownCount: 0) }
+        if literal && query.isEmpty && spec.author == nil && spec.tags.isEmpty && spec.status == nil && !spec.booksOnly { return .init(entries: [], unknownCount: 0) }
         let usesPinyin = literal && query.unicodeScalars.allSatisfy(\.isASCII)
             && query.utf8.contains { (97...122).contains($0) }
         // Request-local only: shared authors/copies need one transform per text,
@@ -118,7 +120,7 @@ extension LibraryQueryRules {
             if !literal { row = row.withMetadata(candidate.resolvedMetadata) }
             let metadata = literal ? candidate.storedSearchMetadata : candidate.resolvedSearchMetadata
             if literal {
-                if spec.configuration.booksOnly || spec.status != nil { guard !row.directory else { return nil } }
+                if spec.booksOnly || spec.status != nil { guard !row.directory else { return nil } }
                 if spec.author != nil || !spec.tags.isEmpty {
                     guard !row.directory, spec.author.map({ metadata?.author.utf8.elementsEqual($0.utf8) == true }) ?? true,
                           spec.tags.allSatisfy({ tag in metadata?.tags.contains(where: { $0.utf8.elementsEqual(tag.utf8) }) == true }) else { return nil }

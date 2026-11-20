@@ -117,10 +117,7 @@ struct LibraryAllBooksView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Picker("显示方式", selection: $model.layout) {
-                        Label("列表", systemImage: "list.bullet").tag(LibraryLayout.list)
-                        Label("网格", systemImage: "square.grid.3x3").tag(LibraryLayout.grid)
-                    }.pickerStyle(.inline)
+                    LibraryDisplayPicker(selection: $model.layout)
                     Menu("分组方式", systemImage: "rectangle.3.group") {
                         Picker("分组方式", selection: $model.grouping) {
                             Label("名称", systemImage: "textformat.abc").tag(LibraryGrouping.name)

@@ -87,7 +87,7 @@ enum LibrarySearchRead {
             \(author ? "LEFT JOIN usr.metadata_text_candidate a ON a.partition=m.source_partition AND a.record_id=m.author_id" : "")
             \(ai ? "LEFT JOIN usr.metadata_text_candidate syn ON syn.partition=m.source_partition AND syn.record_id=m.synopsis_id" : "")
             \(status ? "LEFT JOIN usr.metadata_text_candidate stat ON stat.partition=m.source_partition AND stat.record_id=m.status_id" : "")
-            WHERE \(ai || spec.configuration.booksOnly ? "c.directory=0" : "1")
+            WHERE \(ai || spec.booksOnly ? "c.directory=0" : "1")
               AND \(selection.recursive ? "1" : "c.parent_path=?2")
             ORDER BY c.id
             """, arguments: args)
@@ -251,8 +251,8 @@ extension AppDataService {
         try await fixedReaderRead { try $0.searchCatalogue(scope, spec: spec) }
     }
 
-    func searchLibrary(query: String, configuration: BookSearchConfiguration) async throws -> LibraryQueryRules.SearchOutcome {
-        try await libraryCatalogueSearch(.all, spec: .init(profile: .library, query: query, configuration: configuration))
+    func searchLibrary(query: String, configuration: BookSearchConfiguration, virtualShelf: Bool = false) async throws -> LibraryQueryRules.SearchOutcome {
+        try await libraryCatalogueSearch(.all, spec: .init(profile: .library, query: query, configuration: configuration, virtualShelf: virtualShelf))
     }
 
     func searchCatalogue(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> [LibraryEntry] {

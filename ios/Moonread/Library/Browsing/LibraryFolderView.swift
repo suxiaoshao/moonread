@@ -69,10 +69,7 @@ struct LibraryFolderView: View {
                                 .accessibilityIdentifier("organizeFolder")
                         }
                         Divider()
-                        Picker("显示方式", selection: $model.layout) {
-                            Label("列表", systemImage: "list.bullet").tag(LibraryLayout.list)
-                            Label("网格", systemImage: "square.grid.3x3").tag(LibraryLayout.grid)
-                        }.pickerStyle(.inline)
+                        LibraryDisplayPicker(selection: $model.layout)
                         Divider()
                         if !location.path.isEmpty {
                             NavigationLink(value: LibraryRoute.allBooks(location.shelfID)) {

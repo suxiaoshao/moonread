@@ -72,11 +72,15 @@ struct LibraryView: View {
                     ShelfRecoverySummary(model: model)
                     if sizeClass == .regular && geometry.size.width >= 720 {
                         HStack(alignment: .top, spacing: 24) {
-                            shelves.frame(maxWidth: .infinity, alignment: .topLeading)
+                            VStack(alignment: .leading, spacing: 24) {
+                                shelves
+                                SavedFilterSection(model: model, onHome: true)
+                            }.frame(maxWidth: .infinity, alignment: .topLeading)
                             recentBooks.frame(maxWidth: .infinity, alignment: .topLeading)
                         }
                     } else {
                         shelves
+                        SavedFilterSection(model: model, onHome: true)
                         recentBooks
                     }
                 }.padding([.horizontal, .top], 20).padding(.bottom).frame(maxWidth: 1040).frame(maxWidth: .infinity)
@@ -141,9 +145,8 @@ struct LibraryView: View {
         .textCase(nil).accessibilityElement(children: .contain)
     }
 
-    @ViewBuilder private func recentMenu(_ entry: LibraryEntry) -> some View {
-        Button("小说详情", systemImage: "info.circle") { model.shell.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))) }
-        Button("从最近移除", systemImage: "minus.circle") { Task { await model.hideRecent(entry) } }
+    private func recentMenu(_ entry: LibraryEntry) -> some View {
+        RecentBookActions(model: model, entry: entry)
     }
 }
 
@@ -269,12 +272,13 @@ struct RecentBookRow: View {
     }
 }
 
-/// A recent book in the grid layout's home row: its cover, title and reading progress.
+/// A recent book's cover, title and reading progress.
 /// A List lifts a row's context menu to the whole row, which would highlight every
 /// cover at once; a menu button with a primary action highlights only this book.
-private struct RecentCoverTile<Actions: View>: View {
+struct RecentCoverTile<Actions: View>: View {
     let model: LibraryModel
     let entry: LibraryEntry
+    var fillsColumn = false
     @ViewBuilder let actions: Actions
     @Environment(\.theme) private var theme
     @ScaledMetric(relativeTo: .body) private var width = 96.0
@@ -288,7 +292,10 @@ private struct RecentCoverTile<Actions: View>: View {
                     Text(Double(entry.positionUtf8) / Double(max(1, entry.byteCount)), format: .percent.precision(.fractionLength(1)))
                         .font(.caption).monospacedDigit().foregroundStyle(Color(uiColor: theme.secondary))
                 }
-            }.frame(width: width).contentShape(.rect)
+            }
+            .frame(width: fillsColumn ? nil : width)
+            .frame(maxWidth: fillsColumn ? .infinity : nil, alignment: .leading)
+            .contentShape(.rect)
         } primaryAction: { model.open(entry) }
             .buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
             // The cancel control sits beside the button, never inside its label.
