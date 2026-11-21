@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 
 /// Canonical history is always visible. Editable reviews are fresh, view-lifetime values.

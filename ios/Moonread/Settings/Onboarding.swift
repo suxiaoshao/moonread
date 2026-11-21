@@ -3,7 +3,7 @@ import TipKit
 
 /// Static help: it never opens a reader or accesses a book's data.
 struct UsageGuideView: View {
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Environment(\.theme) private var theme
     var body: some View {
         ScrollView {
@@ -166,7 +166,7 @@ struct ThemedTipCard: View {
 struct FirstRunOnboarding: View {
     @Environment(LibraryModel.self) private var library
     @Environment(CloudStore.self) private var cloud
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Environment(ThemeStore.self) private var themes
     private var theme: ThemeSurface { themes.app }
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize

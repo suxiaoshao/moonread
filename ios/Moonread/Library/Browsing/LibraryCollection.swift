@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// SwiftUI still draws the same themed book covers and file rows.
 struct LibraryCollection: UIViewControllerRepresentable {
     // Resolve this dependency in the SwiftUI parent, before UIKit retains the configuration.
-    let ai: AIService
+    let ai: AIHost
     let model: LibraryModel
     let location: LibraryLocation
     let entries: [LibraryEntry]

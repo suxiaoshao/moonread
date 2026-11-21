@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 
 struct AIModelDetailView: View {
@@ -22,7 +23,7 @@ struct AIModelDetailView: View {
             if let connection, let model {
                 VStack(alignment: .leading, spacing: 24) {
                     HStack(spacing: 14) {
-                        AIProviderIcon(providerID: connection.catalogID).scaleEffect(1.5).frame(width: 38, height: 38)
+                        AIProviderIcon(providerID: connection.catalogID, accent: theme.accent).scaleEffect(1.5).frame(width: 38, height: 38)
                         VStack(alignment: .leading, spacing: 6) {
                             Text(verbatim: model.name).font(.title2.weight(.semibold))
                             if model.id != model.name {
@@ -71,7 +72,7 @@ struct AIModelDetailView: View {
                         VStack(spacing: 8) {
                             HStack { Text("思考程度").font(.headline); Spacer(); Text(AIThinkingLabel.label(selection.thinking ?? "")).foregroundStyle(Color(uiColor: theme.accent)) }
                             if model.thinking.count > 1 {
-                                AIThinkingSlider(levels: model.thinking, selection: Binding(get: { self.selection?.thinking ?? "" }, set: { self.selection?.thinking = $0 }))
+                                AIThinkingSlider(levels: model.thinking, selection: Binding(get: { self.selection?.thinking ?? "" }, set: { self.selection?.thinking = $0 }), accent: theme.accent)
                                 HStack { Text(AIThinkingLabel.label(model.thinking.first!)); Spacer(); Text(AIThinkingLabel.label(model.thinking.last!)) }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                             }
                         }

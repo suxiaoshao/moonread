@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 import AISDKProvider
 import AISDKProviderUtils
@@ -167,12 +168,10 @@ private struct AIReadingMarkPicker: View {
                 item.objectRef = AIReadingTools.ref("mark", id); item.startUtf8 = content.start; item.endUtf8 = content.end
                 item.excerpt = AnnotationReduction.conflicts(heads) ? String(localized: "批注有冲突") : content.excerpt
                 item.note = AnnotationReduction.conflicts(heads) ? nil : content.note
-                item.conflictContents = AnnotationReduction.conflicts(heads) ? heads.map { .init(id: AIReadingTools.ref("v", $0.id), content: $0.content) } : nil
+                item.conflictContents = AnnotationReduction.conflicts(heads) ? heads.map { .init(id: AIReadingTools.ref("v", $0.id), content: $0.content.map { .init(start: $0.start, end: $0.end, excerpt: $0.excerpt, note: $0.note) }) } : nil
                 return item
             }.sorted { ($0.startUtf8 ?? 0, $0.id) < ($1.startUtf8 ?? 0, $1.id) }
         } catch { self.error = ReaderMessages.error(error) }
         loaded = true
     }
 }
-
-extension AIReadingAttachment.Kind: Identifiable { var id: String { rawValue } }

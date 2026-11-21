@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 import Charts
 
@@ -20,7 +21,7 @@ struct StatisticsView: View {
     @State private var positionedAtReading = false
     @State private var aiRequest: AIQuickTaskRequest?
     @State private var removingTask: AISessionSummary?
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
 
     init(library: LibraryModel, target: StatisticsRoute? = nil) {
         self.library = library
@@ -168,17 +169,15 @@ struct StatisticsView: View {
                 optionsMenu
             }
         }
-        .sheet(item: $aiRequest) {
-            if ai.availability.isAvailable {
-                AIQuickTaskSheet(request: $0).themeScope(theme).readerToolPresentation()
-            }
+        .sheet(item: $aiRequest) { request in
+            AIEntry { AIQuickTaskSheet(request: request).themeScope(theme).readerToolPresentation() }
         }
         .onChange(of: ai.availability.isAvailable) { _, available in if !available { aiRequest = nil; removingTask = nil } }
         .alert("移除这个任务？", isPresented: Binding(get: { removingTask != nil }, set: { if !$0 { removingTask = nil } }),
                             presenting: removingTask) { task in
             Button("移除任务", role: .destructive) {
                 Task {
-                    do { try await ai.removeTask(task.id) }
+                    do { try await ai.runtime?.removeTask(task.id) }
                     catch { information.error = AIRequestError.message(error) }
                 }
             }
@@ -307,7 +306,7 @@ struct StatisticsView: View {
                     ForEach([AIQuickTaskRequest.Family.metadata, .cover], id: \.self) { family in
                         if let request = bookRequest(family) {
                             Button(family == .metadata ? "完善资料" : "封面…", systemImage: family == .metadata ? "sparkles" : "photo") { aiRequest = request }
-                            if let task = request.task(ai) {
+                            if let runtime = ai.runtime, let task = request.task(runtime) {
                                 Button(family == .metadata ? "移除资料任务" : "移除封面任务", systemImage: "trash", role: .destructive) {
                                     removingTask = task
                                 }.disabled(task.deleting)

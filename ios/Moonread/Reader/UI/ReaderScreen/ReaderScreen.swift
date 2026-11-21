@@ -51,7 +51,7 @@ struct ReaderScreen: View {
         withAnimation(MotionTokens.panel(reduced: reduceMotion)) { toolSession.send(action, from: context) }
     }
 
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @State private var aiConversationID: String?
     @State private var aiMoonPosition: CGPoint?
     @State private var aiPresence = AIMoonPresence()
@@ -549,7 +549,7 @@ struct ReaderScreen: View {
     }
 
     private var aiCurrentConversation: AIConversation? {
-        aiConversationID.flatMap { ai.conversation($0) }
+        aiConversationID.flatMap { ai.runtime?.conversation($0) }
     }
 
     private var statisticsVisibility: ReaderStatisticsVisibility {

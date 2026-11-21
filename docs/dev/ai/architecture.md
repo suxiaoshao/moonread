@@ -4,15 +4,17 @@
 
 ## 当前实现
 
-AI 在现有 Swift target 内按职责组织，不另建包或实现第二套 SDK。参考 Pi 的供应商通信与 Agent 运行分工；Swift AI SDK 继续负责协议实现与工具循环。
+AI 通过本地 Swift 包 `ios/Packages/MoonreadAI` 常规链接。主 App 启动只建立可用性策略。第一次进入功能后，才创建 AI 服务与供应商状态。Swift AI SDK 继续负责协议与工具循环。
 
 | 目录 | 当前职责 |
 | --- | --- |
-| `ios/Moonread/AI/Providers/` | 连接定义、预设与品牌映射、Keychain 凭据管理、API Key 与浏览器 OAuth 认证（ChatGPT SIWC／OpenRouter）、模型目录、请求适配、可取消网络传输、原生搜索/生图执行与能力筛选 |
-| `ios/Moonread/AI/Agent/` | 会话生命周期、任务、消息更新、保存时机、模型选择及阅读上下文 |
-| `ios/Moonread/AI/Data/` | 应用消息结构、SwiftData 实体与本机历史存储、按会话范围保存的图片附件 |
-| `ios/Moonread/AI/Tools/` | 10个读取工具、共享引用与正文准备、结果分页、原生搜索/生图和资料／笔记／书签／封面／整理 TypedTool |
-| `ios/Moonread/AI/UI/` | 对话列表与聊天、连接设置与添加、连接详情、模型选择与详情、阅读入口 |
+| `MoonreadAI/Agent` | 唯一地区和开关策略、会话协调器、运行器、取消、审批、队列和上下文预算 |
+| `MoonreadAI/Providers` | 连接、认证、凭据、模型目录、余额、传输、原生搜索/生图和封面获取 |
+| `MoonreadAI/Data` | 本机 SwiftData 仓储、资产、共享许可、跨会话持久值 |
+| `MoonreadAI/Tools` 与 `MoonreadAI/UI` | 读取工具契约与注册、原生工具、Markdown 缓存、工具展示和复用同一主题色值的呈现组件 |
+| `ios/Moonread/AI` | 注入授权书架和正文服务的读取适配、提案复核与写入、App 导航下的会话/任务页面和界面投影 |
+
+AI 包对宿主暴露有类型的阅读工具操作。App 用已有 `AppDataService` 校验、准备正文、读取业务事实并返回结果。协调器按会话合并读取、原生及提案工具。包接收封面提取纯函数，平台 C ABI 与 Rust 正文绑定分别链接。解析器处理网页候选，URL 授权和图片下载仍归封面执行器。
 
 ## 状态归属
 
@@ -22,6 +24,12 @@ AI 在现有 Swift target 内按职责组织，不另建包或实现第二套 SD
 
 `AIProviderRequest` 把连接、目录模型、凭证和请求参数转成 SDK 模型及选项。四种协议选择、ChatGPT 公共 Responses 流协议适配、OpenCode 会话头与思考参数都在此处；Agent 不分支判断供应商品牌。`AITransport` 负责 URLSession 与流取消，不管理会话；它与 auth、catalog、cover 的直接 URLSession 入口共用 `AINetworkAccess`，每次 HTTP 经 `AIAvailability.networkRequest` 等待启动店面结果并校验执行租约，地区判定只在 AIAvailability 实现。
 
+### 启动与首用
+
+`AIHost` 保留轻量 `AIAvailability`、已有开关键与店面缓存/订阅。普通启屏、开书和仅搜小说时不创建 `AIService`、连接、目录、提供商请求或 AI 会话库。首次进入对话、设置、阅读/快捷 AI 任务，或实际执行包含对话的关键词搜索时创建同一份服务。设置首页如需显示连接数量，只读取连接配置。只管理连接时不打开会话库。历史首次访问时共用一次加载，随后由仓储恢复中断会话。前台恢复只刷新此前已经激活的目录。
+
+`AIEntry` 在 AI 页面范围注入已创建的服务。包的技术组件使用宿主解析出的主题颜色。退出页面保留运行，关闭 AI 或进入受限店面仍由原策略取消。二进制与快照资源随 App 一起交付。
+
 ## 扩展边界
 
 新增供应商优先修改预设、品牌、目录映射和必要的认证/协议适配。界面不新增供应商特判。图标来源与处理见 [资源说明](../../../ios/Moonread/AI/PROVIDER-ICONS.md)。
@@ -30,7 +38,7 @@ AI 在现有 Swift target 内按职责组织，不另建包或实现第二套 SD
 
 ## 持久化边界
 
-AI 会话与附件只在本机 SwiftData，不进 CloudKit；配置本机保存，API Key/access/refresh token 只进 Keychain，不随普通用户数据同步。持久历史保存应用自己的 Codable 值，不归档 SDK 运行对象；结构演进保持历史可读。删书保留对话和引用摘录，原文不可用则禁用跳转，同正文再次可用可定位。删除对话不撤销已应用的封面、批注、资料或文件操作。
+AI 会话与附件只在本机 SwiftData，不进 CloudKit；模块移动继续使用原 `ai-conversations.store` 路径、实体、字段、关联与编码；配置本机保存，API Key/access/refresh token 只进 Keychain，不随普通用户数据同步。持久历史保存应用自己的 Codable 值，不归档 SDK 运行对象；结构演进保持历史可读。删书保留对话和引用摘录，原文不可用则禁用跳转，同正文再次可用可定位。删除对话不撤销已应用的封面、批注、资料或文件操作。
 
 ## 单一数据归属
 
@@ -47,11 +55,11 @@ AI 会话与附件只在本机 SwiftData，不进 CloudKit；配置本机保存�
 
 ## 快捷任务与业务提案
 
-以下保持一个 Agent、现有 Swift target、SDK、AppDataService、Rust 正文计算和 GRDB 索引与用户库。不新增包、供应商、依赖、通用任务引擎或全应用 owner 重构。工具只是业务服务适配；目录组织不等于职责已经解耦。
+快捷任务共用包内 Agent、SDK 和本机会话仓储。业务复核与写入经 AppDataService、Rust 正文计算和 GRDB 索引与用户库。App 载入活动投影并主持现有原生面板。
 
 ### 模型启用与搜索
 
-[AIConnection](../../../ios/Moonread/AI/Providers/Connections/AIConnection.swift) 保存 `disabledModelIDs: Set<String>`，随本机连接配置保存。新连接为空，刷新不删除停用 ID，新出现模型默认启用，消失后重现保留偏好；手工添加与详情“使用此模型”显式启用。不增加自动启用设置；新增持久化字段按发布兼容规则给默认值。
+[AIConnection](../../../ios/Packages/MoonreadAI/Sources/MoonreadAI/Providers/Connections/AIConnection.swift) 保存 `disabledModelIDs: Set<String>`，随本机连接配置保存。新连接为空，刷新不删除停用 ID，新出现模型默认启用，消失后重现保留偏好；手工添加与详情“使用此模型”显式启用。不增加自动启用设置；新增持久化字段按发布兼容规则给默认值。
 
 停用只限制新选择。默认、对话、搜索、生图的当前值继续显示“未启用”且可用；运行和历史不变。执行器的 `model/purposeSelection` 不能加停用过滤而拒绝已有选择。修改当前模型的思考档位不视为重新选择。真正缺失或能力不匹配仍报错，不换账户。目录刷新仅在默认 modelID 为空时选第一个已启用文本模型，没有则留空。
 

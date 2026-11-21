@@ -1,3 +1,4 @@
+@testable import MoonreadAI
 import SwiftUI
 import XCTest
 

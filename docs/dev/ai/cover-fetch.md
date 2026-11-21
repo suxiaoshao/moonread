@@ -45,15 +45,15 @@
 - **尺寸筛选**：解码后最短边小于 100px，或宽高比 w/h 大于 1.2 的丢弃。直链图片和派生图片都适用这条筛选。这只是首版启发式：方形 logo 仍能通过。阈值集中放在一处。
 - 这些规则只作用于 `find_cover`，不修改通用的 ImageStore 和生图规则。图片本身不加 MIME、后缀或字节数门槛。
 
-### Rust 提取器（moonread-core）
+### Rust 提取器（moonread-ai-cover）
 
-`reading/cover_page.rs` 通过 UniFFI 导出：
+独立 crate 的 `src/cover_page.rs` 保留同一提取函数。App 通过 `moonread_ai_cover_extract` 的窄 C ABI 调用并释放结果缓冲区，把提取函数注入 AI 包。
 
 ```
 extract_page_images(body: Vec<u8>, response_url: String, charset: Option<String>, title: Option<String>) -> Vec<String>
 ```
 
-依赖：`scraper`（基于 html5ever）和 `url`。不用正则替代 HTML 解析器。
+`scraper`（基于 html5ever）与 `url` 只在封面 crate 声明，正文 core 沿用自己的编码与正文依赖。
 
 **字符解码**按以下优先顺序判断编码，最后退回 UTF-8 lossy。使用已有的 `encoding_rs`。
 

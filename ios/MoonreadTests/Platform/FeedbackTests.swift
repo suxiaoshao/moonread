@@ -1,3 +1,4 @@
+@testable import MoonreadAI
 import SQLite3
 import XCTest
 

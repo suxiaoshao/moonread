@@ -1,3 +1,4 @@
+@testable import MoonreadAI
 import XCTest
 
 @testable import Moonread

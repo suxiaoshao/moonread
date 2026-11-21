@@ -34,7 +34,7 @@ struct AppSearchActivation: ViewModifier {
 /// to its navigation stack and reports presentation so Cancel returns to the origin tab;
 /// a contextual search attaches it to its own page and is left with Back.
 struct AppSearchField: ViewModifier {
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     private var searchPrompt: Text { search.configuration.booksOnly ? Text("搜索小说：书名或作者") : ai.availability.isAvailable ? Text("书名、作者、文件夹或对话") : Text("书名、作者或文件夹") }
     let model: LibraryModel
     let search: AppSearch
@@ -152,7 +152,7 @@ struct AppSearchView: View {
     let search: AppSearch
     var host = AppSearchHost()
     var savedFilter: SavedFilter?
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Environment(\.theme) private var theme
     @State private var results = AppSearchResults()
     @State private var retry = 0
@@ -408,8 +408,8 @@ struct AppSearchView: View {
         } search: {
             try await model.service.searchLibrary(query: key.term, configuration: key.configuration, virtualShelf: key.virtualShelf)
         } conversations: {
-            guard !spec.booksOnly, key.aiAvailable, !key.term.isEmpty else { return [] }
-            return try await ai.searchConversations(key.term)
+            guard !spec.booksOnly, key.aiAvailable, !key.term.isEmpty, let runtime = ai.activate() else { return [] }
+            return try await runtime.searchConversations(key.term)
         }
     }
 

@@ -44,7 +44,7 @@ ChatGPT 账户目录保持独立 SIWC：slug、visibility=list、服务器顺序
 
 覆盖离线启动、缓存命中不重复下载、手动刷新、失败保留旧数据、账户隔离、六项字段映射及连接限制覆盖。页面以同一份示例数据验证三列两行、置灰与思考档位，不用真实供应商名称承载虚构规格。
 
-资料：[models.dev](https://models.dev)、[最终模型 schema](https://github.com/anomalyco/models.dev/blob/dev/packages/core/src/schema.ts)。内置快照为当天 models.dev 数据的所需字段投影，位于 `ios/Moonread/AI/Providers/AIModelCatalog.json`；完整类型、解析与刷新在同目录 `AIModelCatalog.swift`。公开资料获取不包含凭证；A 目录只使用相应连接的已有凭据。公开目录不证明当前账户有权限；实际调用失败照常展示服务错误。官方模型链接无可靠数据源时省略。测试证据见[验证历史](../engineering/verification-history.md)。
+资料：[models.dev](https://models.dev)、[最终模型 schema](https://github.com/anomalyco/models.dev/blob/dev/packages/core/src/schema.ts)。内置快照为当天 models.dev 数据的所需字段投影，位于 `ios/Packages/MoonreadAI/Sources/MoonreadAI/Resources/AIModelCatalog.json`，从包资源读取。完整类型、解析与刷新在包的 `Providers/AIModelCatalog.swift`。公开资料获取不包含凭证；A 目录只使用相应连接的已有凭据。公开目录不证明当前账户有权限；实际调用失败照常展示服务错误。官方模型链接无可靠数据源时省略。测试证据见[验证历史](../engineering/verification-history.md)。
 
 多协议预设在目录中额外保留模型名称和 `provider.npm`，后者仅用于 OpenCode 网关的单模型路由。区域及套餐使用各自目录键；不借用相近区域的数据。
 

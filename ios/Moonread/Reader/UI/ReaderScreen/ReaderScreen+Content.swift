@@ -1,3 +1,4 @@
+import MoonreadAI
 import TipKit
 import SwiftUI
 import UIKit

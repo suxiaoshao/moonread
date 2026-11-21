@@ -1,3 +1,4 @@
+@testable import MoonreadAI
 import GRDB
 import Foundation
 import Observation
@@ -229,7 +230,7 @@ final class OfflineTestProtocol: URLProtocol, @unchecked Sendable {
   ) -> AICoverImageFetcher {
     AICoverImageFetcher(
       configuration: configuration, availability: availability ?? available(),
-      maximumCandidates: maximumCandidates)
+      maximumCandidates: maximumCandidates, parsePage: AICoverPageParser.extract)
   }
 }
 
