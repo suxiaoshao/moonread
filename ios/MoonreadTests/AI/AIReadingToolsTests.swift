@@ -149,6 +149,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let (root, reader, book, _, tools) = try await fixture(paragraphs: 1)
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
+    try await reader.savePosition(bookID: book.id, offset: 3)
     let before = try await reader.book(book.id)
     do {
       _ = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .string("")])
@@ -156,6 +157,12 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     } catch {}
     let value = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .null])
     XCTAssertEqual(value.object["status"], .string("ok"))
+    let progress = value.object["data"]?.object["progress"]?.object
+    XCTAssertEqual(progress?["offsetUtf8"], .number(3))
+    guard case let .number(percent)? = progress?["percent"] else {
+      return XCTFail("Expected a numeric percentage")
+    }
+    XCTAssertEqual(percent, 300 / Double(book.byteCount), accuracy: 1e-12)
     let after = try await reader.book(book.id)
     XCTAssertEqual(
       after.positionUtf8, before.positionUtf8,

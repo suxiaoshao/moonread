@@ -423,7 +423,7 @@ extension AppDataService {
                 var i = 0
                 return Dictionary(uniqueKeysWithValues: Set(offsets).sorted().map { offset in
                     while i < headings.count, headings[i].startUtf8 <= offset { i += 1 }
-                    return (offset, (i == 0 ? nil : headings[i - 1], total.map { ReaderOpeningRead.percentage(offset, of: $0) }))
+                    return (offset, (i == 0 ? nil : headings[i - 1], total.map { ReadingProgress.percentage(offset, of: $0) }))
                 })
             }
         }

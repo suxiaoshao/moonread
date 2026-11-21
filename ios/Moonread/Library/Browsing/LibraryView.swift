@@ -176,7 +176,7 @@ private struct ContinueReadingRow: View {
     let model: LibraryModel
     let entry: LibraryEntry
     @Environment(\.theme) private var theme
-    private var position: Double { min(1, Double(entry.positionUtf8) / Double(max(1, entry.byteCount))) }
+    private var position: Double { ReadingProgress.fraction(entry.positionUtf8, of: entry.byteCount) }
     private var progress: String { position.formatted(.percent.precision(.fractionLength(0))) }
     private var lastRead: String? {
         guard entry.lastRead > 0 else { return nil }
@@ -268,7 +268,7 @@ struct RecentBookRow: View {
         Text(entry.chapterTitle ?? String(localized: "继续阅读")).lineLimit(1)
     }
     private var progress: Text {
-        Text(Double(entry.positionUtf8) / Double(max(1, entry.byteCount)), format: .percent.precision(.fractionLength(1))).monospacedDigit()
+        Text(ReadingProgress.fraction(entry.positionUtf8, of: entry.byteCount), format: .percent.precision(.fractionLength(1))).monospacedDigit()
     }
 }
 
@@ -289,7 +289,7 @@ struct RecentCoverTile<Actions: View>: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: entry.title).font(.subheadline.weight(.medium))
                         .foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2, reservesSpace: true)
-                    Text(Double(entry.positionUtf8) / Double(max(1, entry.byteCount)), format: .percent.precision(.fractionLength(1)))
+                    Text(ReadingProgress.fraction(entry.positionUtf8, of: entry.byteCount), format: .percent.precision(.fractionLength(1)))
                         .font(.caption).monospacedDigit().foregroundStyle(Color(uiColor: theme.secondary))
                 }
             }

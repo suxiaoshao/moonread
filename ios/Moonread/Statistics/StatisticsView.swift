@@ -207,7 +207,7 @@ struct StatisticsView: View {
                     if showingPreviousRange { previousRangeCaption }
                     if let overview = statisticsState.overview {
                         Text(StatisticsDates.duration(total)).font(.title.weight(.semibold)).monospacedDigit()
-                        Text("\(activeDays(overview)) 个阅读日 · \(overview.books.count) 本书")
+                        Text("\(overview.activeDayCount) 个阅读日 · \(overview.books.count) 本书")
                             .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                     } else if statisticsState.loading {
                         ProgressView("正在读取统计").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)).frame(maxWidth: .infinity)
@@ -416,7 +416,7 @@ struct StatisticsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("所选范围阅读").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                     durationSummary
-                    Text("\(activeDays(overview)) 个阅读日").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                    Text("\(overview.activeDayCount) 个阅读日").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                 }.accessibilityElement(children: .combine).accessibilityIdentifier("statisticsSummary")
             }
             if rhythm.hasContent { rhythm }
@@ -432,7 +432,6 @@ struct StatisticsView: View {
         }
         return Text(text).monospacedDigit()
     }
-    private func activeDays(_ overview: StatisticsOverview) -> Int { overview.days.filter { $0.durationMs > 0 }.count }
     private var periodMenu: some View {
         Picker("统计范围", selection: periodSelection) {
             ForEach(StatisticsPeriod.allCases) { Text($0.label).tag($0) }

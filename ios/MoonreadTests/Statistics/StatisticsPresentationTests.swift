@@ -10,6 +10,16 @@ import XCTest
 
 final class StatisticsPresentationTests: ReaderIntegrationFixture {
 
+  func testActiveDayCountIgnoresZeroDurationAndDeduplicatesLocalDays() {
+    let days: [StatisticsDay] = [
+      .init(day: 100, durationMs: 30, bookCount: 1),
+      .init(day: 100, durationMs: 50, bookCount: 1),
+      .init(day: 101, durationMs: 0, bookCount: 1),
+      .init(day: 103, durationMs: 20, bookCount: 1),
+    ]
+    XCTAssertEqual(days.activeDayCount, 2)
+  }
+
   @MainActor
   func testFileOnlyStatisticsRouteRecoversAfterPreparingForMetadataEditing() async throws {
     let (root, service, _, suite) = try introductionFixture()

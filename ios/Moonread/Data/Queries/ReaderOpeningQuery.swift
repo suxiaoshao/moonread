@@ -106,12 +106,12 @@ enum ReaderOpeningRead {
         let token: String = winner["token"]
         let target = min(winningOffset, body.bytes), localOffset = currentOffset ?? local.offset
         guard token != localToken, target > localOffset else { return nil }
-        let delta = percentage(target - localOffset, of: body.bytes)
+        let delta = ReadingProgress.percentage(target - localOffset, of: body.bytes)
         guard delta >= 0.2 else { return nil }
         let chapter = try ReaderChapterRead.point(db, body: body, offset: target)
         guard delta >= 1 || (chapter?.startUtf8 ?? 0) > localOffset else { return nil }
         return Resume(key: key, localOffset: localOffset, token: token,
-                      location: .init(offsetUtf8: target, percentage: percentage(target, of: body.bytes), chapter: chapter))
+                      location: .init(offsetUtf8: target, percentage: ReadingProgress.percentage(target, of: body.bytes), chapter: chapter))
     }
 
     static func isComplete(_ db: Database, body: ReaderIndex.Body) throws -> Bool {
@@ -120,16 +120,12 @@ enum ReaderOpeningRead {
             """, arguments: [body.id]) == true
     }
 
-    static func percentage(_ offset: UInt64, of count: UInt64) -> Double {
-        Double(min(offset, count)) / Double(max(1, count)) * 100
-    }
-
     static func location(_ db: Database, body: ReaderIndex.Body, percentage requested: Double) throws -> ReadingLocation {
         guard requested.isFinite, (0...100).contains(requested) else { throw ReaderError.InvalidRange }
         guard try isComplete(db, body: body) else { throw ReaderError.ImportBusy }
         let target = min(UInt64((Double(body.bytes) * requested / 100).rounded()), body.bytes)
         let offset = try ReaderIndex.scalarOffset(ReaderIndex.chunk(db, id: body.id, at: target), at: target, forward: false)
-        return try .init(offsetUtf8: offset, percentage: percentage(offset, of: body.bytes),
+        return try .init(offsetUtf8: offset, percentage: ReadingProgress.percentage(offset, of: body.bytes),
                          chapter: ReaderChapterRead.point(db, body: body, offset: offset))
     }
 }
@@ -178,6 +174,6 @@ extension ReaderIndex {
 
     func readingDataPercentage(sha: String, offset: UInt64) throws -> Double? {
         _ = try parseSha256(value: sha)
-        return try read { db in try Self.normalizedLength(db, sha: sha).map { ReaderOpeningRead.percentage(offset, of: $0) } }
+        return try read { db in try Self.normalizedLength(db, sha: sha).map { ReadingProgress.percentage(offset, of: $0) } }
     }
 }

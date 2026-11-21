@@ -62,7 +62,7 @@
 
 输入：`bookRef?:string, fileRef?:string`，必须恰好一个；`prepare?:bool=false`。未知 SHA 的文件可用 fileRef 加 prepare=true，在应用确认后准备并取得正文身份；默认只读已有资料。
 
-结果 `data={bookRef?,title,author?,synopsis?,tags,readingStatus?,wordCount?,chapterCount?,progress?:{offsetUtf8,percent,chapterTitle?,lastReadAt?},cover?:{assetRef,width,height},availability,availableUtf8?,totalUtf8?,files:[{fileRef,name,parentRef,availability}],filesTruncated}`。返回完整简介及所有来源。cover 仅元信息，不自动读取图片/上传。正式位置与估算覆盖分别命名。
+结果 `data={bookRef?,title,author?,synopsis?,tags,readingStatus?,wordCount?,chapterCount?,progress?:{offsetUtf8,percent,chapterTitle?,lastReadAt?},cover?:{assetRef,width,height},availability,availableUtf8?,totalUtf8?,files:[{fileRef,name,parentRef,availability}],filesTruncated}`。返回完整简介及所有来源。cover 仅元信息，不自动读取图片/上传。`progress.percent` 是同一正文 SHA 的规范化 UTF-8 进度百分数，与界面共用比例计算。正式位置与估算覆盖分别命名。
 
 依据：`AppDataService.details(bookID:sha:)`、`snapshot`、库来源投影。正文不可用时仍返回可取得的 SHA 用户资料；文件改动须重新验证映射，不能复用旧 SHA 的资料当成新正文。
 

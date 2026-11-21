@@ -107,9 +107,9 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 拼音 key、字母分组及组内 localized collation | Swift `LibraryPresentation.swift::LibraryNameGroup` | 唯一实现且依赖 Foundation；不是原文件自然序副本 | 原位保留 |
 | 多标签分组/未标注/未索引分区 | Swift `Data/Queries` 书架固定查询 | 按同一个索引身份分组，每个文件可属于多个标签 | 旧 Rust 查询已移除 |
 | 目录四封面选择 | Swift `Data/Queries` 书架固定查询 | 独立 top-4 策略，不等于目录列表顺序 | 旧 Rust 查询已移除 |
-| 字数定义与 UTF-8 前缀累计字数 | Rust 文本计数共用 helper（后续）；当前 reading/chapters、identity/source、reading/navigation 和 user/coverage | 与导入字数、章节/覆盖分母一致 | 不在 #66 改写；旧报告第8项仍待收敛 |
-| 字节位置→进度比例、百分比跳转 | Rust `reading/navigation.rs::reading_percentage`，阅读数据通过 `identity/content.rs::reading_data_percentage` 查询可信全文长度 | 阅读数据与跳转共用比例/边界计算；Swift 只本地化格式化 | 其余旧报告第9项 Swift 比例副本仍待处理 |
-| 有效章节/位置归属 | Swift `IndexTasks.swift` 持有自动章节重建；2c 负责有效章节查询 | 同一书的手动目录覆盖须对导航、查找和统计一致；搜索计算接收冻结标题 | 旧 Rust SQL 已移除 |
+| 字数定义与 UTF-8 前缀累计字数 | Rust `reading/text_count.rs` | 导入和覆盖对已校验切片计非空白 Unicode 标量，目录扫描在原有单趟扫描中调用同一谓词。手动修章由 Swift `UserValueRows` 校验与读取原行及旧块首累计值，一次调用 Rust 得到标题、正文起点的累计值 | 沿用存量块计数与正文坐标 |
+| 字节位置→进度比例、百分比跳转 | Swift `Data/ReadingProgress.swift`；反向定位由 `ReaderOpeningRead.location` 执行 | 进度使用同一正文 SHA 的规范化 UTF-8 位置和长度。界面百分比格式和阅读位置附件取比例，跳转面板、系统目录和 AI `getBook` 取百分数；用户跳转仍校验 0…100 并贴齐 UTF-8 标量边界 | 只读换算，原始位置仍按 SHA 保存 |
+| 有效章节/位置归属 | Swift `ReaderChapterRead.headingSQL`；`IndexTasks` 持有自动章节重建 | 导航、书架和统计使用同一有效章节边界；批注对排序后的偏移批量取前驱，搜索计算接收冻结标题，折叠目录按可见行定位 | 共享有效章节查询 |
 | 文件目录类别、平台书架来源 | Swift `LibraryService` 与 `IndexSources` | 平台协调真实树和授权；Swift writer 对已准入扫描做一次事务，并保留失败范围最后清单 | 页面条目形状留 2c |
 | 正文准备、目录覆盖与笔记选择 | Swift `IndexImport`、`IndexTasks`、`AppDataService` 与 `ReaderToolsModel` | 保留已提交前缀，提交失败丢弃 Rust 后继并从字节零重验；Swift 持有章节暂存，验证原正文再原子发布 | 窗口、覆盖等有效页面读法留 2c |
 | 资料状态与统计范围 | Rust `reading/book_details.rs`，Swift `BookInformationModel` / `StatisticsModel` | 资料可无正文，未识别文件保留同一查询入口；详情来源沿指定文件，记录回退只在目标身份的文件中按目录阅读顺序选，不重复取资料和章；统计按目标和日期范围加载，首屏与累计详情独立，缓存按输入版本复用 | 同一身份查询链 |
@@ -121,15 +121,16 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 听书播放、跟随与瞬时高亮 | Swift `Reader/Session/Listening/`、`ReaderSession+Listening`、`ReadingController+Listening` / `ReadingLayoutManager` | AVSpeech/Now Playing 的单一 Session 控制播放；既有 TextCoordinates 映射语音范围，音频锚点与内存浏览分离，渲染只画临时范围；正文/规范化和统计规则仍归 Rust | 不新增位置、CloudKit、备份字段；声音不计阅读统计 |
 | 阅读工具意图、关闭与输入 | Swift `ReaderToolSession` / `ReaderPresentationHost`、`ReaderBottomPanel` | ReaderSession 每次打开持有一个工具 owner。工具通过带 opening、访问 ID 和版本的动作修改 SurfaceIntent；根工具关闭统一从当前有效会话裁决恢复。宿主只记录物理安装和对应快照，同一快照驱动内容与真实页脚；旧回调只能释放原安装 | 不改公共导航、正文容量或存储 |
 | 阅读执行、搜索与听书门禁 | Swift `ReaderExecution`（由 `ReaderSession` 持有）、`ReaderToolsModel`、`ReaderToolSession` / 原生呈现适配 | ReaderExecution 只持有当前执行主体，搜索任务独立于收起或展开；ReaderToolSession 从位置动作、选区和实际原生层的来源裁决一次播放资格。统计和自动阅读继续按正文可读性独立判断 | 均为会话状态；不持久化 |
-| v2 统计总览、书目、时段和 Widget 固定读 | Swift `Data/Queries/StatisticsQuery.swift`；Apollo 生成结果类型 | 总量、日历和书目读 `reading_day`，按记录的自然日精确归并 UInt64；每书只定点补历史标题、作者与封面引用。时段从两种 current 读取有效起止、时长、类型 ID、首位置与历史标题；不解曝光。未知事实标不完整，相交未知清除阻止出数；覆盖仍由 Rust 计算 | App 统计、AI 和 Widget 已切；快捷指令仅取日量 |
+| v2 统计总览、书目、时段和 Widget 固定读 | Swift `StatisticsHistoryRead`；Apollo 生成结果类型 | 期间总时长、日历和书目读 `reading_day`，按记录的自然日精确归并 UInt64；每书只定点补历史标题、作者与封面引用。时段从两种 current 读取起止、结算时长、类型 ID、首位置与历史标题。未知事实标不完整，相交未知清除阻止出数；覆盖仍由 Rust 计算 | 快捷指令仅取日量 |
+| 有效阅读日 | Swift `Data/Queries/StatisticsQuery.swift::activeDayCount` | 在已筛选的日记录中按当地 day ID 对正结算时长的日期去重；App 统计和 AI 用总览的日记录，邀评复用同一规则并独立读取全书全期日量 | 单书累计日数与 Widget 连续日沿用各自查询 |
 | 章节结构与覆盖加载 | Swift `ReaderChapterQuery.swift` / `ReaderToolsModel`，Rust `user/statistics/coverage.rs` | 目录结构先发布，不取事实。当前消费者只读目标书有效头、曝光文本与端点块；Rust 解码并裁去清除前缀，按连续停留算字节覆盖，再映射至非空白字符前缀。账户、正文边界或选中头变化时淘汰旧计算；兼容性阻断不显示 0%。离开后释放覆盖 | 无派生范围表或跨请求缓存 |
 | 目录/临时跳转与正式续读保存 | Swift `ReaderSession`、`ReaderToolsModel` / Rust `ReadingFrame` | 目录断 visit 并 enqueue，不等统计 writer drain、不预读笔记；跳转 frame/章节标题在 Rust 同一读取事务中返回并一起发布；临时原点只在会话内存，原已接受保存走现有 saveTask；明确采用浏览位置或同步进度共用位置交还，结束听书后提交新位置，旧 flush 不得回写旧位置 | 不改正式位置格式 |
 | 统计范围、观察与时段展示 | Swift `Statistics/StatisticsModels.swift::StatisticsModel`、`StatisticsSpan` | 同池观察按用途选列并合并已通知更新；保留上一范围并明示日期，不把旧数当新范围。账户变化和相交未知清除撤下旧数。单书先发布期间统计，再用同一快照复核期间并补齐累计、最近七个有记录日的时段。展示按原相邻条件合段，用类型和记录 ID 作行身份、用结算时长 checked 相加 | 每页独立观察，关闭页面取消读取；日界、时区和回前台重核参数 |
 | Widget 统计摘要与连续日 | Swift `StatisticsHistoryRead.widget`；`SystemWidgetPublishing` 管日期窗口与发布 | 读已结算的自然日；今天无正时长则截至昨天，沿日期索引查到断日，不限七天。扩展只消费快照 | 独立调度和统计文件；不重建书目 |
-| 同步位置领先阈值、有效章节与百分比 | Rust `reading/navigation.rs` | Swift 只持有冷启动本机基线与提示状态，不重算领先裁决；见[同步设计](../data/sync.md#13-同步进度与编码) | 单源 |
+| 同步位置领先阈值、有效章节与百分比 | Swift `ReaderOpeningRead.resume` | 用共用进度比例和有效章节查询一次裁决；会话持有本机基线与提示状态。见[同步设计](../data/sync.md#13-同步进度与编码) | 单源 |
 | 手选编码 LWW 与升级 epoch 候选 | Swift `UserValueRows` / `UserSyncJSON`，`SourceDecodingPreferences` 编排 | rawSHA 和编码规范调用 Rust；formal 候选与 current 同提交，旧索引迁入任务在用户提交成功后才另行确认。开书、索引与 AI 读取 current 与同域隔离，无旧本机回退 | 按原始 SHA 同步编码值 |
 | 章节修正、配色与书架引用写入 | Swift `UserValueRows`、`CurrentUserRows` | 章节编辑按原正文行边界校验，撤回保留候选；配色与其颜色关系、完整当前 Ref 同提交；书架引用只发布描述，与本机授权分离。三个全局域的 formal 读取仍按各自隔离规则 | 已接本机 writer；章节结构消费者另批切换 |
-| 统计事实保存/去重裁决、日历展示桶/连续行视觉合并、显示格式 | Swift `ReadingStatistics.swift`、`StatisticsView.swift`，按各自职责单源 | 写入/界面组织与 Rust 数值汇总是不同规则；展示合并应消费已算 duration | 保持平台/状态规则，数值副本后续删除 |
+| 统计事实保存/去重裁决、日历展示桶/连续行视觉合并、显示格式 | Swift `ReadingStatistics.swift`、`StatisticsBuckets`、`StatisticsSpan` 和 `StatisticsView.swift`，按各自职责单源 | 图表按月或年分桶，时间线按相邻条件合段，两者均消费已结算的时长 | 展示与统计事实分离 |
 | 备份 ZIP 布局、受限解包、路径/摘要与正文缓存 SQL 驱逐 | Rust `storage/maintenance/backup_archive.rs` 管 ZIP；Swift `ReaderIndex` 管缓存驱逐 | 缓存驱逐使用同一个 GRDB 池，保留索引/授权/任务 | 单源 |
 | 来源栈 Tab 显隐 | Swift `LibrarySourceTabVisibility` | 按该栈路径中的阅读器及当前叶子目录的选择 preference 统一判定；目录只上报选择位置，不另提交相反显隐策略，不持久化全局选择标志 | 单一 owner |
 | 笔记快照与可读导出 | Swift `NoteDocument.swift`、批注当前头、定点章节和正文长度读取 | 三入口共用摘录/出处与 TXT/Markdown 输出；快照不压缩候选，未知记录按范围阻止不完整导出；出处只取选中正文位置和可证的完整字节数 | 不增同步格式 |

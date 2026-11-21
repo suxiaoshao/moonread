@@ -26,7 +26,7 @@ extension ReaderScreen {
         var attachments: [AIReadingAttachment] = [
             .init(kind: .position, origin: "reader", bookRef: sha.map(AIReadingTools.bookRef), title: title,
                   chapter: readerSession.chapter?.title, startUtf8: start, endUtf8: visible?.1,
-                  progress: readerSession.incomplete ? nil : readerSession.book.map { Double(start) / Double(max(1, $0.byteCount)) })
+                  progress: readerSession.incomplete ? nil : readerSession.book.map { ReadingProgress.fraction(start, of: $0.byteCount) })
         ]
         if let selection {
             attachments.append(.init(kind: .selection, origin: "reader", bookRef: sha.map(AIReadingTools.bookRef), title: title,

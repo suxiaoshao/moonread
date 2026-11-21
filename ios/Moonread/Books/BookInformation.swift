@@ -525,10 +525,12 @@ struct BookInformationSections: View {
                     }.pickerStyle(.menu).labelsHidden().accessibilityIdentifier("bookReadingStatus")
                 }
                 if bytes > 0 {
-                    ProgressView(value: Double(position), total: Double(bytes)).accessibilityLabel("全书位置")
+                    let fraction = ReadingProgress.fraction(position, of: bytes)
+                    let positionLabel = Text("读到全书 \(fraction.formatted(.percent.precision(.fractionLength(0))))")
+                    ProgressView(value: fraction).accessibilityLabel("全书位置")
                     ViewThatFits(in: .horizontal) {
-                        HStack { positionLabel(position, bytes); Spacer(); coverageLabel(position) }
-                        VStack(alignment: .leading, spacing: 6) { positionLabel(position, bytes); coverageLabel(position) }
+                        HStack { positionLabel; Spacer(); coverageLabel(position) }
+                        VStack(alignment: .leading, spacing: 6) { positionLabel; coverageLabel(position) }
                     }.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                 } else { coverageLabel(position).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)) }
             }
@@ -545,9 +547,6 @@ struct BookInformationSections: View {
                 if model.details != nil, let id = model.readableBook?.id { await model.observeCoverage(bookID: id) }
             }
             .onDisappear { model.releaseCoverage() }
-    }
-    private func positionLabel(_ position: UInt64, _ bytes: UInt64) -> some View {
-        Text("读到全书 \((Double(position) / Double(max(1, bytes))).formatted(.percent.precision(.fractionLength(0))))")
     }
     private func coverageLabel(_ position: UInt64) -> some View {
         VStack(alignment: .leading, spacing: 4) {

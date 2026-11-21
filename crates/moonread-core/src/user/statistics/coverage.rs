@@ -1,4 +1,5 @@
 //! Continuous dwell calculation over facts supplied in visit/time order by Swift.
+use crate::reading::text_count::count_text_scalars;
 use crate::user::reading_fact::JsonObject;
 use crate::{ReaderError, ReadingExposure, Result, SourceSpan};
 use std::collections::BTreeMap;
@@ -186,13 +187,11 @@ pub fn chapter_coverage_counts(
             while !chunk.text.is_char_boundary(end) {
                 end -= 1;
             }
-            count += chunk
+            let slice = chunk
                 .text
                 .get(cursor..end)
-                .ok_or(ReaderError::InvalidRange)?
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .count() as u64;
+                .ok_or(ReaderError::InvalidRange)?;
+            count += count_text_scalars(slice);
             cursor = end;
             prefixes.push(count);
         }

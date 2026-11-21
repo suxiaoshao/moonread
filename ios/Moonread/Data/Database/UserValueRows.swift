@@ -541,10 +541,8 @@ extension ReaderIndex {
         guard let prefix = try UInt64.fetchOne(db, sql: """
             SELECT start_char_count FROM main.chunks WHERE book_id=? AND chunk_index=?
             """, arguments: [body.id, text.index]) else { throw ReaderError.SourceChanged }
-        let count = UInt64(String(decoding: bytes[..<start], as: UTF8.self).unicodeScalars.lazy
-            .filter { !$0.properties.isWhitespace }.count)
-        let startCount = prefix + count
-        let titleCount = String(decoding: line, as: UTF8.self).unicodeScalars.lazy.filter { !$0.properties.isWhitespace }.count
-        return (startCount, startCount + UInt64(titleCount))
+        let counts = chapterTextCounts(blockPrefix: prefix, linePrefix: String(decoding: bytes[..<start], as: UTF8.self),
+                                       title: String(decoding: line, as: UTF8.self))
+        return (counts.titleStart, counts.bodyStart)
     }
 }
