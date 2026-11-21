@@ -145,7 +145,8 @@ import GRDB
             guard Self.inputExtensions.contains(saved.sourceExtension) else { throw ReaderError.InvalidSettings }
             record = saved
             // The final filename is published by an atomic move, never by partial copy.
-            record?.inputComplete = inputURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+            let inputComplete = inputURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+            record?.inputComplete = inputComplete
             phase = saved.finished == true ? .completed : .interrupted
         }
         taskStore = store
@@ -211,7 +212,8 @@ import GRDB
         record = .init(id: UUID(), sourceExtension: suffix)
         phase = .receiving
         launch { model in
-            model.record?.scope = await model.service.metadataImportScope()
+            let scope = await model.service.metadataImportScope()
+            model.record?.scope = scope
             try model.persist()
             guard let local = model.inputURL else {
                 try await model.prepare(source.url)
@@ -362,7 +364,8 @@ import GRDB
         result = applied.result
         requiresNewPreview = applied.result.requiresNewPreview
         checkpoint = applied.checkpoint
-        record?.summary = .init(saved: savedCount, renamed: renamedCount, renameIssues: renameIssueCount)
+        let summary = Summary(saved: savedCount, renamed: renamedCount, renameIssues: renameIssueCount)
+        record?.summary = summary
         if applied.result.cancelled {
             phase = systemPaused ? .paused : .stopped
         } else if let failure = applied.result.failure {

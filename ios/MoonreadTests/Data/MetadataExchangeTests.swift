@@ -7,6 +7,40 @@ import Synchronization
 @testable import Moonread
 
 final class MetadataExchangeTests: ReaderIntegrationFixture {
+    @MainActor func testSavedImportRestoresAsInterruptedUsingTheFinalInputFile() throws {
+        let (root, service, core, _, _, _, suite) = try singleBookFixture()
+        defer {
+            try? core.session.close()
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let id = UUID()
+        let directory = root.appendingPathComponent("metadata-import")
+        let taskDirectory = directory.appendingPathComponent(id.uuidString)
+        try FileManager.default.createDirectory(at: taskDirectory, withIntermediateDirectories: true)
+        let input = taskDirectory.appendingPathComponent("input.jsonl")
+        for finalFileExists in [true, false] {
+            if finalFileExists {
+                try Data().write(to: input)
+            } else {
+                try FileManager.default.moveItem(at: input, to: input.appendingPathExtension("partial"))
+            }
+            let data = try JSONSerialization.data(withJSONObject: [
+                "id": id.uuidString, "sourceExtension": "jsonl",
+                "inputComplete": !finalFileExists, "hints": [String: Any](), "finished": false,
+            ])
+            try core.session.writeDeviceTask { db in
+                try db.execute(sql: """
+                    INSERT OR REPLACE INTO main.metadata_import_task VALUES(1,?,?)
+                    """, arguments: [id.uuidString, data])
+            }
+            let model = MetadataExchangeModel(service: service, directory: directory)
+            try model.restoreTask(core.session)
+            XCTAssertEqual(model.phase, .interrupted)
+            XCTAssertEqual(model.hasCompleteInput, finalFileExists)
+        }
+    }
+
     @MainActor func testIndexOnlyImportConflictsUnreadAndReimportNoOp() async throws {
         let (root, service, _, store, first, second, suite) = try singleBookFixture()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
