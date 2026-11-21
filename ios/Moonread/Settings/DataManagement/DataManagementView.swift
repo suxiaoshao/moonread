@@ -369,9 +369,7 @@ private struct BackupImportTaskView: View {
             case .idle: Color.clear
             case .working:
                 DataExchangeRunningView(title: Text(verbatim: status.title), stopping: task.stopping, symbol: status.symbol) {
-                    ProgressView {
-                        Text(task.stopping ? "可以关闭此页面。" : "可以关闭此页面，稍后从「阅读数据备份」查看。", tableName: "DataManagement")
-                    }
+                    ProgressView()
                 }
             case .review(let preview):
                 BackupImportReviewView(review: preview.review, title: status.title)

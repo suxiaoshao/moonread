@@ -19,8 +19,6 @@
     "将更新 %lld 本": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%lld to Update"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"將更新 %lld 本"}}}},
     "共 %lld 本 · %lld 本已相同 · %lld 本保留本机": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%1$lld Total · %2$lld Match · %3$lld Keep Local"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"共 %lld 本 · %lld 本已相同 · %lld 本保留本機"}}}},
     "导入 %lld 本": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Import %lld"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"匯入 %lld 本"}}}},
-    "可以关闭此页面，稍后从「阅读数据备份」查看。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"You can close this page and check back under Reading Data Backup."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"可以關閉此頁面，稍後從「閱讀資料備份」查看。"}}}},
-    "可以关闭此页面。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"You can close this page."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"可以關閉此頁面。"}}}},
     "全局阅读数据": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Global Reading Data"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"全域閱讀資料"}}}},
     "将更新": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Will Update"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"將更新"}}}},
     "保留本机": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Keep Local"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"保留本機"}}}},
