@@ -125,10 +125,14 @@ enum ReadingFactSettlement {
         return left == right ? .same : .different
     }
 
-    private static func archive(_ db: Database, _ evidence: Evidence, origin: Origin, reason: String) throws {
+    private static func isolationBytes(_ evidence: Evidence) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let bytes = try encoder.encode(evidence), h = evidence.head
+        return try encoder.encode(evidence)
+    }
+
+    private static func archive(_ db: Database, _ evidence: Evidence, origin: Origin, reason: String) throws {
+        let bytes = try isolationBytes(evidence), h = evidence.head
         try db.execute(sql: """
             INSERT INTO usr.quarantined_record
               (partition,source,source_id,source_type,record_id,schema_version,book_key,session_id,device_id,
@@ -191,6 +195,47 @@ enum ReadingFactSettlement {
         try db.execute(sql: "DELETE FROM usr.reading_fact WHERE partition=0 AND fact_id=?", arguments: [id])
     }
 
+    private enum Intake {
+        case same, insert
+        case isolate(Evidence, prior: Evidence?, reason: String)
+    }
+
+    private static func intake(_ db: Database, _ value: FactImportColumns, book: String, partition: Int,
+                               scope: String) throws -> Intake {
+        let id = try Head(value, book: book, partition: partition).id
+        guard try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM usr.reading_fact WHERE partition=? AND fact_id=?)",
+                               arguments: [partition,id]) == true else { return .insert }
+        let incoming = try Evidence(value, book: book, partition: partition)
+        guard let old = try evidence(db, id: id, partitions: partition).first else {
+            return .isolate(incoming, prior: nil, reason: "unreadable-fact-source")
+        }
+        let relation = try match(old, incoming, db: db, scope: scope)
+        if relation == .same { return .same }
+        return .isolate(incoming, prior: old, reason: relation == .unresolved ? unresolvedSamePartition : conflict)
+    }
+
+    static func assessBackup(_ db: Database, _ value: FactImportColumns, book: String, scope: String) throws -> BackupDisposition {
+        switch try intake(db, value, book: book, partition: 0, scope: scope) {
+        case .same: return .same
+        case .insert: return .restore
+        case .isolate(let incoming, let prior, let reason):
+            return try hasIsolatedConflict(db, incoming: incoming, prior: prior, reason: reason,
+                                           origin: .init(source: "backup", id: value.slice.id)) ? .same : .restore
+        }
+    }
+
+    private static func hasIsolatedConflict(_ db: Database, incoming: Evidence, prior: Evidence?,
+                                            reason: String, origin: Origin) throws -> Bool {
+        guard try hasIsolation(db, incoming, origin: origin, reason: reason) else { return false }
+        guard let prior else { return true }
+        return try hasIsolation(db, prior, origin: .init(source: "relational", id: prior.device), reason: reason)
+    }
+
+    private static func hasIsolation(_ db: Database, _ evidence: Evidence, origin: Origin, reason: String) throws -> Bool {
+        try BackupIsolationKey(source: origin.source, sourceID: origin.id, type: "reading_fact", id: evidence.head.id,
+                               digest: DataIdentity.sha(isolationBytes(evidence)), reason: reason).exists(db, partition: evidence.head.partition)
+    }
+
     /// Stage typed input and return whether evidence changed, for the caller
     /// to gather affected IDs and settle once before its batch commit.
     /// Same-partition clashes cannot fit in the PK: keep both in quarantine
@@ -198,19 +243,16 @@ enum ReadingFactSettlement {
     @discardableResult
     static func ingest(_ db: Database, _ value: FactImportColumns, book: String, partition: Int,
                        scope: String, origin: Origin) throws -> Bool {
-        let head = try Head(value, book: book, partition: partition)
-        let id = head.id
-        if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM usr.reading_fact WHERE partition=? AND fact_id=?)",
-                             arguments: [partition,id]) == true {
-            let incoming = try Evidence(value, book: book, partition: partition)
-            guard let old = try evidence(db, id: id, partitions: partition).first else {
-                try archive(db, incoming, origin: origin, reason: "unreadable-fact-source")
-                return true
+        let id = ReadingFactRows.identity(value.slice.id)
+        switch try intake(db, value, book: book, partition: partition, scope: scope) {
+        case .same: return false
+        case .insert: break
+        case .isolate(let incoming, let prior, let reason):
+            if origin.source == "backup",
+               try hasIsolatedConflict(db, incoming: incoming, prior: prior, reason: reason, origin: origin) { return false }
+            if let prior {
+                try archive(db, prior, origin: .init(source: "relational", id: prior.device), reason: reason)
             }
-            let relation = try match(old, incoming, db: db, scope: scope)
-            guard relation != .same else { return false }
-            let reason = relation == .unresolved ? unresolvedSamePartition : conflict
-            try archive(db, old, origin: .init(source: "relational", id: old.device), reason: reason)
             try archive(db, incoming, origin: origin, reason: reason)
             return true
         }

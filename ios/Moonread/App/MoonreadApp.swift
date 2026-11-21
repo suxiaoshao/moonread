@@ -321,7 +321,7 @@ struct MoonreadApp: App {
             library.shell.selectedTab = .library
             if url.pathExtension.lowercased() == "moonread-backup" {
                 library.shell.openSettings(target: .data)
-                await library.shell.dataManagement.prepareImport(url)
+                library.shell.dataManagement.receiveBackup(url)
             } else { library.receiveSystemURLs([url]) }
         }
     }

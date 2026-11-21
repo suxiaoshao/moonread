@@ -124,16 +124,13 @@ struct MetadataImportView: View {
                     }
                 }
                 else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(rows) { book in
-                            Button {
-                                selected = book.id
-                                if wide { compactColumn = .detail }
-                            } label: { bookRow(book) }
-                                .buttonStyle(.plain).accessibilityIdentifier("metadataBook-" + book.id)
-                            if book.id != rows.last?.id { ThemedDivider().padding(.leading, 16) }
-                        }
-                    }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 17)).clipShape(.rect(cornerRadius: 17))
+                    MetadataReviewRows(rows: rows) { book in
+                        Button {
+                            selected = book.id
+                            if wide { compactColumn = .detail }
+                        } label: { bookRow(book) }
+                            .buttonStyle(.plain).accessibilityIdentifier("metadataBook-" + book.id)
+                    }
                 }
                 Text("默认补空白资料、追加标签。已有不同值保留，改名需要单独选择。", tableName: "MetadataExchange")
                     .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
@@ -203,7 +200,7 @@ struct MetadataImportView: View {
         }
     }
     private var importButton: some View {
-        taskFooter {
+        MetadataTaskActions {
             if let error = model.error { Text(verbatim: error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
             if model.invalidSelection {
                 Text("所选资料超出编辑限制；请减少标签、改为替换或保留现有值。", tableName: "MetadataExchange").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
@@ -256,16 +253,6 @@ struct MetadataImportView: View {
         }
     }
 
-    private func taskFooter<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        VStack(spacing: 0) {
-            ThemedDivider()
-            VStack(spacing: 8, content: content)
-                .frame(maxWidth: 460)
-                .padding(.horizontal, 20).padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
-        }
-    }
-
     private func centered<Content: View>(@ViewBuilder _ content: @escaping () -> Content) -> some View {
         GeometryReader { viewport in
             ScrollView {
@@ -312,7 +299,7 @@ struct MetadataImportView: View {
                         .buttonStyle(MetadataActionButtonStyle())
                 }
             }.modifier(MetadataTaskBar {
-                taskFooter {
+                MetadataTaskActions {
                     finishReview
                 }
             })
@@ -322,7 +309,7 @@ struct MetadataImportView: View {
                     message: String(localized: "这份清单没有可预览的书目。没有保存任何信息。", table: "MetadataExchange"))
                 if let diagnostics = model.preview?.diagnostics, !diagnostics.isEmpty { issues(diagnostics) }
                 if let error = model.error { note(Text(verbatim: error)) }
-            }.modifier(MetadataTaskBar { taskFooter { endAction } })
+            }.modifier(MetadataTaskBar { MetadataTaskActions { endAction } })
         case .idle:
             Color.clear
         default:
@@ -358,7 +345,7 @@ struct MetadataImportView: View {
                 note(Text("正在停止；已完成的操作会保留。", tableName: "MetadataExchange"))
             }
         }.modifier(MetadataTaskBar {
-            taskFooter {
+            MetadataTaskActions {
                 Button(role: .destructive) { model.cancel() } label: {
                     Label {
                         Text(renaming ? "停止后续改名" : "停止导入", tableName: "MetadataExchange")
@@ -558,7 +545,7 @@ struct MetadataImportView: View {
             resultIssues
             resultNotes
         }.modifier(MetadataTaskBar {
-            taskFooter {
+            MetadataTaskActions {
                 if model.phase == .completed {
                     if canStartFreshPreview {
                         Button { model.reviewAgain() } label: { Text("重新预览", tableName: "MetadataExchange") }
@@ -768,5 +755,23 @@ private struct MetadataCoverSources: View {
             } label: { Text("封面文件", tableName: "MetadataExchange") }
                 .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)).padding(.horizontal, 14)
         }
+    }
+}
+
+
+struct MetadataReviewRows<Rows: RandomAccessCollection, Content: View>: View where Rows.Element: Identifiable {
+    @Environment(\.theme) private var theme
+    let rows: Rows
+    @ViewBuilder let row: (Rows.Element) -> Content
+
+    var body: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(rows) { item in
+                VStack(spacing: 0) {
+                    row(item)
+                    if item.id != rows.last?.id { ThemedDivider().padding(.leading, 16) }
+                }
+            }
+        }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 17)).clipShape(.rect(cornerRadius: 17))
     }
 }

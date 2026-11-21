@@ -418,28 +418,60 @@ enum ReadingHistoryTransport {
             """, arguments: [sourceID,id,book,bytes,DataIdentity.sha(bytes),reason])
     }
 
-    static func stageSegment(_ db: Database, id: String, book: String?, payload: String, fetched: Bool, sourceID: String,
-                             scope: DataScope, changed: inout ReadingHistoryRows.Changed) throws {
-        let origin = ReadingFactSettlement.Origin(source: fetched ? "cloud" : "backup", id: sourceID,
-                                                  upgrade: fetched ? nil : .local)
+    private enum SegmentInput {
+        case valid(ReadingSegment, book: String)
+        case invalid(book: String?, reason: String)
+    }
+
+    private static func segmentInput(id: String, book: String?, payload: String, fetched: Bool) -> SegmentInput {
         let wire = decodeReadingSegment(payload: payload)
         let route = formalScope(book)
         guard let value = wire.segment, let key = wire.bookKey, let parsed = try? parseReadingKey(value: key),
               case .formal = parsed, value.header.id == id, (!fetched || value.header.sealed),
               (book == nil || route == key) else {
-            try ReadingSegmentRows.quarantine(db, partition: 0, book: route, id: id, origin: origin,
-                  reason: wire.status == .newerFormat ? "newer-segment" : "invalid-segment", raw: Data(payload.utf8))
-            changed.segments.insert(id)
-            return
+            return .invalid(book: route, reason: wire.status == .newerFormat ? "newer-segment" : "invalid-segment")
         }
-        if try ReadingSegmentRows.ingest(db, value: value, book: key, partition: 0,
-             intake: fetched ? .fetched : .backup, origin: origin, originalPayload: payload) {
-            changed.segments.insert(id)
+        return .valid(value, book: key)
+    }
+
+    static func assessBackupSegment(_ db: Database, record: BackupRecord) throws -> BackupDisposition {
+        switch segmentInput(id: record.id, book: record.key, payload: record.payload, fetched: false) {
+        case .valid(let value, let key):
+            return try ReadingSegmentRows.assessBackup(db, value: value, book: key, payload: record.payload)
+        case .invalid(_, let reason):
+            return try ReadingSegmentRows.assessBackupIsolation(db, id: record.id, payload: record.payload, reason: reason)
         }
     }
 
-    static func stageClear(_ db: Database, id: String, book: String?, payload: String, source: String, sourceID: String,
-                           changed: inout ReadingHistoryRows.Changed, upgrade: UpgradeOrigins.Write? = nil) throws {
+    @discardableResult
+    static func stageSegment(_ db: Database, id: String, book: String?, payload: String, fetched: Bool, sourceID: String,
+                             scope: DataScope, changed: inout ReadingHistoryRows.Changed) throws -> Bool {
+        let origin = ReadingFactSettlement.Origin(source: fetched ? "cloud" : "backup", id: sourceID,
+                                                  upgrade: fetched ? nil : .local)
+        switch segmentInput(id: id, book: book, payload: payload, fetched: fetched) {
+        case .invalid(let route, let reason):
+            if !fetched, try ReadingSegmentRows.assessBackupIsolation(db, id: id, payload: payload, reason: reason) == .same {
+                return false
+            }
+            try ReadingSegmentRows.quarantine(db, partition: 0, book: route, id: id, origin: origin,
+                  reason: reason, raw: Data(payload.utf8))
+            changed.segments.insert(id)
+        case .valid(let value, let key):
+            if try ReadingSegmentRows.ingest(db, value: value, book: key, partition: 0,
+                 intake: fetched ? .fetched : .backup, origin: origin, originalPayload: payload) {
+                changed.segments.insert(id)
+            } else { return false }
+        }
+        return true
+    }
+
+    private enum ClearDecision {
+        case same(ReadingClearRows.Value), write(ReadingClearRows.Value), isolate(prior: ReadingClearRows.Value?)
+    }
+
+    private static func clearDecision(_ db: Database, id: String, book: String?, payload: String,
+                                      source: String) throws -> ClearDecision {
+        let prior = try ReadingClearRows.load(db, partition: 0, id: id)
         let clear = try? ReadingClearRows.decode(payload)
         let allowed = clear?.book.map { key in
             if case .formal? = try? parseReadingKey(value: key) { return true }
@@ -448,17 +480,52 @@ enum ReadingHistoryTransport {
             return source == "backup" && clear?.v == 1 && (try? parseReadingKey(value: key)) != nil
         } ?? true
         if let clear, allowed, (book == nil || book == clear.book),
-           try ReadingClearRows.load(db, partition: 0, id: id).map({ $0 == clear }) != false,
+           prior.map({ $0 == clear }) != false,
            try Bool.fetchOne(db, sql: """
                SELECT EXISTS(SELECT 1 FROM usr.statistics_clear WHERE partition=0 AND record_id=?
                AND schema_version NOT IN (1,2))
                """, arguments: [id]) == false {
-            if try ReadingClearRows.insert(db, clear, partition: 0, id: id, upgrade: upgrade) {
-                try ReadingClearRows.recordAffected(db, clear, partition: 0, changed: &changed)
-            }
-            return
+            return prior == nil ? .write(clear) : .same(clear)
         }
-        if let prior = try ReadingClearRows.load(db, partition: 0, id: id) {
+        return .isolate(prior: prior)
+    }
+
+    static func assessBackupClear(_ db: Database, record: BackupRecord) throws -> (BackupDisposition, book: String?) {
+        switch try clearDecision(db, id: record.id, book: record.key.isEmpty ? nil : record.key,
+                                 payload: record.payload, source: "backup") {
+        case .same(let clear): return (.same, formalScope(clear.book))
+        case .write(let clear): return (.restore, formalScope(clear.book))
+        case .isolate(let prior):
+            let same = try hasBackupClearIsolation(db, id: record.id, payload: record.payload, prior: prior)
+            return (same ? .same : .restore, formalScope(record.key))
+        }
+    }
+
+    private static func hasBackupClearIsolation(_ db: Database, id: String, payload: String,
+                                                prior: ReadingClearRows.Value?) throws -> Bool {
+        guard try clearIsolationKey(id: id, source: "backup", sourceID: id, bytes: Data(payload.utf8)).exists(db) else {
+            return false
+        }
+        guard let prior else { return true }
+        return try clearIsolationKey(id: id, source: "relational", sourceID: id,
+                                     bytes: Data(ReadingClearRows.wire(prior).utf8)).exists(db)
+    }
+
+    @discardableResult
+    static func stageClear(_ db: Database, id: String, book: String?, payload: String, source: String, sourceID: String,
+                           changed: inout ReadingHistoryRows.Changed, upgrade: UpgradeOrigins.Write? = nil) throws -> Bool {
+        let prior: ReadingClearRows.Value?
+        switch try clearDecision(db, id: id, book: book, payload: payload, source: source) {
+        case .same: return false
+        case .write(let clear):
+            try ReadingClearRows.insert(db, clear, partition: 0, id: id, upgrade: upgrade)
+            try ReadingClearRows.recordAffected(db, clear, partition: 0, changed: &changed)
+            return true
+        case .isolate(let existing):
+            if source == "backup", try hasBackupClearIsolation(db, id: id, payload: payload, prior: existing) { return false }
+            prior = existing
+        }
+        if let prior {
             // A same-ID conflict blocks both prior and incoming scope.
             let priorBytes = try Data(ReadingClearRows.wire(prior).utf8)
             try isolateClear(db, id: id, book: prior.book, session: prior.session, bytes: priorBytes,
@@ -467,6 +534,7 @@ enum ReadingHistoryTransport {
         }
         try blockClear(db, id: id, book: formalScope(book), payload: payload, source: source, sourceID: sourceID,
                        changed: &changed, upgrade: upgrade)
+        return true
     }
 
     private static func blockClear(_ db: Database, id: String, book: String?, payload: String,
@@ -483,6 +551,11 @@ enum ReadingHistoryTransport {
         changed.clearSegments.formUnion(try ReadingSegmentRows.affected(db, partition: 0, book: book, session: session))
     }
 
+    private static func clearIsolationKey(id: String, source: String, sourceID: String, bytes: Data) -> BackupIsolationKey {
+        .init(source: source, sourceID: sourceID, type: "statistics_clear", id: id,
+              digest: DataIdentity.sha(bytes), reason: "unreadable-clear")
+    }
+
     private static func isolateClear(_ db: Database, id: String, book: String?, session: String?, bytes: Data,
                                      source: String, sourceID: String, upgrade: UpgradeOrigins.Write?) throws {
         try db.execute(sql: """
@@ -490,7 +563,7 @@ enum ReadingHistoryTransport {
                 raw_format,raw_bytes,digest,reason,completeness)
             VALUES(0,?,?,'statistics_clear',?,?,?,'clear-wire',?,?,'unreadable-clear','complete')
             ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
-            """, arguments: [source,sourceID,id,book,session,bytes,DataIdentity.sha(bytes)])
+            """, arguments: [source,sourceID,id,book,session,bytes,clearIsolationKey(id: id, source: source, sourceID: sourceID, bytes: bytes).digest])
         if let upgrade { try UpgradeOrigins.recordInsertedIsolation(db, partition: 0, as: upgrade) }
     }
 
