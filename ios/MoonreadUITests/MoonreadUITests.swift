@@ -292,24 +292,28 @@ import XCTest
     ready(app.buttons["readerThemeSettings"]).tap()
     app.segmentedControls["readerThemeTabs"].buttons["排版"].tap()
     ready(app.buttons["readingFont"]).tap()
-    ready(app.buttons["readerFont-system"]).tap()
-    waitUntil { self.app.buttons["readerFont-system"].isSelected }
-    XCTAssertTrue(app.buttons["readerFont-system"].exists) // Immediate save leaves the list open.
+    let systemFont = app.cells["readerFont-system"]
+    ready(systemFont).tap()
+    waitUntil { systemFont.isSelected }
+    XCTAssertTrue(systemFont.exists) // Immediate save leaves the list open.
     app.navigationBars.buttons.firstMatch.tap()
     app.navigationBars.buttons.firstMatch.tap()
     XCTAssertFalse(app.buttons["aiSettings"].exists)
     XCTAssertFalse(element("automaticFullIndex").exists)
     ready(app.buttons["statisticsSettings"]).tap()
-    ready(element("statisticsEnabled"))
+    let statisticsEnabled = app.switches["statisticsEnabled"].switches.firstMatch
+    ready(statisticsEnabled)
     XCTAssertTrue(app.staticTexts["关闭后保留历史统计，只停止此设备的新记录。只记录可见正文活动；锁屏、后台、工具面板和闲置时暂停。"].exists)
-    element("statisticsEnabled").tap()
+    statisticsEnabled.tap()
+    waitUntil { statisticsEnabled.value as? String == "0" }
     app.navigationBars.buttons.firstMatch.tap()
     app.tabBars.buttons["统计"].tap()
     ready(app.staticTexts["阅读统计已暂停"])
     XCTAssertTrue(ready(app.staticTexts["暂无阅读记录"]).exists)
     XCTAssertTrue(element("statisticsPeriod").exists)
     ready(app.buttons["统计设置"]).tap()
-    ready(element("statisticsEnabled")).tap()
+    ready(statisticsEnabled).tap()
+    waitUntil { statisticsEnabled.value as? String == "1" }
     app.navigationBars.buttons.firstMatch.tap()
     app.tabBars.buttons["设置"].tap()
     ready(app.buttons["libraryManagementSettings"]).tap()
