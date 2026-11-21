@@ -405,7 +405,10 @@ struct UserBackupRestore: Sendable {
         return result
     }
 
-    func merge(_ db: Database, scope: DataScope, cancellation: BackupCancellation) throws {
+    func merge(_ db: Database, scope: DataScope, syncRequested: Bool, cancellation: BackupCancellation) throws {
+        let queueForSync = try syncRequested && scope != .local
+            && CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready
+            && ReadingCloudInitialization.traffic(db) == .ordinary
         for asset in attachments {
             try cancellation.check()
             try UserValueRows.restoreBackupCover(db, id: asset.id, sha: asset.sha, bytes: asset.bytes)
@@ -416,11 +419,12 @@ struct UserBackupRestore: Sendable {
             try cancellation.check()
             switch entry {
             case let .value(key, head, device):
-                try UserValueRows.merge(db, key: .init(key), head: head, device: device, restoringBackup: true)
+                try UserValueRows.merge(db, key: .init(key), head: head, device: device,
+                                        restoringBackup: true, queueForSync: queueForSync)
             case let .position(book, value):
-                try ReadingPositionRows.mergeBackup(db, book: book, incoming: value)
+                try ReadingPositionRows.mergeBackup(db, book: book, incoming: value, queueForSync: queueForSync)
             case let .annotation(book, mark, value):
-                try AnnotationRows.mergeBackup(db, book: book, mark: mark, value: value)
+                try AnnotationRows.mergeBackup(db, book: book, mark: mark, value: value, queueForSync: queueForSync)
             case let .fact(book, value):
                 if try ReadingFactSettlement.ingest(db, value, book: book, partition: 0, scope: scope.key,
                     origin: .init(source: "backup", id: value.slice.id, upgrade: .local)) {

@@ -156,13 +156,18 @@ enum UserValueRows {
         try UserSyncJSON.validateValue(value, key: key.logical)
         let head = StoredValue(updated: max(now,latest + 1), token: UUID().uuidString, value: value)
         let fields = try body(key, value: value) { try assetReference(db, $0) }
-        let family = scope == .local ? nil : FixedValueCloudRows.Family(key.kind)
+        try persistLocal(db, key: key, body: fields, head: head, device: device, queueForSync: scope != .local)
+        return head
+    }
+
+    private static func persistLocal(_ db: Database, key: Key, body: Body, head: StoredValue, device: String,
+                                     queueForSync: Bool) throws {
+        let family = queueForSync ? FixedValueCloudRows.Family(key.kind) : nil
         let id = recordID(logical: key.logical, device: device)
         let previous = try family.flatMap { try FixedValueCloudRows.currentDigest(db, $0, id: id) }
-        try persist(db, key: key, body: fields, head: head, device: device)
+        try persist(db, key: key, body: body, head: head, device: device)
         try recordUpgradeEdit(db, key: key, device: device)
         if let family { try FixedValueCloudRows.enqueueLocalEdit(db, family, id: id, previousDigest: previous) }
-        return head
     }
 
     /// For a checked released record, preserve its author's clock. Validate
@@ -211,11 +216,14 @@ enum UserValueRows {
 
     @discardableResult
     static func merge(_ db: Database, key: Key, head: StoredValue, device: String,
-                      preserveSiblingIdentity: Bool = false, restoringBackup: Bool = false) throws -> Bool {
+                      preserveSiblingIdentity: Bool = false, restoringBackup: Bool = false, queueForSync: Bool = false) throws -> Bool {
         let state = try assess(db, key: key, head: head, requireAsset: true)
         guard disposition(state, head: head, device: device, preserveSiblingIdentity: preserveSiblingIdentity) == .restore else { return false }
-        try persist(db, key: key, body: state.body, head: head, device: device)
-        if restoringBackup { try recordUpgradeEdit(db, key: key, device: device) }
+        if restoringBackup {
+            try persistLocal(db, key: key, body: state.body, head: head, device: device, queueForSync: queueForSync)
+        } else {
+            try persist(db, key: key, body: state.body, head: head, device: device)
+        }
         try key.settle(db)
         return true
     }

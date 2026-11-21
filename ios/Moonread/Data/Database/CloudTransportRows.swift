@@ -52,11 +52,13 @@ enum CloudTransportRows {
             """, arguments: key.arguments) == true
     }
 
-    static func enqueueSave(_ db: Database, _ key: Key, businessID: String, digest: String) throws {
+    static func enqueueSave(_ db: Database, _ key: Key, businessID: String, digest: String,
+                            replacingPendingDeletion: Bool = false) throws {
         if let prior = try pending(db, key) {
             guard prior.businessID == businessID else { throw DataV2Error.incompatibleSource("cloud record identity") }
             // A generic save is not proof of an explicit, post-delete create.
-            guard prior.intent != .delete, prior.intent != .save(digest: digest) else { return }
+            guard replacingPendingDeletion || prior.intent != .delete else { return }
+            guard prior.intent != .save(digest: digest) else { return }
         }
         try enqueue(db, key, businessID: businessID, intent: "save", digest: digest)
     }
@@ -134,7 +136,7 @@ enum CloudTransportRows {
             INSERT INTO usr.cloud_outbox(zone,record_type,record_name,business_id,intent,content_digest,generation)
             VALUES(?,?,?,?,?,?,?)
             ON CONFLICT(zone,record_type,record_name) DO UPDATE SET intent=excluded.intent,content_digest=excluded.content_digest,
-              generation=excluded.generation
+              generation=excluded.generation,after_type=NULL,after_name=NULL,after_digest=NULL
             """, arguments: key.arguments + [businessID, intent, digest, next])
         if key.zone == ReadingHistoryTransport.zone {
             try db.execute(sql: """
