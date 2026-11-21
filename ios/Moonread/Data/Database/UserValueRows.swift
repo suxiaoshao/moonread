@@ -128,10 +128,15 @@ enum UserValueRows {
     }
 
     private static func candidates(_ db: Database, _ key: Key) throws -> [Row] {
-        try Row.fetchAll(db, sql: """
+        let rows = try Row.fetchAll(db, sql: """
             SELECT * FROM usr.\(key.table) WHERE partition=0 AND \(key.memberColumn)=? AND logical_key=? AND schema_version=1
-            \(key.kind == .shelfReference ? "AND reference_version=1" : "") ORDER BY record_id
+            \(key.kind == .shelfReference ? "AND reference_version=1" : "")
             """, arguments: [key.member,key.logical])
+        // Ordering in SQL can make SQLite scan the entire partition by
+        // record ID. Keep the same binary order after fetching this key.
+        return rows.sorted {
+            ($0["record_id"] as String).utf8.lexicographicallyPrecedes(($1["record_id"] as String).utf8)
+        }
     }
 
     @discardableResult
@@ -188,22 +193,27 @@ enum UserValueRows {
         return (incoming,known,duplicate)
     }
 
-    static func assessBackup(_ db: Database, key: Key, head: StoredValue) throws -> Bool {
-        let state = try assess(db, key: key, head: head, requireAsset: false)
-        return CurrentUserRows.winner(state.known).map { ($0["updated_ms"] as Int64,$0["token"] as String) > (head.updated,head.token) } ?? false
+    private static func disposition(_ state: (body: Body, known: [Row], duplicate: Bool), head: StoredValue,
+                                    device: String, preserveSiblingIdentity: Bool) -> BackupDisposition {
+        let canonical = DataIdentity.canonical(device)
+        if state.duplicate && (!preserveSiblingIdentity || state.known.contains(where: {
+            ($0["device_id"] as String) == canonical && ($0["token"] as String) == head.token
+        })) { return .same }
+        if let row = state.known.first(where: { ($0["device_id"] as String) == canonical }),
+           (row["updated_ms"] as Int64,row["token"] as String) > (head.updated,head.token) { return .keepLocal }
+        return .restore
+    }
+
+    static func assessBackup(_ db: Database, key: Key, head: StoredValue, device: String) throws -> BackupDisposition {
+        disposition(try assess(db, key: key, head: head, requireAsset: false), head: head,
+                    device: device, preserveSiblingIdentity: false)
     }
 
     @discardableResult
     static func merge(_ db: Database, key: Key, head: StoredValue, device: String,
                       preserveSiblingIdentity: Bool = false, restoringBackup: Bool = false) throws -> Bool {
         let state = try assess(db, key: key, head: head, requireAsset: true)
-        let canonical = DataIdentity.canonical(device)
-        if state.duplicate && (!preserveSiblingIdentity || state.known.contains(where: {
-            ($0["device_id"] as String) == canonical && ($0["token"] as String) == head.token
-        })) { return false }
-        let known = state.known
-        if let row = known.first(where: { ($0["device_id"] as String) == canonical }),
-           (row["updated_ms"] as Int64,row["token"] as String) > (head.updated,head.token) { return false }
+        guard disposition(state, head: head, device: device, preserveSiblingIdentity: preserveSiblingIdentity) == .restore else { return false }
         try persist(db, key: key, body: state.body, head: head, device: device)
         if restoringBackup { try recordUpgradeEdit(db, key: key, device: device) }
         try key.settle(db)
@@ -253,6 +263,27 @@ enum UserValueRows {
         guard try Bool.fetchOne(db, sql: "SELECT availability='available' FROM usr.cover_asset WHERE asset_id=?", arguments: [id]) == true
         else { throw ReadingDataError.missingAsset }
         return id
+    }
+
+    static func booksReferencingCover(_ db: Database, id: String, sha: String) throws -> [String] {
+        try String.fetchAll(db, sql: """
+            SELECT DISTINCT book_key FROM usr.cover_candidate WHERE asset_id=? AND partition=0
+            """, arguments: [assetID(id, sha: sha)])
+    }
+
+    static func assessBackupCover(_ db: Database, id: String, sha: String) throws -> BackupDisposition {
+        if try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM usr.cover_asset WHERE legacy_cover_id=? AND availability='available' AND expected_sha IS NOT ?)
+            """, arguments: [id,sha]) == true { throw ReadingDataError.invalid }
+        return try Bool.fetchOne(db, sql: """
+            SELECT bytes IS NOT NULL FROM usr.cover_asset WHERE asset_id=?
+            """, arguments: [assetID(id, sha: sha)]) == true ? .same : .restore
+    }
+
+    static func restoreBackupCover(_ db: Database, id: String, sha: String, bytes: Data) throws {
+        if try assessBackupCover(db, id: id, sha: sha) == .restore {
+            try attach(db, id: id, sha: sha, bytes: bytes)
+        }
     }
 
     static func attach(_ db: Database, id: String, sha: String, bytes: Data, publishRepair: Bool = true) throws {

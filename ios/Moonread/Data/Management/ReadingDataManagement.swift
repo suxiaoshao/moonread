@@ -8,10 +8,36 @@ final class BackupStaging: Sendable {
     init(directory: URL, manifest: BackupManifest, configuration: UUID, ownedRoot: URL? = nil) { self.directory = directory; self.manifest = manifest; self.configuration = configuration; self.ownedRoot = ownedRoot ?? directory }
     deinit { let directory = ownedRoot; Task.detached { try? FileManager.default.removeItem(at: directory) } }
 }
+struct ReadingBackupReview: Sendable {
+    struct Book: Identifiable, Sendable {
+        let id: String
+        let title: String?
+        let linked: Bool
+        let changes: Set<BackupChange>
+        var disposition: BackupDisposition {
+            changes.map(\.disposition).max { $0.rawValue < $1.rawValue } ?? .same
+        }
+    }
+
+    let books: [Book]
+    let global: Set<BackupChange>
+
+    var updates: Int { books.count(where: { $0.disposition == .restore }) }
+    var same: Int { books.count(where: { $0.disposition == .same }) }
+    var kept: Int { books.count - updates - same }
+    var hasGlobalChanges: Bool { global.contains { $0.disposition == .restore } }
+    var needsRestore: Bool { updates > 0 || hasGlobalChanges }
+    var isEmpty: Bool { books.isEmpty && global.isEmpty }
+    var keepsLocal: Bool { kept > 0 || global.contains { $0.disposition == .keepLocal } }
+}
+
 struct ReadingBackupPreview: Sendable {
     let staging: BackupStaging
-    let preview: BackupPreview
-    let linked: Int
+    let review: ReadingBackupReview
+}
+
+extension BackupCancellation {
+    func check() throws { if isCancelled() { throw CancellationError() } }
 }
 
 extension AppDataService {
@@ -113,10 +139,6 @@ extension AppDataService {
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         value.configuration = configuration
         return value
-    }
-    func allReadingDataKeysForDeletion() async throws -> (keys: Set<String>, configuration: UUID) {
-        let configuration = userCloudConfigurationRevision
-        return (try relationalUserIndex().bookKeysForUserDeletion(), configuration)
     }
     /// Inspect only task/source metadata; never materialize or open the original.
     func pendingReadingData(_ key: String) throws -> PendingReadingData {
@@ -261,50 +283,71 @@ extension AppDataService {
             return output
         } catch { try? FileManager.default.removeItem(at: directory); throw error }
     }
-    func previewReadingBackup(_ url: URL) async throws -> ReadingBackupPreview {
+    func stageReadingBackup(_ source: ProtectedFileAccess.Source) async throws -> BackupStaging {
         let revision = userCloudConfigurationRevision
-        let source = ProtectedFileAccess.Source(selectedFile: url)
-        defer { withExtendedLifetime(source) {} }
         let directory = try backupDirectory("import")
         inFlightBackupDirectories.insert(directory)
         defer { inFlightBackupDirectories.remove(directory) }
+        let cancellation = BackupCancellation()
+        let access = ProtectedFileAccess()
         do {
-            let info = try await Task.detached(priority: .utility) {
-                let info = try ProtectedFileAccess().coordinatedRead(at: source.url) { readable in
-                    try inspectBackup(archivePath: readable.path, stagingRoot: directory.path)
+            let info = try await withTaskCancellationHandler {
+                try await access.readAsync(at: source.url) { readable in
+                    try withExtendedLifetime(source) {
+                        try inspectBackup(archivePath: readable.path, stagingRoot: directory.path, cancellation: cancellation)
+                    }
                 }
-                guard let info else { throw ReadingDataError.invalid }; return info
-            }.value
+            } onCancel: { cancellation.cancel() }
             try Task.checkCancellation()
             let manifest = try JSONDecoder().decode(BackupManifest.self, from: Data(info.manifestJson.utf8))
+            guard revision == userCloudConfigurationRevision else { throw ReadingDataError.changed }
             let staging = BackupStaging(directory: URL(fileURLWithPath: info.directory), manifest: manifest, configuration: revision, ownedRoot: directory)
-            let preview = try await refreshReadingBackupPreview(staging)
-            try Task.checkCancellation()
             activeBackupImport = staging
-            return preview
+            return staging
         } catch { try? FileManager.default.removeItem(at: directory); throw error }
     }
-    func refreshReadingBackupPreview(_ staging: BackupStaging) async throws -> ReadingBackupPreview {
-        guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        let plan = try UserBackupRestore(directory: staging.directory, manifest: staging.manifest)
-        let core = try relationalUserIndex()
-        let preview = try core.session.readUsers(core.lease) { try plan.preview($0) }
-        var linked = 0
-        for key in preview.keys { if try !core.sourceFilesForSha(sha: key).isEmpty { linked += 1 } }
-        guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        return .init(staging: staging, preview: preview, linked: linked)
+
+    func previewReadingBackup(_ staging: BackupStaging) async throws -> ReadingBackupPreview {
+        let cancellation = BackupCancellation()
+        return try await withTaskCancellationHandler {
+            guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+            let plan = try UserBackupRestore(directory: staging.directory, manifest: staging.manifest, cancellation: cancellation)
+            let core = try relationalUserIndex()
+            let review = try core.session.readUsers(core.lease) { try plan.preview($0, scope: core.lease.scope, cancellation: cancellation) }
+            try cancellation.check()
+            let sources = try core.firstSources(forSHAs: Set(review.books.keys))
+            var books = [ReadingBackupReview.Book]()
+            for (key, changes) in review.books {
+                try cancellation.check()
+                let source = sources[key]
+                books.append(.init(id: key, title: staging.manifest.titles[key] ?? source?.title, linked: source != nil, changes: changes))
+            }
+            books.sort {
+                if $0.linked != $1.linked { return $0.linked }
+                let comparison = ($0.title ?? "").localizedStandardCompare($1.title ?? "")
+                return comparison == .orderedSame ? $0.id < $1.id : comparison == .orderedAscending
+            }
+            try cancellation.check()
+            return .init(staging: staging, review: .init(books: books, global: review.global))
+        } onCancel: { cancellation.cancel() }
     }
+
     func importReadingBackup(_ preview: ReadingBackupPreview) async throws {
         guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        try Task.checkCancellation()
-        let lease = try indexStore().lease
-        let plan = try UserBackupRestore(directory: preview.staging.directory, manifest: preview.staging.manifest)
-        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
-        try Task.checkCancellation()
-        guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        let index = try relationalUserIndex()
-        guard index.lease == lease else { throw ReadingDataError.changed }
-        try index.session.writeUsers(index.lease) { try plan.merge($0, scope: index.lease.scope) }
+        guard preview.review.needsRestore else { return }
+        let cancellation = BackupCancellation()
+        try await withTaskCancellationHandler {
+            try cancellation.check()
+            let lease = try indexStore().lease
+            let plan = try UserBackupRestore(directory: preview.staging.directory, manifest: preview.staging.manifest, cancellation: cancellation)
+            try await acquireCancellableUserDataOperation()
+            defer { releaseUserDataOperation() }
+            try cancellation.check()
+            guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+            let index = try relationalUserIndex()
+            guard index.lease == lease else { throw ReadingDataError.changed }
+            try index.session.writeUsers(index.lease) { try plan.merge($0, scope: index.lease.scope, cancellation: cancellation) }
+        } onCancel: { cancellation.cancel() }
         dataChanged()
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
         // Reuse the existing received-data refresh (including ThemeStore.load).

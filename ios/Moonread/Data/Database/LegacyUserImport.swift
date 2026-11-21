@@ -120,7 +120,8 @@ enum LegacyUserImport {
         try db.execute(sql: "INSERT INTO usr.local_data_state VALUES ('legacy-user-import','structural-v1')")
     }
 
-    static func reconcileCoverCompleteness(_ db: Database, source: String? = nil) throws {
+    static func recoverableCoverMarkers(_ db: Database, source: String? = nil,
+                                        cancellation: BackupCancellation? = nil) throws -> [String: [Int64]] {
         // A nil UserCover has no checksum of its own. It stops being missing
         // only if its logical ID has a single, complete byte variant after
         // both partitions and all checksum-verified cache fallbacks were read.
@@ -131,28 +132,29 @@ enum LegacyUserImport {
             """, arguments: [source])
         var markers: [String: [Int64]] = [:]
         for row in missing {
+            try cancellation?.check()
             guard let id = String(data: row["raw_bytes"], encoding: .utf8), !id.isEmpty else { continue }
             markers[DataIdentity.canonical(id), default: []].append(row["quarantine_id"])
         }
-        if !markers.isEmpty {
-            var resolved = Set<String>(), ambiguous = Set<String>()
-            do {
-                // Read only identity headers, never all the cover bytes.
-                let assets = try Row.fetchCursor(db, sql: "SELECT legacy_cover_id,availability,expected_sha FROM usr.cover_asset WHERE legacy_cover_id IS NOT NULL")
-                while let row = try assets.next() {
-                    let id = DataIdentity.canonical(row["legacy_cover_id"])
-                    guard markers[id] != nil else { continue }
-                    if (row["availability"] as String) != "available" || (row["expected_sha"] as String?) == nil ||
-                        !resolved.insert(id).inserted {
-                        ambiguous.insert(id)
-                    }
-                }
+        guard !markers.isEmpty else { return [:] }
+        var resolved = Set<String>(), ambiguous = Set<String>()
+        // Read only identity headers, never all the cover bytes.
+        let assets = try Row.fetchCursor(db, sql: "SELECT legacy_cover_id,availability,expected_sha FROM usr.cover_asset WHERE legacy_cover_id IS NOT NULL")
+        while let row = try assets.next() {
+            try cancellation?.check()
+            let id = DataIdentity.canonical(row["legacy_cover_id"])
+            guard markers[id] != nil else { continue }
+            if (row["availability"] as String) != "available" || (row["expected_sha"] as String?) == nil ||
+                !resolved.insert(id).inserted {
+                ambiguous.insert(id)
             }
-            for id in resolved.subtracting(ambiguous) {
-                for marker in markers[id, default: []] {
-                    try db.execute(sql: "DELETE FROM usr.quarantined_record WHERE quarantine_id=?", arguments: [marker])
-                }
-            }
+        }
+        return markers.filter { resolved.contains($0.key) && !ambiguous.contains($0.key) }
+    }
+
+    static func reconcileCoverCompleteness(_ db: Database, source: String? = nil) throws {
+        for marker in try recoverableCoverMarkers(db, source: source).values.joined() {
+            try db.execute(sql: "DELETE FROM usr.quarantined_record WHERE quarantine_id=?", arguments: [marker])
         }
         try db.execute(sql: """
             UPDATE usr.legacy_import_state AS rows SET completeness=CASE WHEN EXISTS(

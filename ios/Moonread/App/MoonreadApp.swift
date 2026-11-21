@@ -252,7 +252,7 @@ struct MoonreadApp: App {
                 if phase == .background {
                     Task { await cloud.scene(active: false) }
                     MetadataExchangeModel.shared.sceneDidEnterBackground()
-                    library.shell.dataManagement.backupExport.sceneDidEnterBackground()
+                    library.shell.dataManagement.sceneDidEnterBackground()
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences(); await readerSettings.flush() }
                     Task { await AppDataService.shared.pauseImports() }
                 }
@@ -321,7 +321,7 @@ struct MoonreadApp: App {
             library.shell.selectedTab = .library
             if url.pathExtension.lowercased() == "moonread-backup" {
                 library.shell.openSettings(target: .data)
-                await library.shell.dataManagement.prepareImport(url)
+                library.shell.dataManagement.receiveBackup(url)
             } else { library.receiveSystemURLs([url]) }
         }
     }

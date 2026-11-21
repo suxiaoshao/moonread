@@ -188,7 +188,7 @@ enum AnnotationRows {
         try writeRelations(value.relatedMarks, table: "annotation_related_mark")
     }
 
-    static func assessBackup(_ db: Database, book: String, mark: String, value: AnnotationCandidate) throws -> Bool {
+    static func assessBackup(_ db: Database, book: String, mark: String, value: AnnotationCandidate) throws -> BackupDisposition {
         let record = DataIdentity.canonical(value.id)
         if try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM usr.quarantined_record WHERE partition=0 AND record_id=?
@@ -197,14 +197,14 @@ enum AnnotationRows {
         let view = try snapshot(db, key: book, markID: mark, partition: 0, reducing: false)
         try requireReadable(view, ids: [mark])
         guard let route = try Row.fetchOne(db, sql: "SELECT book_key,mark_id FROM usr.annotation_candidate WHERE partition=0 AND record_id=?",
-                                           arguments: [record]) else { return false }
+                                           arguments: [record]) else { return .restore }
         guard (route["book_key"] as String) == book, (route["mark_id"] as String) == mark,
               view.groups[mark]?.first(where: { $0.id == record }) == value else { throw ReadingDataError.invalid }
-        return true
+        return .same
     }
 
     static func mergeBackup(_ db: Database, book: String, mark: String, value: AnnotationCandidate) throws {
-        guard try !assessBackup(db, book: book, mark: mark, value: value) else { return }
+        guard try assessBackup(db, book: book, mark: mark, value: value) == .restore else { return }
         let lineage = try UpgradeOrigins.annotationLineage(db, partition: 0, book: book, ancestors: value.ancestors)
         try insertCandidate(db, book: book, mark: mark, partition: 0, value: value)
         try UpgradeOrigins.record(db, .init(partition: 0, domain: .annotation, id: DataIdentity.canonical(value.id)),

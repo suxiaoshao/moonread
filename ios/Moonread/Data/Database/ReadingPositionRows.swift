@@ -254,7 +254,7 @@ enum ReadingPositionRows {
         try settleCurrent(db, book: book)
     }
 
-    static func assessBackup(_ db: Database, book: String, incoming: Position) throws -> Bool {
+    static func assessBackup(_ db: Database, book: String, incoming: Position) throws -> BackupDisposition {
         let old = try position(db, book: book, partition: 0)
         let sameToken = try Row.fetchAll(db, sql: """
             SELECT \(positionColumns) FROM usr.position_candidate WHERE partition=0 AND book_key=? AND token=?
@@ -264,12 +264,13 @@ enum ReadingPositionRows {
             guard existing.updated == incoming.updated, existing.value.offset == incoming.value.offset,
                   existing.value.source_hint == incoming.value.source_hint else { throw ReadingDataError.invalid }
         }
-        return old.map { ($0.updated,$0.token) > (incoming.updated,incoming.token) } ?? false
+        if old?.token == incoming.token { return .same }
+        if let old, (old.updated,old.token) > (incoming.updated,incoming.token) { return .keepLocal }
+        return .restore
     }
 
     static func mergeBackup(_ db: Database, book: String, incoming: Position) throws {
-        guard try !assessBackup(db, book: book, incoming: incoming) else { return }
-        if try position(db, book: book, partition: 0)?.token == incoming.token { return }
+        guard try assessBackup(db, book: book, incoming: incoming) == .restore else { return }
         try replacePosition(db, with: incoming, book: book, partition: 0)
         try recordUpgradePosition(db, incoming, book: book, partition: 0, bases: [])
         try settleCurrent(db, book: book)

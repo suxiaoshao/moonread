@@ -1,6 +1,10 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "导入失败": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Import failed"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"匯入失敗"}}}},
+    "正在停止导入。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Stopping import."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在停止匯入。"}}}},
+    "系统未提供后台执行资格。返回后可以重试导入。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The system did not allow background execution. You can retry the import when you return."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"系統未提供背景執行資格。返回後可以重試匯入。"}}}},
+    "系统后台执行时间已结束。返回后可以重试导入。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The system ended background execution. You can retry the import when you return."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"系統背景執行時間已結束。返回後可以重試匯入。"}}}},
     "当前没有待导入的改动": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No Changes Selected for Import"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"目前沒有待匯入的變更"}}}},
     "已核对 %lld 本，资料均一致。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Checked %lld books. All metadata matches."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已核對 %lld 本，資料均一致。"}}}},
     "所选书架已不可用": {
@@ -799,6 +803,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "確認重新命名 %lld 個檔案"
+          }
+        }
+      }
+    },
+    "有 %lld 本有改动，都未勾选": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld book has changes. No changes are selected."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld books have changes. No changes are selected."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有 %lld 本有改动，都未勾选"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有 %lld 本有變更，都未勾選"
           }
         }
       }
