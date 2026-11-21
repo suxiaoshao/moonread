@@ -191,6 +191,35 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     }
   }
 
+  @MainActor func testRescanningKeepsPausedImportPositionAndAnnotation() async throws {
+    let (root, service, core, source, id, defaults, suite) = try await Self.pausedSourceFixture()
+    defer {
+      try? core.session.close()
+      defaults.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let paused = try await service.snapshot(id)
+    XCTAssertEqual(paused.book.readingKey, .pending(bookId: id))
+    XCTAssertEqual(try core.importStatus(bookId: id).phase, .paused)
+    try await service.savePosition(bookID: id, offset: 3)
+    let edit = try await service.prepareAnnotation(id, start: 0, end: 6)
+    let original = try await service.saveNote(edit, text: "Saved before rescan")
+
+    let scanned = try await service.scanLibraryShelf("builtin")
+    XCTAssertTrue(scanned)
+    let entry = try await service.libraryEntry(source.id)
+    let lease = try await service.openSourceFile(entry.source)
+    XCTAssertEqual(lease.id, id)
+    try await service.waitForImportFinish(lease.id)
+    let snapshot = try await service.snapshot(lease.id)
+    XCTAssertTrue(snapshot.preparation.isComplete)
+    XCTAssertEqual(snapshot.book.positionUtf8, 3)
+    let marks = try await service.marks(lease.id, kind: .annotation, offset: 0).items
+    XCTAssertEqual(marks.map(\.id), [original.id])
+    XCTAssertEqual(marks.map(\.note), [original.note])
+    withExtendedLifetime(lease) {}
+  }
+
   // S386: 文件夹接受事件先进入目标书架，晚到 dismissal 不重放扫描/导入；假事件，不操作 picker。
   @MainActor func testFolderPickerEntersShelfBeforeScanAndDoesNotReplayOnCancel() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
