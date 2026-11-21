@@ -321,6 +321,7 @@ extension AppDataService {
                 books.append(.init(id: key, title: staging.manifest.titles[key] ?? source?.title, linked: source != nil, changes: changes))
             }
             books.sort {
+                if $0.linked != $1.linked { return $0.linked }
                 let comparison = ($0.title ?? "").localizedStandardCompare($1.title ?? "")
                 return comparison == .orderedSame ? $0.id < $1.id : comparison == .orderedAscending
             }
