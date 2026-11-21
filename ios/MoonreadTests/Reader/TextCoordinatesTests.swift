@@ -154,27 +154,29 @@ final class TextCoordinatesReaderSelectionTests: ReaderSelectionFixture {
 }
 
 final class TextCoordinatesReaderIntegrationTests: ReaderIntegrationFixture {
-  // S355: 部分重叠已有批注时应用动作使用完整批注范围，编辑不默改当前选区；仅动作描述和范围，无系统菜单。
+  // The highlight hit and native selection menu use independent inputs.
   @MainActor
-  func testSelectionMenuUsesAnyOverlapAndPreservesTheSelectedTextRange() throws {
-    let mark = ReaderMark(
-      id: "note", kind: .annotation, startUtf8: 3, endUtf8: 12, excerpt: "", note: "原批注", created: 1
-    )
-    let context = AnnotationSelection(start: 6, end: 9, annotations: [mark])
-    XCTAssertEqual(context.start, 6)
-    XCTAssertEqual(context.end, 9)
-    XCTAssertEqual(context.marks.map(\.id), ["note"])
-    let full = ReadingController.annotationRange(
-      context, mapping: TextCoordinates("甲乙丙丁戊"), base: 0)
-    XCTAssertEqual(
-      full, NSRange(location: 2, length: 1),
-      "editing preserves the original selected range")
-    let menu = ReadingController().selectionMenu(for: context, suggestedActions: []) { _ in }
+  func testOverlappingAnnotationsDoNotChangeNativeSelectionActions() throws {
+    let controller = ReadingController()
+    controller.annotations = [
+      .init(id: "one", kind: .annotation, startUtf8: 0, endUtf8: 9, excerpt: "", note: "", created: 1),
+      .init(id: "two", kind: .annotation, startUtf8: 3, endUtf8: 9, excerpt: "", note: "A note", created: 2),
+    ]
+    let text = ReadingTextView(frame: CGRect(x: 0, y: 0, width: 240, height: 100))
+    text.readingText = ReadingText(text: "甲乙丙丁")
+    text.text = text.readingText.text
+    text.layoutManager.ensureLayout(for: text.textContainer)
+    let glyph = text.layoutManager.boundingRect(forGlyphRange: NSRange(location: 1, length: 1), in: text.textContainer)
+    let hit = CGPoint(x: glyph.midX + text.textContainerInset.left, y: glyph.midY + text.textContainerInset.top)
+    XCTAssertEqual(controller.annotationIDs(at: hit, in: text), ["one", "two"])
+    XCTAssertTrue(controller.annotationIDs(at: .zero, in: text).isEmpty)
+
+    let menu = controller.selectionMenu(suggestedActions: []) { _ in XCTFail("Building the menu must not perform an action") }
     let primary = try XCTUnwrap(menu.children.first as? UIMenu)
-    XCTAssertEqual(
-      primary.children.compactMap { ($0 as? UIAction)?.title }.prefix(2),
-      [String(localized: "编辑批注"), String(localized: "移除批注")])
-    XCTAssertEqual(context.start, 6, "building actions must not change the user's selection")
+    let advanced = try XCTUnwrap(menu.children.last as? UIMenu)
+    XCTAssertEqual(primary.children.compactMap { ($0 as? UIAction)?.title }.first, String(localized: "标注"))
+    XCTAssertEqual(advanced.children.compactMap { ($0 as? UIAction)?.title }.first, String(localized: "写批注"))
+    XCTAssertEqual(text.selectedRange.length, 0)
   }
 
   // S398: 封面不参与正文 offset，加入/移除封面仍按同一原文锚点恢复；纯投影输入。

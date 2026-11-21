@@ -5224,6 +5224,7 @@
         }
       }
     },
+    "此处的批注（%lld）": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Notes here (%lld)"}}, "zh-Hant":{"stringUnit":{"state":"translated","value":"此處的批註（%lld）"}}}},
     "编辑批注": {
       "localizations": {
         "en": {

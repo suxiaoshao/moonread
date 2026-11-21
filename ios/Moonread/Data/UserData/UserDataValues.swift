@@ -25,6 +25,7 @@ struct AnnotationCandidate: Codable, Equatable, Identifiable, Sendable {
     }
 }
 struct AnnotationEdit: Sendable {
+    enum Scope: Sendable { case overlapping, single }
     var id: String
     var bookId: String
     var startUtf8: UInt64
@@ -34,6 +35,16 @@ struct AnnotationEdit: Sendable {
     var marks: [ReaderMark]
     var baselines: [String: [AnnotationCandidate]]
     var writeAdmission: DataSessionLease? = nil
+    var scope: Scope = .overlapping
+
+    static func excerpt(from text: String) -> String {
+        String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
+    }
+}
+
+struct ReaderAnnotationWindow: Sendable {
+    let marks: [ReaderMark]
+    let candidates: NoteCandidates
 }
 struct StoredValue: Codable, Sendable {
     var updated: Int64
@@ -190,6 +201,7 @@ enum AnnotationReduction {
     }
 
     static func editingBundle(_ edit: AnnotationEdit, groups: [String: [AnnotationCandidate]]) -> [String: [AnnotationCandidate]] {
+        if edit.scope == .single { return [edit.id: groups[edit.id] ?? []] }
         var ids = Set(edit.baselines.keys).union([edit.id])
         var from = edit.startUtf8, to = edit.endUtf8
         while true {

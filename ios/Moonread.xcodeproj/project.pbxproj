@@ -157,6 +157,7 @@
 		BCA9FC224516449E85299411 /* ReadingTextDecorations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877FD187DC584201993EB368 /* ReadingTextDecorations.swift */; };
 		68B923012B624E04B44EA7E3 /* ReaderSearchContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFDEA98F6244BFCB5585222 /* ReaderSearchContent.swift */; };
 		8BE0A1CCE83D4C5C83A75AD8 /* NoteEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA87A42C5E9B498293DC1520 /* NoteEditor.swift */; };
+		E44C314B4FF64F97B185487B /* ReaderAnnotationDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = E44C314B4FF64F97B185487A /* ReaderAnnotationDetails.swift */; };
 		79080AE9A8A340A1B99ACC83 /* ReaderChapterList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DD24446A106474B8CE31B7C /* ReaderChapterList.swift */; };
 		CC9B3BCAE0EA4013878D9BA4 /* ReaderNotesList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22ECFC9087614B5699133F80 /* ReaderNotesList.swift */; };
 		D14015000000000000000001 /* NoteDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14015000000000000000002 /* NoteDocument.swift */; };
@@ -676,6 +677,7 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 		877FD187DC584201993EB368 /* ReadingTextDecorations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingTextDecorations.swift"; sourceTree = "<group>"; };
 		5DFDEA98F6244BFCB5585222 /* ReaderSearchContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSearchContent.swift"; sourceTree = "<group>"; };
 		DA87A42C5E9B498293DC1520 /* NoteEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteEditor.swift"; sourceTree = "<group>"; };
+		E44C314B4FF64F97B185487A /* ReaderAnnotationDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderAnnotationDetails.swift"; sourceTree = "<group>"; };
 		2DD24446A106474B8CE31B7C /* ReaderChapterList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderChapterList.swift"; sourceTree = "<group>"; };
 		22ECFC9087614B5699133F80 /* ReaderNotesList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderNotesList.swift"; sourceTree = "<group>"; };
 		D14015000000000000000002 /* NoteDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDocument.swift"; sourceTree = "<group>"; };
@@ -1972,6 +1974,7 @@ D35000000000000000000001,
 				22ECFC9087614B5699133F80 /* ReaderNotesList.swift */,
 				D14015000000000000000002 /* NoteDocument.swift */,
 				DA87A42C5E9B498293DC1520 /* NoteEditor.swift */,
+				E44C314B4FF64F97B185487A /* ReaderAnnotationDetails.swift */,
 			);
 			path = "Notes";
 			sourceTree = "<group>";
@@ -2548,6 +2551,7 @@ F01900000000000000000001,
 				BCA9FC224516449E85299411 /* ReadingTextDecorations.swift in Sources */,
 				68B923012B624E04B44EA7E3 /* ReaderSearchContent.swift in Sources */,
 				8BE0A1CCE83D4C5C83A75AD8 /* NoteEditor.swift in Sources */,
+				E44C314B4FF64F97B185487B /* ReaderAnnotationDetails.swift in Sources */,
 				79080AE9A8A340A1B99ACC83 /* ReaderChapterList.swift in Sources */,
 				CC9B3BCAE0EA4013878D9BA4 /* ReaderNotesList.swift in Sources */,
 				D14015000000000000000001 /* NoteDocument.swift in Sources */,

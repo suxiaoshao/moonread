@@ -9,6 +9,7 @@ struct ReaderTaskContent: View {
     @Binding var aiConversationID: String?
     let openingIsActive: () -> Bool
     let closeTask: () -> Void
+    let measureAnnotations: (ReaderAnnotationPanelSize) -> Void
     let navigate: (UInt64, UInt64?, ReadingTargetPlacement, String?) -> Void
     let edit: (ReaderMark) -> Void
     let editorClosed: () -> Void
@@ -22,6 +23,10 @@ struct ReaderTaskContent: View {
             AIReadingConversation(context: context, close: closeTask, selected: $aiConversationID, openingIsActive: openingIsActive)
         case .note(let model), .library(.note(_, let model)):
             NoteEditor(model: model, close: closeTask)
+        case .annotations(_, .some(let model)):
+            NoteEditor(model: model, close: { session.editor = nil })
+        case .annotations(let ids, nil):
+            ReaderAnnotationDetails(ids: ids, session: session, tools: tools, close: closeTask, onMeasure: measureAnnotations)
         case .history:
             ReaderHistorySheet(session: session, navigate: { navigate($0, nil, .start, $1) }, close: closeTask)
         case .chapter(let editor):
