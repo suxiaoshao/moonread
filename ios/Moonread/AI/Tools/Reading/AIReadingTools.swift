@@ -260,7 +260,7 @@ actor AIReadingTools {
       data.totalUtf8 = book.byteCount
       data.progress = .init(
         offsetUtf8: book.positionUtf8,
-        percent: book.byteCount == 0 ? 0 : Double(book.positionUtf8) * 100 / Double(book.byteCount),
+        percent: ReadingProgress.percentage(book.positionUtf8, of: book.byteCount),
         chapterTitle: details.currentChapter)
     }
     return .init(data: data)
@@ -580,7 +580,7 @@ actor AIReadingTools {
       return .init(
         data: .init(
           durationMs: summary.totalDurationMs, bookCount: summary.books.count,
-          readingDays: summary.days.filter { $0.durationMs > 0 }.count,
+          readingDays: summary.activeDayCount,
           recordingEnabledOnDevice: summary.preferences.enabled, dateBasis: "recorded_local_day",
           incomplete: incomplete))
     }

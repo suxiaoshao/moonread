@@ -70,7 +70,7 @@ extension LibraryEntry {
     var libraryProgress: String {
         if needsDownload { return String(localized: "待下载") }
         guard readingIdentity != nil, positionUtf8 > 0 else { return String(localized: "未读") }
-        return (Double(positionUtf8) / Double(max(1, byteCount))).formatted(.percent.precision(.fractionLength(1)))
+        return ReadingProgress.fraction(positionUtf8, of: byteCount).formatted(.percent.precision(.fractionLength(1)))
     }
 }
 

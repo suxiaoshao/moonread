@@ -230,7 +230,7 @@ PositionValue 仍是 `content_key/offset/source_hint`，StoredValue 仍是 `upda
 5. 候选不能用“所有记录最远 offset”计算。只比较现有 LWW 胜者与本机 anchor；落后但更新的胜者仍是事实胜者，不能为了提示偷偷选已输掉的更远候选。候选若在观察前已被压缩或本机新写覆盖，不承诺找回它。
 6. 接受、换书、编码重启、正文 SHA 改变、账户切换、隔离时撤销提示。异步结果携带 openingRequest/session ID，过期结果不推到新书。
 
-“明显更靠后”由 **Rust navigation.rs 的一个查询方法**计算，复用真实有效章节和 reading_percentage，不在 Swift 用字节数自算比例。输入同 SHA 的本机 offset 与胜者 offset；输出是否提示、有效章节、百分比。确定阈值：严格 forward，且差额达到全文 1 个百分点，或至少一个有效章边界且差额达到 0.2 个百分点。章节尚未完成只在可信全文长度已有时按比例；否则延后判断，不拿当前准备字节作分母。阈值是已确认的产品参数，不做设置滑杆。
+“明显更靠后”由 Swift `ReaderOpeningRead.resume` 裁决，复用有效章节查询和 `ReadingProgress`。正文准备完成后比较同 SHA 的本机位置与胜者位置。只在胜者严格靠后，且差额达到全文 1 个百分点，或至少跨过一个有效章边界并达到 0.2 个百分点时提示。
 
 ##### 阅读交互与写入
 

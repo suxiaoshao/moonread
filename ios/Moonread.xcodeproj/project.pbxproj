@@ -263,6 +263,7 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
 		A10000000000000000000001 /* MoonreadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MoonreadApp.swift */; };
 		6330E9327FF2417A990DB18A /* AppShellModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32EF7CA859B141099ECA688E /* AppShellModel.swift */; };
 		A10000000000000000000002 /* AppDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppDataService.swift */; };
+		B8241D3AB12C4A36B0E155D1 /* ReadingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8241D3AB12C4A36B0E155D0 /* ReadingProgress.swift */; };
 		A10000000000000000000003 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* LibraryView.swift */; };
 		A10000000000000000000004 /* ReaderScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* ReaderScreen.swift */; };
 		A10000000000000000000005 /* ReadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* ReadingView.swift */; };
@@ -786,6 +787,7 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		A20000000000000000000001 /* MoonreadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadApp.swift; sourceTree = "<group>"; };
 		32EF7CA859B141099ECA688E /* AppShellModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellModel.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* AppDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataService.swift; sourceTree = "<group>"; };
+		B8241D3AB12C4A36B0E155D0 /* ReadingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgress.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryView.swift"; sourceTree = "<group>"; };
 		A20000000000000000000004 /* ReaderScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderScreen.swift"; sourceTree = "<group>"; };
 		A20000000000000000000005 /* ReadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingView.swift; sourceTree = "<group>"; };
@@ -1314,6 +1316,7 @@ D35000000000000000000001,
                 270D00000000000000000040, 270E30000000000000000000,
 				E237B1E2BAF2109F635ED408 /* UserData */,
 				A20000000000000000000002 /* AppDataService.swift */,
+				B8241D3AB12C4A36B0E155D0 /* ReadingProgress.swift */,
 				2AABE76052D0D231A8ACA8DF /* Cloud */,
 				6A33186914892ECAE8FC0AA0 /* Restoration */,
 				E5A0C22F71F5B7838D74C9D2 /* Management */,
@@ -2584,6 +2587,7 @@ F01900000000000000000001,
                 AC1000000000000000000077,
                 AC1000000000000000000006,
 				A10000000000000000000002 /* AppDataService.swift in Sources */,
+				B8241D3AB12C4A36B0E155D1 /* ReadingProgress.swift in Sources */,
 				1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */,
 				A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */,
 				4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */,

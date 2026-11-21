@@ -3,6 +3,7 @@ use crate::reading::input::text::{
     DECODER_WINDOW, ENCODING_PROBE_BYTES, TextDecoder, detect_sample,
 };
 use crate::reading::layout::BlankScanner;
+use crate::reading::text_count::count_text_scalars;
 use crate::*;
 use encoding_rs::Encoding;
 use sha2::{Digest, Sha256};
@@ -287,7 +288,7 @@ impl ImportOutput {
     ) -> Result<()> {
         self.normalized_bytes = checked_bytes(self.normalized_bytes, text.len())?;
         self.text.update(text.as_bytes());
-        self.char_count += text.chars().filter(|c| !c.is_whitespace()).count() as u64;
+        self.char_count += count_text_scalars(text);
         let Some(index) = &mut self.index else {
             return Ok(());
         };
@@ -507,6 +508,7 @@ mod tests {
         let mut replay = true;
         let mut headings = Vec::new();
         let mut suffix = String::new();
+        let mut cumulative_count = 5; // Published first block: 第一章天亮.
         let mut spans = Vec::new();
         for part in bytes.chunks(8192).chain(std::iter::once(&[][..])) {
             let result = advance_text_import(
@@ -520,6 +522,8 @@ mod tests {
             spans.extend(result.blank_updates);
             for block in result.chunks {
                 assert_eq!(block.chunk.start_utf8 as usize, head.len() + suffix.len());
+                assert_eq!(block.start_char_count, cumulative_count);
+                cumulative_count = block.end_char_count;
                 suffix.push_str(&block.chunk.text);
             }
             if let Some(next) = result.next {
@@ -527,6 +531,7 @@ mod tests {
             }
         }
         assert_eq!(suffix, body[head.len()..]);
+        assert_eq!(cumulative_count, 5 + 5 * 5100 + 5);
         assert_eq!(
             headings
                 .iter()
