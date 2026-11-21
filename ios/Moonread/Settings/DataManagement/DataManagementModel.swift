@@ -250,14 +250,6 @@ import SwiftUI
             dataOperation = .completed(.deleted(cacheCleaned: cleaned))
         } catch { dataOperation = .failed(ReaderMessages.error(error)) }
     }
-    func requestDeleteAll() async {
-        guard !busy else { return }
-        do {
-            let (keys, configuration) = try await service.allReadingDataKeysForDeletion()
-            deleting = .init(keys: keys, configuration: configuration)
-        }
-        catch { dataOperation = .failed(ReaderMessages.error(error)) }
-    }
     func clearCache() async {
         await runCancellable(.cleaningCache) {
             let result = try await self.service.clearRebuildableCaches()

@@ -74,15 +74,11 @@ struct DataManagementView: View {
                         }
                     }.foregroundStyle(Color(uiColor: theme.accent)).accessibilityIdentifier("readingDataCaches")
                 }
-                Button(role: .destructive) { Task { await model.requestDeleteAll() } } label: {
-                    Text("删除全部阅读数据", tableName: "DataManagement").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }.buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("deleteAllReadingData")
             }.padding(20).frame(maxWidth: 690, alignment: .leading).frame(maxWidth: .infinity)
         }
         .themedPage().navigationTitle(Text("数据管理", tableName: "DataManagement"))
         .navigationBarTitleDisplayMode(.inline)
         .modifier(ReadingDataWorking(model: model))
-        .modifier(ReadingDataDeletionPrompt(model: model))
         .refreshable { await model.loadCache() }
         .task { await model.loadCache() }
         .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { _ in

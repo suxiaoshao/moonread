@@ -354,29 +354,6 @@
         }
       }
     },
-    "删除全部阅读数据": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "删除全部阅读数据"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "刪除全部閱讀資料"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete All Reading Data"
-          }
-        }
-      }
-    },
     "阅读数据（%lld 本）": {
       "extractionState": "manual",
       "localizations": {

@@ -322,15 +322,6 @@ extension ReaderIndex {
         try CausalCloudRows.queueBookDeletion(db, book: book)
     }
 
-    func bookKeysForUserDeletion() throws -> Set<String> {
-        try session.readUsers(lease) { db in
-            let selects = Self.bookOwnedUserTables.map { "SELECT book_key FROM usr.\($0) WHERE book_key IS NOT NULL" }
-            return Set(try String.fetchAll(db, sql: selects.joined(separator: " UNION ")).filter {
-                (try? parseReadingKey(value: $0)) != nil
-            })
-        }
-    }
-
     /// The requested pending alias alone does not authorize deleting the
     /// formal book. A requested SHA also deletes its verified pending aliases.
     /// No index content changes. Cloud delete intents share the usr commit.

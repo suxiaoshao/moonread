@@ -140,10 +140,6 @@ extension AppDataService {
         value.configuration = configuration
         return value
     }
-    func allReadingDataKeysForDeletion() async throws -> (keys: Set<String>, configuration: UUID) {
-        let configuration = userCloudConfigurationRevision
-        return (try relationalUserIndex().bookKeysForUserDeletion(), configuration)
-    }
     /// Inspect only task/source metadata; never materialize or open the original.
     func pendingReadingData(_ key: String) throws -> PendingReadingData {
         guard case let .pending(id) = try parseReadingKey(value: key) else { throw ReadingDataError.invalid }
