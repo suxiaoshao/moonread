@@ -8,10 +8,11 @@ extension ReaderSession {
         annotationTask = Task {
             do {
                 let compatibilityNotice = try await service.readingCompatibilityNotice(id)
-                let values = try await service.annotations(id, start: min(selectionStart ?? window.start, window.start), end: max(selectionStart ?? window.end, window.end))
+                let values = try await service.annotationWindow(id, start: min(selectionStart ?? window.start, window.start),
+                    end: max(selectionStart ?? window.end, window.end))
                 let positions = try await service.bookmarkPositions(id, start: window.start, end: window.end)
                 guard !isLeaving, !Task.isCancelled, readingID == id else { return }
-                annotations = values
+                annotationWindow = values
                 bookmarkPositions = positions
                 if let compatibilityNotice { presentCompatibilityNotice(compatibilityNotice) }
             } catch { if !Task.isCancelled { reportAutomaticReadingError(error) } }
@@ -89,14 +90,13 @@ extension ReaderSession {
                     let to = selectionStart.map { max($0, end) } ?? end
                     range = try await service.textRange(id, start: from, end: to)
                 }
-                if action == .highlight {
-                    _ = try await service.annotate(id, start: range.startUtf8, end: range.endUtf8, admission: admission)
-                } else {
-                    let value = try await service.prepareAnnotation(id, start: range.startUtf8, end: range.endUtf8, admission: admission)
-                    guard !isLeaving else { return }
-                    editor = value
-                }
-                guard !isLeaving else { return }
+                guard !isLeaving, readingID == id else { return }
+                let draft = AnnotationEdit(id: UUID().uuidString, bookId: id, startUtf8: range.startUtf8, endUtf8: range.endUtf8,
+                    excerpt: AnnotationEdit.excerpt(from: range.text), note: "", marks: [], baselines: [:],
+                    writeAdmission: admission, scope: .single)
+                if action == .highlight { _ = try await service.saveNote(draft, text: "") }
+                else { editor = draft }
+                guard !isLeaving, readingID == id else { return }
                 selectionStart = nil
                 marksRevision += 1; refreshAnnotations()
             } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
@@ -116,6 +116,15 @@ extension ReaderSession {
             }
             catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
         }
+    }
+
+    func openAnnotation(_ mark: ReaderMark, shown snapshot: NoteCandidates) throws {
+        guard !isLeaving, let bookID = readingID, editor == nil else { return }
+        let baselines = try snapshot.checked([mark.id])
+        toolsSession.send(.ordinaryEdit)
+        editor = AnnotationEdit(id: mark.id, bookId: bookID, startUtf8: mark.startUtf8, endUtf8: mark.endUtf8,
+            excerpt: mark.excerpt, note: mark.note, marks: [mark], baselines: baselines,
+            writeAdmission: snapshot.admission, scope: .single)
     }
 
     func notesChanged() { if !isLeaving { marksRevision += 1; refreshAnnotations() } }

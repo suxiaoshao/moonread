@@ -189,7 +189,8 @@ final class ReaderSession {
         preview.focus = nil
         browseState = .preview(preview)
     }
-    var annotations: [ReaderMark] = []
+    var annotationWindow: ReaderAnnotationWindow?
+    var annotations: [ReaderMark] { annotationWindow?.marks ?? [] }
     var bookmarkPositions: [UInt64] = []
     var bookmarked = false
     var changingBookmark = false

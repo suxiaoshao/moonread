@@ -409,7 +409,7 @@ import AVFoundation
             return
         case .search:
             tools.stopSearch()
-        case .note:
+        case .note, .annotations:
             reader?.editor = nil
         case .listeningSettings:
             collapse()
@@ -435,12 +435,20 @@ import AVFoundation
 
     private func updateNote(_ note: NoteEditorModel?) {
         if let note {
-            if var visit = render.visit, case .library(let library) = visit.route {
-                visit.route = .library(.note(library.tab, note))
+            if var visit = render.visit {
+                switch visit.route {
+                case .library(let library): visit.route = .library(.note(library.tab, note))
+                case .annotations(let ids, _): visit.route = .annotations(ids, editing: note)
+                default: visit = .init(route: .note(note))
+                }
                 publish(.tool(visit))
             } else { publish(.tool(.init(route: .note(note)))) }
-        } else if let visit = render.visit {
+        } else if var visit = render.visit {
             switch visit.route {
+            case .annotations(let ids, .some):
+                visit.route = .annotations(ids)
+                reader?.notesChanged()
+                publish(.tool(visit))
             case .note, .library(.note): finish(visit)
             default: break
             }

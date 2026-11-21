@@ -103,6 +103,7 @@ struct ReaderScreen: View {
                             listening: listening, listeningUIActive: listeningBodyVisible, autoReading: automatic, viewportAccess: session.viewportAccess,
                             annotations: session.annotations, bookmarkPositions: session.bookmarkPositions, focusRange: session.focusRange,
                             selectionStart: session.selectionStart, selection: selectText,
+                            annotationsTapped: { sendTool(.open(.annotations($0))) },
                             allowsBackGesture: allowsReaderBack,
                             prepareInteractivePop: {
                                 var transaction = Transaction(); transaction.disablesAnimations = true
@@ -679,10 +680,11 @@ struct ReaderScreen: View {
             default:
                 EmptyView()
             }
-        } taskContent: {
+        } taskContent: { measureAnnotations in
             ReaderTaskContent(visit: snapshot.visit, session: session, tools: tools, toolSession: toolSession,
                 aiConversationID: $aiConversationID, openingIsActive: { exitPhase == .reading && !session.isLeaving },
                 closeTask: { if let visit = snapshot.visit { sendTool(.closeVisit(visit.id), from: context) } },
+                measureAnnotations: measureAnnotations,
                 navigate: { start, end, placement, history in
                     navigate(start, end: end, placement: placement, historyID: history, from: context)
                 },
@@ -729,7 +731,9 @@ struct ReaderScreen: View {
 
     private var undoCapsuleVisible: Bool {
         guard !session.isLeaving, !navigationPresentation.isSuspended, scenePhase == .active, session.editor == nil else { return false }
-        return taskID == nil && sheetPresented && !rendered.expanded && rendered.compact != .settings && !nativeHost.dismissing
+        guard sheetPresented, !nativeHost.dismissing else { return false }
+        if taskID == "annotationDetails" { return true }
+        return taskID == nil && !rendered.expanded && rendered.compact != .settings
     }
 
     func openBookDetails(from context: ReaderActionContext? = nil) {
@@ -748,19 +752,7 @@ struct ReaderScreen: View {
     }
 
     private func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
-        if action == .removeAnnotations { sendTool(.selectionChanged) }
         if action != .shareExcerpt { session.beganReadingInteraction() }
-        if action == .removeAnnotations {
-            guard !session.isLeaving, let bookID = session.readingID else { return }
-            let admission = session.readingLease?.writeAdmission
-            Task {
-                await tools.removeAnnotations(bookID: bookID, start: start, end: end, admission: admission)
-                guard !session.isLeaving else { return }
-                if let error = tools.error { session.error = error; tools.error = nil }
-                session.notesChanged()
-            }
-            return
-        }
         guard action == .search || action == .copy || action == .shareExcerpt else { session.selectText(start: start, end: end, action: action); return }
         guard !session.isLeaving, let id = session.readingID else { return }
         if action == .shareExcerpt {

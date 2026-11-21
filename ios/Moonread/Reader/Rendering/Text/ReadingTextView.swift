@@ -23,23 +23,6 @@ class ReadingTextView: UITextView {
         copySelection?(readingText.sourceStart + UInt64(envelope.lowerBound), readingText.sourceStart + UInt64(envelope.upperBound))
     }
 
-    private var menuSelectionRange: UITextRange?
-
-    /// The native Select command normally narrows to a word. During this one
-    /// synchronous command, use the annotation's specified range instead. Native
-    /// selection gestures and handle dragging keep their normal behavior.
-    func presentSelectionMenu(for range: NSRange) {
-        selectedRange = range
-        menuSelectionRange = selectedTextRange
-        defer { menuSelectionRange = nil }
-        super.select(nil)
-    }
-
-    override var selectedTextRange: UITextRange? {
-        get { super.selectedTextRange }
-        set { super.selectedTextRange = menuSelectionRange ?? newValue }
-    }
-
     private var bookmarkCharacters: [Int] = []
     private var bookmarkColor = UIColor.clear
     private(set) var bookmarkIndicators: [UIImageView] = []

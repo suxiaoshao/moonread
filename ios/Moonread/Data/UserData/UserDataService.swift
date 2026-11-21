@@ -266,17 +266,14 @@ extension AppDataService {
         return try await marks(annotationSnapshot(id), kind: kind)
     }
 
-    func userAnnotationRanges(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] {
+    func annotationWindow(_ id: String, start: UInt64, end: UInt64) async throws -> ReaderAnnotationWindow {
         guard start <= end else { throw ReaderError.InvalidRange }
-        return try await marks(annotationSnapshot(id), kind: .annotation, range: start..<end)
-    }
-
-    func removeAnnotationRange(_ id: String, start: UInt64, end: UInt64, offered: DataSessionLease?) async throws -> [String] {
-        guard start <= end else { throw ReaderError.InvalidRange }
-        let view = try await annotationSnapshot(id, offered: offered)
-        let ids = marks(view, kind: .annotation, range: start..<end).map(\.id)
-        try await userDeleteMarks(ids, deleted: true, expected: view)
-        return ids
+        let snapshot = try await annotationSnapshot(id)
+        let visible = marks(snapshot, kind: .annotation, range: start..<end)
+        let ids = Set(visible.map(\.id))
+        let candidates = NoteCandidates(key: snapshot.key, groups: snapshot.groups.filter { ids.contains($0.key) },
+            blocked: snapshot.blocked.intersection(ids), unknownMarks: snapshot.unknownMarks, admission: snapshot.admission)
+        return .init(marks: visible, candidates: candidates)
     }
 
     func prepareUserAnnotation(_ id: String, start: UInt64, end: UInt64,
@@ -297,11 +294,11 @@ extension AppDataService {
             if nextFrom == from && nextTo == to { marks = overlaps; break }
             from = nextFrom; to = nextTo
         }
-        let quote = try indexStore().textRange(bookId: id, startUtf8: from, endUtf8: to).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let quote = try indexStore().textRange(bookId: id, startUtf8: from, endUtf8: to).text
         let markID = marks.first?.id ?? UUID().uuidString
         let note = marks.map(\.note).filter { !$0.isEmpty }.joined(separator: "\n\n")
         let baselines = Dictionary(uniqueKeysWithValues: marks.map { ($0.id, view.groups[$0.id] ?? []) })
-        var edit = AnnotationEdit(id: markID, bookId: id, startUtf8: from, endUtf8: to, excerpt: String(quote.prefix(160)), note: note,
+        var edit = AnnotationEdit(id: markID, bookId: id, startUtf8: from, endUtf8: to, excerpt: AnnotationEdit.excerpt(from: quote), note: note,
                                   marks: marks, baselines: baselines, writeAdmission: view.admission)
         for (mark, heads) in try AnnotationRows.editingBundle(view, edit: edit) where edit.baselines[mark] == nil { edit.baselines[mark] = heads }
         return edit

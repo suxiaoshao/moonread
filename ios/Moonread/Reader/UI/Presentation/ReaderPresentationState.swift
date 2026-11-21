@@ -43,6 +43,7 @@ enum ReaderToolRoute {
     case details(StatisticsRoute)
     case history
     case ai(AIEntryContext)
+    case annotations([String], editing: NoteEditorModel? = nil)
     case note(NoteEditorModel)
     case chapter(ReaderEditSession)
 
@@ -51,7 +52,7 @@ enum ReaderToolRoute {
         switch self {
         case .quick(.more): .pause
         case .automaticSettings, .listeningSettings: .preserve
-        case .quick(.settings), .library, .search, .settings, .details, .history, .ai, .note, .chapter: .end
+        case .quick(.settings), .library, .search, .settings, .details, .history, .ai, .annotations, .note, .chapter: .end
         }
     }
 
@@ -61,7 +62,7 @@ enum ReaderToolRoute {
         case .quick: .compact
         case .search, .listeningSettings, .automaticSettings: .expanded
         case .settings, .details: .source
-        case .library, .history, .ai, .note, .chapter: .task
+        case .library, .history, .ai, .annotations, .note, .chapter: .task
         }
     }
     var sourcePage: ReaderSourcePage? {
@@ -153,7 +154,8 @@ struct ReaderActionContext: Equatable {
     var canExpand: Bool { [.search, .listening, .automatic].contains(compact) }
     var taskID: String? {
         switch visit?.route {
-        case .library(.note), .note: "note"
+        case .library(.note), .note, .annotations(_, .some): "note"
+        case .annotations: "annotationDetails"
         case .library: "library"
         case .history: "history"
         case .chapter: "chapterEditor"
