@@ -34,7 +34,7 @@ struct SettingsView: View {
     @Environment(ReaderSettingsStore.self) private var readerSettings
     @Environment(ThemeStore.self) private var themes
     @Environment(CloudStore.self) private var cloud
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.theme) private var theme
     let library: LibraryModel
@@ -207,7 +207,7 @@ struct SettingsView: View {
         }
     }
     private var aiSummary: String {
-        let count = ai.providers.connections.count
+        let count = ai.connectionCount
         return count == 0 ? String(localized: "未添加") : String(localized: "\(count) 个连接")
     }
     private var languageSummary: String {
@@ -268,7 +268,7 @@ struct SettingsTaskContent: View {
     let library: LibraryModel
     @Bindable var navigation: SettingsNavigation
     @Environment(ReaderSettingsStore.self) private var readerSettings
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Environment(\.theme) private var theme
     @ViewBuilder var body: some View {
         switch task {
@@ -278,7 +278,7 @@ struct SettingsTaskContent: View {
         case .library: LibraryManagementView(model: library)
         case .data: DataManagementView(model: library.shell.dataManagement).navigationBarTitleDisplayMode(.large)
         case .cloud: CloudSettingsView()
-        case .ai: if ai.availability.isAvailable { AISettingsView() }
+        case .ai: if ai.availability.isAvailable { AIEntry { AISettingsView() } }
         case .appearance: AppThemePreferencesView()
         case .guide: UsageGuideView()
         case .about: AboutView()

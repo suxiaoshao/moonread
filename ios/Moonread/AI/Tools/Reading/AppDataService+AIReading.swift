@@ -1,4 +1,28 @@
+import MoonreadAI
 import Foundation
+
+enum AICoverPageParser {
+  static func extract(_ data: Data, _ responseURL: String, _ charset: String?, _ title: String?) -> [String] {
+    func withBytes<T>(_ data: Data?, _ body: (MoonreadCoverBytes) -> T) -> T {
+      guard let data else { return body(.init(data: nil, len: 0)) }
+      return data.withUnsafeBytes { bytes in
+        body(.init(data: bytes.bindMemory(to: UInt8.self).baseAddress, len: bytes.count))
+      }
+    }
+    let result = withBytes(data) { body in
+      withBytes(Data(responseURL.utf8)) { url in
+        withBytes(charset.map { Data($0.utf8) }) { encoding in
+          withBytes(title.map { Data($0.utf8) }) { book in
+            moonread_ai_cover_extract(body, url, encoding, book)
+          }
+        }
+      }
+    }
+    defer { moonread_ai_cover_release(result) }
+    guard let bytes = result.data else { return [] }
+    return (try? JSONDecoder().decode([String].self, from: Data(bytes: bytes, count: result.len))) ?? []
+  }
+}
 
 enum AIPreparationEntry {
   case preparing(token: UUID, task: Task<Void, Never>, waiters: Int)

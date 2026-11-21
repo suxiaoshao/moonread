@@ -1,3 +1,4 @@
+import MoonreadAI
 import Foundation
 import Observation
 import AISDKProvider
@@ -34,12 +35,6 @@ struct AIBookmarkProposalInput: AIReadingInput { var bookRef: String; var offset
 struct AICoverProposalInput: AIReadingInput { var bookRef: String; var attachmentRef: String }
 
 struct AIFindCoverInput: AIReadingInput { var bookRef: String; var query: String? }
-struct AIFindCoverResult: Codable, Sendable {
-    var bookRef: String
-    var candidates: [AICoverProposal]
-    var answer: String?
-    var sources: [AIWebSource] = []
-}
 /// A source verified against this session's committed tool results.
 enum AIResolvedSource: Sendable, Identifiable {
     case text(bookRef: String, startUtf8: UInt64, endUtf8: UInt64, title: String)
@@ -261,7 +256,7 @@ enum AIResolvedSource: Sendable, Identifiable {
                     let details = try await self.reader.details(sha: sha)
                     let title = details.book?.title ?? input.bookRef
                     let native = try await AINativeTools(providers: providers, owner: owner, makeTransport: makeTransport).search(.init(query: input.query ?? (title + " " + details.metadata.author + " 小说")))
-                    let fetcher = await AICoverImageFetcher(availability: providers.availability)
+                    let fetcher = await AICoverImageFetcher(availability: providers.availability, parsePage: AICoverPageParser.extract)
                     let request = try await providers.trackNativeRequest(connectionID: native.data.connectionID, cancel: { fetcher.cancel() })
                     do {
                         let report = try await fetcher.candidates(sources: native.sources, title: title, bookRef: input.bookRef,

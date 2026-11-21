@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 
 private struct AIConnectionRoute: Hashable {
@@ -70,7 +71,7 @@ private struct AISettingsConnectionRow: View {
         HStack(spacing: 12) {
             Button(action: manage) {
                 HStack(spacing: 12) {
-                    AIProviderIcon(providerID: connection.catalogID).frame(width: 32, height: 32)
+                    AIProviderIcon(providerID: connection.catalogID, accent: theme.accent).frame(width: 32, height: 32)
                         .background(Color(uiColor: theme.input), in: .rect(cornerRadius: 9))
                     VStack(alignment: .leading, spacing: 4) {
                         Text(connection.name).foregroundStyle(Color(uiColor: theme.ink))
@@ -167,7 +168,7 @@ private struct AIAddConnectionView: View {
                 Section {
                     ForEach(AIProviderPreset.all.filter { ($0.auth == .apiKey) == usesAPIKey && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)) }, id: \.identity) { preset in
                         Button { createdConnectionID = ai.providers.addConnection(preset.connection()); dismiss() } label: {
-                            HStack { AIProviderIcon(providerID: preset.id); Text(verbatim: preset.name).foregroundStyle(Color(uiColor: theme.ink)); Spacer() }
+                            HStack { AIProviderIcon(providerID: preset.id, accent: theme.accent); Text(verbatim: preset.name).foregroundStyle(Color(uiColor: theme.ink)); Spacer() }
                         }
                     }
                 }.listRowBackground(Color(uiColor: theme.surface))

@@ -1,3 +1,4 @@
+import MoonreadAI
 import Foundation
 
 struct AIModelSelection: Equatable {

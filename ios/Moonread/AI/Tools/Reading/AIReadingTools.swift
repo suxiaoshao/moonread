@@ -1,10 +1,9 @@
+import MoonreadAI
 import AISDKProvider
 import AISDKProviderUtils
-import CryptoKit
 import Foundation
-import SwiftAISDK
 
-actor AIReadingTools {
+actor AIReadingTools: AIReadingToolActions {
   private let reader: AppDataService
   private struct Cursor: Codable {
     var signature: String
@@ -15,64 +14,8 @@ actor AIReadingTools {
     precondition((1...2000).contains(lineLimit))
     self.reader = reader; self.lineLimit = lineLimit
   }
-  nonisolated func definitions() -> [AIAgentTool] {
-    [
-      .init(
-        name: "ls",
-        description:
-          "Browse one level of authorized shelves. Omit parentRef to list roots. Optional fields may be omitted or null; never use empty references.",
-        input: AILSInput.self, execute: { try await self.list($0) }),
-      .init(
-        name: "search_books",
-        description: "Find novels by indexed title, author, synopsis, tags and reading status.",
-        input: AISearchBooksInput.self, execute: { try await self.searchBooks($0) }),
-      .init(
-        name: "get_book",
-        description:
-          "Read metadata. Supply exactly one bookRef or fileRef; omit or null the other. prepare requests confirmation for file preparation.",
-        input: AIGetBookInput.self, confirmation: { try await self.confirmBook($0) },
-        execute: { try await self.getBook($0) }),
-      .init(
-        name: "get_chapters",
-        description:
-          "Read corrected chapter outline. Use query to find a title such as 番外 or 第316章 without paging through the whole outline. Omit cursor on first call; use the returned nextCursor for later pages.",
-        input: AIChaptersInput.self, confirmation: { try await self.confirmText([$0.bookRef]) },
-        execute: { try await self.chapters($0) }),
-      .init(
-        name: "read",
-        description:
-          "Read by chapter/range, or set contextOffsetUtf8 to a hit startUtf8 with beforeParagraphs/afterParagraphs (default 3 each, non-empty paragraphs). Context cannot combine with explicit range. Omit cursor initially; keep query unchanged for pagination. Use tool-provided UTF-8 boundaries.",
-        input: AIReadInput.self, confirmation: { try await self.confirmText([$0.bookRef]) },
-        execute: { try await self.readText($0) }),
-      .init(
-        name: "rg",
-        description:
-          "Search novel text, not a shell command. Example: query=年龄, mode=literal (rg -F); query=年龄|岁, mode=regex. Start with a specific phrase and one book. Search books with literal text or single-line Rust regex. For one book, optionally restrict chapterRef and/or startUtf8/endUtf8 before scanning. Use get_chapters for range boundaries. To inspect a hit call read with its bookRef and contextOffsetUtf8=range.startUtf8, beforeParagraphs=3, afterParagraphs=3; do not calculate byte offsets. Use nextCursor with the same search; maxHits may change between pages. Continue partial searches with nextCursor.",
-        input: AIRGInput.self, confirmation: { try await self.confirmText($0.bookRefs) },
-        execute: { try await self.searchText($0) }),
-      .init(
-        name: "get_marks",
-        description: "List bookmarks and annotations with short note/excerpt previews. Use get_mark for the full comment and read with the returned range for original text. Conflicts remain explicit.",
-        input: AIMarksInput.self, execute: { try await self.marks($0) }),
-      .init(
-        name: "get_mark",
-        description:
-          "Read an annotation comment in pages; nextCursor continues the comment, excerpt is only a preview. Use read for full original text. Select variantRef for conflicts; this never resolves a conflict.",
-        input: AIMarkInput.self, execute: { try await self.mark($0) }),
-      .init(
-        name: "get_reading_statistics",
-        description:
-          "Read recorded local-day statistics for an inclusive date range. Concurrent device durations are summed. Distinguish recorded facts from interpretation when analyzing reading.",
-        input: AIStatisticsInput.self, execute: { try await self.statistics($0) }),
-      .init(
-        name: "get_environment",
-        description:
-          "Read current time, time zone and application locale. Omit fields for both time and locale.",
-        input: AIEnvironmentInput.self, execute: { await self.environment($0) }),
-    ].sorted { $0.name < $1.name }
-  }
   static func ref(_ type: String, _ key: String) -> String {
-    type + ":" + SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    AIReference.make(type, key)
   }
   static func bookRef(_ sha: String) -> String { "b:" + sha }
   private func sha(_ ref: String) throws -> String { try AIReadingReferences.parseBookReference(ref).sha }
@@ -80,8 +23,8 @@ actor AIReadingTools {
   private func location(_ ref: String) async throws -> LibraryLocation { try await AIReadingReferences(reader: reader).location(ref) }
   private func file(_ ref: String) async throws -> LibraryEntry { try await AIReadingReferences(reader: reader).file(ref) }
   private func bookID(_ ref: String) async throws -> String { try await AIReadingReferences(reader: reader).bookID(ref) }
-  private func confirmBook(_ input: AIGetBookInput) async throws -> String? { try await AIReadingReferences(reader: reader).confirmBook(input) }
-  private func confirmText(_ refs: [String]) async throws -> String? { try await AIReadingReferences(reader: reader).confirmText(refs) }
+  func confirmBook(_ input: AIGetBookInput) async throws -> String? { try await AIReadingReferences(reader: reader).confirmBook(input) }
+  func confirmText(_ refs: [String]) async throws -> String? { try await AIReadingReferences(reader: reader).confirmText(refs) }
   private func ready(_ ref: String) async throws -> String { try await AIReadingReferences(reader: reader).ready(ref) }
   static func preparationConfirmation(_ refs: [String], isolation: isolated (any Actor)? = #isolation, title: (String) async throws -> String?) async throws -> String? {
     var seen = Set<String>()
@@ -160,7 +103,7 @@ actor AIReadingTools {
       .init(assetRef: Self.ref("asset", $0.id), width: $0.width, height: $0.height)
     }
   }
-  private func list(_ input: AILSInput) async throws -> AIToolResponse<AILibraryResult> {
+  func list(_ input: AILSInput) async throws -> AIToolResponse<AILibraryResult> {
     let items: [AIFileResult]
     if let parent = input.parentRef {
       let rows = try await reader.aiLibraryEntries(
@@ -198,7 +141,7 @@ actor AIReadingTools {
       items, signature: signature("ls", query), cursor: input.cursor, limit: input.limit ?? 100)
     return .init(data: .init(items: rows, parentRef: input.parentRef), page: page)
   }
-  private func searchBooks(_ input: AISearchBooksInput) async throws -> AIToolResponse<
+  func searchBooks(_ input: AISearchBooksInput) async throws -> AIToolResponse<
     AIBooksResult
   > {
     let scope: LibraryLocation?
@@ -221,7 +164,7 @@ actor AIReadingTools {
       limit: input.limit ?? 100)
     return .init(data: .init(items: pageItems), page: page)
   }
-  private func getBook(_ input: AIGetBookInput) async throws -> AIToolResponse<AIBookResult> {
+  func getBook(_ input: AIGetBookInput) async throws -> AIToolResponse<AIBookResult> {
     let entry: LibraryEntry?
     let contentSHA: String?
     switch try ReadingToolTarget(input) {
@@ -265,7 +208,7 @@ actor AIReadingTools {
     }
     return .init(data: data)
   }
-  private func chapters(_ input: AIChaptersInput) async throws -> AIToolResponse<AIChaptersResult> {
+  func chapters(_ input: AIChaptersInput) async throws -> AIToolResponse<AIChaptersResult> {
     let id = try await ready(input.bookRef)
     let outline = try await reader.chapters(id)
     let book = try await reader.book(id)
@@ -301,7 +244,7 @@ actor AIReadingTools {
     return .init(startUtf8: chapters[index].startUtf8,
       endUtf8: chapters.dropFirst(index + 1).first { $0.level <= chapters[index].level }?.startUtf8 ?? size)
   }
-  private func readText(_ input: AIReadInput) async throws -> AIToolResponse<AIReadResult> {
+  func readText(_ input: AIReadInput) async throws -> AIToolResponse<AIReadResult> {
     let ref = input.bookRef
     let id = try await ready(ref)
     let book = try await reader.book(id)
@@ -370,7 +313,7 @@ actor AIReadingTools {
         sourceRef: source(ref, range).sourceRef),
       page: .init(nextCursor: next, complete: end == requestedEnd))
   }
-  private func searchText(_ input: AIRGInput) async throws -> AIToolResponse<AISearchResult> {
+  func searchText(_ input: AIRGInput) async throws -> AIToolResponse<AISearchResult> {
     var query = input
     query.cursor = nil; query.maxHits = nil
     query.mode = query.mode ?? .regex; query.caseSensitive = query.caseSensitive ?? true
@@ -438,7 +381,7 @@ actor AIReadingTools {
       data: .init(hits: rows, coverage: coverage, truncated: truncated),
       page: page)
   }
-  private func marks(_ input: AIMarksInput) async throws -> AIToolResponse<AIMarksResult> {
+  func marks(_ input: AIMarksInput) async throws -> AIToolResponse<AIMarksResult> {
     let ref = input.bookRef
     let groups = try await reader.aiMarks(sha: sha(ref))
     var rows: [(UInt64, String, AIMarkResult)] = []
@@ -489,7 +432,7 @@ actor AIReadingTools {
       data: .init(bookRef: ref, items: items),
       page: page)
   }
-  private func mark(_ input: AIMarkInput) async throws -> AIToolResponse<AIMarkResult> {
+  func mark(_ input: AIMarkInput) async throws -> AIToolResponse<AIMarkResult> {
     let ref = input.bookRef
     let groups = try await reader.aiMarks(sha: sha(ref))
     guard let heads = groups.first(where: { Self.ref("mark", $0.key) == input.markRef })?.value
@@ -539,7 +482,7 @@ actor AIReadingTools {
   private func timestamp(_ ms: Int64) -> String {
     ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: Double(ms) / 1000))
   }
-  private func statistics(_ input: AIStatisticsInput) async throws -> AIToolResponse<
+  func statistics(_ input: AIStatisticsInput) async throws -> AIToolResponse<
     AIStatisticsResult
   > {
     let formatter = DateFormatter()
@@ -625,7 +568,7 @@ actor AIReadingTools {
       limit: input.limit ?? 100)
     return .init(data: .init(items: rows, incomplete: incomplete), page: page)
   }
-  private func environment(_ input: AIEnvironmentInput) -> AIToolResponse<AIEnvironmentResult> {
+  func environment(_ input: AIEnvironmentInput) -> AIToolResponse<AIEnvironmentResult> {
     let fields = input.fields ?? [.time, .locale]
     return .init(
       data: .init(

@@ -1,3 +1,4 @@
+import MoonreadAI
 import Foundation
 import Observation
 
@@ -39,26 +40,6 @@ struct AINoteProposal: Codable, Sendable, Identifiable {
     var endUtf8: UInt64
     var note: String
     var markRef: String?
-    var id: String { proposalRef }
-}
-enum AIImageOrigin: Codable, Equatable, Sendable {
-    case web(AIWebSource), generated, currentCover, unknown
-    var webSource: AIWebSource? { if case .web(let source) = self, source.isValid { source } else { nil } }
-    var isKnown: Bool { switch self { case .unknown: false; case .web(let source): source.isValid; default: true } }
-    var caption: String {
-        switch self {
-        case .web(let source): URL(string: source.url)?.host ?? String(localized: "图片")
-        case .generated: String(localized: "生成")
-        case .currentCover: String(localized: "封面参考")
-        case .unknown: String(localized: "图片")
-        }
-    }
-}
-struct AICoverProposal: Codable, Sendable, Identifiable {
-    var proposalRef: String
-    var bookRef: String
-    var attachment: AIImageAttachment
-    var origin: AIImageOrigin
     var id: String { proposalRef }
 }
 enum AIProposalSnapshot: Codable, Sendable {

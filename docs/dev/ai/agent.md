@@ -6,6 +6,8 @@
 
 ## 代码职责
 
+`AIAgentCoordinator`、运行时与 SwiftData 仓储由本地 `MoonreadAI` 包提供。首次需要历史时连接已有会话并恢复中断状态。宿主回传正文/提案工具及可展示的业务错误，书架权限和真实写入由原 App 服务掌管。
+
 目录、状态与存储 owner 见[AI 架构](architecture.md)，固定 SDK/Pi 研究见[历史依据](../research/ai-integration-history.md)。运行器复用 SDK 多步工具循环，不增加独立 package 或通用任务引擎。
 
 ## SDK 与界面库接入边界

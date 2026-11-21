@@ -56,7 +56,7 @@ struct ImportFailure: Identifiable {
 }
 
 struct LibraryPresentations: ViewModifier {
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Bindable var model: LibraryModel
     @Environment(\.theme) private var theme
     func body(content: Content) -> some View {
@@ -67,7 +67,9 @@ struct LibraryPresentations: ViewModifier {
                           allowsMultipleSelection: model.filePicker?.multiple ?? false,
                           onCompletion: model.completeFilePicker,
                           onCancellation: model.cancelFilePicker)
-            .sheet(item: $shell.aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }
+            .sheet(item: $shell.aiRequest) { request in
+                AIEntry { AIQuickTaskSheet(request: request).themeScope(theme) }
+            }
             .onChange(of: ai.availability.isAvailable) { _, available in if !available { model.shell.aiRequest = nil } }
             .sheet(item: $model.sheet, onDismiss: model.sheetDidDismiss) { sheet in
                 switch sheet {
@@ -185,7 +187,7 @@ struct LibraryDecisionAlert: UIViewControllerRepresentable {
 }
 
 struct LibraryItemMenu: View {
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     let model: LibraryModel
     let entry: LibraryEntry
     var body: some View {

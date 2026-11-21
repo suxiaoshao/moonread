@@ -1,7 +1,49 @@
+import MoonreadAI
 import SwiftUI
 import CoreSpotlight
 import UIKit
 import CloudKit
+
+@MainActor @Observable final class AIHost {
+    private let defaults: UserDefaults
+    let availability: AIAvailability
+    private(set) var runtime: AIService?
+
+    init() {
+        defaults = AIAvailability.applicationDefaults
+        availability = AIAvailability(defaults: defaults)
+    }
+
+    func activate() -> AIService? {
+        guard availability.isAvailable else { return nil }
+        if let runtime { return runtime }
+        let service = AIService(defaults: defaults, availability: availability)
+        runtime = service
+        return service
+    }
+
+    var connectionCount: Int {
+        runtime?.providers.connections.count ?? AIConnectionService.storedConnections(defaults).count
+    }
+}
+
+struct AIEntry<Content: View>: View {
+    @Environment(AIHost.self) private var host
+    var active = true
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        Group {
+            if host.availability.isAvailable {
+                if let runtime = host.runtime { content().environment(runtime) }
+                else if active { ProgressView() }
+            }
+        }
+        .task(id: active && host.availability.isAvailable) {
+            if active { _ = host.activate() }
+        }
+    }
+}
 
 @main
 struct MoonreadApp: App {
@@ -10,7 +52,7 @@ struct MoonreadApp: App {
     @State private var themes = ThemeStore()
     @State private var readerSettings = ReaderSettingsStore.shared
     @State private var cloud = CloudStore()
-    @State private var ai = AIService()
+    @State private var ai = AIHost()
     @State private var tipJar = TipJar()
     private enum Startup {
         case preparing, failed(String), ready
@@ -146,7 +188,6 @@ struct MoonreadApp: App {
         MoonreadRoot(library: library, themes: themes, defersIntroduction: showsUpgradeNotice)
             .environment(cloud).environment(ai).environment(tipJar).environment(readerSettings)
             .task { await tipJar.listenForTransactions() }
-            .task { await ai.load() }
             .task {
                 library.startCloudDiscovery()
                 if await library.load() {
@@ -260,7 +301,9 @@ struct MoonreadApp: App {
                     Task { await cloud.scene(active: true) }
                     readerSettings.refreshBuiltinFonts()
                     Task { await library.service.refreshSystemWidgetConfigurations() }
-                    Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }
+                    if let providers = ai.runtime?.providers, providers.catalogActivated {
+                        Task { await providers.refreshCatalogsIfNeeded() }
+                    }
                     Task {
                         await library.service.resumeSystemReadingPublication()
                         await AppDataService.shared.resumePausedImports(); await library.refresh()
@@ -282,8 +325,9 @@ struct MoonreadApp: App {
                 case .statistics: library.shell.selectedTab = .statistics
                 case .recap:
                     let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
-                    await ai.load()
-                    try await ai.seedStoreShotRecap(fixture)
+                    guard let runtime = ai.activate() else { return }
+                    await runtime.load()
+                    try await runtime.seedStoreShotRecap(fixture)
                     library.shell.selectedTab = .conversations
                 case .widget: break
                 default:
@@ -382,7 +426,7 @@ private struct LegacyImportPage: View {
 
 private struct MoonreadRoot: View {
     @Environment(ReaderSettingsStore.self) private var readerSettings
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Bindable var library: LibraryModel
     let themes: ThemeStore
     let defersIntroduction: Bool
@@ -477,7 +521,9 @@ private struct MoonreadRoot: View {
         return TabView(selection: $shell.selectedTab) {
             Tab("书架", systemImage: "books.vertical", value: AppTab.library) { libraryStack }
             if ai.availability.isAvailable {
-                Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { AIConversationsView() }
+                Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) {
+                    AIEntry(active: shell.selectedTab == .conversations) { AIConversationsView() }
+                }
             }
             Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.statistics) { statisticsStack }
             Tab("设置", systemImage: "gearshape", value: AppTab.settings) { settingsStack }
@@ -517,7 +563,7 @@ private struct MoonreadRoot: View {
 /// The page for a library route. Every navigation stack, and the search pushed
 /// above an open book, builds its pages here from the shared environment.
 struct LibraryDestination: View {
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     let route: LibraryRoute
     @Environment(LibraryModel.self) private var library
     @Environment(\.readerTheme) private var readerTheme
@@ -540,7 +586,7 @@ struct LibraryDestination: View {
         case .manage: LibraryManagementView(model: library)
         case .statistics(let target): StatisticsView(library: library, target: target)
         case .conversation(let id, let anchor):
-            if ai.availability.isAvailable { AIChatView(conversationID: id, anchor: anchor) }
+            if ai.availability.isAvailable { AIEntry { AIChatView(conversationID: id, anchor: anchor) } }
         // Contextual routes delegate to the same task content.
         case .settingsPalette(let appearance): PalettePicker(reader: false, appearance: appearance)
         #if DEBUG

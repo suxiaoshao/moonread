@@ -33,7 +33,7 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 
 单包保存 Cargo registry/git、`target` 的 host/simulator 产物、DerivedData、Debug UniFFI 生成目录及实际 Nix 用户输入缓存。CI 的 Xcode 构建启用原生编译缓存及命中诊断，CAS 路径显式设为 `build/DerivedData/CompilationCache.noindex`，随同一包恢复/保存；不另建缓存或改变本机工程设置。环境前缀包含实际 macOS/架构、Xcode build、SDK、Nix 版本和工具链/依赖锁指纹；源码、工程、scheme、xcconfig、资源和 CI 配置属于精确 key 后缀，工程小改不再隔断环境前缀恢复。Nix 输入尊重 `NIX_CACHE_HOME` / `XDG_CACHE_HOME`，不包含整个 `/nix/store`。新输入的展开体积先限 1.5 GiB，超过时不发布该代，记录证据后调整；这不冒充压缩存储量。
 
-SwiftPM 的共享仓库缓存放在 `build/DerivedData/SwiftPMPackageCache`，同样随单包恢复与保存。每轮在缓存包外的 `build/SwiftPM/SourcePackages` 按当前提交的 `Package.resolved` 重新解析并检出；不复用上轮的工作副本或解析状态。旧缓存恢复出的 `build/DerivedData/SourcePackages` 会在解析前移除。解析和构建均要求使用锁定版本，且检查锁文件未被改写。
+SwiftPM 的共享仓库缓存放在 `build/DerivedData/SwiftPMPackageCache`，同样随单包恢复与保存。每轮在缓存包外的 `build/SwiftPM/SourcePackages` 按当前提交的 `Package.resolved` 重新解析并检出；不复用上轮的工作副本或解析状态。旧缓存恢复出的 `build/DerivedData/SourcePackages` 会在解析前移除。解析和构建均要求使用锁定版本，且检查锁文件未被改写。本地 `ios/Packages/MoonreadAI` 的传递依赖继续共用此锁，封面 crate 同样沿用 workspace Cargo 锁和现有按路径触发的检查。
 
 每个新包（含编译缓存）API 存储量预算为 4 GiB。独立清理作业先确认成功 key 在精确 writer ref 唯一可见且在预算内，再删除同命名空间更旧 ID 及明确列出的旧 Cargo/DerivedData 前缀；保留当前和更晚并发代，保存失败或 API 不可确认时不删旧。新代超预算只移除该新代，保留旧种子并报告容量未通过；不提高额度。迁移清理仅作用于 Actions cache ID，不删除日志、xcresult 或 TestFlight artifact。
 

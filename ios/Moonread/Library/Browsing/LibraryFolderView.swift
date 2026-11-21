@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct LibraryFolderView: View {
     @Bindable var model: LibraryModel
     let location: LibraryLocation
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Environment(\.theme) private var theme
     @State private var folder = FolderStore(service: .shared)
     @State private var selection = Set<String>()

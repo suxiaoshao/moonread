@@ -1,3 +1,4 @@
+import MoonreadAI
 import Foundation
 
 enum ReadingToolTarget {

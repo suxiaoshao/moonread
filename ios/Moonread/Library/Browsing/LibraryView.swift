@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @Bindable var model: LibraryModel
     @State private var recentUse: RecentReadingUse?
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
