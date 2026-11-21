@@ -26,7 +26,6 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
     @State private var reload = 0
     @State private var expanded: Set<BookTagCategory> = []
     @State private var foldedCounts: [BookTagCategory: Int] = [:]
-    @State private var firstRow = TagSelectionRow(ids: [], count: 0)
     @State private var position = ScrollPosition()
     @State private var activeGroup: BookTagCategory?
     @State private var viewport = BookTagViewport()
@@ -49,24 +48,22 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
 
     var body: some View {
         let groups = groups
-        let words = Array(selection.reversed())
-        let ids = words.map { Data($0.utf8) }
-        let split = ids.isEmpty ? 0 : min(words.count, max(1, firstRow.count))
-        let measuredSelection = ids.isEmpty || firstRow.ids == ids ? ids : nil
+        // The system toolbar applies its own scroll-edge material to this page.
         ScrollViewReader { scroll in
-            VStack(spacing: 0) {
-                controls()
+            Group {
                 if showsChoices {
-                    selectionHeader(words: words, ids: ids, split: split)
-                    catalogue(groups, overflow: Array(words.dropFirst(split)), measuredSelection: measuredSelection)
+                    catalogue(groups)
                 } else {
-                    ScrollView { status().frame(maxWidth: .infinity) }
-                        .defaultScrollAnchor(.center, for: .alignment)
-                    footer()
+                    VStack(spacing: 0) {
+                        controls()
+                        ScrollView { status().frame(maxWidth: .infinity) }
+                            .defaultScrollAnchor(.center, for: .alignment)
+                        footer()
+                    }
+                    .padding(.leading, horizontalMargins?.leading)
+                    .padding(.trailing, horizontalMargins?.trailing)
                 }
             }
-            .padding(.leading, horizontalMargins?.leading)
-            .padding(.trailing, horizontalMargins?.trailing)
             .background {
                 BookTagSystemMargins { horizontalMargins = $0 }.allowsHitTesting(false)
             }
@@ -139,8 +136,9 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
         position.scrollTo(edge: .top)
     }
 
-    private func selectionHeader(words: [String], ids: [Data], split: Int) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private var selectionHeader: some View {
+        let words = Array(selection.reversed())
+        return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("已选 \(words.count)").font(.subheadline.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
@@ -155,17 +153,11 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
                 if words.isEmpty {
                     Text("尚未选择标签").font(.subheadline).foregroundStyle(.secondary)
                 } else {
-                    selectionChips(Array(words.prefix(split)))
+                    selectionChips(words)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
-            .background(alignment: .topLeading) {
-                if !words.isEmpty {
-                    BookTagWrapProbe(words: words, style: .removable, lines: 1) { count in
-                        firstRow = .init(ids: ids, count: count)
-                    }
-                }
-            }
+
         }
     }
 
@@ -173,22 +165,30 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
         BookTagFlow {
             ForEach(words.map { Data($0.utf8) }, id: \.self) { id in
                 let name = String(decoding: id, as: UTF8.self)
-                Button { toggle(name, fromSelection: true) } label: {
-                    BookTagCapsule(name: name, style: .removable)
+                Button { setSelected(false, name: name, fromSelection: true) } label: {
+                    HStack(spacing: LayoutTokens.compact / 2) {
+                        Text(verbatim: name).lineLimit(1)
+                        Image(systemName: "xmark").font(.caption).accessibilityHidden(true)
+                    }
+                    .font(.subheadline)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .frame(minHeight: LayoutTokens.hit)
                 .accessibilityLabel("移除标签 \(name)")
             }
         }
     }
 
-    private func catalogue(_ groups: [BookTagGroup], overflow: [String], measuredSelection: [Data]?) -> some View {
-        let selected = Set(selection.map { Data($0.utf8) })
+    private func catalogue(_ groups: [BookTagGroup]) -> some View {
+        let selectionIDs = selection.map { Data($0.utf8) }
+        let selected = Set(selectionIDs)
         let known = Set((options ?? []).map { Data($0.name.utf8) })
         let missing = purpose == .filter ? selected.subtracting(known) : []
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                if !overflow.isEmpty { selectionChips(overflow) }
+                controls()
+                selectionHeader
                 if let error {
                     ContentUnavailableView {
                         Label("无法加载选项", systemImage: "exclamationmark.circle")
@@ -214,9 +214,13 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
             .padding(.bottom, LayoutTokens.content)
             .transformAnchorPreference(key: BookTagViewportAnchors.self, value: .bounds) { $0.content = $1 }
         }
+        .contentMargins(.leading, horizontalMargins?.leading, for: .scrollContent)
+        .contentMargins(.trailing, horizontalMargins?.trailing, for: .scrollContent)
         .scrollPosition($position)
-        .onScrollGeometryChange(for: EdgeInsets.self) { $0.contentInsets } action: { _, insets in
-            viewport.insets = insets
+        .onScrollGeometryChange(for: BookTagViewport.ScrollMetrics.self) { geometry in
+            .init(insets: geometry.contentInsets, offset: geometry.contentOffset.y + geometry.contentInsets.top)
+        } action: { _, metrics in
+            viewport.metrics = metrics
         }
         .onScrollPhaseChange { _, phase in
             if phase == .interacting { viewport.pending = nil }
@@ -225,7 +229,7 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
             GeometryReader { proxy in
                 if let content = anchors.content {
                     let frames = BookTagViewport.Frames(
-                        selection: measuredSelection, content: proxy[content], height: proxy.size.height,
+                        selection: selectionIDs, content: proxy[content], height: proxy.size.height,
                         choices: anchors.choices.mapValues { proxy[$0] },
                         groupBodies: anchors.groupBodies.mapValues { proxy[$0] },
                         headers: anchors.headers.mapValues { proxy[$0] })
@@ -249,7 +253,7 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
                 choiceChips(visible, selected: selected)
                     .background(alignment: .topLeading) {
                         if group.tags.count > 2 {
-                            BookTagWrapProbe(words: group.tags.map(\.name), style: .option, lines: 2) { count in
+                            BookTagWrapProbe(choices: group.tags, selected: selected) { count in
                                 foldedCounts[group.id] = count
                             }
                         }
@@ -302,7 +306,7 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
             }
             if canCreate {
                 Button {
-                    toggle(term)
+                    setSelected(true, name: term)
                     query = ""
                 } label: {
                     Label("新建标签“\(term)”", systemImage: "plus")
@@ -320,7 +324,10 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
     {
         BookTagFlow {
             ForEach(choices) { choice in
-                BookTagOptionButton(choice: choice, selected: selected.contains(choice.id), toggle: { toggle($0) })
+                BookTagOptionToggle(name: choice.name, isOn: Binding(
+                    get: { selected.contains(choice.id) },
+                    set: { setSelected($0, name: choice.name) }
+                ))
                     .anchorPreference(key: BookTagViewportAnchors.self, value: .bounds) {
                         .init(choices: [choice.id: $0])
                     }
@@ -328,10 +335,11 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
         }
     }
 
-    private func toggle(_ name: String, fromSelection: Bool = false) {
+    private func setSelected(_ isSelected: Bool, name: String, fromSelection: Bool = false) {
         let id = Data(name.utf8)
         var next = selection
         let removing = next.firstIndex { $0.utf8.elementsEqual(name.utf8) }
+        guard (removing == nil) == isSelected else { return }
         if let removing { next.remove(at: removing) } else { next.append(name) }
 
         let candidateStays = removing == nil || (!selectedOnly && (options ?? []).contains {
@@ -349,7 +357,7 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
 
     private func updateViewport(_ frames: BookTagViewport.Frames, categories: [BookTagCategory]) {
         viewport.frames = frames
-        let insets = viewport.insets
+        let insets = viewport.metrics.insets
         let top = insets.top
         let active = categories.last { group in
             guard let body = frames.groupBodies[group], let header = frames.headers[group] else { return false }
@@ -359,12 +367,12 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
         guard let pending = viewport.pending, frames.selection == pending.selection else { return }
         viewport.pending = nil
         guard let newY = frames.choices[pending.id]?.minY else { return }
-        // Translate the same chip's screen displacement into a scroll offset
-        // relative to the content start. The matching layout supplies its new height.
-        let delta = newY - pending.y
-        guard abs(delta) > 0.5 else { return }
+        guard abs(newY - pending.y) > 0.5 else { return }
+        // The viewport can extend under the toolbar. Compute the target from
+        // the tapped offset and the chip's movement within scroll content.
+        let newContentY = newY - frames.content.minY
         let maxOffset = max(0, frames.content.height + insets.top + insets.bottom - frames.height)
-        let offset = min(maxOffset, max(0, top - frames.content.minY + delta))
+        let offset = min(maxOffset, max(0, pending.scrollOffset + newContentY - pending.contentY))
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
         withTransaction(transaction) { position.scrollTo(y: offset) }
@@ -396,16 +404,11 @@ private struct BookTagSystemMargins: UIViewControllerRepresentable {
     }
 }
 
-private struct TagSelectionRow {
-    let ids: [Data]
-    let count: Int
-}
-
 /// Geometry during a drag is local bookkeeping. It only changes view state
 /// when the active category changes or a selection compensation is needed.
 @MainActor private final class BookTagViewport {
     struct Frames: Equatable {
-        let selection: [Data]?
+        let selection: [Data]
         let content: CGRect
         let height: CGFloat
         let choices: [Data: CGRect]
@@ -413,22 +416,32 @@ private struct TagSelectionRow {
         let headers: [BookTagCategory: CGRect]
     }
 
+    struct ScrollMetrics: Equatable {
+        let insets: EdgeInsets
+        let offset: CGFloat
+    }
+
     struct Pending {
         let id: Data
         let y: CGFloat
+        let contentY: CGFloat
+        let scrollOffset: CGFloat
         let selection: [Data]
     }
 
     var frames: Frames?
-    var insets = EdgeInsets()
+    var metrics = ScrollMetrics(insets: EdgeInsets(), offset: 0)
     var pending: Pending?
 
     func anchor(_ id: Data, y: CGFloat, selection: [String]) {
-        pending = Pending(id: id, y: y, selection: selection.reversed().map { Data($0.utf8) })
+        guard let frames else { return }
+        pending = Pending(id: id, y: y, contentY: y - frames.content.minY,
+                          scrollOffset: metrics.offset, selection: selection.map { Data($0.utf8) })
     }
 
     func firstVisibleChoice(excluding id: Data) -> (Data, CGRect)? {
         guard let frames else { return nil }
+        let insets = metrics.insets
         let pinnedBottom = frames.headers.values
             .filter { $0.minY <= insets.top + 2 && $0.maxY > insets.top }
             .map(\.maxY).max() ?? insets.top
@@ -459,9 +472,8 @@ private struct BookTagViewportAnchors: PreferenceKey {
 }
 
 private struct BookTagWrapProbe: View {
-    let words: [String]
-    let style: BookTagCapsule.Style
-    let lines: Int
+    let choices: [BookTagChoice]
+    let selected: Set<Data>
     let onFit: (Int) -> Void
 
     private struct Measurement: Equatable {
@@ -470,10 +482,9 @@ private struct BookTagWrapProbe: View {
     }
 
     var body: some View {
-        let ids = words.map { Data($0.utf8) }
         BookTagFlow {
-            ForEach(ids, id: \.self) { id in
-                BookTagCapsule(name: String(decoding: id, as: UTF8.self), style: style)
+            ForEach(choices) { choice in
+                BookTagOptionToggle(name: choice.name, isOn: .constant(selected.contains(choice.id)))
                     .anchorPreference(key: BookTagChipBounds.self, value: .bounds) { [$0] }
             }
         }
@@ -481,7 +492,7 @@ private struct BookTagWrapProbe: View {
             GeometryReader { proxy in
                 if !anchors.isEmpty {
                     let positions = anchors.map { proxy[$0].minY }
-                    Color.clear.onChange(of: Measurement(ids: ids, count: prefixFitting(positions)), initial: true) {
+                    Color.clear.onChange(of: Measurement(ids: choices.map(\.id), count: prefixFitting(positions)), initial: true) {
                         _, result in onFit(result.count)
                     }
                 }
@@ -497,7 +508,7 @@ private struct BookTagWrapProbe: View {
         var previous: CGFloat?
         for (index, y) in positions.enumerated() where y != previous {
             row += 1
-            if row > lines { return index }
+            if row > 2 { return index }
             previous = y
         }
         return positions.count
@@ -515,80 +526,35 @@ private struct BookTagChipBounds: PreferenceKey {
     }
 }
 
-private struct BookTagOptionButton: View {
-    let choice: BookTagChoice
-    let selected: Bool
-    let toggle: (String) -> Void
+private struct BookTagOptionToggle: View {
+    let name: String
+    @Binding var isOn: Bool
 
     var body: some View {
-        Button { toggle(choice.name) } label: {
-            BookTagCapsule(name: choice.name, style: selected ? .selected : .option)
+        Toggle(isOn: $isOn) {
+            Text(verbatim: name).fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .toggleStyle(.button)
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .frame(minHeight: LayoutTokens.hit)
     }
 }
 
-struct BookTagCapsule: View {
-    enum Style { case option, selected, removable, summary }
-
+/// Read-only summary in the metadata form.
+struct BookTagSummaryCapsule: View {
     let name: String
-    let style: Style
     @Environment(\.theme) private var theme
 
-    private var foreground: Color {
-        switch style {
-        case .option: Color(uiColor: theme.ink)
-        case .selected, .removable: Color(uiColor: theme.onAccent)
-        case .summary: Color(uiColor: theme.accent)
-        }
-    }
-
-    @ViewBuilder private var capsuleBackground: some View {
-        switch style {
-        case .option:
-            Capsule().fill(Color(uiColor: theme.input))
-                .overlay { Capsule().fill(Color(uiColor: theme.surface).opacity(0.5)) }
-                .overlay { Capsule().strokeBorder(Color(uiColor: theme.separator), lineWidth: LayoutTokens.border) }
-        case .selected, .removable:
-            Capsule().fill(Color(uiColor: theme.accent))
-        case .summary:
-            Capsule().fill(Color(uiColor: theme.accentSurface))
-        }
-    }
-
-    private var word: some View {
-        Text(verbatim: name)
-            .lineLimit(style == .summary || style == .removable ? 1 : nil)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
     var body: some View {
-        Group {
-            if style == .option || style == .selected {
-                HStack(spacing: LayoutTokens.compact / 2) {
-                    Image(systemName: "checkmark").font(.caption).accessibilityHidden(true)
-                    word
-                }
-                .opacity(style == .option ? 0 : 1)
-                .overlay { if style == .option { word } }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(verbatim: name))
-            } else {
-                HStack(spacing: LayoutTokens.compact / 2) {
-                    word
-                    if style == .removable { Image(systemName: "xmark").font(.caption).accessibilityHidden(true) }
-                }
-            }
-        }
-        .font(style == .summary || style == .removable ? .subheadline : .body)
-        .foregroundStyle(foreground)
-        .padding(.vertical, LayoutTokens.compact / 2)
-        .padding(.horizontal, LayoutTokens.control)
-        .background { capsuleBackground }
-        .padding(.vertical, style == .summary ? 0 : LayoutTokens.compact / 2)
-        .frame(minHeight: style == .summary ? nil : LayoutTokens.hit)
-        .contentShape(.rect)
+        Text(verbatim: name)
+            .lineLimit(1)
+            .fixedSize(horizontal: false, vertical: true)
+            .font(.subheadline)
+            .foregroundStyle(Color(uiColor: theme.accent))
+            .padding(.vertical, LayoutTokens.compact / 2)
+            .padding(.horizontal, LayoutTokens.control)
+            .background(Color(uiColor: theme.accentSurface), in: .capsule)
     }
 }
 

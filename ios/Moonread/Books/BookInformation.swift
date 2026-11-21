@@ -415,7 +415,7 @@ struct BookMetadataEditor: View {
         } else {
             HStack(spacing: LayoutTokens.compact) {
                 ForEach(tags.prefix(2), id: \.self) { tag in
-                    BookTagCapsule(name: tag, style: .summary)
+                    BookTagSummaryCapsule(name: tag)
                 }
                 if tags.count > 2 {
                     Text("+\(tags.count - 2)").font(.subheadline)
