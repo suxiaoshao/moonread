@@ -476,6 +476,7 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
         try Self.metadata(db, book: a, field: "tag-1", value: "\"Group 2\"")
         try Self.metadata(db, book: a, field: "tag-2", value: "\"Group 10\"")
         try Self.metadata(db, book: b, field: "synopsis", value: "\"Unique synopsis token\"")
+        try Self.metadata(db, book: b, field: "tag-1", value: "\"Group 2\"")
         _ = try ReadingPositionRows.recordPosition(db, book: a, offset: 3, hint: nil,
           file: nil, device: "fixture", now: 10, token: "read")
         // A restored legacy position can have a nonzero offset and a zero clock.
@@ -516,7 +517,8 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
         try LibrarySearchRead.options(db, scope: index.lease.scope, shelfID: "builtin").bookFilterOptions
       }
       XCTAssertEqual(options.authors, ["Synthetic Writer"])
-      XCTAssertEqual(options.tags, ["Group 10", "Group 2"])
+      XCTAssertEqual(options.tags.map(\.name), ["Group 10", "Group 2"])
+      XCTAssertEqual(options.tags.map(\.bookCount), [1, 2])
 
       try index.session.writeUsers(index.lease) { db in
         try db.execute(sql: """

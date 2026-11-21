@@ -1,5 +1,15 @@
 import GRDB
 
+struct LibraryMetadataOptions: Sendable {
+    struct Tag: Sendable {
+        let name: String
+        let bookCount: Int
+    }
+
+    let authors: [String]
+    let tags: [Tag]
+}
+
 enum LibrarySearchRead {
     typealias Match = MoonreadQueries.SearchCandidatesQuery.Data
     typealias Candidate = Match.SearchCandidate
@@ -119,26 +129,33 @@ enum LibrarySearchRead {
         let selection = try Scope(shelfID.map { .shelf(shelfId:$0,parentPath:"",recursive:true) } ?? .all)
         let rows = try Row.fetchAll(db, sql: selection.tree + """
             \(LibraryCardSQL.fileIdentities(scopeParameter: "?3", includeNames: false))
-            SELECT 0 AS kind,c.value_text AS text
+            SELECT 0 AS kind,c.value_text AS text,0 AS book_count
               FROM identity_keys k JOIN usr.metadata_current m ON m.book_key=k.book_key
               JOIN usr.metadata_text_candidate c ON c.partition=m.source_partition AND c.record_id=m.author_id
               WHERE c.value_text<>''
             UNION
-            SELECT 1 AS kind,c.tag_text AS text
+            SELECT 1 AS kind,c.tag_text AS text,count(DISTINCT k.book_key) AS book_count
               FROM identity_keys k JOIN usr.tag_current t ON t.book_key=k.book_key
               JOIN usr.tag_candidate c ON c.partition=t.source_partition AND c.record_id=t.candidate_id
               WHERE c.is_deleted=0
+              GROUP BY c.tag_text COLLATE BINARY
             ORDER BY kind,text
             """, arguments: selection.arguments(scope))
-        var authors: [String] = [], tags: [String] = []
+        var authors: [String] = []
+        var tags: [Options.BookFilterOptions.Tag] = []
         for row in rows {
-            if (row["kind"] as Int) == 0 { authors.append(row["text"]) } else { tags.append(row["text"]) }
+            if (row["kind"] as Int) == 0 {
+                authors.append(row["text"])
+            } else {
+                tags.append(.init(name: row["text"], bookCount: row["book_count"]))
+            }
         }
         return .init(bookFilterOptions: .init(authors: authors, tags: tags))
     }
 
-    static func optionValues(_ value: Options) -> BookFilterOptions {
-        .init(authors: value.bookFilterOptions.authors, tags: value.bookFilterOptions.tags)
+    static func optionValues(_ value: Options) -> LibraryMetadataOptions {
+        .init(authors: value.bookFilterOptions.authors,
+              tags: value.bookFilterOptions.tags.map { .init(name: $0.name, bookCount: $0.bookCount) })
     }
 
     // GraphQL String equality is canonical-equivalent. The released matcher
@@ -259,15 +276,7 @@ extension AppDataService {
         try await libraryCatalogueSearch(catalogueScope(location, recursive: true), spec: spec).entries
     }
 
-    func metadataOptions(shelfID: String?) async throws -> BookFilterOptions {
-        try await fixedReaderRead { index in
-            try index.session.readUsers(index.lease) {
-                try LibrarySearchRead.optionValues(LibrarySearchRead.options($0, scope: index.lease.scope, shelfID: shelfID))
-            }
-        }
-    }
-
-    func metadataOptionsUpdates(shelfID: String?) throws -> AsyncThrowingStream<BookFilterOptions, Error> {
+    func metadataOptionsUpdates(shelfID: String?) throws -> AsyncThrowingStream<LibraryMetadataOptions, Error> {
         try relationalUserIndex().metadataOptionsUpdates(shelfID: shelfID)
     }
 
@@ -277,11 +286,15 @@ extension AppDataService {
 }
 
 extension ReaderIndex {
-    func metadataOptionsUpdates(shelfID: String?) throws -> AsyncThrowingStream<BookFilterOptions, Error> {
+    func metadataOptionsUpdates(shelfID: String?) throws -> AsyncThrowingStream<LibraryMetadataOptions, Error> {
         try Task.checkCancellation()
         let scope = lease.scope
-        let (stream,sink) = AsyncThrowingStream.makeStream(of: BookFilterOptions.self, bufferingPolicy: .bufferingNewest(1))
-        let observation = ValueObservation.tracking { try LibrarySearchRead.options($0, scope: scope, shelfID: shelfID) }.removeDuplicates()
+        let (stream,sink) = AsyncThrowingStream.makeStream(of: LibraryMetadataOptions.self, bufferingPolicy: .bufferingNewest(1))
+        let observation = ValueObservation.tracking { try LibrarySearchRead.options($0, scope: scope, shelfID: shelfID) }.removeDuplicates(by: { lhs, rhs in
+            lhs == rhs && zip(lhs.bookFilterOptions.tags, rhs.bookFilterOptions.tags).allSatisfy {
+                $0.name.utf8.elementsEqual($1.name.utf8)
+            }
+        })
         let token = try session.observeUsers(lease, observation) { result in
             switch result {
             case .success(let value): sink.yield(LibrarySearchRead.optionValues(value))

@@ -256,7 +256,6 @@ final class BookMetadataDraft: Identifiable {
     let id = UUID()
     let base: BookMetadata
     var value: BookMetadata
-    var newTag = ""
     var error: String?
     var saving = false
     private(set) var choosingImage = false
@@ -269,7 +268,7 @@ final class BookMetadataDraft: Identifiable {
     init(base: BookMetadata, service: AppDataService = .shared) {
         self.base = base; value = base; self.service = service
     }
-    var changed: Bool { value != base || !newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var changed: Bool { value != base }
     var blocksInteractiveDismissal: Bool {
         !closed && (changed || saving || choosingImage || presentsPhotoPicker || presentsFilePicker)
     }
@@ -317,7 +316,6 @@ struct BookMetadataEditor: View {
     @FocusState private var focused: Bool
     @State private var photo: PhotosPickerItem?
     @State private var discard = false
-    @State private var suggestions: [String] = []
     @ViewBuilder private var coverActions: some View {
         Button("从照片选择", systemImage: "photo") { draft.presentsPhotoPicker = true }
             .buttonStyle(ThemedSecondaryButtonStyle()).disabled(draft.choosingImage)
@@ -349,26 +347,16 @@ struct BookMetadataEditor: View {
                         .accessibilityIdentifier("bookAuthorField")
                 }.listRowBackground(Color(uiColor: theme.surface))
                 Section("标签") {
-                    ForEach(draft.value.tags, id: \.self) { tag in
-                        HStack {
-                            Text(verbatim: tag); Spacer()
-                            Button("移除标签", systemImage: "minus.circle") { draft.value.tags.removeAll { $0 == tag } }
-                                .labelStyle(.iconOnly).accessibilityLabel(String(localized: "移除标签 \(tag)"))
+                    NavigationLink {
+                        BookTagPicker(service: draft.service, purpose: .metadata, selection: $draft.value.tags) {
+                            EmptyView()
+                        } footer: {
+                            EmptyView()
                         }
+                    } label: {
+                        tagSummary
                     }
-                    HStack {
-                        TextField("添加标签", text: $draft.newTag).focused($focused).keyboardInputRegion().onSubmit(addTag)
-                            .accessibilityIdentifier("bookTagField")
-                        Button("添加", systemImage: "plus", action: addTag).labelStyle(.iconOnly)
-                            .disabled(draft.newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                    if !suggestions.isEmpty {
-                        Menu("已有标签") {
-                            ForEach(suggestions.filter { !draft.value.tags.contains($0) }, id: \.self) { tag in
-                                Button(tag) { draft.value.tags.append(tag) }
-                            }
-                        }
-                    }
+                    .accessibilityIdentifier("editBookTags")
                 }.listRowBackground(Color(uiColor: theme.surface))
                 Section("简介") {
                     TextField("简介", text: $draft.value.synopsis, axis: .vertical).lineLimit(4...12)
@@ -388,7 +376,7 @@ struct BookMetadataEditor: View {
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         SystemToolbarButton("保存", role: .confirm) {
-                            addTag(); focused = false; draft.saving = true
+                            focused = false; draft.saving = true
                             Task {
                                 defer { draft.saving = false }
                                 do { try await draft.service.saveMetadata(base: draft.base, edited: draft.value); dismiss() }
@@ -412,17 +400,30 @@ struct BookMetadataEditor: View {
                         return try await Task.detached { try Data(contentsOf: url) }.value
                     }
                 }
-                .task { suggestions = (try? await draft.service.metadataOptions(shelfID: nil).tags) ?? [] }
                 .alert("暂时无法完成", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
                     Button("知道了", role: .cancel) { draft.error = nil }
                 } message: { Text(draft.error ?? "") }
         }.interactiveDismissDisabled(draft.blocksInteractiveDismissal)
             .onDisappear { draft.cancel() }
     }
-    private func addTag() {
-        let value = draft.newTag.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !value.isEmpty, !draft.value.tags.contains(value) { draft.value.tags.append(value) }
-        draft.newTag = ""
+    @ViewBuilder private var tagSummary: some View {
+        let tags = draft.value.tags
+        if tags.isEmpty {
+            Text("选择标签").foregroundStyle(Color(uiColor: theme.secondary))
+        } else {
+            HStack(spacing: LayoutTokens.compact) {
+                ForEach(tags.prefix(2), id: \.self) { tag in
+                    BookTagCapsule(name: tag, style: .summary)
+                }
+                if tags.count > 2 {
+                    Text("+\(tags.count - 2)").font(.subheadline)
+                        .foregroundStyle(Color(uiColor: theme.secondary))
+                        .fixedSize()
+                }
+            }
+            .accessibilityLabel("标签")
+            .accessibilityValue(tags.joined(separator: "、"))
+        }
     }
 }
 
