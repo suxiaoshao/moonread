@@ -203,13 +203,18 @@ enum AnnotationRows {
         return .same
     }
 
-    static func mergeBackup(_ db: Database, book: String, mark: String, value: AnnotationCandidate) throws {
+    static func mergeBackup(_ db: Database, book: String, mark: String, value: AnnotationCandidate,
+                            queueForSync: Bool = false) throws {
         guard try assessBackup(db, book: book, mark: mark, value: value) == .restore else { return }
         let lineage = try UpgradeOrigins.annotationLineage(db, partition: 0, book: book, ancestors: value.ancestors)
         try insertCandidate(db, book: book, mark: mark, partition: 0, value: value)
-        try UpgradeOrigins.record(db, .init(partition: 0, domain: .annotation, id: DataIdentity.canonical(value.id)),
+        let id = DataIdentity.canonical(value.id)
+        try UpgradeOrigins.record(db, .init(partition: 0, domain: .annotation, id: id),
                                   as: .local, bases: lineage.bases, groups: lineage.groups)
         try settleHeads(db, key: book, markID: mark, partition: 0)
+        if queueForSync {
+            try CausalCloudRows.enqueueReplacement(db, .annotation, id: id, predecessors: [], restoringBackup: true)
+        }
     }
 
     /// An unreadable sibling blocks the mark's published heads, not intake

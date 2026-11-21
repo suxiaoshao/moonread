@@ -93,6 +93,118 @@ import XCTest
         XCTAssertEqual(facts, ["original-fact"])
     }
 
+    func testBackupQueuesOnlyRestoredRecordsForReadyCloudSync() async throws {
+        let (sourceRoot, source, book, sourceRows) = try await editorFixture()
+        defer { try? sourceRows.index.session.close(); try? FileManager.default.removeItem(at: sourceRoot) }
+        let sha = book.fixtureSHA256
+        let author = "metadata/\(sha)/author"
+        let synopsis = "metadata/\(sha)/synopsis"
+        let unchangedAuthor = try UserValueRows.Key("metadata/\(String(repeating: "a", count: 64))/author")
+        let unchanged = StoredValue(updated: 20, token: "already-restored", value: try UserSyncJSON.encode("Same author"))
+        try sourceRows.seedValue(author, value: UserSyncJSON.encode("Restored author"), updated: 20)
+        try sourceRows.seedValue(synopsis, value: UserSyncJSON.encode("Older synopsis"), updated: 20)
+        _ = try sourceRows.index.session.writeUsers(sourceRows.index.lease) { db in
+            try UserValueRows.merge(db, key: unchangedAuthor, head: unchanged, device: "fixture")
+        }
+        try sourceRows.seedPosition(sha, offset: 12, time: 20, token: "restored-position")
+        let edit = try await source.prepareAnnotation(book.id, start: 0, end: 8)
+        _ = try await source.saveNote(edit, text: "Restored note")
+        let bookmarked = try await source.toggleBookmark(book.id, at: 12)
+        XCTAssertTrue(bookmarked)
+        let annotations = try sourceRows.annotationRecordIDs()
+        let archive = try await source.exportReadingData()
+        defer { try? FileManager.default.removeItem(at: archive.deletingLastPathComponent()) }
+
+        let account = try DataScope.confirmed(container: "fixture.invalid", environment: .production, recordName: "backup-account")
+        for (requested, ready, initializing) in [(true, false, false), (false, true, false), (true, true, true), (true, true, false)] {
+            let (root, target, _, rows) = try await editorFixture(account: account)
+            defer { try? rows.index.session.close(); try? FileManager.default.removeItem(at: root) }
+            target.cloudSyncIntent.set(requested)
+            try rows.index.session.writeUsers(rows.index.lease) { db in
+                try UpgradeOrigins.finish(db)
+                if initializing { try UpgradeOrigins.begin(db) }
+                if ready { try CloudTransportRows.initializeZone(db, zone: ReadingHistoryTransport.zone, exists: true) }
+                try UserValueRows.merge(db, key: unchangedAuthor, head: unchanged, device: "fixture")
+            }
+            try rows.seedValue(synopsis, value: UserSyncJSON.encode("Newer local synopsis"), updated: 30)
+            try rows.seedPosition(sha, offset: 4, time: 10, token: "previous-position")
+
+            let staged = try await target.stageReadingBackup(.init(selectedFile: archive))
+            defer { try? FileManager.default.removeItem(at: staged.ownedRoot) }
+            try await target.importReadingBackup(target.previewReadingBackup(staged))
+            XCTAssertEqual(try rows.positionToken(sha), "restored-position")
+            XCTAssertEqual(try rows.annotationRecordIDs(), annotations)
+
+            try rows.index.session.readUsers(rows.index.lease) { db in
+                let saves = try String.fetchAll(db, sql: "SELECT business_id FROM usr.cloud_outbox WHERE intent='save'")
+                let deletes = try String.fetchAll(db, sql: "SELECT business_id FROM usr.cloud_outbox WHERE intent='delete'")
+                if requested && ready && !initializing {
+                    let position = ReadingPositionRows.recordID(book: sha, token: "restored-position")
+                    let previous = ReadingPositionRows.recordID(book: sha, token: "previous-position")
+                    let authorID = UserValueRows.recordID(logical: author, device: "fixture")
+                    XCTAssertEqual(saves.sorted(), ([position, authorID] + annotations).sorted())
+                    XCTAssertEqual(deletes, [previous])
+                    XCTAssertTrue(try CloudTransportRows.deletionAwaitingSuccessor(db, CausalCloudRows.key(.position, id: previous)))
+                } else {
+                    XCTAssertTrue(saves.isEmpty)
+                    XCTAssertTrue(deletes.isEmpty)
+                }
+            }
+        }
+    }
+
+    func testBackupReplacesPendingDeletionWithRestoredPosition() async throws {
+        let account = try DataScope.confirmed(container: "fixture.invalid", environment: .production, recordName: "backup-account")
+        let (sourceRoot, source, book, sourceRows) = try await editorFixture()
+        let (targetRoot, target, _, targetRows) = try await editorFixture(account: account)
+        defer {
+            for fixture in [sourceRows, targetRows] { try? fixture.index.session.close() }
+            for root in [sourceRoot, targetRoot] { try? FileManager.default.removeItem(at: root) }
+        }
+        let sha = book.fixtureSHA256
+        let token = "restored-position"
+        let id = ReadingPositionRows.recordID(book: sha, token: token)
+        let key = CausalCloudRows.key(.position, id: id)
+        try sourceRows.seedPosition(sha, offset: 12, time: 20, token: token)
+        let archive = try await source.exportReadingData()
+        defer { try? FileManager.default.removeItem(at: archive.deletingLastPathComponent()) }
+
+        target.cloudSyncIntent.set(true)
+        let index = targetRows.index
+        let deletion = try index.session.writeUsers(index.lease) { db in
+            try UpgradeOrigins.finish(db)
+            try CloudTransportRows.initializeZone(db, zone: key.zone, exists: true)
+            let successorID = ReadingPositionRows.recordID(book: sha, token: "successor-position")
+            let successorKey = CausalCloudRows.key(.position, id: successorID)
+            try CloudTransportRows.enqueueSave(db, successorKey, businessID: successorID, digest: "successor")
+            let successor = try XCTUnwrap(CloudTransportRows.pending(db, successorKey))
+            try CloudTransportRows.compactAfterSave(db, predecessor: key, id: id, successor: successor)
+            XCTAssertTrue(try CloudTransportRows.deletionAwaitingSuccessor(db, key))
+            return try XCTUnwrap(CloudTransportRows.pending(db, key))
+        }
+        XCTAssertEqual(deletion.intent, .delete)
+
+        let staged = try await target.stageReadingBackup(.init(selectedFile: archive))
+        defer { try? FileManager.default.removeItem(at: staged.ownedRoot) }
+        try await target.importReadingBackup(target.previewReadingBackup(staged))
+
+        try index.session.writeUsers(index.lease) { db in
+            let prepared = try XCTUnwrap(CausalCloudRows.prepare(db, .position, id: id))
+            let material = try XCTUnwrap(prepared.material)
+            XCTAssertEqual(prepared.attempt.intent, .save(digest: material.digest))
+            XCTAssertGreaterThan(prepared.attempt.generation, deletion.generation)
+            let head = try UserSyncJSON.storedValue(material.payload, key: "position/" + sha)
+            XCTAssertEqual(head.token, token)
+            XCTAssertEqual(head.updated, 20)
+            XCTAssertEqual(try JSONDecoder().decode(PositionValue.self, from: Data(head.value.utf8)).offset, 12)
+            XCTAssertEqual(try String.fetchAll(db, sql: """
+                SELECT intent FROM usr.cloud_outbox WHERE business_id=? AND after_name IS NULL
+                """, arguments: [id]), ["save"])
+            XCTAssertFalse(try CloudTransportRows.acknowledge(db, deletion, systemFields: nil))
+            XCTAssertEqual(try CloudTransportRows.pending(db, key), prepared.attempt)
+        }
+    }
+
     func testBackupReviewKeepsGlobalChangesAndMissingCoverSeparateFromNewerProgress() async throws {
         let (sourceRoot, source, book, sourceRows) = try await editorFixture()
         let (targetRoot, target, _, targetRows) = try await editorFixture()

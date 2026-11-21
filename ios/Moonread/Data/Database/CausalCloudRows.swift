@@ -60,10 +60,12 @@ enum CausalCloudRows {
         }
     }
 
-    static func enqueueReplacement(_ db: Database, _ family: Family, id: String, predecessors: [String]) throws {
+    static func enqueueReplacement(_ db: Database, _ family: Family, id: String, predecessors: [String],
+                                   restoringBackup: Bool = false) throws {
         guard let value = try material(db, family, id: id) else { throw DataV2Error.migrationNotVerified }
         let key = key(family, id: id)
-        try CloudTransportRows.enqueueSave(db, key, businessID: id, digest: value.digest)
+        try CloudTransportRows.enqueueSave(db, key, businessID: id, digest: value.digest,
+                                          replacingPendingDeletion: restoringBackup)
         guard let saved = try CloudTransportRows.pending(db, key), saved.intent == .save(digest: value.digest)
         else { throw DataV2Error.migrationNotVerified }
         for prior in predecessors where prior != id {
