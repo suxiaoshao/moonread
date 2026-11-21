@@ -352,6 +352,8 @@ struct BookMetadataEditor: View {
                             EmptyView()
                         } footer: {
                             EmptyView()
+                        } status: {
+                            EmptyView()
                         }
                     } label: {
                         tagSummary

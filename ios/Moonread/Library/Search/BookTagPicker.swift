@@ -1,10 +1,9 @@
 import Combine
 import SwiftUI
-
-private enum BookTagPickerCoordinates: Hashable { case content }
+import UIKit
 
 /// Both entry points select original strings. Their parent owns when the draft commits.
-struct BookTagPicker<Controls: View, Footer: View>: View {
+struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
     enum Purpose {
         case filter, metadata
     }
@@ -12,9 +11,11 @@ struct BookTagPicker<Controls: View, Footer: View>: View {
     let service: AppDataService
     let purpose: Purpose
     var showsChoices = true
+    var match: BookSearchMatch?
     @Binding var selection: [String]
     @ViewBuilder let controls: () -> Controls
     @ViewBuilder let footer: () -> Footer
+    @ViewBuilder let status: () -> Status
 
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -24,15 +25,16 @@ struct BookTagPicker<Controls: View, Footer: View>: View {
     @State private var error: String?
     @State private var reload = 0
     @State private var expanded: Set<BookTagCategory> = []
+    @State private var foldedCounts: [BookTagCategory: Int] = [:]
+    @State private var firstRow = TagSelectionRow(ids: [], count: 0)
     @State private var position = ScrollPosition()
-    @State private var offsets: [BookTagCategory: CGFloat] = [:]
-    @State private var visibleGroup: BookTagCategory?
-    @State private var pinnedHeight: CGFloat = 0
-    @State private var jumpedTo: BookTagCategory?
+    @State private var activeGroup: BookTagCategory?
+    @State private var viewport = BookTagViewport()
+    @State private var horizontalMargins: NSDirectionalEdgeInsets?
 
     private var term: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var selectedIDs: Set<Data> { Set(selection.map { Data($0.utf8) }) }
     private var browsing: Bool { term.isEmpty && !selectedOnly }
+
     private var groups: [BookTagGroup] {
         let library = (options ?? []).map {
             BookTagChoice(name: $0.name, bookCount: $0.bookCount, category: BookTagCategory.category(for: $0.name))
@@ -47,45 +49,52 @@ struct BookTagPicker<Controls: View, Footer: View>: View {
 
     var body: some View {
         let groups = groups
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: LayoutTokens.control, pinnedViews: [.sectionHeaders]) {
+        let words = Array(selection.reversed())
+        let ids = words.map { Data($0.utf8) }
+        let split = ids.isEmpty ? 0 : min(words.count, max(1, firstRow.count))
+        let measuredSelection = ids.isEmpty || firstRow.ids == ids ? ids : nil
+        ScrollViewReader { scroll in
+            VStack(spacing: 0) {
                 controls()
                 if showsChoices {
-                    if let error {
-                        ContentUnavailableView {
-                            Label("无法加载选项", systemImage: "exclamationmark.circle")
-                        } description: {
-                            Text(error)
-                        } actions: {
-                            Button("重试") { reload += 1 }
-                        }
-                    } else if options == nil {
-                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, LayoutTokens.section)
-                    } else {
-                        Section {
-                            candidates(groups, selected: selectedIDs)
-                        } header: {
-                            pinnedHeader(browsing ? groups.map(\.id) : [])
+                    selectionHeader(words: words, ids: ids, split: split)
+                    catalogue(groups, overflow: Array(words.dropFirst(split)), measuredSelection: measuredSelection)
+                } else {
+                    ScrollView { status().frame(maxWidth: .infinity) }
+                        .defaultScrollAnchor(.center, for: .alignment)
+                    footer()
+                }
+            }
+            .padding(.leading, horizontalMargins?.leading)
+            .padding(.trailing, horizontalMargins?.trailing)
+            .background {
+                BookTagSystemMargins { horizontalMargins = $0 }.allowsHitTesting(false)
+            }
+            .toolbar {
+                if showsChoices && browsing && options != nil && error == nil && !groups.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            ForEach(groups) { group in
+                                Button {
+                                    viewport.pending = nil
+                                    withAnimation(reduceMotion ? nil : .default) {
+                                        scroll.scrollTo(group.id, anchor: .top)
+                                    }
+                                } label: {
+                                    if group.id == (activeGroup ?? groups.first?.id) {
+                                        Label(group.category.title, systemImage: "checkmark")
+                                    } else {
+                                        Text(group.category.title)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("跳到分类", systemImage: "list.bullet").labelStyle(.iconOnly)
                         }
                     }
                 }
-                footer()
             }
-            .coordinateSpace(name: BookTagPickerCoordinates.content)
-            .padding(.horizontal, LayoutTokens.content)
-            .padding(.bottom, LayoutTokens.content)
         }
-        .scrollPosition($position)
-        .onScrollGeometryChange(for: BookTagCategory?.self) { geometry in
-            let edge = geometry.contentOffset.y + geometry.contentInsets.top + pinnedHeight + LayoutTokens.compact
-            return groups.last { (offsets[$0.id] ?? .infinity) <= edge }?.id
-        } action: { _, category in
-            visibleGroup = category
-        }
-        .onScrollPhaseChange { _, phase in
-            if phase == .interacting { jumpedTo = nil }
-        }
-        .scrollDismissesKeyboard(.interactively)
         .modifier(BookSearchOptionSearch(enabled: showsChoices, query: $query,
                                          prompt: purpose == .filter ? "搜索选项" : "搜索或新建标签"))
         .themedPage()
@@ -94,9 +103,8 @@ struct BookTagPicker<Controls: View, Footer: View>: View {
         .onChange(of: term) { _, _ in scrollToTop() }
         .onChange(of: selectedOnly) { _, _ in scrollToTop() }
         .onChange(of: selection.isEmpty) { _, empty in if empty { selectedOnly = false } }
-        .onChange(of: showsChoices) { _, visible in
-            if !visible { query = ""; selectedOnly = false }
-        }
+        .onChange(of: match) { _, _ in resetSearch() }
+        .onChange(of: showsChoices) { _, _ in resetSearch() }
         .onReceive(NotificationCenter.default.publisher(for: .readingContinuationInvalidated, object: service)
             .receive(on: DispatchQueue.main)) { _ in
             options = nil
@@ -119,247 +127,380 @@ struct BookTagPicker<Controls: View, Footer: View>: View {
         }
     }
 
+    private func resetSearch() {
+        query = ""
+        selectedOnly = false
+        scrollToTop()
+    }
+
     private func scrollToTop() {
-        jumpedTo = nil
+        viewport.pending = nil
+        activeGroup = nil
         position.scrollTo(edge: .top)
     }
 
-    private func pinnedHeader(_ categories: [BookTagCategory]) -> some View {
-        VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+    private func selectionHeader(words: [String], ids: [Data], split: Int) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Group {
-                    if selection.isEmpty { Text("已选标签") }
-                    else { Text("已选 \(selection.count) 项") }
-                }
-                .font(.subheadline)
-                .foregroundStyle(Color(uiColor: theme.secondary))
-                .accessibilityAddTraits(.isHeader)
+                Text("已选 \(words.count)").font(.subheadline.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
-                if purpose == .filter, !selection.isEmpty {
+                if purpose == .filter, !words.isEmpty {
                     Button(selectedOnly ? "显示全部" : "只看已选") { selectedOnly.toggle() }
-                        .font(.subheadline)
+                        .font(.subheadline).foregroundStyle(Color(uiColor: theme.ink))
                 }
             }
-            if selection.isEmpty {
-                Text("尚未选择")
-                    .font(.subheadline)
-                    .foregroundStyle(Color(uiColor: theme.secondary))
-            } else {
-                BookTagSelectionStrip(words: selection, remove: toggle)
+            .padding(.vertical, LayoutTokens.compact)
+            Group {
+                if words.isEmpty {
+                    Text("尚未选择标签").font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    selectionChips(Array(words.prefix(split)))
+                }
             }
-            if !categories.isEmpty {
-                categoryIndex(categories)
-                ThemedDivider()
-            }
-        }
-        .padding(.vertical, LayoutTokens.compact)
-        .background(Color(uiColor: theme.canvas).padding(.horizontal, -LayoutTokens.content))
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pinnedHeight = $0 }
-    }
-
-    private func categoryIndex(_ categories: [BookTagCategory]) -> some View {
-        let active = jumpedTo ?? visibleGroup.flatMap { categories.contains($0) ? $0 : nil } ?? categories.first
-        return ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(spacing: LayoutTokens.content) {
-                    ForEach(categories) { category in
-                        Button {
-                            guard let y = offsets[category] else { return }
-                            jumpedTo = category
-                            withAnimation(reduceMotion ? nil : .default) {
-                                position.scrollTo(y: max(0, y - pinnedHeight))
-                            }
-                        } label: {
-                            Text(category.title).font(.subheadline)
-                                .fontWeight(active == category ? .semibold : .regular)
-                                .fixedSize()
-                                .padding(.vertical, LayoutTokens.compact)
-                                .overlay(alignment: .bottom) {
-                                    if active == category {
-                                        Rectangle().fill(Color(uiColor: theme.accent)).frame(height: LayoutTokens.border)
-                                    }
-                                }
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color(uiColor: active == category ? theme.accent : theme.secondary))
-                        .accessibilityAddTraits(active == category ? .isSelected : [])
-                        .id(category)
+            .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
+            .background(alignment: .topLeading) {
+                if !words.isEmpty {
+                    BookTagWrapProbe(words: words, style: .removable, lines: 1) { count in
+                        firstRow = .init(ids: ids, count: count)
                     }
                 }
-            }
-            .scrollIndicators(.hidden)
-            .accessibilityLabel("跳到分类")
-            .onChange(of: active) { _, value in
-                if let value { proxy.scrollTo(value, anchor: .center) }
             }
         }
     }
 
-    @ViewBuilder private func candidates(_ groups: [BookTagGroup], selected: Set<Data>) -> some View {
-        let missing = missingSelection
-        if browsing {
-            if groups.isEmpty {
-                ContentUnavailableView("暂无标签", systemImage: "tag")
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(groups) { group in
-                        if group.id != groups.first?.id { ThemedDivider() }
-                        BookTagCategorySection(group: group, selected: selected, expanded: expanded.contains(group.id),
-                                               missing: missing, toggle: toggle) {
-                            if !expanded.insert(group.id).inserted { expanded.remove(group.id) }
-                        }
-                        .onGeometryChange(for: CGFloat.self) {
-                            $0.frame(in: .named(BookTagPickerCoordinates.content)).minY
-                        } action: { offsets[group.id] = $0 }
-                    }
+    private func selectionChips(_ words: [String]) -> some View {
+        BookTagFlow {
+            ForEach(words.map { Data($0.utf8) }, id: \.self) { id in
+                let name = String(decoding: id, as: UTF8.self)
+                Button { toggle(name, fromSelection: true) } label: {
+                    BookTagCapsule(name: name, style: .removable)
                 }
-                .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: LayoutTokens.inputRadius))
+                .buttonStyle(.plain)
+                .accessibilityLabel("移除标签 \(name)")
             }
-        } else {
-            let matches = groups.flatMap(\.tags).filter {
-                (!selectedOnly || selected.contains($0.id)) && LibraryQueryRules.selectionMatches($0.name, query: term)
-            }
-            let canCreate = purpose == .metadata && !term.isEmpty && !groups.contains { group in
-                group.tags.contains { $0.name.utf8.elementsEqual(term.utf8) }
-            }
-            VStack(alignment: .leading, spacing: LayoutTokens.control) {
-                if !matches.isEmpty {
-                    Text(term.isEmpty ? "已选标签" : "搜索结果")
-                        .font(.subheadline.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    BookTagFlow {
-                        ForEach(matches) { choice in
-                            BookTagOptionButton(choice: choice, selected: selected.contains(choice.id), toggle: toggle)
-                        }
-                    }
-                    if matches.contains(where: { missing.contains($0.id) }) { unavailableNote }
-                } else if !canCreate {
-                    ContentUnavailableView.search(text: term)
-                }
-                if canCreate {
-                    Button {
-                        toggle(term)
-                        query = ""
-                    } label: {
-                        Label("新建标签“\(term)”", systemImage: "plus")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .accessibilityIdentifier("createBookTag")
-                }
-            }
-            .padding(LayoutTokens.control)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: LayoutTokens.inputRadius))
         }
     }
 
-    private var missingSelection: Set<Data> {
-        guard purpose == .filter else { return [] }
+    private func catalogue(_ groups: [BookTagGroup], overflow: [String], measuredSelection: [Data]?) -> some View {
+        let selected = Set(selection.map { Data($0.utf8) })
         let known = Set((options ?? []).map { Data($0.name.utf8) })
-        return selectedIDs.subtracting(known)
-    }
-
-    private func toggle(_ name: String) {
-        if let index = selection.firstIndex(where: { $0.utf8.elementsEqual(name.utf8) }) {
-            selection.remove(at: index)
-        } else {
-            selection.append(name)
+        let missing = purpose == .filter ? selected.subtracting(known) : []
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                if !overflow.isEmpty { selectionChips(overflow) }
+                if let error {
+                    ContentUnavailableView {
+                        Label("无法加载选项", systemImage: "exclamationmark.circle")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("重试") { reload += 1 }
+                    }
+                } else if options == nil {
+                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, LayoutTokens.section)
+                } else if browsing {
+                    if groups.isEmpty {
+                        ContentUnavailableView("暂无标签", systemImage: "tag")
+                    }
+                    ForEach(groups) { group in
+                        categorySection(group, selected: selected, missing: missing)
+                    }
+                } else {
+                    filteredChoices(groups, selected: selected, missing: missing)
+                }
+                footer().padding(.top, LayoutTokens.control)
+            }
+            .padding(.bottom, LayoutTokens.content)
+            .transformAnchorPreference(key: BookTagViewportAnchors.self, value: .bounds) { $0.content = $1 }
         }
-    }
-}
-
-private struct BookTagSelectionStrip: View {
-    let words: [String]
-    let remove: (String) -> Void
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(spacing: LayoutTokens.compact) {
-                    ForEach(words.map { Data($0.utf8) }, id: \.self) { word in
-                        let name = String(decoding: word, as: UTF8.self)
-                        Button { remove(name) } label: {
-                            BookTagCapsule(name: name, style: .removable)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("移除标签 \(name)")
-                        .id(word)
+        .scrollPosition($position)
+        .onScrollGeometryChange(for: EdgeInsets.self) { $0.contentInsets } action: { _, insets in
+            viewport.insets = insets
+        }
+        .onScrollPhaseChange { _, phase in
+            if phase == .interacting { viewport.pending = nil }
+        }
+        .overlayPreferenceValue(BookTagViewportAnchors.self) { anchors in
+            GeometryReader { proxy in
+                if let content = anchors.content {
+                    let frames = BookTagViewport.Frames(
+                        selection: measuredSelection, content: proxy[content], height: proxy.size.height,
+                        choices: anchors.choices.mapValues { proxy[$0] },
+                        groupBodies: anchors.groupBodies.mapValues { proxy[$0] },
+                        headers: anchors.headers.mapValues { proxy[$0] })
+                    Color.clear.onChange(of: frames, initial: true) { _, frames in
+                        updateViewport(frames, categories: groups.map(\.id))
                     }
                 }
             }
-            .scrollIndicators(.hidden)
-            .onChange(of: words.count) { old, new in
-                if new > old, let latest = words.last { proxy.scrollTo(Data(latest.utf8), anchor: .trailing) }
-            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
-    }
-}
-
-private struct BookTagCategorySection: View {
-    let group: BookTagGroup
-    let selected: Set<Data>
-    let expanded: Bool
-    let missing: Set<Data>
-    let toggle: (String) -> Void
-    let toggleExpanded: () -> Void
-    @State private var firstTwoRows: Int?
-
-    private var visible: ArraySlice<BookTagChoice> {
-        group.tags.prefix(expanded ? group.tags.count : (firstTwoRows ?? 2))
+        .scrollDismissesKeyboard(.interactively)
     }
 
-    private var overflows: Bool {
-        if let firstTwoRows { return firstTwoRows < group.tags.count }
-        return false
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+    private func categorySection(_ group: BookTagGroup, selected: Set<Data>, missing: Set<Data>) -> some View {
+        let opened = expanded.contains(group.id)
+        let foldedCount = foldedCounts[group.id] ?? 2
+        let visible = group.tags.prefix(opened ? group.tags.count : foldedCount)
+        return Section {
+            VStack(alignment: .leading, spacing: 0) {
+                choiceChips(visible, selected: selected)
+                    .background(alignment: .topLeading) {
+                        if group.tags.count > 2 {
+                            BookTagWrapProbe(words: group.tags.map(\.name), style: .option, lines: 2) { count in
+                                foldedCounts[group.id] = count
+                            }
+                        }
+                    }
+                if visible.contains(where: { missing.contains($0.id) }) { unavailableNote }
+            }
+            .padding(.bottom, LayoutTokens.page)
+            .transformAnchorPreference(key: BookTagViewportAnchors.self, value: .bounds) {
+                $0.groupBodies[group.id] = $1
+            }
+        } header: {
             HStack {
                 Text(group.category.title).font(.subheadline.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                if overflows {
-                    Button(expanded ? "收起" : "展开", action: toggleExpanded)
-                        .font(.subheadline)
-                        .accessibilityLabel(expanded ? "收起\(group.category.title)" : "展开\(group.category.title)")
-                        .accessibilityValue(expanded ? "已展开" : "已收起")
-                }
-            }
-            BookTagFlow {
-                ForEach(visible) { choice in
-                    BookTagOptionButton(choice: choice, selected: selected.contains(choice.id), toggle: toggle)
-                }
-            }
-            .background(alignment: .topLeading) {
-                if group.tags.count > 2 {
-                    BookTagFlow {
-                        ForEach(group.tags) { choice in
-                            BookTagCapsule(name: choice.name, style: selected.contains(choice.id) ? .selected : .option)
-                                .anchorPreference(key: BookTagChipBounds.self, value: .bounds) { [$0] }
-                        }
+                if let count = foldedCounts[group.id], count < group.tags.count {
+                    Button(opened ? "收起" : "展开") {
+                        if !expanded.insert(group.id).inserted { expanded.remove(group.id) }
                     }
-                    .overlayPreferenceValue(BookTagChipBounds.self) { anchors in
-                        GeometryReader { proxy in
-                            let count = twoRows(anchors.map { proxy[$0].minY })
-                            Color.clear.onChange(of: count, initial: true) { _, count in firstTwoRows = count }
-                        }
-                    }
-                    .hidden()
-                    .accessibilityHidden(true)
-                    .allowsHitTesting(false)
+                    .font(.subheadline)
+                    .accessibilityLabel(opened ? "收起\(group.category.title)" : "展开\(group.category.title)")
+                    .accessibilityValue(opened ? "已展开" : "已收起")
                 }
             }
-            if visible.contains(where: { missing.contains($0.id) }) { unavailableNote }
+            .padding(.vertical, LayoutTokens.compact)
+            .background(Color(uiColor: theme.canvas))
+            .anchorPreference(key: BookTagViewportAnchors.self, value: .bounds) {
+                .init(headers: [group.id: $0])
+            }
         }
-        .padding(LayoutTokens.control)
+        .id(group.id)
     }
 
-    private func twoRows(_ positions: [CGFloat]) -> Int {
-        guard let first = positions.first, let second = positions.first(where: { $0 > first }) else {
-            return positions.count
+    @ViewBuilder private func filteredChoices(_ groups: [BookTagGroup], selected: Set<Data>, missing: Set<Data>) -> some View {
+        let matches = groups.flatMap(\.tags).filter {
+            (!selectedOnly || selected.contains($0.id)) && LibraryQueryRules.selectionMatches($0.name, query: term)
         }
-        return positions.prefix { $0 <= second }.count
+        let canCreate = purpose == .metadata && !term.isEmpty && !groups.contains { group in
+            group.tags.contains { $0.name.utf8.elementsEqual(term.utf8) }
+        }
+        VStack(alignment: .leading, spacing: LayoutTokens.control) {
+            if !matches.isEmpty {
+                Text(selectedOnly ? "已选标签" : "搜索结果")
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                choiceChips(matches, selected: selected)
+                if matches.contains(where: { missing.contains($0.id) }) { unavailableNote }
+            } else if !canCreate {
+                ContentUnavailableView.search(text: term)
+            }
+            if canCreate {
+                Button {
+                    toggle(term)
+                    query = ""
+                } label: {
+                    Label("新建标签“\(term)”", systemImage: "plus")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .accessibilityIdentifier("createBookTag")
+            }
+        }
+        .padding(.top, LayoutTokens.control)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func choiceChips<Choices: RandomAccessCollection>(_ choices: Choices, selected: Set<Data>) -> some View
+        where Choices.Element == BookTagChoice
+    {
+        BookTagFlow {
+            ForEach(choices) { choice in
+                BookTagOptionButton(choice: choice, selected: selected.contains(choice.id), toggle: { toggle($0) })
+                    .anchorPreference(key: BookTagViewportAnchors.self, value: .bounds) {
+                        .init(choices: [choice.id: $0])
+                    }
+            }
+        }
+    }
+
+    private func toggle(_ name: String, fromSelection: Bool = false) {
+        let id = Data(name.utf8)
+        var next = selection
+        let removing = next.firstIndex { $0.utf8.elementsEqual(name.utf8) }
+        if let removing { next.remove(at: removing) } else { next.append(name) }
+
+        let candidateStays = removing == nil || (!selectedOnly && (options ?? []).contains {
+            $0.name.utf8.elementsEqual(name.utf8)
+        })
+        if !fromSelection && candidateStays, let y = viewport.frames?.choices[id]?.minY {
+            viewport.anchor(id, y: y, selection: next)
+        } else if let (target, frame) = viewport.firstVisibleChoice(excluding: id) {
+            viewport.anchor(target, y: frame.minY, selection: next)
+        } else {
+            viewport.pending = nil
+        }
+        selection = next
+    }
+
+    private func updateViewport(_ frames: BookTagViewport.Frames, categories: [BookTagCategory]) {
+        viewport.frames = frames
+        let insets = viewport.insets
+        let top = insets.top
+        let active = categories.last { group in
+            guard let body = frames.groupBodies[group], let header = frames.headers[group] else { return false }
+            return body.minY - header.height <= top + 2
+        }
+        if activeGroup != active { activeGroup = active }
+        guard let pending = viewport.pending, frames.selection == pending.selection else { return }
+        viewport.pending = nil
+        guard let newY = frames.choices[pending.id]?.minY else { return }
+        // Translate the same chip's screen displacement into a scroll offset
+        // relative to the content start. The matching layout supplies its new height.
+        let delta = newY - pending.y
+        guard abs(delta) > 0.5 else { return }
+        let maxOffset = max(0, frames.content.height + insets.top + insets.bottom - frames.height)
+        let offset = min(maxOffset, max(0, top - frames.content.minY + delta))
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { position.scrollTo(y: offset) }
+    }
+}
+
+/// UIKit supplies the navigation host's current system margins for this viewport.
+private struct BookTagSystemMargins: UIViewControllerRepresentable {
+    let report: (NSDirectionalEdgeInsets) -> Void
+
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) { controller.report = report }
+
+    final class Controller: UIViewController {
+        var report: ((NSDirectionalEdgeInsets) -> Void)?
+        private var previous: NSDirectionalEdgeInsets?
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            let margins = parent?.systemMinimumLayoutMargins ?? systemMinimumLayoutMargins
+            guard view.window != nil, margins != previous else { return }
+            previous = margins
+            // Layout may run synchronously during a SwiftUI update.
+            Task { @MainActor [weak self] in
+                guard let self, previous == margins else { return }
+                report?(margins)
+            }
+        }
+    }
+}
+
+private struct TagSelectionRow {
+    let ids: [Data]
+    let count: Int
+}
+
+/// Geometry during a drag is local bookkeeping. It only changes view state
+/// when the active category changes or a selection compensation is needed.
+@MainActor private final class BookTagViewport {
+    struct Frames: Equatable {
+        let selection: [Data]?
+        let content: CGRect
+        let height: CGFloat
+        let choices: [Data: CGRect]
+        let groupBodies: [BookTagCategory: CGRect]
+        let headers: [BookTagCategory: CGRect]
+    }
+
+    struct Pending {
+        let id: Data
+        let y: CGFloat
+        let selection: [Data]
+    }
+
+    var frames: Frames?
+    var insets = EdgeInsets()
+    var pending: Pending?
+
+    func anchor(_ id: Data, y: CGFloat, selection: [String]) {
+        pending = Pending(id: id, y: y, selection: selection.reversed().map { Data($0.utf8) })
+    }
+
+    func firstVisibleChoice(excluding id: Data) -> (Data, CGRect)? {
+        guard let frames else { return nil }
+        let pinnedBottom = frames.headers.values
+            .filter { $0.minY <= insets.top + 2 && $0.maxY > insets.top }
+            .map(\.maxY).max() ?? insets.top
+        return frames.choices.filter { entry in
+            entry.key != id && entry.value.minY >= pinnedBottom && entry.value.maxY <= frames.height - insets.bottom
+        }.min { lhs, rhs in
+            (lhs.value.minY, lhs.value.minX) < (rhs.value.minY, rhs.value.minX)
+        }
+    }
+}
+
+private struct BookTagViewportAnchors: PreferenceKey {
+    struct Value {
+        var content: Anchor<CGRect>?
+        var choices: [Data: Anchor<CGRect>] = [:]
+        var groupBodies: [BookTagCategory: Anchor<CGRect>] = [:]
+        var headers: [BookTagCategory: Anchor<CGRect>] = [:]
+    }
+
+    static var defaultValue: Value { Value() }
+    static func reduce(value: inout Value, nextValue: () -> Value) {
+        let next = nextValue()
+        value.content = next.content ?? value.content
+        value.choices.merge(next.choices) { _, new in new }
+        value.groupBodies.merge(next.groupBodies) { _, new in new }
+        value.headers.merge(next.headers) { _, new in new }
+    }
+}
+
+private struct BookTagWrapProbe: View {
+    let words: [String]
+    let style: BookTagCapsule.Style
+    let lines: Int
+    let onFit: (Int) -> Void
+
+    private struct Measurement: Equatable {
+        let ids: [Data]
+        let count: Int
+    }
+
+    var body: some View {
+        let ids = words.map { Data($0.utf8) }
+        BookTagFlow {
+            ForEach(ids, id: \.self) { id in
+                BookTagCapsule(name: String(decoding: id, as: UTF8.self), style: style)
+                    .anchorPreference(key: BookTagChipBounds.self, value: .bounds) { [$0] }
+            }
+        }
+        .overlayPreferenceValue(BookTagChipBounds.self) { anchors in
+            GeometryReader { proxy in
+                if !anchors.isEmpty {
+                    let positions = anchors.map { proxy[$0].minY }
+                    Color.clear.onChange(of: Measurement(ids: ids, count: prefixFitting(positions)), initial: true) {
+                        _, result in onFit(result.count)
+                    }
+                }
+            }
+        }
+        .hidden()
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+    }
+
+    private func prefixFitting(_ positions: [CGFloat]) -> Int {
+        var row = 0
+        var previous: CGFloat?
+        for (index, y) in positions.enumerated() where y != previous {
+            row += 1
+            if row > lines { return index }
+            previous = y
+        }
+        return positions.count
     }
 }
 
@@ -395,34 +536,56 @@ struct BookTagCapsule: View {
     let style: Style
     @Environment(\.theme) private var theme
 
-    private var background: Color {
-        switch style {
-        case .option: Color(uiColor: theme.ink).opacity(0.07)
-        case .selected: Color(uiColor: theme.accent)
-        case .removable, .summary: Color(uiColor: theme.accentSurface)
-        }
-    }
-
     private var foreground: Color {
         switch style {
         case .option: Color(uiColor: theme.ink)
-        case .selected: Color(uiColor: theme.onAccent)
-        case .removable, .summary: Color(uiColor: theme.accent)
+        case .selected, .removable: Color(uiColor: theme.onAccent)
+        case .summary: Color(uiColor: theme.accent)
         }
     }
 
+    @ViewBuilder private var capsuleBackground: some View {
+        switch style {
+        case .option:
+            Capsule().fill(Color(uiColor: theme.input))
+                .overlay { Capsule().fill(Color(uiColor: theme.surface).opacity(0.5)) }
+                .overlay { Capsule().strokeBorder(Color(uiColor: theme.separator), lineWidth: LayoutTokens.border) }
+        case .selected, .removable:
+            Capsule().fill(Color(uiColor: theme.accent))
+        case .summary:
+            Capsule().fill(Color(uiColor: theme.accentSurface))
+        }
+    }
+
+    private var word: some View {
+        Text(verbatim: name)
+            .lineLimit(style == .summary || style == .removable ? 1 : nil)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     var body: some View {
-        HStack(spacing: LayoutTokens.compact / 2) {
-            if style == .selected { Image(systemName: "checkmark").font(.caption).accessibilityHidden(true) }
-            Text(verbatim: name).lineLimit(style == .summary ? 1 : nil)
-                .fixedSize(horizontal: style == .removable, vertical: true)
-            if style == .removable { Image(systemName: "xmark").font(.caption).accessibilityHidden(true) }
+        Group {
+            if style == .option || style == .selected {
+                HStack(spacing: LayoutTokens.compact / 2) {
+                    Image(systemName: "checkmark").font(.caption).accessibilityHidden(true)
+                    word
+                }
+                .opacity(style == .option ? 0 : 1)
+                .overlay { if style == .option { word } }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: name))
+            } else {
+                HStack(spacing: LayoutTokens.compact / 2) {
+                    word
+                    if style == .removable { Image(systemName: "xmark").font(.caption).accessibilityHidden(true) }
+                }
+            }
         }
         .font(style == .summary || style == .removable ? .subheadline : .body)
         .foregroundStyle(foreground)
         .padding(.vertical, LayoutTokens.compact / 2)
         .padding(.horizontal, LayoutTokens.control)
-        .background(background, in: .capsule)
+        .background { capsuleBackground }
         .padding(.vertical, style == .summary ? 0 : LayoutTokens.compact / 2)
         .frame(minHeight: style == .summary ? nil : LayoutTokens.hit)
         .contentShape(.rect)
@@ -489,14 +652,6 @@ struct BookSearchTagRulePage: View {
             self == .untagged ? String(localized: "无标签") : match.title
         }
 
-        var explanation: LocalizedStringKey {
-            switch self {
-            case .any: "显示带有任一所选标签的小说"
-            case .all: "显示同时带有全部所选标签的小说"
-            case .none: "不显示带有所选标签的小说"
-            case .untagged: "显示没有任何标签的小说"
-            }
-        }
     }
 
     let initial: BookSearchNode
@@ -523,14 +678,14 @@ struct BookSearchTagRulePage: View {
     private var node: BookSearchNode {
         if preservesExistingUntagged, relation != .untagged { return initial }
         var node = initial
-        node.match = relation.match
-        node.values = relation == .untagged ? [.untagged] : words.map(BookSearchValue.text)
+        node.kind = .rule(relation == .untagged ? .untagged : .tag(relation.match, words.map(BookSearchValue.text)))
         return node
     }
 
     var body: some View {
         BookTagPicker(service: .shared, purpose: .filter,
-                      showsChoices: relation != .untagged && !preservesExistingUntagged, selection: $words) {
+                      showsChoices: relation != .untagged && !preservesExistingUntagged,
+                      match: relation.match, selection: $words) {
             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                 Picker("标签关系", selection: $relation) {
                     ForEach(Relation.allCases, id: \.self) { relation in
@@ -543,8 +698,6 @@ struct BookSearchTagRulePage: View {
                     // A saved mixed or negative predicate keeps its exact meaning until explicitly edited.
                     Text(initial.expression { $0 }).font(.footnote)
                     Button("移除无标签选项") { preservesExistingUntagged = false }
-                } else {
-                    Text(relation.explanation).font(.footnote).foregroundStyle(.secondary)
                 }
             }
             .padding(.top, LayoutTokens.compact)
@@ -555,6 +708,10 @@ struct BookSearchTagRulePage: View {
                     .padding(.horizontal, LayoutTokens.control)
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: LayoutTokens.inputRadius))
             }
+        } status: {
+            if relation == .untagged {
+                BookTagUntaggedStatus(restorableCount: words.count)
+            }
         }
         .onChange(of: node) { _, value in onChange(value != initial) }
         .onDisappear { onChange(false) }
@@ -563,6 +720,43 @@ struct BookSearchTagRulePage: View {
                 SystemToolbarButton("完成", role: .confirm) { complete(node) }
                     .disabled(node.validation() != nil)
                     .accessibilityIdentifier("saveSearchCondition")
+            }
+        }
+    }
+}
+
+private struct BookTagUntaggedStatus: View {
+    let restorableCount: Int
+    @State private var count: Int?
+    @State private var revision = 0
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("筛选没有标签的小说", systemImage: "tag.slash")
+        } description: {
+            VStack(spacing: LayoutTokens.compact) {
+                if let count {
+                    if count == 0 {
+                        Text("书库里还没有符合此条件的小说。")
+                    } else {
+                        Text("书库里有 \(count) 本小说没有标签。")
+                    }
+                }
+                Text("无需再选标签，点右上角的 ✓ 完成。")
+                if restorableCount > 0 {
+                    Text("切回其他方式，将恢复这 \(restorableCount) 个标签。")
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .readingContinuationInvalidated, object: AppDataService.shared)
+            .receive(on: DispatchQueue.main)) { _ in
+            count = nil
+            revision += 1
+        }
+        .task(id: revision) {
+            let request = revision
+            if let result = try? await AppDataService.shared.untaggedBookCount(), !Task.isCancelled, request == revision {
+                count = result
             }
         }
     }

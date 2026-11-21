@@ -60,6 +60,8 @@ enum BookSearchStatus: String, CaseIterable, Sendable, Codable {
 
 struct BookSearchNode: Hashable, Identifiable, Sendable, Codable {
     enum Predicate: Hashable, Sendable, Codable {
+        static let untagged: Self = .tag(.any, [.untagged])
+
         case status([BookSearchStatus])
         case tag(BookSearchMatch, [BookSearchValue])
         case author([String])
