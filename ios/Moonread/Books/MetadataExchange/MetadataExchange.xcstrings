@@ -807,6 +807,40 @@
         }
       }
     },
+    "有 %lld 本有改动，都未勾选": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld book has changes. No changes are selected."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld books have changes. No changes are selected."
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有 %lld 本有改动，都未勾选"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有 %lld 本有變更，都未勾選"
+          }
+        }
+      }
+    },
     "查看逐书预览": {
       "localizations": {
         "en": {

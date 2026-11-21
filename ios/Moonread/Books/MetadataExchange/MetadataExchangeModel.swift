@@ -182,12 +182,13 @@ import GRDB
     var invalidSelection: Bool { books.contains { $0.selectionError != nil } }
     var pending: [MetadataPreviewBook] { books.filter { $0.disposition == .changes } }
     var unchangedCount: Int { books.filter { $0.disposition == .unchanged }.count }
-    enum ReviewCompletion: Equatable { case unchanged, unselected }
+    enum ReviewCompletion: Equatable { case unchanged, unselected(changedBooks: Int) }
     var reviewCompletion: ReviewCompletion? {
         guard phase == .review, !books.isEmpty, error == nil,
               preview?.diagnostics.isEmpty == true, !invalidSelection,
               books.allSatisfy({ $0.disposition == .unchanged }) else { return nil }
-        return books.contains(where: \.hasSuggestedChanges) ? .unselected : .unchanged
+        let changedBooks = books.count(where: \.hasSuggestedChanges)
+        return changedBooks == 0 ? .unchanged : .unselected(changedBooks: changedBooks)
     }
     var unmatchedCount: Int { books.filter { $0.disposition == .unmatched }.count }
     var skippedCount: Int { books.filter { $0.disposition == .skipped }.count }

@@ -127,7 +127,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         try JSONSerialization.data(withJSONObject: different).write(to: input)
         model.review(try await service.previewMetadata(input))
         XCTAssertTrue(model.pending.isEmpty)
-        XCTAssertEqual(model.reviewCompletion, .unselected)
+        XCTAssertEqual(model.reviewCompletion, .unselected(changedBooks: 1))
         var b = a; b["author"] = "另一位作者"
         try (JSONSerialization.data(withJSONObject: a) + Data([10]) + JSONSerialization.data(withJSONObject: b)).write(to: input)
         var conflicted = try await service.previewMetadata(input)

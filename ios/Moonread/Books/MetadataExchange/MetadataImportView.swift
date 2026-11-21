@@ -213,7 +213,7 @@ struct MetadataImportView: View {
         let writes = pending.filter { !$0.changedMetadataFields.isEmpty }.count
         let renames = pending.filter { $0.renameName != nil }.count
         if pending.isEmpty, !model.invalidSelection {
-            finishReview
+            finishReview()
         } else {
             Button { confirm = true } label: {
                 Group {
@@ -227,8 +227,10 @@ struct MetadataImportView: View {
         }
     }
 
-    private var finishReview: some View {
-        primary(Text("完成", tableName: "MetadataExchange")) { model.clear(); dismiss() }
+    private func finishReview(prominent: Bool = true) -> some View {
+        Button { model.clear(); dismiss() } label: {
+            Text("完成", tableName: "MetadataExchange").frame(maxWidth: .infinity)
+        }.buttonStyle(MetadataActionButtonStyle(prominent: prominent))
     }
 
     @ToolbarContentBuilder private func statusToolbar(completion: MetadataExchangeModel.ReviewCompletion?) -> some ToolbarContent {
@@ -292,15 +294,15 @@ struct MetadataImportView: View {
             } description: {
                 if completion == .unchanged {
                     Text("已核对 \(model.books.count) 本，资料均一致。", tableName: "MetadataExchange")
-                }
-            } actions: {
-                if completion == .unselected {
-                    Button { inspectingPreview = true } label: { Text("查看逐书预览", tableName: "MetadataExchange") }
-                        .buttonStyle(MetadataActionButtonStyle())
+                } else if case .unselected(let changedBooks)? = completion {
+                    Text("有 \(changedBooks) 本有改动，都未勾选", tableName: "MetadataExchange")
                 }
             }.modifier(MetadataTaskBar {
                 MetadataTaskActions {
-                    finishReview
+                    if case .unselected? = completion {
+                        primary(Text("查看逐书预览", tableName: "MetadataExchange")) { inspectingPreview = true }
+                    }
+                    finishReview(prominent: completion == .unchanged)
                 }
             })
         case .review:
