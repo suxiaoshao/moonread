@@ -412,6 +412,7 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		154000000000000000000004 = {isa = PBXBuildFile; fileRef = 154000000000000000000003; };
 		C31100000000000000000006 /* BookTagCategories.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31100000000000000000005; };
 		C31100000000000000000004 /* BookTagPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31100000000000000000003; };
+		C31100000000000000000008 /* tag-map.json in Resources */ = {isa = PBXBuildFile; fileRef = C31100000000000000000007; };
 		154000000000000000000006 = {isa = PBXBuildFile; fileRef = 154000000000000000000005; };
 		154000000000000000000008 = {isa = PBXBuildFile; fileRef = 154000000000000000000007; };
 		6D93C1035BB54BA388AEDB7C /* ReaderAutoReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA37E7E44EF4E73B8BC6A70 /* ReaderAutoReading.swift */; };
@@ -913,6 +914,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		154000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookSearchEditor.swift"; sourceTree = "<group>"; };
 		C31100000000000000000005 /* BookTagCategories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookTagCategories.swift"; sourceTree = "<group>"; };
 		C31100000000000000000003 /* BookTagPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookTagPicker.swift"; sourceTree = "<group>"; };
+		C31100000000000000000007 /* tag-map.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "tag-map.json"; sourceTree = "<group>"; };
 		154000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedFilters.swift; sourceTree = "<group>"; };
 		154000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedFilterViews.swift; sourceTree = "<group>"; };
 		FDA37E7E44EF4E73B8BC6A70 /* ReaderAutoReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderAutoReading.swift; sourceTree = "<group>"; };
@@ -1871,6 +1873,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				154000000000000000000003 /* BookSearchEditor.swift */,
 				C31100000000000000000005 /* BookTagCategories.swift */,
 				C31100000000000000000003 /* BookTagPicker.swift */,
+				C31100000000000000000007 /* tag-map.json */,
 				154000000000000000000001 /* BookSearchQuery.swift */,
 				154000000000000000000005 /* SavedFilters.swift */,
 				154000000000000000000007 /* SavedFilterViews.swift */,
@@ -2141,6 +2144,7 @@ OS1000000000000000000001,
 				A10000000000000000000008 /* ../assets/icon/Moonread.icon in Resources */,
                 AC1000000000000000000004,
                 AB1000000000000000000002,
+				C31100000000000000000008 /* tag-map.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
