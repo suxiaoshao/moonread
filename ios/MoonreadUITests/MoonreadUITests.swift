@@ -797,7 +797,13 @@ import XCTest
     ready(app.buttons["confirmImportReadingBackup"].firstMatch, timeout: 30)
     snapshot("data-import-preview")
     app.buttons["confirmImportReadingBackup"].firstMatch.tap()
-    ready(app.staticTexts["阅读数据已导入"], timeout: 30)
+    ready(app.buttons["closeImportTask"], timeout: 30).tap()
+    waitUntil { self.app.buttons["importReadingBackup"].isHittable }
+    app.navigationBars.buttons.firstMatch.tap()
+    ready(element("dataManagementSettings")).tap()
+    ready(app.buttons["importReadingBackup"]).tap()
+    ready(app.staticTexts["阅读数据已导入"].firstMatch, timeout: 30)
+    ready(app.buttons["finishBackupImport"]).tap()
     ready(app.buttons["readingDataList"]).tap()
     waitUntil { rows.count == 1 }
     app.buttons["书架"].tap()

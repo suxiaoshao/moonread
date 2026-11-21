@@ -33,10 +33,25 @@ import XCTest
         exporter.clear()
         XCTAssertEqual(exporter.phase, .idle)
         XCTAssertNil(exporter.output)
-        let preview = try await target.previewReadingBackup(archive)
-        defer { try? FileManager.default.removeItem(at: preview.staging.ownedRoot) }
-        try await target.importReadingBackup(preview)
-        try await target.importReadingBackup(preview)
+        let importer = DataManagementModel(service: target)
+        await importer.prepareImport(archive)
+        let stagingRoot = try XCTUnwrap(importer.preview?.staging.ownedRoot)
+        let task = importer.backupImport
+        XCTAssertEqual(task.phase, .idle, "Preview does not launch the import")
+        await target.acquireUserDataOperation()
+        XCTAssertTrue(importer.importConfirmed())
+        XCTAssertNil(importer.preview)
+        XCTAssertFalse(importer.busy)
+        XCTAssertEqual(task.phase, .running)
+        importer.closePreview()
+        try? await target.cleanupOldBackupExports()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stagingRoot.path))
+        await target.releaseUserDataOperation()
+        await task.waitForStop()
+        XCTAssertEqual(task.phase, .completed)
+        task.clear()
+        XCTAssertEqual(task.phase, .idle)
+        try await target.importReadingBackup(target.previewReadingBackup(archive))
         let restored = try await target.details(sha: book.fixtureSHA256)
         XCTAssertEqual(restored.body?.book.positionUtf8, 12)
         let heads = try targetRows.annotationHeads(book.fixtureSHA256)
@@ -45,6 +60,26 @@ import XCTest
             try String.fetchAll($0, sql: "SELECT fact_id FROM usr.reading_fact_current")
         }
         XCTAssertEqual(facts, ["original-fact"])
+    }
+
+    func testBackupImportKeepsCommittedResultOnLateCancellationAndRejectsStaleRetry() async {
+        let committed = DataExchangeTask<Void, Void>(service: .shared, usesSystemExecution: false,
+            kind: "test-import", title: "", subtitle: "", direction: .importing) { _, _ in
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+        committed.start(())
+        await committed.waitForStop()
+        XCTAssertEqual(committed.phase, .completed)
+
+        let stale = DataExchangeTask<Void, Void>(service: .shared, usesSystemExecution: false,
+            kind: "test-import", title: "", subtitle: "", direction: .importing) { _, _ in
+                throw ReadingDataError.changed
+            }
+        stale.start(())
+        await stale.waitForStop()
+        XCTAssertEqual(stale.phase, .failed)
+        XCTAssertNotNil(stale.error)
+        XCTAssertFalse(stale.canRetry)
     }
 
     func testDeletionRefusesActiveBookAndKeepsSharedCover() async throws {

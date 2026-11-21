@@ -9,6 +9,7 @@ struct DataManagementView: View {
     @Bindable var model: DataManagementModel
     @State private var picker = false
     @State private var showingBackupExport = false
+    @State private var showingBackupImport = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
@@ -20,6 +21,9 @@ struct DataManagementView: View {
                         ViewThatFits(in: .horizontal) {
                             HStack { backupButtons }
                             VStack { backupButtons }
+                        }
+                        DataExchangeTaskSummary(task: model.backupImport, open: { showingBackupImport = true }) { _ in
+                            Text("阅读数据已导入", tableName: "DataManagement")
                         }
                         backupExportStatus
                         if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
@@ -96,10 +100,29 @@ struct DataManagementView: View {
             switch result { case .success(let url): Task { await model.prepareImport(url) }; case .failure(let error): model.showError(error.localizedDescription) }
         }
         .sheet(isPresented: $showingBackupExport) { BackupExportView(model: model).presentationSizing(.page) }
-        .sheet(isPresented: Binding(get: { model.preview != nil }, set: { if !$0 && !model.busy { model.closePreview() } })) { BackupImportPreviewView(model: model) }
+        .sheet(isPresented: Binding(get: { model.preview != nil || showingBackupImport }, set: { shown in
+            if !shown {
+                showingBackupImport = false
+                model.closePreview()
+            }
+        })) {
+            if model.preview != nil {
+                BackupImportPreviewView(model: model) {
+                    if model.importConfirmed() { showingBackupImport = true }
+                }
+            } else {
+                BackupImportTaskView(task: model.backupImport).presentationSizing(.page)
+            }
+        }
     }
     @ViewBuilder private var backupButtons: some View {
-        Button { Task { if let url = await model.chooseBackup() { await model.prepareImport(url) } else { picker = true } } } label: {
+        Button {
+            if model.backupImport.phase != .idle {
+                showingBackupImport = true
+            } else {
+                Task { if let url = await model.chooseBackup() { await model.prepareImport(url) } else { picker = true } }
+            }
+        } label: {
             Label { Text("导入备份", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
         }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("importReadingBackup")
         Button {
@@ -113,7 +136,7 @@ struct DataManagementView: View {
 
     private var backupExportStatus: some View {
         let export = model.backupExport
-        return ExportTaskSummary(task: export,
+        return DataExchangeTaskSummary(task: export,
                                  runningDetail: export.stopping ? nil : Text("正在生成备份", tableName: "DataManagement"),
                                  open: { showingBackupExport = true }) { _ in
             Text("备份已生成", tableName: "DataManagement")
@@ -127,10 +150,10 @@ private struct BackupExportView: View {
     @State private var sharing: LibraryExport?
     @State private var sharingError: String?
     @State private var preparingShare = false
-    private var task: ExportTask<Void, URL> { model.backupExport }
+    private var task: DataExchangeTask<Void, URL> { model.backupExport }
 
     var body: some View {
-        ExportTaskSheet(title: task.phase == .running ? Text("导出阅读数据备份", tableName: "DataManagement") : Text("导出结果", tableName: "MetadataExchange"),
+        DataExchangeTaskSheet(title: task.phase == .running ? Text("导出阅读数据备份", tableName: "DataManagement") : Text("导出结果", tableName: "MetadataExchange"),
                         sharing: $sharing, onShared: { [output = task.output] in
                             guard let output, task.output == output else { return }
                             task.clear()
@@ -138,16 +161,16 @@ private struct BackupExportView: View {
             switch task.phase {
             case .idle: Color.clear
             case .running:
-                ExportRunningView(title: Text("正在生成备份", tableName: "DataManagement"), stopping: task.stopping) {
+                DataExchangeRunningView(title: Text("正在生成备份", tableName: "DataManagement"), stopping: task.stopping) {
                     ProgressView {
                         if task.stopping { Text("正在停止导出。", tableName: "MetadataExchange") }
                     }
                 }
             case .completed:
-                MetadataStatusView(symbol: task.phase.symbol, title: String(localized: "备份已生成", table: "DataManagement"),
+                MetadataStatusView(symbol: task.symbol, title: String(localized: "备份已生成", table: "DataManagement"),
                                    message: task.output?.lastPathComponent)
             case .failed:
-                MetadataStatusView(symbol: task.phase.symbol,
+                MetadataStatusView(symbol: task.symbol,
                                    title: String(localized: "导出失败", table: "MetadataExchange"),
                                    message: task.error)
             }
@@ -273,6 +296,7 @@ struct ReadingDataDeletionPrompt: ViewModifier {
 private struct BackupImportPreviewView: View {
     @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
+    let confirm: () -> Void
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -287,13 +311,72 @@ private struct BackupImportPreviewView: View {
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
                     if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
-                    Button { Task { await model.importConfirmed() } } label: { Text("确认导入", tableName: "DataManagement").frame(maxWidth: .infinity) }
+                    Button(action: confirm) { Text("确认导入", tableName: "DataManagement").frame(maxWidth: .infinity) }
                         .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("confirmImportReadingBackup")
                 }.padding().background(Color(uiColor: theme.canvas))
             }
             .modifier(ReadingDataWorking(model: model))
             .toolbar { ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { if !model.busy { model.closePreview() } }.disabled(model.busy) } }
             .interactiveDismissDisabled(model.busy)
+        }
+    }
+}
+
+private struct BackupImportTaskView: View {
+    @Environment(\.dismiss) private var dismiss
+    let task: DataExchangeTask<ReadingBackupPreview, Void>
+
+    var body: some View {
+        DataExchangeTaskSheet(title: Text(task.phase == .running ? "导入备份" : "导入结果", tableName: "MetadataExchange"),
+                              sharing: .constant(nil), onShared: {}, closeIdentifier: "closeImportTask") {
+            switch task.phase {
+            case .idle:
+                Color.clear
+            case .running:
+                DataExchangeRunningView(title: Text("正在导入", tableName: "MetadataExchange"), stopping: task.stopping,
+                                        symbol: task.symbol) {
+                    ProgressView {
+                        if task.stopping { Text(task.progressText, tableName: "MetadataExchange") }
+                    }
+                }
+            case .completed:
+                MetadataStatusView(symbol: task.symbol, title: String(localized: "阅读数据已导入", table: "DataManagement"))
+            case .failed:
+                MetadataStatusView(symbol: task.symbol, title: String(localized: "导入失败", table: "MetadataExchange"),
+                                   message: task.error)
+            }
+        } footer: {
+            if task.phase != .idle {
+                VStack(spacing: 0) {
+                    ThemedDivider()
+                    VStack(spacing: 8) {
+                        switch task.phase {
+                        case .idle: EmptyView()
+                        case .running:
+                            Button(role: .destructive) { task.cancel() } label: {
+                                Label { Text("停止导入", tableName: "MetadataExchange") } icon: { Image(systemName: "stop.circle") }
+                                    .frame(maxWidth: .infinity)
+                            }.buttonStyle(MetadataActionButtonStyle(destructive: true)).disabled(task.stopping)
+                        case .completed, .failed:
+                            if task.canRetry {
+                                Button { task.retry() } label: {
+                                    Text("重试", tableName: "MetadataExchange").frame(maxWidth: .infinity)
+                                }.buttonStyle(MetadataActionButtonStyle(prominent: true))
+                            }
+                            Button { task.clear() } label: {
+                                Group {
+                                    if task.phase == .completed { Text("完成", tableName: "MetadataExchange") }
+                                    else { Text("关闭") }
+                                }.frame(maxWidth: .infinity)
+                            }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("finishBackupImport")
+                        }
+                    }.frame(maxWidth: 460).padding(.horizontal, 20).padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .onChange(of: task.phase) { _, phase in
+            if phase == .idle { dismiss() }
         }
     }
 }

@@ -629,34 +629,17 @@ import GRDB
     }
 }
 
-@MainActor @Observable final class ExportTask<Request: Sendable, Output: Sendable> {
-    enum Phase {
-        case idle, running, completed, failed
-
-        var title: LocalizedStringKey {
-            switch self {
-            case .idle: "导出小说信息"
-            case .running: "正在导出"
-            case .completed: "导出完成"
-            case .failed: "导出失败"
-            }
-        }
-
-        var symbol: String {
-            switch self {
-            case .idle, .running: "square.and.arrow.up"
-            case .completed: "checkmark.circle"
-            case .failed: "exclamationmark.circle"
-            }
-        }
-    }
+@MainActor @Observable final class DataExchangeTask<Request: Sendable, Output: Sendable> {
+    enum Phase { case idle, running, completed, failed }
+    enum Direction { case exporting, importing }
 
     let service: AppDataService
+    private let direction: Direction
     private let usesSystemExecution: Bool
     private let kind: String
     private let title: String
     private let subtitle: String
-    private let export: (Request, @escaping @Sendable (Int, Int) async -> Void) async throws -> Output
+    private let operation: (Request, @escaping @Sendable (Int, Int) async -> Void) async throws -> Output
     @ObservationIgnored private let systemExecution = MetadataSystemExecution()
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var request: Request?
@@ -667,7 +650,28 @@ import GRDB
     private(set) var error: String?
     private var stopReason: MetadataExchangeModel.PauseReason?
     private(set) var stopping = false
+    var phaseTitle: LocalizedStringKey {
+        switch (direction, phase) {
+        case (.importing, .idle): "导入备份"
+        case (.importing, .running): "正在导入"
+        case (.importing, .completed): "导入已完成"
+        case (.importing, .failed): "导入失败"
+        case (.exporting, .idle): "导出小说信息"
+        case (.exporting, .running): "正在导出"
+        case (.exporting, .completed): "导出完成"
+        case (.exporting, .failed): "导出失败"
+        }
+    }
+    var symbol: String {
+        switch phase {
+        case .idle, .running: direction == .importing ? "tray.and.arrow.down" : "square.and.arrow.up"
+        case .completed: "checkmark.circle"
+        case .failed: "exclamationmark.circle"
+        }
+    }
+    var canRetry: Bool { phase == .failed && request != nil }
     var progressText: LocalizedStringKey {
+        if direction == .importing { return stopping ? "正在停止导入。" : "可以关闭页面，稍后查看。" }
         if stopping { return "正在停止导出。" }
         if let total, completed < total { return "正在导出 \(completed) / \(total) 本" }
         if total != nil { return "正在生成导出文件。" }
@@ -675,13 +679,15 @@ import GRDB
     }
 
     init(service: AppDataService, usesSystemExecution: Bool, kind: String, title: String, subtitle: String,
-         export: @escaping (Request, @escaping @Sendable (Int, Int) async -> Void) async throws -> Output) {
+         direction: Direction = .exporting,
+         operation: @escaping (Request, @escaping @Sendable (Int, Int) async -> Void) async throws -> Output) {
         self.service = service
+        self.direction = direction
         self.usesSystemExecution = usesSystemExecution
         self.kind = kind
         self.title = title
         self.subtitle = subtitle
-        self.export = export
+        self.operation = operation
     }
 
     func start(_ request: Request) {
@@ -735,27 +741,37 @@ import GRDB
             defer {
                 systemExecution.finish(success: phase == .completed)
                 work = nil
-                if stopping && stopReason == nil { reset() }
+                if stopping && stopReason == nil && phase != .completed { reset() }
                 stopping = false
             }
             do {
                 try Task.checkCancellation()
-                let result = try await export(request) { [weak self] done, count in
+                let result = try await operation(request) { [weak self] done, count in
                     await self?.updateProgress(done, count)
                 }
-                try Task.checkCancellation()
+                if direction == .exporting {
+                    try Task.checkCancellation()
+                } else {
+                    // A successful restore has already committed its transaction.
+                    self.request = nil
+                }
                 output = result
                 phase = .completed
             } catch {
                 switch stopReason {
                 case .unavailable:
-                    self.error = String(localized: "系统未提供后台执行资格。返回后可以重试导出。", table: "MetadataExchange")
+                    self.error = direction == .importing
+                        ? String(localized: "系统未提供后台执行资格。返回后可以重试导入。", table: "MetadataExchange")
+                        : String(localized: "系统未提供后台执行资格。返回后可以重试导出。", table: "MetadataExchange")
                 case .expired:
-                    self.error = String(localized: "系统后台执行时间已结束。返回后可以重试导出。", table: "MetadataExchange")
+                    self.error = direction == .importing
+                        ? String(localized: "系统后台执行时间已结束。返回后可以重试导入。", table: "MetadataExchange")
+                        : String(localized: "系统后台执行时间已结束。返回后可以重试导出。", table: "MetadataExchange")
                 case nil:
                     if stopping { return }
                     self.error = ReaderMessages.error(error)
                 }
+                if direction == .importing, case .changed? = error as? ReadingDataError { self.request = nil }
                 phase = .failed
             }
         }
@@ -790,9 +806,9 @@ struct MetadataExportRequest: Sendable {
     let format: MetadataFormat
 }
 
-typealias MetadataExportTask = ExportTask<MetadataExportRequest, MetadataExportResult>
+typealias MetadataExportTask = DataExchangeTask<MetadataExportRequest, MetadataExportResult>
 
-extension ExportTask where Request == MetadataExportRequest, Output == MetadataExportResult {
+extension DataExchangeTask where Request == MetadataExportRequest, Output == MetadataExportResult {
     convenience init(service: AppDataService, usesSystemExecution: Bool) {
         self.init(service: service, usesSystemExecution: usesSystemExecution,
                   kind: "metadata-export", title: String(localized: "导出小说信息", table: "MetadataExchange"),

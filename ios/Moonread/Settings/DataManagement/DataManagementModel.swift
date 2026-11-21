@@ -2,7 +2,8 @@ import SwiftUI
 
 @MainActor @Observable final class DataManagementModel {
     let service: AppDataService
-    let backupExport: ExportTask<Void, URL>
+    let backupExport: DataExchangeTask<Void, URL>
+    let backupImport: DataExchangeTask<ReadingBackupPreview, Void>
     private enum InventoryResult {
         case ready(ReadingDataInventory)
         case failed(String, previous: ReadingDataInventory?)
@@ -28,13 +29,11 @@ import SwiftUI
         }
     }
     private enum OperationResult {
-        case imported
         case deleted(cacheCleaned: Bool)
         case cacheCleaned(removed: Int, retained: Int)
 
         var message: String? {
             switch self {
-            case .imported: String(localized: "阅读数据已导入", table: "DataManagement")
             case .deleted(let cleaned):
                 String(localized: cleaned ? "阅读数据已清除，小说文件未变" : "阅读数据已清除，部分本机缓存未清理", table: "DataManagement")
             case .cacheCleaned(let removed, let retained):
@@ -45,7 +44,6 @@ import SwiftUI
     private enum DataOperation {
         case idle, inspectingBackup, promoting, preparingPending
         case previewingImport(ReadingBackupPreview)
-        case importing(ReadingBackupPreview)
         case deleting(Set<String>)
         case cleaningCache
         case completed(OperationResult)
@@ -54,7 +52,6 @@ import SwiftUI
         var working: String? {
             switch self {
             case .inspectingBackup: String(localized: "正在检查备份…", table: "DataManagement")
-            case .importing: String(localized: "正在导入…", table: "DataManagement")
             case .deleting: String(localized: "正在清除…", table: "DataManagement")
             case .cleaningCache: String(localized: "正在清理缓存…", table: "DataManagement")
             case .promoting: String(localized: "正在关联阅读数据…", table: "DataManagement")
@@ -87,7 +84,7 @@ import SwiftUI
     }
     var preview: ReadingBackupPreview? {
         switch dataOperation {
-        case .previewingImport(let value), .importing(let value), .failed(_, let value?): value
+        case .previewingImport(let value), .failed(_, let value?): value
         default: nil
         }
     }
@@ -137,10 +134,15 @@ import SwiftUI
     private var recentOrder: [String] = []
     init(service: AppDataService = .shared) {
         self.service = service
-        backupExport = ExportTask(service: service, usesSystemExecution: service === AppDataService.shared,
+        backupExport = DataExchangeTask(service: service, usesSystemExecution: service === AppDataService.shared,
                                   kind: "reading-backup", title: String(localized: "导出备份", table: "MetadataExchange"),
                                   subtitle: String(localized: "正在生成备份…", table: "DataManagement")) { _, _ in
             try await service.exportReadingData()
+        }
+        backupImport = DataExchangeTask(service: service, usesSystemExecution: service === AppDataService.shared,
+                                  kind: "reading-backup-import", title: String(localized: "导入备份", table: "MetadataExchange"),
+                                  subtitle: String(localized: "正在导入", table: "MetadataExchange"), direction: .importing) { preview, _ in
+            try await service.importReadingBackup(preview)
         }
     }
     var visible: [ReadingDataItem] {
@@ -241,19 +243,18 @@ import SwiftUI
         return try await service.readingBackupShareCopy(exported)
     }
     func prepareImport(_ url: URL) async {
+        guard backupImport.phase == .idle else { return }
         await runCancellable(.inspectingBackup) { .previewingImport(try await self.service.previewReadingBackup(url)) }
     }
-    func importConfirmed() async {
-        guard !busy, let candidate = preview else { return }
-        dataOperation = .importing(candidate)
-        do {
-            try await service.importReadingBackup(candidate)
-            if loaded { await load() }
-            dataOperation = .completed(.imported)
-        } catch ReadingDataError.changed {
-            let refreshed = try? await service.refreshReadingBackupPreview(candidate.staging)
-            dataOperation = .failed(ReadingDataError.changed.localizedDescription, preview: refreshed)
-        } catch { dataOperation = .failed(ReaderMessages.error(error), preview: candidate) }
+    func importConfirmed() -> Bool {
+        guard !busy, backupImport.phase == .idle, let candidate = preview else { return false }
+        backupImport.start(candidate)
+        dataOperation = .idle
+        return true
+    }
+    func sceneDidEnterBackground() {
+        backupImport.sceneDidEnterBackground()
+        backupExport.sceneDidEnterBackground()
     }
     func requestDelete(_ keys: Set<String>) {
         guard !busy, !keys.isEmpty else { return }
