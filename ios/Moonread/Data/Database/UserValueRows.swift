@@ -128,10 +128,15 @@ enum UserValueRows {
     }
 
     private static func candidates(_ db: Database, _ key: Key) throws -> [Row] {
-        try Row.fetchAll(db, sql: """
+        let rows = try Row.fetchAll(db, sql: """
             SELECT * FROM usr.\(key.table) WHERE partition=0 AND \(key.memberColumn)=? AND logical_key=? AND schema_version=1
-            \(key.kind == .shelfReference ? "AND reference_version=1" : "") ORDER BY record_id
+            \(key.kind == .shelfReference ? "AND reference_version=1" : "")
             """, arguments: [key.member,key.logical])
+        // Ordering in SQL can make SQLite scan the entire partition by
+        // record ID. Keep the same binary order after fetching this key.
+        return rows.sorted {
+            ($0["record_id"] as String).utf8.lexicographicallyPrecedes(($1["record_id"] as String).utf8)
+        }
     }
 
     @discardableResult

@@ -4,6 +4,28 @@ import XCTest
 @testable import Moonread
 
 @MainActor final class DataManagementTests: UserDataFixture {
+    func testBackupValueRejectsAConflictingSiblingWithTheSameToken() async throws {
+        let (root, _, book, rows) = try await editorFixture()
+        defer { try? rows.index.session.close(); try? FileManager.default.removeItem(at: root) }
+        let key = try UserValueRows.Key("metadata/\(book.fixtureSHA256)/author")
+        let head = StoredValue(updated: 42, token: "shared-token", value: try UserSyncJSON.encode("Author"))
+        try rows.index.session.writeUsers(rows.index.lease) { db in
+            let devices = ["first", "second"]
+            for device in devices {
+                XCTAssertTrue(try UserValueRows.merge(db, key: key, head: head, device: device, preserveSiblingIdentity: true))
+            }
+            XCTAssertEqual(try UserValueRows.assessBackup(db, key: key, head: head, device: devices[0]), .same)
+
+            let last = devices.map { UserValueRows.recordID(logical: key.logical, device: $0) }.max()
+            try db.execute(sql: """
+                UPDATE usr.metadata_text_candidate SET value_text='Conflicting author' WHERE partition=0 AND record_id=?
+                """, arguments: [try XCTUnwrap(last)])
+            XCTAssertThrowsError(try UserValueRows.assessBackup(db, key: key, head: head, device: devices[0])) { error in
+                guard case .invalid? = error as? ReadingDataError else { return XCTFail("Expected a same-token conflict") }
+            }
+        }
+    }
+
     func testBackupRoundTripDoesNotDuplicateReadingHistory() async throws {
         let (sourceRoot, source, book, sourceRows) = try await editorFixture()
         let (targetRoot, target, _, targetRows) = try await editorFixture()

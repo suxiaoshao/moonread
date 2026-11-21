@@ -119,14 +119,18 @@ extension ReaderIndex {
         }
     }
 
+    private static let sourceSnapshotColumns = "f.id,f.shelf_id,f.relative_path,f.size,f.modified,f.needs_download,f.book_id,f.decoding"
+
+    private static func sourceSnapshot(_ row: Row) -> SourceFileSnapshot {
+        .init(id: row["id"], shelfId: row["shelf_id"], relativePath: row["relative_path"], size: row["size"],
+              modified: row["modified"], needsDownload: row["needs_download"], bookId: row["book_id"], decoding: row["decoding"])
+    }
+
     private static func sourceRows(_ db: Database, where condition: String, args: StatementArguments) throws -> [SourceFileSnapshot] {
         try Row.fetchAll(db, sql: """
-            SELECT f.id,f.shelf_id,f.relative_path,f.size,f.modified,f.needs_download,f.book_id,f.decoding
+            SELECT \(Self.sourceSnapshotColumns)
             FROM main.library_files f WHERE f.directory=0 AND \(condition) ORDER BY f.id
-            """, arguments: args).map { row in
-                .init(id: row["id"], shelfId: row["shelf_id"], relativePath: row["relative_path"], size: row["size"],
-                      modified: row["modified"], needsDownload: row["needs_download"], bookId: row["book_id"], decoding: row["decoding"])
-            }
+            """, arguments: args).map(Self.sourceSnapshot)
     }
 
     func sourceFileSnapshots(fileId: String?) throws -> [SourceFileSnapshot] {
@@ -146,6 +150,25 @@ extension ReaderIndex {
         _ = try parseSha256(value: sha)
         return try read { db in
             try Self.sourceRows(db, where: Self.indexedSourceSHA + "=?", args: [sha])
+        }
+    }
+
+    func firstSources(forSHAs shas: Set<String>) throws -> [String: SourceFileSnapshot] {
+        guard !shas.isEmpty else { return [:] }
+        let keys = try UserSyncJSON.encode(shas.sorted().map { try parseSha256(value: $0) })
+        return try read { db in
+            let rows = try Row.fetchCursor(db, sql: """
+                SELECT * FROM (
+                    SELECT \(Self.indexedSourceSHA) AS sha,\(Self.sourceSnapshotColumns)
+                    FROM main.library_files f WHERE f.directory=0
+                ) WHERE sha IN (SELECT value FROM json_each(?)) ORDER BY id
+                """, arguments: [keys])
+            var first: [String: SourceFileSnapshot] = [:]
+            while let row = try rows.next() {
+                let sha: String = row["sha"]
+                if first[sha] == nil { first[sha] = Self.sourceSnapshot(row) }
+            }
+            return first
         }
     }
 

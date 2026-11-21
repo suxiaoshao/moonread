@@ -314,10 +314,12 @@ extension AppDataService {
             let plan = try UserBackupRestore(directory: staging.directory, manifest: staging.manifest, cancellation: cancellation)
             let core = try relationalUserIndex()
             let review = try core.session.readUsers(core.lease) { try plan.preview($0, scope: core.lease.scope, cancellation: cancellation) }
+            try cancellation.check()
+            let sources = try core.firstSources(forSHAs: Set(review.books.keys))
             var books = [ReadingBackupReview.Book]()
             for (key, changes) in review.books {
                 try cancellation.check()
-                let source = try core.sourceFilesForSha(sha: key).first
+                let source = sources[key]
                 books.append(.init(id: key, title: staging.manifest.titles[key] ?? source?.title, linked: source != nil, changes: changes))
             }
             books.sort {
