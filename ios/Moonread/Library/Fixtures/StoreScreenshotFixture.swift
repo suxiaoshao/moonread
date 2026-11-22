@@ -7,6 +7,7 @@ enum StoreShotScene: String, CaseIterable {
     case shelf = "R05", notes = "R06", statistics = "R07", annotation = "R08"
     case search = "R09", backup = "R10", recap = "R11", mint = "R12", bamboo = "R13"
     case listening = "R15"
+    case resumeHome = "R16", librarySearch = "R17", backupReview = "R19"
     static func scene(for capture: StoreShotCapture) -> Self? {
         switch capture.scene {
         case "M01", "M02": .backup
@@ -43,7 +44,13 @@ struct StoreShotCapture: Codable {
     var locale: String { language == "en" ? "en_US" : language == "zh-Hant" ? "zh_TW" : "zh_CN" }
     var fontSize: Double { isPad ? 24 : 20 }
     var paged: Bool { ["R01", "R12", "R13", "reader"].contains(scene) }
-    var fixtureVersion: String { scene == StoreShotScene.listening.rawValue ? "StoreShotFixture/1.6-r15" : "StoreShotFixture/1.4-v1" }
+    var fixtureVersion: String {
+        switch StoreShotScene.scene(for: self) {
+        case .listening: "StoreShotFixture/1.6-r15"
+        case .annotation, .resumeHome, .librarySearch, .backupReview: "StoreShotFixture/1.8"
+        default: "StoreShotFixture/1.4-v1"
+        }
+    }
     static var requested: Self? {
         let args = ProcessInfo.processInfo.arguments
         guard args.contains("--ui-testing"), args.contains("--ui-test-store-screenshots"),

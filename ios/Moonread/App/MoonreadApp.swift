@@ -322,6 +322,21 @@ struct MoonreadApp: App {
                 switch scene {
                 case .shelf: library.shell.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
                 case .backup: library.shell.openSettings(target: .data)
+                case .resumeHome:
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
+                    await library.savedFilters.load()
+                    guard await library.savedFilters.change(.create(fixture.storeShotSavedShelf)) else {
+                        throw ReadingDataError.changed
+                    }
+                case .librarySearch:
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
+                    library.shell.search.configuration = fixture.storeShotSearch
+                    library.shell.selectedTab = .search
+                case .backupReview:
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
+                    library.shell.openSettings(target: .data)
+                    let url = try await library.service.makeStoreShotBackupReview(fixture)
+                    library.shell.dataManagement.receiveBackup(url)
                 case .statistics: library.shell.selectedTab = .statistics
                 case .recap:
                     let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)

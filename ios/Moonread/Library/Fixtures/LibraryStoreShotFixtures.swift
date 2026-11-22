@@ -30,6 +30,7 @@ extension AppDataService {
         for file in files {
             let path = root.appendingPathComponent(file.relativePath)
             let title = path.deletingPathExtension().lastPathComponent
+            if StoreShotScene.requested == .resumeHome { try registerStoreShotIdentity(file, root: root, core: core) }
             let entry = try await libraryEntry(file.id)
             let prepared = try await aiPrepare(entry.source)
             let book = try await snapshot(prepared.id).book
@@ -62,10 +63,9 @@ extension AppDataService {
                     let chapter = original.range(of: f.mainChapters[1])!
                     var start = chapter.lowerBound
                     if scene == .annotation, let note = original.range(of: f.notes[0][0]) {
-                        // Start at the preceding paragraph, not an arbitrary
-                        // character in a line, keeping complete reading lines.
-                        start = original[..<note.lowerBound].dropLast(2)
-                            .range(of: "\n\n", options: .backwards)?.upperBound ?? original.startIndex
+                        // Restore at the start of the highlighted paragraph so
+                        // the runner can tap its actual rendered text.
+                        start = original[..<note.lowerBound].range(of: "\n\n", options: .backwards)?.upperBound ?? original.startIndex
                     }
                     if scene == .recap {
                         start = original.index(original.range(of: f.mainChapters[2])!.lowerBound, offsetBy: -2)
@@ -100,6 +100,10 @@ extension AppDataService {
         let inventory = try await readingDataInventory()
         guard inventory.items.count == 6, inventory.pending == 0, inventory.unsupported == 0,
               try core.libraryShelves().count == 1 else { throw ReaderError.InvalidRange }
+        if StoreShotScene.requested == .resumeHome,
+           let id = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == f.books[0].title + ".txt" })?.bookId {
+            try await recordBookOpened(id, at: Int64(Date.now.timeIntervalSince1970 * 1000))
+        }
         if StoreShotPage.requested != nil,
            let id = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == f.books[0].title + ".txt" })?.bookId {
             try await createStatisticsFixture(bookID: id)
@@ -119,6 +123,38 @@ extension AppDataService {
             "appBuild": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""]
         try JSONSerialization.data(withJSONObject: receipt, options: [.sortedKeys]).write(to: FileManager.default.temporaryDirectory.appendingPathComponent("StoreScreenshots-fixture.json"), options: .atomic)
         sourceDefaults.set(true, forKey: "StoreShots.seeded")
+    }
+
+    func makeStoreShotBackupReview(_ fixture: StoreShotFixture) async throws -> URL {
+        let inventory = try await readingDataInventory()
+        let core = try indexStore()
+        guard let missing = inventory.items.first(where: { $0.title == fixture.books[1].title }),
+              let newer = inventory.items.first(where: { $0.title == fixture.books[4].title }),
+              let missingSource = try core.sourceFilesForSha(sha: missing.id).first,
+              let newerSource = try core.sourceFilesForSha(sha: newer.id).first else {
+            throw ReaderError.NotFound
+        }
+        let url = try await exportReadingData()
+        _ = try await deleteReadingData([missing.id, newer.id], configuration: inventory.configuration)
+        let root = try builtinLibraryURL()
+        for source in [missingSource, newerSource] {
+            guard let file = try core.sourceFileSnapshots(fileId: source.id).first else { throw ReaderError.NotFound }
+            try registerStoreShotIdentity(file, root: root, core: core)
+        }
+        let base = try await details(sha: newer.id).metadata
+        var edited = base
+        edited.author = fixture.author
+        edited.tags = [fixture.folders[1]]
+        try await saveMetadata(base: base, edited: edited)
+        return url
+    }
+
+    private func registerStoreShotIdentity(_ file: SourceFileSnapshot, root: URL, core: ReaderIndex) throws {
+        let url = root.appendingPathComponent(file.relativePath)
+        let identity = try SourceIdentityProbe().identify(filePath: url.path, decoding: file.decoding)
+        guard try core.publishSourceIdentity(file: file, identity: identity) else {
+            throw ReaderError.SourceChanged
+        }
     }
 
     private func createStoreShotStatistics(bookID: String) async throws {
@@ -159,6 +195,20 @@ extension AppDataService {
         UserDefaults(suiteName: SystemReadingSnapshotFile.groupIdentifier)?.set(fixture.language, forKey: "StoreScreenshots.language")
         await MainActor.run { WidgetCenter.shared.reloadAllTimelines() }
         #endif
+    }
+}
+
+extension StoreShotFixture {
+    var storeShotSavedShelf: SavedFilter {
+        let name = language == "en" ? "Stories to read" : language == "zh-Hant" ? "想讀的故事" : "想读的故事"
+        return SavedFilter(id: UUID(), name: name, configuration: storeShotSearch)
+    }
+
+    var storeShotSearch: BookSearchConfiguration {
+        var configuration = BookSearchConfiguration()
+        configuration.root.children = [AppSearchSeed.tag(folders[0]).node]
+        configuration.sorts = [.init(field: .recent, descending: true)]
+        return configuration
     }
 }
 
