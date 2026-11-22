@@ -65,7 +65,23 @@ import GRDB
     var loading: Bool { phase == .receiving || phase == .preparing }
     var saving: Bool { phase == .saving || phase == .renaming }
     var hasTask: Bool { phase != .idle }
-    var canStartNew: Bool { phase == .idle || phase == .completed }
+    var canStartNew: Bool {
+        #if MOONREAD_INTERNAL_TOOLS
+        if cleaningMetadata { return false }
+        #endif
+        return phase == .idle || phase == .completed
+    }
+    #if MOONREAD_INTERNAL_TOOLS
+    private(set) var cleaningMetadata = false
+    var canCleanMetadata: Bool { canStartNew && work == nil }
+
+    func cleanMetadata(_ confirmation: MetadataCleanupConfirmation) async throws -> Int {
+        guard canCleanMetadata else { throw MetadataCleanupError.busy }
+        cleaningMetadata = true
+        defer { cleaningMetadata = false }
+        return try await service.cleanMetadata(confirmation)
+    }
+    #endif
     var canContinue: Bool { !requiresNewPreview && (phase == .stopped || phase == .paused) && (checkpoint != nil || hasCompleteInput) }
     var continuingPreparation: Bool { checkpoint == nil }
     var hasCompleteInput: Bool { record?.inputComplete == true }

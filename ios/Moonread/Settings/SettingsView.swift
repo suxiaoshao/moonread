@@ -2,6 +2,9 @@ import SwiftUI
 
 enum SettingsTask: Hashable {
     case reading, statistics, system, library, data, cloud, ai, appearance, guide, about, support
+    #if MOONREAD_INTERNAL_TOOLS
+    case metadataCleanup
+    #endif
 }
 
 /// One scene-owned settings session; layout only changes its presentation.
@@ -194,6 +197,18 @@ struct SettingsView: View {
                     }.accessibilityIdentifier("tipJarSettings")
                 }.listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
+            #if MOONREAD_INTERNAL_TOOLS
+            Section {
+                settingsLink(.metadataCleanup) {
+                    SettingsEntry(title: .init("清理小说资料", table: "DeveloperTools"),
+                                  symbol: "wrench.and.screwdriver",
+                                  summary: String(localized: "导入测试", table: "DeveloperTools"),
+                                  selected: sizeClass == .regular && navigation.selectedTask == .metadataCleanup)
+                }.accessibilityIdentifier("moonreadInternalMetadataCleanup")
+            } header: { Text("开发者", tableName: "DeveloperTools") }
+                .listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface))
+                .listRowSeparatorTint(Color(uiColor: theme.separator))
+            #endif
         }
         .scrollContentBackground(.hidden)
         .background(Color(uiColor: theme.canvas))
@@ -283,6 +298,10 @@ struct SettingsTaskContent: View {
         case .guide: UsageGuideView()
         case .about: AboutView()
         case .support: TipJarView()
+        #if MOONREAD_INTERNAL_TOOLS
+        case .metadataCleanup:
+            DeveloperMetadataCleanupView(task: .shared, openDataManagement: { navigation.select(.data) })
+        #endif
         }
     }
 

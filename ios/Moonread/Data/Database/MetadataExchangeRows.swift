@@ -7,6 +7,9 @@ enum MetadataExchangeRows {
     struct Result: Sendable {
         let read: MetadataExchangeRead
         let formalBlockedMetadata: Set<String>
+        #if MOONREAD_INTERNAL_TOOLS
+        let storedStatuses: [String: BookReadingStatus]
+        #endif
     }
 
     private struct File {
@@ -105,6 +108,9 @@ enum MetadataExchangeRows {
             """, arguments: [json]).map { ($0["book_key"] as String,$0["file_id"] as String) })
         let blocked = try formalMetadataBarriers(db, keys: json)
 
+        #if MOONREAD_INTERNAL_TOOLS
+        var storedStatuses: [String: BookReadingStatus] = [:]
+        #endif
         let books = wanted.map { sha -> MetadataExchangeBook in
             let related = (aliases[sha] ?? []).sorted()
             let chosen = ([sha] + related).last { key in (metadata[key]?["source_partition"] as Int?) == 1 } ??
@@ -121,6 +127,11 @@ enum MetadataExchangeRows {
                 return .init(id: id, sha256: digest, extension: ext, width: width, height: height)
             }
             let status = BookStatusRead.resolve(stored: row?["status"], hasPosition: hasPosition)
+            #if MOONREAD_INTERNAL_TOOLS
+            if let stored: String = row?["status"] {
+                storedStatuses[sha] = BookStatusRead.resolve(stored: stored, hasPosition: false)
+            }
+            #endif
             let primary = position.flatMap { preferred[sha] ?? preferred[$0["book_key"] as String] }
             let first = requested == nil ? nil : byBook[sha]?.first { $0.value.id == primary } ?? byBook[sha]?.first
             return .init(metadata: .init(sha: sha, author: row?["author"] ?? "", synopsis: row?["synopsis"] ?? "",
@@ -135,7 +146,12 @@ enum MetadataExchangeRows {
             exportFiles = sorted.compactMap { byOrderKey[$0] }.map { .init(file: $0.value, sha: $0.sha) }
         }
         let affected = wanted.filter { blocked.contains($0) || (aliases[$0] ?? []).contains(where: blocked.contains) }
-        return .init(read: .init(exportFiles: exportFiles, books: books), formalBlockedMetadata: Set(affected))
+        let read = MetadataExchangeRead(exportFiles: exportFiles, books: books)
+        #if MOONREAD_INTERNAL_TOOLS
+        return .init(read: read, formalBlockedMetadata: Set(affected), storedStatuses: storedStatuses)
+        #else
+        return .init(read: read, formalBlockedMetadata: Set(affected))
+        #endif
     }
 
     private static let formalMetadataBarrierSQL: String = {

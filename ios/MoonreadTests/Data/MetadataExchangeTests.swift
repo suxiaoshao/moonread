@@ -7,6 +7,90 @@ import Synchronization
 @testable import Moonread
 
 final class MetadataExchangeTests: ReaderIntegrationFixture {
+    #if MOONREAD_INTERNAL_TOOLS
+    @MainActor func testInternalCleanupRechecksScopeAndRestoresOnlySelectedInformation() async throws {
+        let (root, service, core, _, first, second, suite) = try singleBookFixture()
+        defer {
+            try? core.session.close()
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let key = first.fixtureSHA256, other = second.fixtureSHA256
+        let old = try core.catalogue("builtin", grouping: .name).entries
+        let copies = old.map { ScannedLibraryItem(relativePath: $0.relativePath, directory: false, size: $0.size,
+                                                  modified: $0.modified, needsDownload: $0.needsDownload) }
+            + [.init(relativePath: "duplicate.txt", directory: false, size: first.byteCount, modified: 0, needsDownload: true)]
+        try core.scanLibraryShelf(shelfId: "builtin", items: copies)
+        let duplicate = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "duplicate.txt" })
+        try core.linkLibraryFile(fileId: duplicate.id, bookId: first.id)
+        try await service.savePosition(bookID: first.id, offset: 12)
+        try await service.savePosition(bookID: second.id, offset: 10)
+
+        let before = try await service.details(sha: key)
+        let position = try XCTUnwrap(before.book?.positionUtf8)
+        XCTAssertGreaterThan(position, 0)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 6)).pngData {
+            UIColor.blue.setFill()
+            $0.fill(CGRect(x: 0, y: 0, width: 4, height: 6))
+        }
+        let cover = try await service.makeCover(image)
+        var edited = before.metadata
+        edited.author = "Fixture author"; edited.synopsis = "Fixture synopsis"; edited.tags = ["Fixture tag"]
+        edited.cover = cover; edited.status = .finished
+        try await service.saveMetadata(base: before.metadata, edited: edited)
+        let exported = try await service.exportMetadata(shelfID: nil, format: .jsonl)
+        let inventory = try await service.metadataCleanupInventory()
+        XCTAssertEqual(inventory.books.count, 2)
+        XCTAssertEqual(inventory.books.first { $0.id == key }?.copies, 2)
+        XCTAssertEqual(try inventory.confirmation(selected: [key, other], fields: [.readingState]).count, 1)
+        XCTAssertEqual(try inventory.confirmation(selected: [], fields: [.cover]).count, 0)
+
+        let model = MetadataExchangeModel(service: service)
+        let coverOnly = try inventory.confirmation(selected: [key, other], fields: [.cover])
+        model.review(try await service.previewMetadata(exported.file.urls[0]))
+        do { _ = try await model.cleanMetadata(coverOnly); XCTFail("An import preview must exclude cleanup") }
+        catch MetadataCleanupError.busy {}
+        model.clear()
+        let cleared = try await model.cleanMetadata(coverOnly)
+        XCTAssertEqual(cleared, 1)
+        let afterCover = try await service.details(sha: key)
+        XCTAssertNil(afterCover.metadata.cover)
+        XCTAssertEqual(afterCover.metadata.author, edited.author)
+        XCTAssertEqual(afterCover.metadata.status, .finished)
+        XCTAssertEqual(afterCover.book?.positionUtf8, position)
+        let retainedCover = try await service.coverBytes(cover)
+        XCTAssertFalse(retainedCover.isEmpty)
+
+        let beforeEdit = try await service.metadataCleanupInventory()
+        let stale = try beforeEdit.confirmation(selected: [key], fields: [.author])
+        var newer = afterCover.metadata
+        newer.author = "Newer fixture author"
+        try await service.saveMetadata(base: afterCover.metadata, edited: newer)
+        do { _ = try await model.cleanMetadata(stale); XCTFail("A stale confirmation must never erase a newer edit") }
+        catch ReadingDataError.changed {}
+        let fresh = try await service.metadataCleanupInventory()
+        let all = try fresh.confirmation(selected: [key, other], fields: Set(MetadataCleanupInventory.fields))
+        let restoredToDefaults = try await model.cleanMetadata(all)
+        XCTAssertEqual(restoredToDefaults, 1)
+        let after = try await service.details(sha: key)
+        XCTAssertEqual(after.metadata.status, .reading, "The default state still derives from position")
+        XCTAssertEqual(after.book?.positionUtf8, position)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("a.txt").path))
+
+        var preview = try await service.previewMetadata(exported.file.urls[0])
+        let match = try XCTUnwrap(preview.books.firstIndex { $0.id == key })
+        preview.books[match].adopt(true)
+        preview.books[match].validateSelection(using: service)
+        let restored = await service.applyMetadata(preview) { _, _ in }
+        XCTAssertNil(restored.failure)
+        let final = try await service.details(sha: key)
+        XCTAssertEqual(final.metadata.author, edited.author)
+        XCTAssertEqual(final.metadata.tags, edited.tags)
+        XCTAssertEqual(final.metadata.cover?.sha256, cover.sha256)
+        XCTAssertEqual(final.book?.positionUtf8, position)
+    }
+    #endif
+
     @MainActor func testSavedImportRestoresAsInterruptedUsingTheFinalInputFile() throws {
         let (root, service, core, _, _, _, suite) = try singleBookFixture()
         defer {

@@ -24,6 +24,7 @@
 - 推送、iCloud Documents、CloudKit 使用预期生产授权与容器；不接受无云开发备用配置冒充分发构建。
 - App 及实际链接 SDK 的隐私清单已随包打入；required-reason API 用途与实际调用一致。清单、公开政策与 ASC 隐私标签分别核对，不能以 plist 合法代替用途准确。
 - 无 DEBUG/UI 测试开关、测试夹具、`.storekit` 或凭据；Release 条件编译审计与产物检查一起完成。
+- 面向提审的 TestFlight 构建显式关闭开发工具。核验编译条件与 IPA 中的开发工具入口标识及专用本地化资源。启用工具的本机 Development 试用包用于单独验证。
 - 检查 IPA/归档导出、架构和日志；workflow 的失败分类区分构建/签名/核验与上传服务失败，不把失败当成上传成功。
 
 源工程决定本次应有的扩展集合：旧版本只有 Share，新版本为 Share 与 Widget；缺少或出现未知扩展均拒绝。逐一核对 App、Share、Widget 的版本、签名、profile、App Group、arm64、隐私清单及 Release 测试入口；三个 bundle 的 `CFBundleDisplayName` 必须是非空字符串。不能只检查主 App，或认为 archive/export 成功就已满足上传要求。

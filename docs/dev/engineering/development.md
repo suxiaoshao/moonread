@@ -93,6 +93,14 @@ App 的营销版本（`MARKETING_VERSION`，用户可见）和构建号（`CURRE
 
 统一见[发布手册](release.md)。从待打包的受保护版本分支手动触发，填写完整 SHA，verify 后经授权执行 upload，也可在本机核验同一归档的导出产物。
 
+### 内部开发工具
+
+需要反复验证小说信息导入时，在现有 Moonread scheme 的本机构建命令中增加 `MOONREAD_TOOLS_CONDITION=MOONREAD_INTERNAL_TOOLS`。真机试用仍使用 `-configuration Release` 保留 Swift 与 Rust 优化，并核对 Development 的签名与资料环境。需要运行开发工具的资料回归测试时，可对 Debug 测试传入同一设置。
+
+工具从设置末尾的「开发者 → 清理小说资料」进入。选择已识别的小说及字段，按正文 SHA 去重。默认清理作者、简介、标签与封面引用，手动阅读状态需单独选中。清理保留小说文件、文件名、正文缓存、封面附件及阅读记录，之后可从原数据管理页重试导入。
+
+内测标记只决定是否编入工具。清理前按当前实际资料库提示范围。本机库只写入本机，账户库沿用原有同步，暂停同步的变更会在恢复后上传。普通 Debug、Release 及提审候选默认关闭工具。
+
 ### 官网与商店原图（独立 DEBUG 测试）
 
 使用独立的 `StoreScreenshots` scheme，不进入日常关键 UI 测试。拍摄参数、原创样书与处理入口都只存在于 DEBUG（#83）；每次启动使用随机 UUID 的临时书库，拒绝用户 iCloud / Downloads 路径。不能用用户小说或真实 AI 网络请求作夹具。

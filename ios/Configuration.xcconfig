@@ -5,6 +5,8 @@ MOONREAD_CLOUD_ENABLED = YES
 // archive workflow sets Production and verifies it against the IPA signature.
 MOONREAD_READING_CLOUD_ENVIRONMENT = Development
 MOONREAD_ENTITLEMENTS = Moonread/Moonread.entitlements
+MOONREAD_TOOLS_CONDITION =
+MOONREAD_TOOLS_RESOURCES_MOONREAD_INTERNAL_TOOLS = DeveloperTools.xcstrings
 #include? "LocalSigning.xcconfig"
 CODE_SIGN_STYLE = Automatic
 CODE_SIGN_ENTITLEMENTS = $(MOONREAD_ENTITLEMENTS)
