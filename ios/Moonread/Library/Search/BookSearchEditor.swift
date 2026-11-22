@@ -307,6 +307,7 @@ private struct BookSearchConditionActions<Editor: View>: View {
     let excluded: Binding<Bool>?
     @ViewBuilder let editor: Editor
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.theme) private var theme
 
     var body: some View {
         let layout = typeSize.isAccessibilitySize
@@ -314,17 +315,47 @@ private struct BookSearchConditionActions<Editor: View>: View {
             : AnyLayout(HStackLayout(spacing: LayoutTokens.control))
         layout {
             if let excluded {
-                Picker("条件作用：\(field.title)", selection: excluded) {
-                    Text("包含").tag(false)
-                    Text("排除").tag(true)
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize(horizontal: true, vertical: false)
-                .accessibilityIdentifier("searchRuleExclusion-\(field.rawValue)")
+                exclusionMenu(excluded)
             }
             editor
         }
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+    }
+
+    private func exclusionMenu(_ excluded: Binding<Bool>) -> some View {
+        let isExcluded = excluded.wrappedValue
+        return Menu {
+            Picker("条件作用：\(field.title)", selection: excluded) {
+                Text("包含").tag(false)
+                Text("排除").tag(true)
+            }
+            .pickerStyle(.inline)
+        } label: {
+            ZStack(alignment: .leading) {
+                // Reserve the wider label in every language and at every Dynamic Type size.
+                exclusionLabel(!isExcluded).hidden()
+                exclusionLabel(isExcluded)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .contentShape(.rect)
+        }
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("条件作用：\(field.title)"))
+        .accessibilityValue(Text(isExcluded ? "排除" : "包含"))
+        .accessibilityIdentifier("searchRuleExclusion-\(field.rawValue)")
+    }
+
+    private func exclusionLabel(_ excluded: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text(excluded ? "排除" : "包含")
+                .fontWeight(excluded ? .semibold : .regular)
+            Image(systemName: "chevron.up.chevron.down")
+                .imageScale(.small)
+                .accessibilityHidden(true)
+        }
+        .font(.subheadline)
+        .foregroundStyle(Color(uiColor: excluded ? theme.accent : theme.secondary))
     }
 }
 
@@ -474,7 +505,7 @@ private struct BookSearchGroupPage: View {
             }
         }
         return .init(child.id.uuidString, action: { navigate(.group(child.id)) }, disclosure: true, actions: actions) {
-            conditionLabel(child, includingExclusion: true)
+            conditionLabel(child, includingExclusion: true).padding(.vertical, 4)
         }
     }
 
@@ -484,7 +515,7 @@ private struct BookSearchGroupPage: View {
             if let error = child.validation() {
                 Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.destructive))
             }
-        }.padding(.vertical, 4)
+        }
     }
 }
 private struct BookSearchRulePage: View {
