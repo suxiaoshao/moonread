@@ -91,7 +91,7 @@ App 的营销版本（`MARKETING_VERSION`，用户可见）和构建号（`CURRE
 
 ### TestFlight 打包与上传
 
-统一见[发布手册](release.md)：main 手动触发、branch+SHA、verify 后授权 upload，或本机同归档导出核验。
+统一见[发布手册](release.md)。从待打包的受保护版本分支手动触发，填写完整 SHA，verify 后经授权执行 upload，也可在本机核验同一归档的导出产物。
 
 ### 官网与商店原图（独立 DEBUG 测试）
 
@@ -156,11 +156,13 @@ R15 原图写到 `build/Release/1.4-screenshots/raw/1.6/<语言>/<设备组>/<li
 
 ### TestFlight 手动 CI
 
-[`TestFlight`](../../../.github/workflows/testflight.yml) 只接受在默认分支 `main` 上的 `workflow_dispatch`，不由 tag、PR 或 push 上传。工作流本身须先通过 PR 合入 main；维护者再同步到当前 release 分支。Actions 中选择 `main`，填写 `source_branch`（仅 `release/x.y` 或 `hotfix/x.y.z`）、`expected_sha`（完整 40 位、等于该分支 HEAD）、`mode`（默认 `verify`）。`upload` 必须另获用户明确授权后才选择；verify 从不上传。
+[`TestFlight`](../../../.github/workflows/testflight.yml) 由维护者在 Actions 选择本次打包的受保护 `release/x.y` 或 `hotfix/x.y.z` 分支手动触发。填写 `expected_sha`（40 位小写十六进制，等于所选分支 HEAD）和 `mode`（默认 `verify`）。工作流与触发提交必须都匹配此 SHA。verify 只归档、导出和核验，upload 需经用户明确授权。
 
 不接触签名凭据的 prepare job 检查同一个可信 `ci.yml` 中该来源分支与 SHA 的最新 push run。该运行必须成功，且 `Secret scan` 和 `Workflow syntax` 必须成功；如果该运行包含 `Rust and iOS tests`，也必须要求它成功；只有不存在该作业时才要求旧版的 `Linux checks` 和 `iOS unit tests` 都成功。每项必需作业必须恰好出现一次，且结果为 `success`；skipped、pending 等状态均不放行。签名 job 进入 `testflight` Environment 后再次检查分支 HEAD，检出固定 SHA；上传前再检查一次。所有版本共用 `moonread-testflight` 串行组，不取消正在运行的任务；不要连续排多个发版请求。
 
-用户在 GitHub **Environment `testflight`** 中自行配置 Secrets：`ASC_API_KEY_BASE64`（ASC Team API Key 的 p8 原字节 Base64）、`ASC_KEY_ID`、`ASC_ISSUER_ID`，以及固定 Apple Development 证书 `IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64` / `IOS_DEVELOPMENT_CERTIFICATE_PASSWORD`（导入临时钥匙串，供自动签名复用，避免每次运行新建开发证书占满额度）；配置非敏感 Variable `APPLE_TEAM_ID`。导入后仅接受临时钥匙串中通过 codesigning 有效性检查、含匹配私钥且 Subject `OU` 等于配置团队的唯一 Apple Development 身份；证书名称括号内是成员标识，不能拿来匹配 Team ID。证书类型、团队或信任链不满足时停止，不自动新建证书，也不修改信任设置。API Key 按已确认自动签名方案使用 Admin 角色。Environment 限制只允许 main 部署，不设审批；不要把签名 Secrets 配到 PR 可访问的仓库环境。代理不在仓库、日志或报告中保存密钥与 p12。未配置或自动签名权限、协议、证书额度不足时停止报告，不自动改走手动签名、不撤销证书或循环申请。GitHub-hosted `xcode-27` 必须提供 Xcode 27.2（27B52） / iPhoneOS SDK，否则停止，不自行换工具链。
+启用分支触发前，维护者先为 `main`、`release/*`、`hotfix/*` 核对 PR 合入和对应 CI 必需检查，确保只有受信任的维护者能创建匹配分支。再将 GitHub **Environment `testflight`** 的选定部署分支设为上述三项，类型均为 Branch。签名凭据只放在该 Environment。
+
+用户配置 Secrets `ASC_API_KEY_BASE64`（ASC Team API Key 的 p8 原字节 Base64）、`ASC_KEY_ID`、`ASC_ISSUER_ID`，以及固定 Apple Development 证书 `IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64` / `IOS_DEVELOPMENT_CERTIFICATE_PASSWORD`（导入临时钥匙串，供自动签名复用，避免每次运行新建开发证书占满额度）；配置非敏感 Variable `APPLE_TEAM_ID`。导入后仅接受临时钥匙串中通过 codesigning 有效性检查、含匹配私钥且 Subject `OU` 等于配置团队的唯一 Apple Development 身份；证书名称括号内是成员标识，不能拿来匹配 Team ID。证书类型、团队或信任链不满足时停止，不自动新建证书，也不修改信任设置。API Key 按已确认自动签名方案使用 Admin 角色。代理不在仓库、日志或报告中保存密钥与 p12。未配置或自动签名权限、协议、证书额度不足时停止报告，不自动改走手动签名、不撤销证书或循环申请。GitHub-hosted `xcode-27` 必须提供 Xcode 27.2（27B52） / iPhoneOS SDK，否则停止，不自行换工具链。
 
 先在工程 PR 中分配全局递增构建号，App/Share、Debug/Release 一致，营销版本与源分支版本一致。CI 只读取，绝不修改版本号。ASC 对 App `6823849812` 的所有营销版本分页取数字最大构建号；upload 的候选号必须更大，verify 可以核验已用号但不消耗新号。上传命令非零退出时立即保存网络、权限、协议、签名或导出失败的脱敏类别并停止，不空等处理结果或自动重传；上传是否发生可能不明，列表也可能延迟，需用户先核对 ASC 后决定重试或新号。
 
