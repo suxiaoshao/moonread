@@ -68,6 +68,34 @@ import UIKit
                 if toggle.waitForExistence(timeout: 3) { toggle.tap(); settled(toggle) }
             case .statistics: settled(ready(element("statisticsRhythmChart"), timeout: 40))
             case .shelf: settled(ready(file(f.books[0].title + ".txt"), timeout: 40))
+            case .resumeHome:
+                ready(app.buttons["shelf-builtin"], timeout: 40)
+                ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'savedFilter-'")).firstMatch)
+                settled(ready(file(f.books[0].title + ".txt"), timeout: 40))
+            case .librarySearch:
+                ready(app.buttons["searchFilters"], timeout: 40)
+                settled(ready(file(f.books[0].title + ".txt"), timeout: 40))
+                if app.keyboards.firstMatch.exists { ready(element("structuredSearchCount")).tap() }
+                waitUntil { !self.app.keyboards.firstMatch.exists }
+                let save = ready(app.buttons["saveVirtualShelf"], timeout: 40)
+                waitUntil { save.isEnabled }
+                settled(save)
+            case .backupReview:
+                settled(ready(app.buttons["confirmImportReadingBackup"], timeout: 40))
+            case .annotation:
+                readableBody()
+                let text = body()
+                let prefix = "StoreShotAnnotation:"
+                waitUntil { (text.value as? String)?.hasPrefix(prefix) == true }
+                let value = try XCTUnwrap(text.value as? String)
+                let point = value.dropFirst(prefix.count).split(separator: ",").compactMap { Double($0) }
+                let x = try XCTUnwrap(point.first)
+                let y = try XCTUnwrap(point.dropFirst().first)
+                // Anchor to the text view on Duo, where the app can occupy either display.
+                let origin = text.frame.origin
+                text.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: x - origin.x, dy: y - origin.y)).tap()
+                settled(ready(app.staticTexts[f.notes[0][1]]))
             case .recap:
                 ready(app.buttons["aiConversation-store-shot-recap"], timeout: 40).tap()
                 settled(ready(app.tables["aiMessages"], timeout: 20)); app.tables["aiMessages"].swipeDown()
