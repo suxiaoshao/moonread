@@ -18,9 +18,9 @@
 
 ## 表格与 Markdown
 
-行模型包含任务头、较早/较新入口、用户消息/队列、文本、过程/工具组、等待、确认/结果卡、图片、错误和结束操作栏。结构变化 diffable apply，内容变化只 reconfigure 对应 ID；快照不加默认动画。其余 SwiftUI 行使用 UIHostingConfiguration，主题/AIService 环境一致，水平边距使用 LayoutTokens.content。
+行模型包含任务头、较早/较新入口、用户消息/队列、文本、过程/工具组、等待、确认/结果卡、图片、错误和结束操作栏。结构变化 diffable apply，内容变化只 reconfigure 对应 ID；快照不加默认动画。SwiftUI 行由单元格中的 UIHostingController 显示，主题/AIService 环境一致，水平边距使用 LayoutTokens.content。
 
-AI 回复及过程文本用 UIKit MarkdownView；流式时使用库的未闭合标记处理，turn 结束按完整原文重解析。按块 ID、内容 hash、流式状态和主题缓存解析结果；按块保留显示 view，cell 挂载已有 view，不能只设初始文本后重建空 controller。sizing view 池上限 24；显式测量高度并缓存，文本行不依赖 SwiftUI 自适应。非文本行仍使用自适应 hosting，高度变化遵循 selfSizingInvalidation。
+AI 回复及过程文本用 UIKit MarkdownView；流式时使用库的未闭合标记处理，turn 结束按完整原文重解析。按块 ID、内容 hash、流式状态和主题缓存解析结果；按块保留显示 view，cell 挂载已有 view，不能只设初始文本后重建空 controller。sizing view 池上限 24；显式测量高度并缓存，文本行不依赖 SwiftUI 自适应。SwiftUI 行由离屏宿主按表格宽度测量，结果卡内部状态变化时接收显示内容在同一宽度、同一行版本下的新测量。缓存只接收内容测量值。
 
 高度键含块 ID、内容版本、宽度、Dynamic Type；宽度/字号改变失效，未命中按类型/文本长度估算。缓存随会话释放、不持久化；parsed/retained view 的长期容量限制尚待测量，不把 sizing pool 上限当全缓存上限。
 
@@ -28,7 +28,7 @@ AI 回复及过程文本用 UIKit MarkdownView；流式时使用库的未闭合�
 
 ## 跟随、锚点与输入区
 
-用户开始拖动立即停止 following；拖动/减速结束接近底部（约 24pt）恢复，发送或点回到底部恢复；程序滚动不改变 following。搜索居中并高亮目标后停止 following。非跟随更新前记录第一个完全可见行 ID 与屏内偏移，更新布局后恢复，同样覆盖头部分页。
+用户开始拖动立即停止 following；拖动/减速结束接近底部（约 24pt）恢复，发送或点回到底部恢复；程序滚动不改变 following。搜索居中并高亮目标后停止 following。非跟随用与有效视口相交且更新后仍存在的首行固定屏内位置，包含只显示一部分的长回复，同样覆盖头部分页。过程展开继续使用用户操作的行作锚点。
 
 输入区占底部 contentInset，排队胶囊额外占其实测高度与间距；胶囊和回到底部按钮为 overlay，不改变表格视口。inset、键盘、输入框高度变化在同次布局中处理，非跟随恢复锚点。交互式收键盘及点空白收键盘保留。排队气泡复用用户消息、0.6 不透明度，菜单和无障碍动作可取消；多条胶囊可逐项取消。无数据变化不让全历史重建。
 
@@ -38,7 +38,7 @@ UI 按活动文本块 ID 记录已显示长度，与权威文本分离。CADispl
 
 后面出现新块/工具/reasoning/确认、turn 结束/停止/中断、离页或后台时立即放完，保持顺序；历史和重开直接完整显示。仅 UI 显示缓冲，不改 runtime 100ms 发布与保存节奏。
 
-跟随时 cell 高度正常更新，display link 以临界阻尼将 offset 追向底部；新目标承接当前位置和速度，小积压限速、大积压连续加速，不重启动画、不按内容类型分支。用户拖动即停，非跟随不动画；没有另做容器高度/裁剪过渡或逐词淡入。
+跟随时 cell 高度正常更新，display link 以临界阻尼将 offset 追向底部；新目标承接当前位置和速度，小积压限速、大积压连续加速。完成时若「查看过程」插入可见回复之前，快照布局后按同一正文行的实际坐标抵消插入造成的位移，末尾增长继续由 display link 跟随。用户拖动即停，非跟随不动画；没有另做容器高度/裁剪过渡或逐词淡入。
 
 系统或应用减弱动态开启时，停用显示缓冲和追随动画，直接显示并贴底；VoiceOver label 使用已显示内容，不提前朗读。逐词淡入仅是[暂缓候选](../engineering/performance.md#ai-列表第二步与显示候选)。
 
