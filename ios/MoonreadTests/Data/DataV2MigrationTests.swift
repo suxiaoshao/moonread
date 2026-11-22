@@ -182,7 +182,7 @@ struct DataV2MigrationTests {
         try check.close()
     }
 
-    @Test func upgradesVersionSevenUserStoreForLocalSavedFilters() throws {
+    @Test func upgradesVersionSevenUserStoreForSavedFiltersAndUnfetchedHistoryDeletes() throws {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
@@ -193,6 +193,7 @@ struct DataV2MigrationTests {
         try old.write { db in
             try db.execute(sql: """
                 DROP TABLE local_saved_filter;
+                DROP TABLE cloud_history_delete_unfetched;
                 INSERT INTO local_shelf_recovery VALUES ('fixture', 'binding', X'01');
                 PRAGMA user_version=7;
                 """)
@@ -202,13 +203,15 @@ struct DataV2MigrationTests {
         let upgraded = try DataSession(layout: layout)
         defer { try? upgraded.close() }
         let (lease, _) = try upgraded.activate(.signedOut)
-        let (version, filters, recovery) = try upgraded.read(lease) { db in
+        let (version, filters, deletes, recovery) = try upgraded.read(lease) { db in
             (try DataV2Schema.version(db, in: "usr"),
              try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.local_saved_filter"),
+             try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.cloud_history_delete_unfetched"),
              try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.local_shelf_recovery WHERE key='fixture'"))
         }
         #expect(version == DataV2Schema.userVersion)
         #expect(filters == 0)
+        #expect(deletes == 0)
         #expect(recovery == 1)
     }
 

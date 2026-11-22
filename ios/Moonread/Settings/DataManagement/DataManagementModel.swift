@@ -386,7 +386,11 @@ import SwiftUI
                 } else if stopping {
                     phase = .stopped(operation)
                 } else {
-                    if operation == .importing { retryStep = retry }
+                    if case .pendingHistoryDeletion? = error as? ReadingDataError {
+                        // Check the same file again against the post-delete state before asking for confirmation.
+                        if case .restore(let preview) = retry { retryStep = .compare(preview.staging) }
+                        else { retryStep = retry }
+                    } else if operation == .importing { retryStep = retry }
                     phase = .failed(operation, ReaderMessages.error(error))
                 }
             }

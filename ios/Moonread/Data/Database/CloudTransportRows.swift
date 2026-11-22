@@ -52,6 +52,38 @@ enum CloudTransportRows {
             """, arguments: key.arguments) == true
     }
 
+    static func pendingHistoryDeletionIDs(_ db: Database, zone: String, cancellation: BackupCancellation) throws
+        -> [ReadingHistoryTransport.RecordType: Set<Data>] {
+        let types = ReadingHistoryTransport.RecordType.allCases.map(\.rawValue)
+        let parameters = types.map { _ in "?" }.joined(separator: ",")
+        let rows = try Row.fetchCursor(db, sql: """
+            SELECT record_type,business_id FROM usr.cloud_outbox
+            WHERE zone=? AND intent='delete' AND record_type IN (\(parameters))
+            UNION ALL
+            SELECT record_type,business_id FROM usr.cloud_history_delete_unfetched WHERE zone=?
+            """, arguments: StatementArguments([zone] + types + [zone]))
+        var ids: [ReadingHistoryTransport.RecordType: Set<Data>] = [:]
+        while let row = try rows.next() {
+            try cancellation.check()
+            let rawType: String = row["record_type"]
+            let id: String = row["business_id"]
+            if let type = ReadingHistoryTransport.RecordType(rawValue: rawType) {
+                ids[type, default: []].insert(Data(id.utf8))
+            }
+        }
+        return ids
+    }
+
+    static func historyDeletionNeedsFetch(_ db: Database, zone: String) throws -> Bool {
+        try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM usr.cloud_history_delete_unfetched WHERE zone=?)
+            """, arguments: [zone]) == true
+    }
+
+    static func clearHistoryDeletesAwaitingFetch(_ db: Database, zone: String) throws {
+        try db.execute(sql: "DELETE FROM usr.cloud_history_delete_unfetched WHERE zone=?", arguments: [zone])
+    }
+
     static func enqueueSave(_ db: Database, _ key: Key, businessID: String, digest: String,
                             replacingPendingDeletion: Bool = false) throws {
         if let prior = try pending(db, key) {
@@ -264,6 +296,13 @@ enum CloudTransportRows {
                 try FixedValueCloudRows.didConfirmDeletion(db, family, sent: sent)
             } else {
                 try forgetServerRecord(db, sent.key)
+                if sent.key.zone == ReadingHistoryTransport.zone,
+                   ReadingHistoryTransport.RecordType(rawValue: sent.key.type) != nil {
+                    // The next fetch can still deliver this deletion after the outbox ACK.
+                    try db.execute(sql: """
+                        INSERT OR IGNORE INTO usr.cloud_history_delete_unfetched(zone,record_type,business_id) VALUES(?,?,?)
+                        """, arguments: [sent.key.zone, sent.key.type, sent.businessID])
+                }
             }
         }
         // The exact ACK above is not sufficient if it caused X2 to stage
@@ -338,14 +377,21 @@ enum CloudTransportRows {
             try ReadingCloudInitialization.notePriorZone(db)
             try CloudBootstrapRows.clear(db)
         }
-        try db.execute(sql: "DELETE FROM usr.cloud_record_state WHERE zone=?", arguments: [zone])
-        try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE zone=?", arguments: [zone])
+        try resetZoneRecords(db, zone: zone)
         // Keep the account-level attempt sequence: old results must not
         // match recreated pending work, even across an engine restart.
         try db.execute(sql: """
             INSERT INTO usr.cloud_engine_state(zone,checkpoint,region_state) VALUES(?,NULL,?)
             ON CONFLICT(zone) DO UPDATE SET checkpoint=NULL,region_state=excluded.region_state
             """, arguments: [zone, stage.rawValue])
+    }
+
+    static func resetZoneRecords(_ db: Database, zone: String) throws {
+        try db.execute(sql: """
+            DELETE FROM usr.cloud_outbox WHERE zone=:zone;
+            DELETE FROM usr.cloud_record_state WHERE zone=:zone;
+            """, arguments: ["zone": zone])
+        try clearHistoryDeletesAwaitingFetch(db, zone: zone)
     }
 
     static func confirmZoneCreation(_ db: Database, zone: String) throws -> Bool {
@@ -774,6 +820,20 @@ actor CloudCallbackJournal {
         try recordCallback(whileCreating: { () }) { db in
             guard try ReadingCloudInitialization.traffic(db) != .blocked else { return }
             try CloudTransportRows.storeCheckpoint(db, zone: ReadingHistoryTransport.zone, bytes: bytes)
+        }
+    }
+
+    func historyDeletionNeedsFetch() throws -> Bool {
+        guard !failed else { throw Failure.restartRequired }
+        return try session.readCloudChanges(binding) {
+            try CloudTransportRows.historyDeletionNeedsFetch($0, zone: ReadingHistoryTransport.zone)
+        }
+    }
+
+    func finishHistoryDeletionFetch() throws {
+        guard try historyDeletionNeedsFetch() else { return }
+        try recordCallback(whileCreating: { () }) {
+            try CloudTransportRows.clearHistoryDeletesAwaitingFetch($0, zone: ReadingHistoryTransport.zone)
         }
     }
 

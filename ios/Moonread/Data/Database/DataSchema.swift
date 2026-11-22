@@ -199,6 +199,10 @@ enum DataV2Schema {
                         sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE,
                         name TEXT NOT NULL, configuration BLOB NOT NULL
                     );
+                    CREATE TABLE usr.cloud_history_delete_unfetched(
+                        zone TEXT NOT NULL, record_type TEXT NOT NULL, business_id TEXT NOT NULL,
+                        PRIMARY KEY(zone,record_type,business_id)
+                    );
                     PRAGMA usr.user_version=8;
                     """)
             }
