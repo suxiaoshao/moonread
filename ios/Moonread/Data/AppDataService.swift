@@ -320,17 +320,31 @@ actor AppDataService {
             let session = old.session
             let destination = try session.destination(status)
             if let approval {
-                guard case .confirmed(let scope, true) = status, approval.scope == scope, scope != .local else {
+                guard case .confirmed(let scope, true, _) = status, approval.scope == scope, scope != .local else {
                     throw ReaderError.CloudAccountChanged
                 }
             }
+            let releasedChange: ReadingDataLayoutUpgrade.AccountChange?
+            let inheritedApproval: DataScope?
+            if case .confirmed(let scope, _, let recordName?) = status {
+                releasedChange = try releasedAccountChange(to: scope, recordName: recordName)
+                inheritedApproval = releasedApproval(for: scope, change: releasedChange)
+            } else {
+                releasedChange = nil
+                inheritedApproval = nil
+            }
+            let accountChange = try releasedChange.flatMap { change in
+                let ownsAccount = try session.stillUsesReleasedAccount(change.old)
+                return ownsAccount || (try? publishedUserSource()) == change.old ? change : nil
+            }
             let claim = old.lease.scope == .local ? approval?.scope : nil
-            let rebind = claim != nil || old.lease.scope != destination.scope
+            let rebind = accountChange != nil || claim != nil || old.lease.scope != destination.scope
             let preparePresentation = beforeRebind ?? prepareUserScopePresentation
             let finishPresentation = afterRebind ?? finishUserScopePresentation
             if !rebind, approval == nil {
                 try cancellation.check()
                 let (_, selected) = try session.activate(status)
+                if let inheritedApproval { cloudSyncIntent.approve(inheritedApproval) }
                 updateReadingScopePublication(status, selected)
                 return selected
             }
@@ -360,6 +374,11 @@ actor AppDataService {
                     }
                     try cancellation.check()
                     guard intent.requested else { throw CancellationError() }
+                } else if let accountChange {
+                    guard case .confirmed(let current) = await lookup(), current.scope == accountChange.new else {
+                        throw ReaderError.CloudAccountChanged
+                    }
+                    try cancellation.check()
                 }
 
                 if rebind {
@@ -376,6 +395,7 @@ actor AppDataService {
                     // D1 recovery; never hand out the old invalidated index.
                     core = nil
                 }
+                if let accountChange { try session.changeReleasedAccount(accountChange) }
                 if let claim {
                     _ = try session.activate(.confirmed(claim, syncRequested: false))
                     try session.claimLocal(for: claim)
@@ -397,6 +417,8 @@ actor AppDataService {
                     try cancellation.check()
                     guard intent.requested else { throw CancellationError() }
                     intent.approve(approval.scope)
+                } else if let inheritedApproval {
+                    intent.approve(inheritedApproval)
                 }
                 updateReadingScopePublication(status, selected)
                 releaseUserDataOperation()
@@ -617,6 +639,8 @@ actor AppDataService {
         return try dataSession.legacyUserScope()
     }
 
+    var releasedReadingLayout: ReadingDataLayoutUpgrade.Source? { dataSession?.releasedLayout }
+
     private func legacyBootstrapScope() throws -> DataScope? {
         guard let value = sourceDefaults.object(forKey: "Moonread.userOwner") else { return nil }
         guard let name = value as? String, !name.isEmpty else { throw DataV2Error.invalidOwnerState }
@@ -634,7 +658,8 @@ actor AppDataService {
         if let dataSession { session = dataSession }
         else {
             session = try DataSession(layout: DataLayout(applicationSupport: directory, environment: readingCloudEnvironment),
-                                      confirmedLegacyOwner: try legacyBootstrapScope())
+                                      confirmedLegacyOwner: try legacyBootstrapScope(),
+                                      releasedDevelopmentApproval: cloudSyncIntent.releasedDevelopmentApproval)
             dataSession = session
         }
         let (lease, _) = try session.activate(.unknown)

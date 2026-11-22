@@ -120,7 +120,7 @@ extension AppDataService {
 extension AppDataService {
     func metadataImportScope() -> String {
         guard let scope = try? indexStore().lease.scope else { return "unavailable" }
-        return scope == .local ? "local" : "account:" + scope.key
+        return scope.metadataImportKey
     }
     func exportMetadata(shelfID: String?, format: MetadataFormat, progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }) async throws -> MetadataExportResult {
         try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }

@@ -2,7 +2,9 @@
 
 #270：App 只读已发布的 SwiftData 源，不启动旧 CloudKit 镜像。App 的 CKSyncEngine 接入月读容器 `iCloud.dev.moonread.Moonread` 的私有库，只操作 `MoonreadReadingV2`。本机开发试用包使用 Development；App Store 包使用 Production。构建参数和实际签名的环境须一致；SyncProbe 仅用于独立验证。iCloud Drive 的小说目录照常独立工作。
 
-1.6 本机旧源的归属按旧的账户确认记录识别，该来源没有环境标记。每个环境独立从旧库迁入一次；Development 使用 `Data/v2/development`，Production 使用 `Data/v2`。两者的所有权、正文索引、用户文件、检查点和待发不互相复制。Production 不沿用开发试用的新写；本机旧源继续只读。
+自 1.9 起，Production 与 Development 分别使用 `Data/v3/production` 和 `Data/v3/development`，独立保存设备索引、账户库及同步状态。已发布的 1.7–1.8 商店包签名为 Production，却因历史标签打开 `Data/v2/development`。普通商店升级一次性接管该本机库，沿用同一 Production 私有区的记录 ID、系统字段、检查点、初始化状态和待发。仍在 Development 的开发包原位升级则将自己的旧库接入 Development。已有独立旧 Production 库时优先保留它。一次性接管记录确保同一份历史子目录只被一个新环境接管；有混装历史的个人试用设备先确认来源，再按实际环境升级或用阅读备份转移业务数据。
+
+目录接管以 SQLite 一致快照保存已提交的数据和本机任务，完成后原子发布新目录。离线可打开上次确认的库，实时账户确认前无联网权限。实际 Production 账户经核对后，只换算该账户的旧键、设备索引引用和同步许可；历史账户在本人再次确认时换算。两个真实环境独立维护云传输状态。1.6 直接升级仍按旧账户归属读取本机源，保留原始文件。
 
 第 6 步内部接点：阅读段和统计清除的出站意图已用账户库内的递增代次匹配精确回执；入站的原文、隔离、系统字段及当前贡献由同一 GRDB 池提交。如果入站事务失败，该回调会话停用，从上次已保存的检查点重开。
 

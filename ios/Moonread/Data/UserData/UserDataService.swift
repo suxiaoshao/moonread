@@ -34,6 +34,7 @@ extension AppDataService {
 
     func prepareUserIndex(_ index: ReaderIndex, progress: (@Sendable (LegacyImportProgress) -> Void)? = nil) throws {
         try index.session.prepareUsers(index.lease, progress: progress) {
+            guard index.session.releasedLayout != .otherEnvironment else { return nil }
             let source = try publishedUserSource()
             guard source == index.lease.scope else { return nil }
             let deviceState: LegacyUserSnapshot.DeviceState

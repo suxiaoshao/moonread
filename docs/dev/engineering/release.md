@@ -21,7 +21,7 @@
 本机补充构建沿用下方[归档命令](#本机归档与导出)和开发环境的 Nix 接线，归档产物放 build。CI 和本机都检查最终分发产物，而不只检查工程设置：
 
 - 主 App、分享扩展和嵌套组件签名有效，Bundle ID、版本/构建号、Team 和 provision 匹配；分发包 `get-task-allow=false`。
-- 推送、iCloud Documents、CloudKit 使用预期生产授权与容器；不接受无云开发备用配置冒充分发构建。
+- 推送、iCloud Documents、CloudKit 使用预期生产授权与容器。导出 IPA 的主 App 中，`MoonreadReadingCloudEnvironment` 与签名的 CloudKit 环境均须为 Production。
 - App 及实际链接 SDK 的隐私清单已随包打入；required-reason API 用途与实际调用一致。清单、公开政策与 ASC 隐私标签分别核对，不能以 plist 合法代替用途准确。
 - 无 DEBUG/UI 测试开关、测试夹具、`.storekit` 或凭据；Release 条件编译审计与产物检查一起完成。
 - 面向提审的 TestFlight 构建显式关闭开发工具。核验编译条件与 IPA 中的开发工具入口标识及专用本地化资源。启用工具的本机 Development 试用包用于单独验证。
