@@ -7,6 +7,7 @@ struct DeveloperMetadataCleanupView: View {
     @Environment(CloudStore.self) private var cloud
     @Environment(\.theme) private var theme
     @State private var inventory: MetadataCleanupInventory?
+    @State private var loadingInventory = false
     @State private var selection = Set<String>()
     @State private var fields: Set<MetadataField> = [.author, .description, .tags, .cover]
     @State private var confirmation: MetadataCleanupConfirmation?
@@ -15,7 +16,7 @@ struct DeveloperMetadataCleanupView: View {
     @State private var completed: Int?
 
     var body: some View {
-        Group {
+        ZStack {
             if let completed {
                 ContentUnavailableView {
                     Label {
@@ -37,7 +38,7 @@ struct DeveloperMetadataCleanupView: View {
                 } description: {
                     Text(error)
                 } actions: {
-                    Button("重试") { Task { await load() } }
+                    Button("重试", action: startInventoryLoad)
                 }
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -47,7 +48,9 @@ struct DeveloperMetadataCleanupView: View {
         .navigationTitle(completed == nil ? Text("清理小说资料", tableName: "DeveloperTools")
                          : Text("清理结果", tableName: "DeveloperTools"))
         .navigationBarTitleDisplayMode(.inline)
-        .task { if inventory == nil { await load() } }
+        .onAppear {
+            if inventory == nil { startInventoryLoad() }
+        }
         .alert(Text("清理小说资料？", tableName: "DeveloperTools"), isPresented: $confirming, presenting: confirmation) { value in
             Button("取消", role: .cancel) { confirmation = nil }
             Button(role: .destructive) {
@@ -147,6 +150,16 @@ struct DeveloperMetadataCleanupView: View {
             return String(localized: "清理会通过 iCloud 同步到使用此账户和环境的其他设备。", table: "DeveloperTools")
         }
         return String(localized: "清理写入账户资料库，恢复同步后会更新使用此账户和环境的其他设备。", table: "DeveloperTools")
+    }
+
+    private func startInventoryLoad() {
+        guard !loadingInventory else { return }
+        loadingInventory = true
+        // Finish the read across a quick exit and reentry to this destination.
+        Task {
+            defer { loadingInventory = false }
+            await load()
+        }
     }
 
     private func load() async {
