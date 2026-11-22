@@ -530,7 +530,7 @@ jobs:
           PY
           set_stage number-gate
           python3 "$private/asc.py" number-gate > "$private/number-gate.log" 2> "$private/number-gate.stderr.log"
-          run_xcode archive "${common[@]}" -configuration Release "${auth[@]}" +            MOONREAD_READING_CLOUD_ENVIRONMENT=Production -archivePath "$private/Moonread.xcarchive" archive
+          run_xcode archive "${common[@]}" -configuration Release "${auth[@]}" -archivePath "$private/Moonread.xcarchive" archive
           set_stage archive-validation
           python3 - > "$private/archive-validation.log" 2> "$private/archive-validation.stderr.log" <<'PY'
           import json, os, pathlib, plistlib
@@ -548,13 +548,19 @@ jobs:
             -exportOptionsPlist "$private/export.plist" "${auth[@]}"
           set_stage audit
           python3 - > "$private/audit.log" 2> "$private/audit.stderr.log" <<'PY'
-          import datetime, hashlib, json, os, pathlib, plistlib, subprocess, zipfile
+          import datetime, hashlib, json, os, pathlib, plistlib, re, subprocess, zipfile
           root = pathlib.Path(os.environ['TF_PRIVATE'])
           meta = json.loads((root / 'metadata.json').read_text())
           def require(ok, message):
               if not ok: raise SystemExit('IPA audit: ' + message)
           def command(*args): return subprocess.check_output(args, stderr=subprocess.PIPE)
           def digest(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+          configuration = pathlib.Path('ios/Configuration.xcconfig').read_text()
+          reading_environments = re.findall(
+              r'^[ \t]*MOONREAD_READING_CLOUD_ENVIRONMENT[ \t]*=[ \t]*(.*?)[ \t]*(?://.*)?$',
+              configuration, re.MULTILINE)
+          require(len(reading_environments) == 1 and reading_environments[0] in ('Development', 'Production'),
+                  'Configuration.xcconfig must declare one reading database environment (Development or Production)')
           ipas = list((root / 'export').glob('*.ipa'))
           require(len(ipas) == 1, 'expected one IPA')
           unpack = root / 'unpacked'
@@ -588,7 +594,8 @@ jobs:
               require(group in ent.get('com.apple.security.application-groups', []), 'missing App Group')
               if bundle == app:
                   require(info.get('ITSAppUsesNonExemptEncryption') is False, 'encryption declaration')
-                  require(info.get('MoonreadReadingCloudEnvironment') == 'Production', 'reading database environment must match Production signing')
+                  require(info.get('MoonreadReadingCloudEnvironment') == reading_environments[0],
+                          'reading database environment must match Configuration.xcconfig')
                   require(ent.get('aps-environment') == 'production', 'push must be production')
                   require(ent.get('com.apple.developer.icloud-container-environment') == 'Production', 'CloudKit must be Production')
                   require(ent.get('com.apple.developer.icloud-container-identifiers') == [container], 'wrong CloudKit container')
