@@ -68,21 +68,15 @@ struct BookTagPicker<Controls: View, Status: View>: View {
                 BookTagSystemMargins { horizontalMargins = $0 }.allowsHitTesting(false)
             }
             .toolbar {
-                if let currentGroup {
-                    if #available(iOS 26, *) {
-                        ToolbarItem(placement: .subtitle) {
-                            Text(currentGroup.category.title)
+                if #unavailable(iOS 26), let currentGroup {
+                    ToolbarItem(placement: .principal) {
+                        VStack(spacing: 0) {
+                            Text("标签").font(.headline)
+                            Text(currentGroup.category.title).font(.caption).foregroundStyle(.secondary)
                         }
-                    } else {
-                        ToolbarItem(placement: .principal) {
-                            VStack(spacing: 0) {
-                                Text("标签").font(.headline)
-                                Text(currentGroup.category.title).font(.caption).foregroundStyle(.secondary)
-                            }
-                            .lineLimit(1)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityAddTraits(.isHeader)
-                        }
+                        .lineLimit(1)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isHeader)
                     }
                 }
                 if browsesCategories && !groups.isEmpty {
@@ -126,6 +120,7 @@ struct BookTagPicker<Controls: View, Status: View>: View {
         .themedPage()
         .navigationTitle("标签")
         .navigationBarTitleDisplayMode(.inline)
+        .tagCategorySubtitle(currentGroup?.category.title)
         .onChange(of: term) { _, _ in scrollToTop() }
         .onChange(of: selectedOnly) { _, _ in scrollToTop() }
         .onChange(of: selection.isEmpty) { _, empty in if empty { selectedOnly = false } }
@@ -412,6 +407,17 @@ struct BookTagPicker<Controls: View, Status: View>: View {
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
         withTransaction(transaction) { position.scrollTo(y: offset) }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func tagCategorySubtitle(_ title: String?) -> some View {
+        if #available(iOS 26, *) {
+            navigationSubtitle(title ?? "")
+        } else {
+            self
+        }
     }
 }
 
