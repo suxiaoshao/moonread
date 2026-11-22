@@ -42,6 +42,10 @@ import UIKit
             edit(&value.root, id: id, mutation)
         }
     }
+    func exclusion(of node: BookSearchNode) -> Binding<Bool> {
+        Binding(get: { self.node(node.id)?.excluded ?? node.excluded },
+                set: { excluded in self.edit(node.id) { $0.excluded = excluded } })
+    }
     private func edit(_ node: inout BookSearchNode, id: UUID, _ mutation: (inout BookSearchNode) -> Void) {
         if node.id == id { mutation(&node); return }
         for index in node.children.indices { edit(&node.children[index], id: id, mutation) }
@@ -139,7 +143,7 @@ struct BookSearchEditor: View {
     private func cancel() { if draft.changed { discard = true } else { dismiss() } }
     private var root: BookSearchNode { draft.value.root }
     private var sections: [ThemedGroupedList.Section] {
-        let quick = root.supportsQuickEditing
+        let quick = root.supportsQuickEditing(includingExcluded: true)
         // Keep the section slots stable while UIKit updates the list's layout and snapshot.
         let conditionRows = quick ? BookSearchField.allCases.map(quickConditionRow) : []
         let showsReset = savedConfiguration.map { draft.value != $0 } ?? draft.value.booksOnly
@@ -167,25 +171,39 @@ struct BookSearchEditor: View {
     }
 
     private func quickConditionRow(_ field: BookSearchField) -> ThemedGroupedList.Row {
+        let existing = root.children.first { $0.field == field }
         if field == .status {
             return .init("quickSearchStatusRow") {
-                BookSearchStatusMenu(values: Binding(get: { statusValues }, set: setStatusValues))
+                BookSearchConditionActions(field: field, excluded: existing.map(draft.exclusion)) {
+                    BookSearchStatusMenu(values: Binding(get: { statusValues }, set: setStatusValues))
+                }
             }
         }
 
-        let existing = root.children.first { $0.field == field }
-        let detail = existing.map { node in
-            node.values.map { node.valueTitle($0, shelfTitle: model.shelfTitle) }.joined(separator: "、")
-        } ?? String(localized: "不限")
-        return .init("quickSearch-\(field.rawValue)", action: {
-            path.append(.rule(parent: root.id, node: existing ?? BookSearchNode(field: field)))
-        }, disclosure: true) {
-            HStack {
-                Text(field.title).layoutPriority(1)
-                Spacer()
-                Text(detail).foregroundStyle(Color(uiColor: theme.secondary))
+        let rowID = "quickSearch-\(field.rawValue)"
+        guard let existing else {
+            return .init(rowID, action: {
+                path.append(.rule(parent: root.id, node: BookSearchNode(field: field)))
+            }, disclosure: true) {
+                BookSearchConditionSummary(title: field.title) { Text("不限") }
             }
         }
+        let detail = conditionDetail(existing)
+        return .init(rowID) {
+            BookSearchConditionActions(field: field, excluded: draft.exclusion(of: existing)) {
+                BookSearchConditionButton(action: { path.append(.rule(parent: root.id, node: existing)) }) {
+                    BookSearchConditionSummary(title: field.title) { Text(detail) }
+                }
+                .accessibilityIdentifier(rowID)
+            }
+        }
+    }
+
+    private func conditionDetail(_ node: BookSearchNode) -> String {
+        if node.field == .tag && (node.match == .none || node.values.count > 1) {
+            return node.expression(includingExclusion: false, shelfTitle: model.shelfTitle)
+        }
+        return node.values.map { node.valueTitle($0, shelfTitle: model.shelfTitle) }.joined(separator: "、")
     }
 
     private var sortSection: ThemedGroupedList.Section {
@@ -284,9 +302,98 @@ private struct BookSearchActionLabel: View {
     }
 }
 
+private struct BookSearchConditionActions<Editor: View>: View {
+    let field: BookSearchField
+    let excluded: Binding<Bool>?
+    @ViewBuilder let editor: Editor
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: LayoutTokens.compact))
+            : AnyLayout(HStackLayout(spacing: LayoutTokens.control))
+        layout {
+            if let excluded {
+                exclusionMenu(excluded)
+            }
+            editor
+        }
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+    }
+
+    private func exclusionMenu(_ excluded: Binding<Bool>) -> some View {
+        let isExcluded = excluded.wrappedValue
+        return Menu {
+            Picker("条件作用：\(field.title)", selection: excluded) {
+                Text("包含").tag(false)
+                Text("排除").tag(true)
+            }
+            .pickerStyle(.inline)
+        } label: {
+            ZStack(alignment: .leading) {
+                // Reserve the wider label in every language and at every Dynamic Type size.
+                exclusionLabel(!isExcluded).hidden()
+                exclusionLabel(isExcluded)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .contentShape(.rect)
+        }
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("条件作用：\(field.title)"))
+        .accessibilityValue(Text(isExcluded ? "排除" : "包含"))
+        .accessibilityIdentifier("searchRuleExclusion-\(field.rawValue)")
+    }
+
+    private func exclusionLabel(_ excluded: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text(excluded ? "排除" : "包含")
+                .fontWeight(excluded ? .semibold : .regular)
+            Image(systemName: "chevron.up.chevron.down")
+                .imageScale(.small)
+                .accessibilityHidden(true)
+        }
+        .font(.subheadline)
+        .foregroundStyle(Color(uiColor: excluded ? theme.accent : theme.secondary))
+    }
+}
+
+private struct BookSearchConditionButton<Label: View>: View {
+    let action: () -> Void
+    @ViewBuilder let label: Label
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: LayoutTokens.compact) {
+                label.frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: theme.secondary))
+                    .accessibilityHidden(true)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct BookSearchConditionSummary<Detail: View>: View {
+    let title: String
+    @ViewBuilder let detail: Detail
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).foregroundStyle(Color(uiColor: theme.ink))
+            detail.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+        }
+    }
+}
+
 private struct BookSearchStatusMenu: View {
     @Binding var values: [BookSearchValue]
-    @Environment(\.theme) private var theme
 
     private let displayOrder: [BookSearchStatus] = [.unread, .reading, .finished, .paused]
 
@@ -301,15 +408,15 @@ private struct BookSearchStatusMenu: View {
                     .accessibilityIdentifier("quickSearchStatus-\(status.rawValue)")
             }
         } label: {
-            HStack {
-                Text("阅读状态").foregroundStyle(Color(uiColor: theme.ink))
-                Spacer()
-                Text(summary)
-                Image(systemName: "chevron.up.chevron.down")
-                    .imageScale(.small)
-                    .accessibilityHidden(true)
+            BookSearchConditionSummary(title: BookSearchField.status.title) {
+                HStack(spacing: LayoutTokens.compact) {
+                    Text(summary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .imageScale(.small)
+                        .accessibilityHidden(true)
+                }
             }
-            .foregroundStyle(Color(uiColor: theme.secondary))
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
         }
         .accessibilityLabel(Text("阅读状态"))
@@ -362,21 +469,7 @@ private struct BookSearchGroupPage: View {
                 Toggle("排除本组", isOn: Binding(get: { node.excluded }, set: { value in draft.edit(id) { $0.excluded = value } }))
             }
         ])
-        let rows: [ThemedGroupedList.Row] = node.children.map { child in
-            .init(child.id.uuidString, action: {
-                navigate(child.field == nil ? .group(child.id) : .rule(parent: id, node: child))
-            }, disclosure: true, actions: [
-                .init(title: String(localized: "删除"), destructive: true, perform: {
-                    if child.field == nil { deleting = [child.id] }
-                    else { draft.edit(id) { $0.children.removeAll { $0.id == child.id } } }
-                })
-            ]) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(child.expression(shelfTitle: model.shelfTitle))
-                    if let error = child.validation() { Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.destructive)) }
-                }.padding(.vertical, 4)
-            }
-        }
+        let rows = node.children.map(conditionRow)
         var additions: [ThemedGroupedList.Row] = BookSearchField.allCases.map { field in
             .init("addSearchCondition-\(field.rawValue)", action: { navigate(.rule(parent: id, node: BookSearchNode(field: field))) },
                   disclosure: true) { Text(field.title) }
@@ -394,6 +487,36 @@ private struct BookSearchGroupPage: View {
         return sections
     }
 
+    private func conditionRow(_ child: BookSearchNode) -> ThemedGroupedList.Row {
+        let actions: [ThemedGroupedList.Action] = [
+            .init(title: String(localized: "删除"), destructive: true, perform: {
+                if child.field == nil { deleting = [child.id] }
+                else { draft.edit(id) { $0.children.removeAll { $0.id == child.id } } }
+            })
+        ]
+        if let field = child.field {
+            return .init(child.id.uuidString, actions: actions) {
+                BookSearchConditionActions(field: field, excluded: draft.exclusion(of: child)) {
+                    BookSearchConditionButton(action: { navigate(.rule(parent: id, node: child)) }) {
+                        conditionLabel(child, includingExclusion: false)
+                    }
+                    .accessibilityIdentifier(child.id.uuidString)
+                }
+            }
+        }
+        return .init(child.id.uuidString, action: { navigate(.group(child.id)) }, disclosure: true, actions: actions) {
+            conditionLabel(child, includingExclusion: true).padding(.vertical, 4)
+        }
+    }
+
+    private func conditionLabel(_ child: BookSearchNode, includingExclusion: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(child.expression(includingExclusion: includingExclusion, shelfTitle: model.shelfTitle))
+            if let error = child.validation() {
+                Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.destructive))
+            }
+        }
+    }
 }
 private struct BookSearchRulePage: View {
     let draft: BookSearchDraft

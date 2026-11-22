@@ -272,6 +272,8 @@
     "全部满足": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"全部满足"}},"en":{"stringUnit":{"state":"translated","value":"Match all"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"全部符合"}}}},
     "任一满足": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"任一满足"}},"en":{"stringUnit":{"state":"translated","value":"Match any"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"任一符合"}}}},
     "排除本组": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"排除本组"}},"en":{"stringUnit":{"state":"translated","value":"Exclude this group"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"排除此群組"}}}},
+    "排除": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Exclude"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"排除"}}}},
+    "条件作用：%@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Include or exclude: %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"條件作用：%@"}}}},
     "含全部": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"含全部"}},"en":{"stringUnit":{"state":"translated","value":"Contains all"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"包含全部"}}}},
     "含任一": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"含任一"}},"en":{"stringUnit":{"state":"translated","value":"Contains any"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"包含任一"}}}},
     "均不含": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"均不含"}},"en":{"stringUnit":{"state":"translated","value":"Contains none"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"均不包含"}}}},

@@ -222,7 +222,7 @@ struct AIBookFilterCard: View {
             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                 Text("筛选建议").font(.headline)
                 Group {
-                    if root.supportsQuickEditing, !root.children.isEmpty {
+                    if root.supportsQuickEditing(includingExcluded: false), !root.children.isEmpty {
                         ForEach(root.children) { node in
                             let condition = node.expression(shelfTitle: { $0 })
                             if node.field == .status { Text("阅读状态 · \(condition)") }

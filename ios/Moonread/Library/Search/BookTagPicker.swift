@@ -689,9 +689,10 @@ struct BookSearchTagRulePage: View {
     }
 
     private var node: BookSearchNode {
-        if preservesExistingUntagged, relation != .untagged { return initial }
         var node = initial
-        node.kind = .rule(relation == .untagged ? .untagged : .tag(relation.match, words.map(BookSearchValue.text)))
+        if !preservesExistingUntagged || relation == .untagged {
+            node.kind = .rule(relation == .untagged ? .untagged : .tag(relation.match, words.map(BookSearchValue.text)))
+        }
         return node
     }
 
@@ -709,7 +710,7 @@ struct BookSearchTagRulePage: View {
                 .disabled(preservesExistingUntagged)
                 if preservesExistingUntagged {
                     // A saved mixed or negative predicate keeps its exact meaning until explicitly edited.
-                    Text(initial.expression { $0 }).font(.footnote)
+                    Text(node.expression { $0 }).font(.footnote)
                     Button("移除无标签选项") { preservesExistingUntagged = false }
                 }
             }
