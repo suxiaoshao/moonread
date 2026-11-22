@@ -13,7 +13,7 @@
   let display = params.get('display') === 'outer' ? 'outer' : 'inner';
   let manual = params.has('device');
   const names = {phone:'iPhone', ipad:'iPad', duo:zh ? 'Duo ' + (display === 'inner' ? '内屏' : '外屏') : 'Duo ' + display};
-  const labels = zh ? {R01:'纸色正文',R02:'阅读设置',R03:'跨设备进度',R04:'桌面续读小组件',R05:'文件夹书架',R06:'标注与笔记',R07:'阅读统计',R10:'数据管理',R15:'听书与逐句高亮'} : {R01:'Reading',R02:'Typography',R03:'Synced progress',R04:'Home Screen widget',R05:'Folder library',R06:'Notes',R07:'Reading statistics',R10:'Data management',R15:'Read aloud with sentence highlighting'};
+  const labels = zh ? {R01:'纸色正文',R02:'阅读设置',R03:'跨设备进度',R04:'桌面续读小组件',R05:'文件夹书架',R06:'标注与笔记',R07:'阅读统计',R10:'数据管理',R15:'听书与逐句高亮',R16:'书架首页与继续阅读',R17:'书库搜索',R19:'阅读数据备份导入预览'} : {R01:'Reading',R02:'Typography',R03:'Synced progress',R04:'Home Screen widget',R05:'Folder library',R06:'Notes',R07:'Reading statistics',R10:'Data management',R15:'Read aloud with sentence highlighting',R16:'Library home and Continue Reading',R17:'Library search',R19:'Reading-data backup import preview'};
   function reflect() {
     document.querySelectorAll('[data-device]').forEach(b => b.setAttribute('aria-pressed', b.dataset.device === device));
     document.querySelectorAll('[data-display]').forEach(b => b.setAttribute('aria-pressed', b.dataset.display === display));
@@ -27,10 +27,11 @@
   async function update(f) {
     if (!f.dataset.visible) return;
     const generation = (Number(f.dataset.generation)||0)+1;f.dataset.generation = generation;
-    const code = device === 'phone' ? 'F' : device === 'ipad' ? 'L' : display === 'inner' ? 'I' : 'O';
+    const phoneOnly = f.hasAttribute('data-phone-only');
+    const code = phoneOnly || device === 'phone' ? 'F' : device === 'ipad' ? 'L' : display === 'inner' ? 'I' : 'O';
     const item = data[[lang,code,f.dataset.scene,media.matches?'dark':'light'].join('/')];
     const link=f.querySelector('.shot-link'),message=f.querySelector('.shot-unavailable');
-    const deviceName=device === 'duo' ? (zh?'Duo '+(display==='inner'?'内屏':'外屏'):'Duo '+display) : names[device];
+    const deviceName=phoneOnly ? names.phone : device === 'duo' ? (zh?'Duo '+(display==='inner'?'内屏':'外屏'):'Duo '+display) : names[device];
     
     const unavailable = text => {f.querySelector('.shot-device').textContent=deviceName;link.hidden=true;message.textContent=text;message.hidden=false;};
     if (!item || item.pending) {unavailable(zh?'这张设备截图正在准备中。可切换设备或查看其他画面。':'This device screenshot is being prepared. Choose another device or scene.');return;}

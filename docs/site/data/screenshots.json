@@ -4938,25 +4938,25 @@
           "path": "images/screenshots/zh/F/R10-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 34932
+          "bytes": 32244
         },
         {
           "path": "images/screenshots/zh/F/R10-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 85244
+          "bytes": 78230
         },
         {
           "path": "images/screenshots/zh/F/R10-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 144768
+          "bytes": 130820
         }
       ],
       "source": {
         "id": "R10-F-zh-Hans-light",
-        "origin": "1.7",
-        "sha256": "994a170705292a87972150e27a7d8b56f7d31b8e6e6995564629f3ae51c49fc3",
+        "origin": "1.8",
+        "sha256": "a759348eb41752c610a618c2beebdbe34ea6d421972896446889f582db0f2a15",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -4982,25 +4982,25 @@
           "path": "images/screenshots/zh/F/R10-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 34772
+          "bytes": 31516
         },
         {
           "path": "images/screenshots/zh/F/R10-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 85240
+          "bytes": 77080
         },
         {
           "path": "images/screenshots/zh/F/R10-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 147430
+          "bytes": 130536
         }
       ],
       "source": {
         "id": "R10-F-zh-Hans-dark",
-        "origin": "1.7",
-        "sha256": "be0aad38e2410b23bc9db147fb50dfdee9f9f6553f3b6e12a8e84de3394f4b44",
+        "origin": "1.8",
+        "sha256": "ab29ab86111ed024999f78fc23b9c4e46fdb89633a34f0ab189a47be33f6dd2c",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -5334,25 +5334,25 @@
           "path": "images/screenshots/zh/I/R10-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 14232
+          "bytes": 13478
         },
         {
           "path": "images/screenshots/zh/I/R10-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 39902
+          "bytes": 36982
         },
         {
           "path": "images/screenshots/zh/I/R10-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 79606
+          "bytes": 73214
         }
       ],
       "source": {
         "id": "R10-I-zh-Hans-dark",
-        "origin": "1.7",
-        "sha256": "a03995005334a3e38a36800728fb31cd5e7352f94c192c1bfa48efbc395368aa",
+        "origin": "1.8",
+        "sha256": "1fe34c97650cb6325f9e3add42149fcd6155df09921dd86b30834e90f3078b52",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -5422,25 +5422,25 @@
           "path": "images/screenshots/en/I/R10-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 17064
+          "bytes": 15252
         },
         {
           "path": "images/screenshots/en/I/R10-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 45896
+          "bytes": 41024
         },
         {
           "path": "images/screenshots/en/I/R10-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 90000
+          "bytes": 77990
         }
       ],
       "source": {
         "id": "R10-I-en-dark",
-        "origin": "1.7",
-        "sha256": "66bf718d27c2b98d06d17e6c2c4fa550597c7398dab5b11ba8a5ae83ec6e89e2",
+        "origin": "1.8",
+        "sha256": "3c637d2598cd5d9972eaf0bb0f7cfd92113ca07bc6007ac1c3a09ebf253f2e4a",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -5466,25 +5466,25 @@
           "path": "images/screenshots/zh/L/R10-light-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 9354
+          "bytes": 8274
         },
         {
           "path": "images/screenshots/zh/L/R10-light-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 27082
+          "bytes": 24198
         },
         {
           "path": "images/screenshots/zh/L/R10-light-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 59720
+          "bytes": 53344
         }
       ],
       "source": {
         "id": "R10-L-zh-Hans-light",
-        "origin": "1.7",
-        "sha256": "105a8bfa631ab734b756247b01c256a055c572866d81386a4704769eaab89490",
+        "origin": "1.8",
+        "sha256": "0d61d6b9ea1fa9e307e51670cdb40ff7ea7bdfc2762fe6d76d6c6d14abdd8d21",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -5510,25 +5510,25 @@
           "path": "images/screenshots/zh/L/R10-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 9454
+          "bytes": 8212
         },
         {
           "path": "images/screenshots/zh/L/R10-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 27680
+          "bytes": 24202
         },
         {
           "path": "images/screenshots/zh/L/R10-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 60416
+          "bytes": 53122
         }
       ],
       "source": {
         "id": "R10-L-zh-Hans-dark",
-        "origin": "1.7",
-        "sha256": "a97161d70982d1651030b4df1ef2a01d61ba583c29753f4dbbf7707f30dc1dfa",
+        "origin": "1.8",
+        "sha256": "77a1bedf001dcae22c51684396c379cb77ad6327b13f468b24f52c04f54c534e",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -5554,25 +5554,25 @@
           "path": "images/screenshots/en/L/R10-light-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 11290
+          "bytes": 9896
         },
         {
           "path": "images/screenshots/en/L/R10-light-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 33678
+          "bytes": 29648
         },
         {
           "path": "images/screenshots/en/L/R10-light-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 69838
+          "bytes": 60762
         }
       ],
       "source": {
         "id": "R10-L-en-light",
-        "origin": "1.7",
-        "sha256": "72e1391be1a0806204049095dabdddf449705ab8696328fb84e87db57de1ce89",
+        "origin": "1.8",
+        "sha256": "f29d95d5c0049d8634b8bcd9596e0c6aea33620408b6c3fef4f96c80e68be550",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -5598,25 +5598,25 @@
           "path": "images/screenshots/en/L/R10-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 11324
+          "bytes": 9808
         },
         {
           "path": "images/screenshots/en/L/R10-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 33518
+          "bytes": 29822
         },
         {
           "path": "images/screenshots/en/L/R10-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 69356
+          "bytes": 60418
         }
       ],
       "source": {
         "id": "R10-L-en-dark",
-        "origin": "1.7",
-        "sha256": "95767369b9623373d80e3f733eb8f17eb3a39ed1646ad09de88aef4a2b19ab87",
+        "origin": "1.8",
+        "sha256": "e09f65845bcc8702310943ecc8f6719f630eb14bf0ed25d58477cde341b034ee",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -6497,6 +6497,1590 @@
         "id": "R15-I-en-dark",
         "origin": "1.6",
         "sha256": "0481162614428f3338158793a83b110af924bf33ab52493f52fe9640c49b14ba",
+        "frame": {
+          "file": "duo-inner.png",
+          "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
+          "screen": [
+            120,
+            120,
+            2853,
+            2007
+          ],
+          "canvas": [
+            3093,
+            2247
+          ]
+        }
+      }
+    },
+    "zh/F/R16/light": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/F/R16-light-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 29636
+        },
+        {
+          "path": "images/screenshots/zh/F/R16-light-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 72156
+        },
+        {
+          "path": "images/screenshots/zh/F/R16-light-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 121424
+        }
+      ],
+      "source": {
+        "id": "R16-F-zh-Hans-light",
+        "origin": "1.8",
+        "sha256": "ab73d929acc75f77d7c227d51996582b7ad5bb7f2a1f37c06884741fcf10f564",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "zh/F/R16/dark": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/F/R16-dark-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 28450
+        },
+        {
+          "path": "images/screenshots/zh/F/R16-dark-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 69876
+        },
+        {
+          "path": "images/screenshots/zh/F/R16-dark-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 118892
+        }
+      ],
+      "source": {
+        "id": "R16-F-zh-Hans-dark",
+        "origin": "1.8",
+        "sha256": "e6c5a935e83175a0237596d191c7c6a511e2372ca2cde65161274c40bfa66209",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "en/F/R16/light": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/en/F/R16-light-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 32632
+        },
+        {
+          "path": "images/screenshots/en/F/R16-light-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 76290
+        },
+        {
+          "path": "images/screenshots/en/F/R16-light-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 131790
+        }
+      ],
+      "source": {
+        "id": "R16-F-en-light",
+        "origin": "1.8",
+        "sha256": "65332985899b343239afb804811dce8878a6dfea2b677d2b950c82cb3c168ce6",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "en/F/R16/dark": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/en/F/R16-dark-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 31446
+        },
+        {
+          "path": "images/screenshots/en/F/R16-dark-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 76206
+        },
+        {
+          "path": "images/screenshots/en/F/R16-dark-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 129254
+        }
+      ],
+      "source": {
+        "id": "R16-F-en-dark",
+        "origin": "1.8",
+        "sha256": "3ade29bf789ed9b765e6d7c153495069e35d2e96020a89a7bbe270204569444c",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "zh/F/R17/light": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/F/R17-light-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 24134
+        },
+        {
+          "path": "images/screenshots/zh/F/R17-light-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 58786
+        },
+        {
+          "path": "images/screenshots/zh/F/R17-light-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 100682
+        }
+      ],
+      "source": {
+        "id": "R17-F-zh-Hans-light",
+        "origin": "1.8",
+        "sha256": "774f32ba9edd2be0afafe504d48edba91d8894c538147af8cd5dad61e0f7c6d0",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "zh/F/R17/dark": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/F/R17-dark-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 22964
+        },
+        {
+          "path": "images/screenshots/zh/F/R17-dark-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 56230
+        },
+        {
+          "path": "images/screenshots/zh/F/R17-dark-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 98244
+        }
+      ],
+      "source": {
+        "id": "R17-F-zh-Hans-dark",
+        "origin": "1.8",
+        "sha256": "19b1a2a5a09cae3e92e93ccceba03836c266400967301b8b6c7c1c8aaa431c48",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "en/F/R17/light": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/en/F/R17-light-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 25616
+        },
+        {
+          "path": "images/screenshots/en/F/R17-light-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 60132
+        },
+        {
+          "path": "images/screenshots/en/F/R17-light-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 101740
+        }
+      ],
+      "source": {
+        "id": "R17-F-en-light",
+        "origin": "1.8",
+        "sha256": "5307495befb7efb9f8701a668f26f98307ed5a6fb81cd2d40337c417cd7911f4",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "en/F/R17/dark": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/en/F/R17-dark-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 24466
+        },
+        {
+          "path": "images/screenshots/en/F/R17-dark-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 58658
+        },
+        {
+          "path": "images/screenshots/en/F/R17-dark-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 100184
+        }
+      ],
+      "source": {
+        "id": "R17-F-en-dark",
+        "origin": "1.8",
+        "sha256": "57c7251d6d5665309cdf6b0280e9ab909c1625ea92cf6c451e9d743b8a6fc363",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "zh/F/R19/light": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/F/R19-light-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 29716
+        },
+        {
+          "path": "images/screenshots/zh/F/R19-light-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 71562
+        },
+        {
+          "path": "images/screenshots/zh/F/R19-light-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 116538
+        }
+      ],
+      "source": {
+        "id": "R19-F-zh-Hans-light",
+        "origin": "1.8",
+        "sha256": "a62a350d11c5e1deb509bb192897d8ed6bf913189b26d4296805e2903121927b",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "zh/F/R19/dark": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/F/R19-dark-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 28472
+        },
+        {
+          "path": "images/screenshots/zh/F/R19-dark-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 69064
+        },
+        {
+          "path": "images/screenshots/zh/F/R19-dark-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 114582
+        }
+      ],
+      "source": {
+        "id": "R19-F-zh-Hans-dark",
+        "origin": "1.8",
+        "sha256": "b1b143a094d3156ccbaf75272288d3244399316f03e9e1168101dee0d04cff08",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "en/F/R19/light": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/en/F/R19-light-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 35632
+        },
+        {
+          "path": "images/screenshots/en/F/R19-light-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 83768
+        },
+        {
+          "path": "images/screenshots/en/F/R19-light-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 136558
+        }
+      ],
+      "source": {
+        "id": "R19-F-en-light",
+        "origin": "1.8",
+        "sha256": "74cc0621938f8a3278d9f45981ba66f0d3e1de723cb8f741b4168258e789c0b7",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "en/F/R19/dark": {
+      "cropped": false,
+      "width": 1350,
+      "height": 2760,
+      "variants": [
+        {
+          "path": "images/screenshots/en/F/R19-dark-480.webp",
+          "width": 480,
+          "height": 981,
+          "bytes": 33880
+        },
+        {
+          "path": "images/screenshots/en/F/R19-dark-960.webp",
+          "width": 960,
+          "height": 1963,
+          "bytes": 81300
+        },
+        {
+          "path": "images/screenshots/en/F/R19-dark-1350.webp",
+          "width": 1350,
+          "height": 2760,
+          "bytes": 134952
+        }
+      ],
+      "source": {
+        "id": "R19-F-en-dark",
+        "origin": "1.8",
+        "sha256": "a8fbd9edaed9a9dd8c9b6158582c146a3e559800b8427e3b45cd640288c1944a",
+        "frame": {
+          "file": "iphone18pro.png",
+          "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
+          "screen": [
+            72,
+            69,
+            1206,
+            2622
+          ],
+          "canvas": [
+            1350,
+            2760
+          ]
+        }
+      }
+    },
+    "zh/L/R16/light": {
+      "cropped": false,
+      "width": 3000,
+      "height": 2300,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/L/R16-light-480.webp",
+          "width": 480,
+          "height": 368,
+          "bytes": 5346
+        },
+        {
+          "path": "images/screenshots/zh/L/R16-light-960.webp",
+          "width": 960,
+          "height": 736,
+          "bytes": 14520
+        },
+        {
+          "path": "images/screenshots/zh/L/R16-light-1600.webp",
+          "width": 1600,
+          "height": 1227,
+          "bytes": 31630
+        }
+      ],
+      "source": {
+        "id": "R16-L-zh-Hans-light",
+        "origin": "1.8",
+        "sha256": "6cd6a21354e184c3ee08bb8662ec0713070479d828e3be70a8662aebbf01061f",
+        "frame": {
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
+          "screen": [
+            124,
+            118,
+            2752,
+            2064
+          ],
+          "canvas": [
+            3000,
+            2300
+          ]
+        }
+      }
+    },
+    "zh/L/R16/dark": {
+      "cropped": false,
+      "width": 3000,
+      "height": 2300,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/L/R16-dark-480.webp",
+          "width": 480,
+          "height": 368,
+          "bytes": 4984
+        },
+        {
+          "path": "images/screenshots/zh/L/R16-dark-960.webp",
+          "width": 960,
+          "height": 736,
+          "bytes": 13886
+        },
+        {
+          "path": "images/screenshots/zh/L/R16-dark-1600.webp",
+          "width": 1600,
+          "height": 1227,
+          "bytes": 30288
+        }
+      ],
+      "source": {
+        "id": "R16-L-zh-Hans-dark",
+        "origin": "1.8",
+        "sha256": "0f435dcd8ce1012ecf0f77ee510162dff49d6d5abfabb8ce3e2cac74d79072b7",
+        "frame": {
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
+          "screen": [
+            124,
+            118,
+            2752,
+            2064
+          ],
+          "canvas": [
+            3000,
+            2300
+          ]
+        }
+      }
+    },
+    "en/L/R16/light": {
+      "cropped": false,
+      "width": 3000,
+      "height": 2300,
+      "variants": [
+        {
+          "path": "images/screenshots/en/L/R16-light-480.webp",
+          "width": 480,
+          "height": 368,
+          "bytes": 5982
+        },
+        {
+          "path": "images/screenshots/en/L/R16-light-960.webp",
+          "width": 960,
+          "height": 736,
+          "bytes": 16602
+        },
+        {
+          "path": "images/screenshots/en/L/R16-light-1600.webp",
+          "width": 1600,
+          "height": 1227,
+          "bytes": 34226
+        }
+      ],
+      "source": {
+        "id": "R16-L-en-light",
+        "origin": "1.8",
+        "sha256": "ed47b41da4a017ecf46088537c12b253c362f922c6e69b7484d2418d4de533fb",
+        "frame": {
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
+          "screen": [
+            124,
+            118,
+            2752,
+            2064
+          ],
+          "canvas": [
+            3000,
+            2300
+          ]
+        }
+      }
+    },
+    "en/L/R16/dark": {
+      "cropped": false,
+      "width": 3000,
+      "height": 2300,
+      "variants": [
+        {
+          "path": "images/screenshots/en/L/R16-dark-480.webp",
+          "width": 480,
+          "height": 368,
+          "bytes": 5762
+        },
+        {
+          "path": "images/screenshots/en/L/R16-dark-960.webp",
+          "width": 960,
+          "height": 736,
+          "bytes": 15930
+        },
+        {
+          "path": "images/screenshots/en/L/R16-dark-1600.webp",
+          "width": 1600,
+          "height": 1227,
+          "bytes": 33356
+        }
+      ],
+      "source": {
+        "id": "R16-L-en-dark",
+        "origin": "1.8",
+        "sha256": "f42fcf151c238fa5f844084d48e390ae2a28f7fe43e7ee5669d688aad85330be",
+        "frame": {
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
+          "screen": [
+            124,
+            118,
+            2752,
+            2064
+          ],
+          "canvas": [
+            3000,
+            2300
+          ]
+        }
+      }
+    },
+    "zh/L/R17/light": {
+      "cropped": false,
+      "width": 3000,
+      "height": 2300,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/L/R17-light-480.webp",
+          "width": 480,
+          "height": 368,
+          "bytes": 4304
+        },
+        {
+          "path": "images/screenshots/zh/L/R17-light-960.webp",
+          "width": 960,
+          "height": 736,
+          "bytes": 12128
+        },
+        {
+          "path": "images/screenshots/zh/L/R17-light-1600.webp",
+          "width": 1600,
+          "height": 1227,
+          "bytes": 26442
+        }
+      ],
+      "source": {
+        "id": "R17-L-zh-Hans-light",
+        "origin": "1.8",
+        "sha256": "8d44d60377407af5c3a8f412a1140ce4afd1dffb4d60a18e51c8609530e82e91",
+        "frame": {
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
+          "screen": [
+            124,
+            118,
+            2752,
+            2064
+          ],
+          "canvas": [
+            3000,
+            2300
+          ]
+        }
+      }
+    },
+    "zh/L/R17/dark": {
+      "cropped": false,
+      "width": 3000,
+      "height": 2300,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/L/R17-dark-480.webp",
+          "width": 480,
+          "height": 368,
+          "bytes": 4226
+        },
+        {
+          "path": "images/screenshots/zh/L/R17-dark-960.webp",
+          "width": 960,
+          "height": 736,
+          "bytes": 11794
+        },
+        {
+          "path": "images/screenshots/zh/L/R17-dark-1600.webp",
+          "width": 1600,
+          "height": 1227,
+          "bytes": 25538
+        }
+      ],
+      "source": {
+        "id": "R17-L-zh-Hans-dark",
+        "origin": "1.8",
+        "sha256": "bd3fab8700071d2d13db023c3786d1d253c45aeeaf527713761b5564669a95c9",
+        "frame": {
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
+          "screen": [
+            124,
+            118,
+            2752,
+            2064
+          ],
+          "canvas": [
+            3000,
+            2300
+          ]
+        }
+      }
+    },
+    "en/L/R17/light": {
+      "cropped": false,
+      "width": 3000,
+      "height": 2300,
+      "variants": [
+        {
+          "path": "images/screenshots/en/L/R17-light-480.webp",
+          "width": 480,
+          "height": 368,
+          "bytes": 4746
+        },
+        {
+          "path": "images/screenshots/en/L/R17-light-960.webp",
+          "width": 960,
+          "height": 736,
+          "bytes": 13306
+        },
+        {
+          "path": "images/screenshots/en/L/R17-light-1600.webp",
+          "width": 1600,
+          "height": 1227,
+          "bytes": 27670
+        }
+      ],
+      "source": {
+        "id": "R17-L-en-light",
+        "origin": "1.8",
+        "sha256": "72baa8288d2faefb8d8ac615cb7bafaeb52443e21fd3308a6d3abf02a0443f06",
+        "frame": {
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
+          "screen": [
+            124,
+            118,
+            2752,
+            2064
+          ],
+          "canvas": [
+            3000,
+            2300
+          ]
+        }
+      }
+    },
+    "en/L/R17/dark": {
+      "cropped": false,
+      "width": 3000,
+      "height": 2300,
+      "variants": [
+        {
+          "path": "images/screenshots/en/L/R17-dark-480.webp",
+          "width": 480,
+          "height": 368,
+          "bytes": 4650
+        },
+        {
+          "path": "images/screenshots/en/L/R17-dark-960.webp",
+          "width": 960,
+          "height": 736,
+          "bytes": 12838
+        },
+        {
+          "path": "images/screenshots/en/L/R17-dark-1600.webp",
+          "width": 1600,
+          "height": 1227,
+          "bytes": 27234
+        }
+      ],
+      "source": {
+        "id": "R17-L-en-dark",
+        "origin": "1.8",
+        "sha256": "8f0373bed6944c54f8ba670fac180eaefaae729934946f437e9dcbd594ddb5f2",
+        "frame": {
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
+          "screen": [
+            124,
+            118,
+            2752,
+            2064
+          ],
+          "canvas": [
+            3000,
+            2300
+          ]
+        }
+      }
+    },
+    "zh/O/R16/light": {
+      "cropped": false,
+      "width": 1574,
+      "height": 2194,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/O/R16-light-480.webp",
+          "width": 480,
+          "height": 669,
+          "bytes": 21396
+        },
+        {
+          "path": "images/screenshots/zh/O/R16-light-960.webp",
+          "width": 960,
+          "height": 1338,
+          "bytes": 52438
+        },
+        {
+          "path": "images/screenshots/zh/O/R16-light-1574.webp",
+          "width": 1574,
+          "height": 2194,
+          "bytes": 100256
+        }
+      ],
+      "source": {
+        "id": "R16-O-zh-Hans-light",
+        "origin": "1.8",
+        "sha256": "c652ea102999c7d8ad5045a7a5082a4ed05ece2ebd1a60bfefbeafd644c7fca8",
+        "frame": {
+          "file": "duo-outer.png",
+          "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
+          "screen": [
+            88,
+            80,
+            1398,
+            2034
+          ],
+          "canvas": [
+            1574,
+            2194
+          ]
+        }
+      }
+    },
+    "zh/O/R16/dark": {
+      "cropped": false,
+      "width": 1574,
+      "height": 2194,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/O/R16-dark-480.webp",
+          "width": 480,
+          "height": 669,
+          "bytes": 20320
+        },
+        {
+          "path": "images/screenshots/zh/O/R16-dark-960.webp",
+          "width": 960,
+          "height": 1338,
+          "bytes": 50052
+        },
+        {
+          "path": "images/screenshots/zh/O/R16-dark-1574.webp",
+          "width": 1574,
+          "height": 2194,
+          "bytes": 97992
+        }
+      ],
+      "source": {
+        "id": "R16-O-zh-Hans-dark",
+        "origin": "1.8",
+        "sha256": "04d38b86f679a4f68c051a72d435f9c93e4a4ee491bb5f6c93ac32d149df2648",
+        "frame": {
+          "file": "duo-outer.png",
+          "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
+          "screen": [
+            88,
+            80,
+            1398,
+            2034
+          ],
+          "canvas": [
+            1574,
+            2194
+          ]
+        }
+      }
+    },
+    "en/O/R16/light": {
+      "cropped": false,
+      "width": 1574,
+      "height": 2194,
+      "variants": [
+        {
+          "path": "images/screenshots/en/O/R16-light-480.webp",
+          "width": 480,
+          "height": 669,
+          "bytes": 22168
+        },
+        {
+          "path": "images/screenshots/en/O/R16-light-960.webp",
+          "width": 960,
+          "height": 1338,
+          "bytes": 53274
+        },
+        {
+          "path": "images/screenshots/en/O/R16-light-1574.webp",
+          "width": 1574,
+          "height": 2194,
+          "bytes": 100634
+        }
+      ],
+      "source": {
+        "id": "R16-O-en-light",
+        "origin": "1.8",
+        "sha256": "27a15b12035cef2c915da9c7c8001ce5a4c0a0b83c2c335d3810c302109f9c21",
+        "frame": {
+          "file": "duo-outer.png",
+          "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
+          "screen": [
+            88,
+            80,
+            1398,
+            2034
+          ],
+          "canvas": [
+            1574,
+            2194
+          ]
+        }
+      }
+    },
+    "en/O/R16/dark": {
+      "cropped": false,
+      "width": 1574,
+      "height": 2194,
+      "variants": [
+        {
+          "path": "images/screenshots/en/O/R16-dark-480.webp",
+          "width": 480,
+          "height": 669,
+          "bytes": 21302
+        },
+        {
+          "path": "images/screenshots/en/O/R16-dark-960.webp",
+          "width": 960,
+          "height": 1338,
+          "bytes": 51586
+        },
+        {
+          "path": "images/screenshots/en/O/R16-dark-1574.webp",
+          "width": 1574,
+          "height": 2194,
+          "bytes": 99464
+        }
+      ],
+      "source": {
+        "id": "R16-O-en-dark",
+        "origin": "1.8",
+        "sha256": "38945de508f83e30047c03dfb461749a332ff9fbb9814d878ab988918d54c06d",
+        "frame": {
+          "file": "duo-outer.png",
+          "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
+          "screen": [
+            88,
+            80,
+            1398,
+            2034
+          ],
+          "canvas": [
+            1574,
+            2194
+          ]
+        }
+      }
+    },
+    "zh/O/R17/light": {
+      "cropped": false,
+      "width": 1574,
+      "height": 2194,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/O/R17-light-480.webp",
+          "width": 480,
+          "height": 669,
+          "bytes": 18672
+        },
+        {
+          "path": "images/screenshots/zh/O/R17-light-960.webp",
+          "width": 960,
+          "height": 1338,
+          "bytes": 46344
+        },
+        {
+          "path": "images/screenshots/zh/O/R17-light-1574.webp",
+          "width": 1574,
+          "height": 2194,
+          "bytes": 89556
+        }
+      ],
+      "source": {
+        "id": "R17-O-zh-Hans-light",
+        "origin": "1.8",
+        "sha256": "3e4d4dc103331e3ec65a423b538f97fe9218e8f29f35ffe8bf8c11e5bdeda0fa",
+        "frame": {
+          "file": "duo-outer.png",
+          "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
+          "screen": [
+            88,
+            80,
+            1398,
+            2034
+          ],
+          "canvas": [
+            1574,
+            2194
+          ]
+        }
+      }
+    },
+    "zh/O/R17/dark": {
+      "cropped": false,
+      "width": 1574,
+      "height": 2194,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/O/R17-dark-480.webp",
+          "width": 480,
+          "height": 669,
+          "bytes": 17826
+        },
+        {
+          "path": "images/screenshots/zh/O/R17-dark-960.webp",
+          "width": 960,
+          "height": 1338,
+          "bytes": 44702
+        },
+        {
+          "path": "images/screenshots/zh/O/R17-dark-1574.webp",
+          "width": 1574,
+          "height": 2194,
+          "bytes": 87862
+        }
+      ],
+      "source": {
+        "id": "R17-O-zh-Hans-dark",
+        "origin": "1.8",
+        "sha256": "b25fdc520a74d0aab648e476f21c8ccd74aafd0e03f216728a47ab8fcae054b8",
+        "frame": {
+          "file": "duo-outer.png",
+          "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
+          "screen": [
+            88,
+            80,
+            1398,
+            2034
+          ],
+          "canvas": [
+            1574,
+            2194
+          ]
+        }
+      }
+    },
+    "en/O/R17/light": {
+      "cropped": false,
+      "width": 1574,
+      "height": 2194,
+      "variants": [
+        {
+          "path": "images/screenshots/en/O/R17-light-480.webp",
+          "width": 480,
+          "height": 669,
+          "bytes": 20538
+        },
+        {
+          "path": "images/screenshots/en/O/R17-light-960.webp",
+          "width": 960,
+          "height": 1338,
+          "bytes": 48916
+        },
+        {
+          "path": "images/screenshots/en/O/R17-light-1574.webp",
+          "width": 1574,
+          "height": 2194,
+          "bytes": 92522
+        }
+      ],
+      "source": {
+        "id": "R17-O-en-light",
+        "origin": "1.8",
+        "sha256": "be121a5e890f3f0aa0b953e20651f71a0506ee7ad1da8d4bff16d631eb54cebb",
+        "frame": {
+          "file": "duo-outer.png",
+          "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
+          "screen": [
+            88,
+            80,
+            1398,
+            2034
+          ],
+          "canvas": [
+            1574,
+            2194
+          ]
+        }
+      }
+    },
+    "en/O/R17/dark": {
+      "cropped": false,
+      "width": 1574,
+      "height": 2194,
+      "variants": [
+        {
+          "path": "images/screenshots/en/O/R17-dark-480.webp",
+          "width": 480,
+          "height": 669,
+          "bytes": 19958
+        },
+        {
+          "path": "images/screenshots/en/O/R17-dark-960.webp",
+          "width": 960,
+          "height": 1338,
+          "bytes": 47564
+        },
+        {
+          "path": "images/screenshots/en/O/R17-dark-1574.webp",
+          "width": 1574,
+          "height": 2194,
+          "bytes": 91496
+        }
+      ],
+      "source": {
+        "id": "R17-O-en-dark",
+        "origin": "1.8",
+        "sha256": "448f3caa5dc8767e4a6078bc75b350af4c975533c044ed832d9b414260a10cb3",
+        "frame": {
+          "file": "duo-outer.png",
+          "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
+          "screen": [
+            88,
+            80,
+            1398,
+            2034
+          ],
+          "canvas": [
+            1574,
+            2194
+          ]
+        }
+      }
+    },
+    "zh/I/R16/light": {
+      "cropped": false,
+      "width": 3093,
+      "height": 2247,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/I/R16-light-480.webp",
+          "width": 480,
+          "height": 349,
+          "bytes": 10100
+        },
+        {
+          "path": "images/screenshots/zh/I/R16-light-960.webp",
+          "width": 960,
+          "height": 697,
+          "bytes": 26258
+        },
+        {
+          "path": "images/screenshots/zh/I/R16-light-1600.webp",
+          "width": 1600,
+          "height": 1162,
+          "bytes": 52082
+        }
+      ],
+      "source": {
+        "id": "R16-I-zh-Hans-light",
+        "origin": "1.8",
+        "sha256": "e3b32bc6127cbcbe232f01b56c95dfe2d0d02b1383c06bafa184d0035d18c417",
+        "frame": {
+          "file": "duo-inner.png",
+          "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
+          "screen": [
+            120,
+            120,
+            2853,
+            2007
+          ],
+          "canvas": [
+            3093,
+            2247
+          ]
+        }
+      }
+    },
+    "zh/I/R16/dark": {
+      "cropped": false,
+      "width": 3093,
+      "height": 2247,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/I/R16-dark-480.webp",
+          "width": 480,
+          "height": 349,
+          "bytes": 9466
+        },
+        {
+          "path": "images/screenshots/zh/I/R16-dark-960.webp",
+          "width": 960,
+          "height": 697,
+          "bytes": 24820
+        },
+        {
+          "path": "images/screenshots/zh/I/R16-dark-1600.webp",
+          "width": 1600,
+          "height": 1162,
+          "bytes": 50308
+        }
+      ],
+      "source": {
+        "id": "R16-I-zh-Hans-dark",
+        "origin": "1.8",
+        "sha256": "e12f5319c0dc01ba55fb1ef7f419e73cd2df4057fe594cbf7ae038b7042e262a",
+        "frame": {
+          "file": "duo-inner.png",
+          "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
+          "screen": [
+            120,
+            120,
+            2853,
+            2007
+          ],
+          "canvas": [
+            3093,
+            2247
+          ]
+        }
+      }
+    },
+    "en/I/R16/light": {
+      "cropped": false,
+      "width": 3093,
+      "height": 2247,
+      "variants": [
+        {
+          "path": "images/screenshots/en/I/R16-light-480.webp",
+          "width": 480,
+          "height": 349,
+          "bytes": 11596
+        },
+        {
+          "path": "images/screenshots/en/I/R16-light-960.webp",
+          "width": 960,
+          "height": 697,
+          "bytes": 28700
+        },
+        {
+          "path": "images/screenshots/en/I/R16-light-1600.webp",
+          "width": 1600,
+          "height": 1162,
+          "bytes": 55644
+        }
+      ],
+      "source": {
+        "id": "R16-I-en-light",
+        "origin": "1.8",
+        "sha256": "f669f8e310f7ae3fec07e4003ac8d0f85f16360cf2aa0dccf2216a7b9cbecf90",
+        "frame": {
+          "file": "duo-inner.png",
+          "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
+          "screen": [
+            120,
+            120,
+            2853,
+            2007
+          ],
+          "canvas": [
+            3093,
+            2247
+          ]
+        }
+      }
+    },
+    "en/I/R16/dark": {
+      "cropped": false,
+      "width": 3093,
+      "height": 2247,
+      "variants": [
+        {
+          "path": "images/screenshots/en/I/R16-dark-480.webp",
+          "width": 480,
+          "height": 349,
+          "bytes": 10934
+        },
+        {
+          "path": "images/screenshots/en/I/R16-dark-960.webp",
+          "width": 960,
+          "height": 697,
+          "bytes": 27786
+        },
+        {
+          "path": "images/screenshots/en/I/R16-dark-1600.webp",
+          "width": 1600,
+          "height": 1162,
+          "bytes": 54702
+        }
+      ],
+      "source": {
+        "id": "R16-I-en-dark",
+        "origin": "1.8",
+        "sha256": "0f264bc232fd1f5a4d8acf4b1464647bc57d6a9db6d2fbe63515538023b22565",
+        "frame": {
+          "file": "duo-inner.png",
+          "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
+          "screen": [
+            120,
+            120,
+            2853,
+            2007
+          ],
+          "canvas": [
+            3093,
+            2247
+          ]
+        }
+      }
+    },
+    "zh/I/R17/light": {
+      "cropped": false,
+      "width": 3093,
+      "height": 2247,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/I/R17-light-480.webp",
+          "width": 480,
+          "height": 349,
+          "bytes": 8762
+        },
+        {
+          "path": "images/screenshots/zh/I/R17-light-960.webp",
+          "width": 960,
+          "height": 697,
+          "bytes": 22862
+        },
+        {
+          "path": "images/screenshots/zh/I/R17-light-1600.webp",
+          "width": 1600,
+          "height": 1162,
+          "bytes": 43824
+        }
+      ],
+      "source": {
+        "id": "R17-I-zh-Hans-light",
+        "origin": "1.8",
+        "sha256": "e5ae278116ff0a2a28d2fe0a9bd545ab96c8919c21ca2b3a1feae5da523b9c03",
+        "frame": {
+          "file": "duo-inner.png",
+          "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
+          "screen": [
+            120,
+            120,
+            2853,
+            2007
+          ],
+          "canvas": [
+            3093,
+            2247
+          ]
+        }
+      }
+    },
+    "zh/I/R17/dark": {
+      "cropped": false,
+      "width": 3093,
+      "height": 2247,
+      "variants": [
+        {
+          "path": "images/screenshots/zh/I/R17-dark-480.webp",
+          "width": 480,
+          "height": 349,
+          "bytes": 8338
+        },
+        {
+          "path": "images/screenshots/zh/I/R17-dark-960.webp",
+          "width": 960,
+          "height": 697,
+          "bytes": 21456
+        },
+        {
+          "path": "images/screenshots/zh/I/R17-dark-1600.webp",
+          "width": 1600,
+          "height": 1162,
+          "bytes": 43110
+        }
+      ],
+      "source": {
+        "id": "R17-I-zh-Hans-dark",
+        "origin": "1.8",
+        "sha256": "1f0a52444cc171bfe5e924ac2b8b13d8caed168aa1b56f6d7c4478c3c7830872",
+        "frame": {
+          "file": "duo-inner.png",
+          "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
+          "screen": [
+            120,
+            120,
+            2853,
+            2007
+          ],
+          "canvas": [
+            3093,
+            2247
+          ]
+        }
+      }
+    },
+    "en/I/R17/light": {
+      "cropped": false,
+      "width": 3093,
+      "height": 2247,
+      "variants": [
+        {
+          "path": "images/screenshots/en/I/R17-light-480.webp",
+          "width": 480,
+          "height": 349,
+          "bytes": 9402
+        },
+        {
+          "path": "images/screenshots/en/I/R17-light-960.webp",
+          "width": 960,
+          "height": 697,
+          "bytes": 24242
+        },
+        {
+          "path": "images/screenshots/en/I/R17-light-1600.webp",
+          "width": 1600,
+          "height": 1162,
+          "bytes": 45600
+        }
+      ],
+      "source": {
+        "id": "R17-I-en-light",
+        "origin": "1.8",
+        "sha256": "310a99f4483456b5bdbd560d0c818a1957c50d8dd08439d017d1214aa8a4c190",
+        "frame": {
+          "file": "duo-inner.png",
+          "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
+          "screen": [
+            120,
+            120,
+            2853,
+            2007
+          ],
+          "canvas": [
+            3093,
+            2247
+          ]
+        }
+      }
+    },
+    "en/I/R17/dark": {
+      "cropped": false,
+      "width": 3093,
+      "height": 2247,
+      "variants": [
+        {
+          "path": "images/screenshots/en/I/R17-dark-480.webp",
+          "width": 480,
+          "height": 349,
+          "bytes": 9138
+        },
+        {
+          "path": "images/screenshots/en/I/R17-dark-960.webp",
+          "width": 960,
+          "height": 697,
+          "bytes": 23082
+        },
+        {
+          "path": "images/screenshots/en/I/R17-dark-1600.webp",
+          "width": 1600,
+          "height": 1162,
+          "bytes": 44936
+        }
+      ],
+      "source": {
+        "id": "R17-I-en-dark",
+        "origin": "1.8",
+        "sha256": "a7433545a6d7564cffa0da44480c805aed6311338c2e2f4ab6691e24523eff45",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",

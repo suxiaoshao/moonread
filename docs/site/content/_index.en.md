@@ -9,4 +9,5 @@ listening_alt = "Moonread playback controls and sentence highlighting"
 typography_alt = "Moonread typography settings"
 widget_alt = "Moonread Home Screen widget"
 library_alt = "Moonread folder library"
+backup_preview_alt = "Reading-data backup import preview"
 +++
