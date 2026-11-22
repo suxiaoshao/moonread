@@ -151,13 +151,6 @@ extension ReaderIndex {
         }
     }
 
-    func sourceFilesAtPath(shelfId: String, relativePath: String) throws -> [SourceFileSnapshot] {
-        try Self.validate(relativePath)
-        return try read { db in
-            try Self.sourceRows(db, where: "f.shelf_id=? AND f.relative_path=?", args: [shelfId,relativePath])
-        }
-    }
-
     func sourceFilesForSha(sha: String) throws -> [SourceFileSnapshot] {
         _ = try parseSha256(value: sha)
         return try read { db in
@@ -348,16 +341,6 @@ extension ReaderIndex {
                 SELECT v.file_id,v.raw_sha256,v.decoding FROM main.valid_indexed_identities v
                 JOIN main.library_files f ON f.id=v.file_id WHERE f.shelf_id=?
                 """, arguments: [shelfId]).map { .init(fileId: $0["file_id"], rawSha256: $0["raw_sha256"], decoding: $0["decoding"]) }
-        }
-    }
-
-    func indexedSourceKeys(shelfId: String?, fileId: String?) throws -> [String] {
-        try read { db in
-            try String.fetchAll(db, sql: """
-                SELECT DISTINCT v.content_sha256 FROM main.library_files f
-                JOIN main.valid_indexed_identities v ON v.file_id=f.id
-                WHERE (? IS NULL OR f.shelf_id=?) AND (? IS NULL OR f.id=?)
-                """, arguments: [shelfId,shelfId,fileId,fileId])
         }
     }
 

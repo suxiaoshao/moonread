@@ -1,8 +1,5 @@
 import MoonreadAI
 import MarkdownView
-import MarkdownParser
-import Litext
-import CoreText
 import SwiftUI
 import UIKit
 

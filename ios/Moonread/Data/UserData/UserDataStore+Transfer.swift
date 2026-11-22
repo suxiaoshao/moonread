@@ -119,4 +119,35 @@ extension UserDataStore {
             for row in facts { modelContext.delete(row) }
         }
     }
+
+    static func samePayload(_ a: String, _ b: String) -> Bool {
+        guard let a = try? UserSyncJSON.versioned(a), let b = try? UserSyncJSON.versioned(b) else { return false }
+        return sameVersionedPayload(a, b)
+    }
+    static func sameFactPayload(_ a: UserSyncJSON.ValidatedFact, _ b: UserSyncJSON.ValidatedFact) -> Bool {
+        guard let a = try? a.versioned(), let b = try? b.versioned() else { return false }
+        return sameVersionedPayload(a, b)
+    }
+    private static func sameVersionedPayload(_ a: String, _ b: String) -> Bool {
+        guard let left = try? JSONSerialization.jsonObject(with: Data(a.utf8)) as? NSDictionary,
+              let right = try? JSONSerialization.jsonObject(with: Data(b.utf8)) as? NSDictionary else { return false }
+        return left.isEqual(right)
+    }
+    /// Immutable value intake for legacy upgrade candidates.
+    /// The existing value projection remains the only winner selection.
+    func mergeValueRecord(key: String, device: String, payload: String) throws {
+        let incoming = try UserSyncJSON.storedValue(payload, key: key)
+        _ = try value(key) // Unknown siblings remain isolated.
+        let old = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == key }))
+        var exists = false
+        for row in old {
+            let parsed = try UserSyncJSON.storedValue(row.payload, key: key)
+            if parsed.token == incoming.token {
+                let same = key.hasPrefix("position/") ? try PositionCandidate.sameUpdate(parsed, incoming) : Self.samePayload(row.payload, payload)
+                guard same else { throw ReadingDataError.invalid }
+                exists = true
+            }
+        }
+        if !exists { modelContext.insert(UserValue(key: key, device: device, payload: payload)) }
+    }
 }
