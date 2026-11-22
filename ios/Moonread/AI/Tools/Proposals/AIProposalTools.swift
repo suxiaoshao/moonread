@@ -99,7 +99,7 @@ enum AIResolvedSource: Sendable, Identifiable {
         case .note(let p): ref = p.bookRef
         case .cover(let p): ref = p.bookRef
         case .findCover(let p): ref = p.bookRef
-        case .organization: return
+        case .organization, .bookFilter: return
         }
         do { let sha = try await AIReadingReferences(reader: reader).sha(ref); liveMetadata[id] = try await reader.details(sha: sha).metadata }
         catch { /* Optional refresh does not turn an actual business save into failure. */ }
@@ -158,6 +158,8 @@ enum AIResolvedSource: Sendable, Identifiable {
             let plan = AIOrganizationPlan(proposal: p, scope: location, reader: reader)
             try await plan.prepare()
             body = .organization(plan)
+        case .bookFilter:
+            throw AIToolError("invalid_argument")
         }
         return .init(id: result.id, sessionID: result.sessionID, result: result, body: body)
     }

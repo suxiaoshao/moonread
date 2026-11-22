@@ -12,6 +12,8 @@ public protocol AIReadingToolActions: Actor {
   func mark(_ input: AIMarkInput) async throws -> AIToolResponse<AIMarkResult>
   func statistics(_ input: AIStatisticsInput) async throws -> AIToolResponse<AIStatisticsResult>
   func environment(_ input: AIEnvironmentInput) -> AIToolResponse<AIEnvironmentResult>
+  func listFilterOptions(_ input: AIFilterOptionsInput) async throws -> AIToolResponse<AIFilterOptionsResult>
+  func proposeBookFilter(_ input: AIBookFilterInput) async throws -> AIToolResponse<AIBookFilterSuggestion>
 }
 
 extension AIReadingToolActions {
@@ -26,6 +28,18 @@ extension AIReadingToolActions {
         name: "search_books",
         description: "Find novels by indexed title, author, synopsis, tags and reading status.",
         input: AISearchBooksInput.self, execute: { try await self.searchBooks($0) }),
+      .init(
+        name: "list_filter_options",
+        description: "For a book filter, look up exact tag, author, or shelf names here instead of enumerating books. An omitted query browses the names. Continue with page.nextCursor and the same field and query. Returns names only.",
+        input: AIFilterOptionsInput.self, execute: { try await self.listFilterOptions($0) }),
+      .init(
+        name: "propose_book_filter",
+        description: """
+          Suggest a book search filter as a clickable card. This does not run a search or save a shelf. Use only supported constraints. If part of the user's request cannot be expressed (e.g. read during the last 30 days), explain and ask before proposing a broader filter.
+          nodes is a flat tree in display order. Start with {kind:"group",relation:"all"} at index 0. Set each later node's parent to the zero-based index of an earlier group. Groups use all/any. Any node may set excluded:true. Status values are unread, reading, finished, paused. A tag rule uses relation all/any/none and exact names. Use the untagged kind without values for books with no tags. Author and shelf rules match any listed exact name.
+          sorts is in priority order: field recent, name, or author, with descending true or false. Use nodes:[] for a sort-only suggestion and sorts:[] for default order. For tag/author/shelf names, use list_filter_options if uncertain. Use exact names, no IDs, text query or links. A successful suggestion needs no repeated card content in the reply.
+          """,
+        input: AIBookFilterInput.self, execute: { try await self.proposeBookFilter($0) }),
       .init(
         name: "get_book",
         description:

@@ -21,7 +21,11 @@ struct ReaderTaskContent: View {
         switch visit?.route {
         case .ai(let context) where ai.availability.isAvailable:
             AIEntry {
-                AIReadingConversation(context: context, close: closeTask, selected: $aiConversationID, openingIsActive: openingIsActive)
+                AIReadingConversation(context: context, close: closeTask, selected: $aiConversationID, openingIsActive: openingIsActive,
+                    readingSearch: .init(isOpenBook: { entry in
+                        if let sha = session.book?.readingKey.formalSHA256 { return entry.readingKey == sha }
+                        return session.readingID.map { entry.bookId == $0 } ?? false
+                    }, returnToBook: closeTask))
             }
         case .note(let model), .library(.note(_, let model)):
             NoteEditor(model: model, close: closeTask)

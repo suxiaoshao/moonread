@@ -74,6 +74,51 @@ actor AIReadingTools: AIReadingToolActions {
       sourceRef: Self.ref("source", "\(ref):\(range.startUtf8):\(range.endUtf8)"), bookRef: ref,
       title: title, range: range)
   }
+
+  func listFilterOptions(_ input: AIFilterOptionsInput) async throws -> AIToolResponse<AIFilterOptionsResult> {
+    let names: [String]
+    switch input.field {
+    case .tag: names = try await reader.metadataOptions(shelfID: nil).tags.map(\.name)
+    case .author: names = try await reader.metadataOptions(shelfID: nil).authors
+    case .shelf: names = LibraryQueryRules.filterShelves(try await reader.shelves()).map(LibraryQueryRules.filterShelfName)
+    }
+    let term = input.query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    var seen = Set<Data>()
+    let matches = LibraryQueryRules.filterSuggestions(names, query: term).filter { seen.insert(Data($0.utf8)).inserted }
+    let query = AIFilterOptionsInput(field: input.field, query: term)
+    let (rows, page) = try page(matches, signature: signature("list_filter_options", query), cursor: input.cursor, limit: 100)
+    return .init(data: .init(names: rows), page: page)
+  }
+
+  func proposeBookFilter(_ input: AIBookFilterInput) async throws -> AIToolResponse<AIBookFilterSuggestion> {
+    _ = try input.configuration(resolveShelf: { $0 })
+    if input.nodes.contains(where: { $0.kind == .author || $0.kind == .tag }) {
+      let options = try await reader.metadataOptions(shelfID: nil)
+      let tags = Set(options.tags.map { Data($0.name.utf8) })
+      let authors = Set(options.authors.map { Data($0.utf8) })
+      for node in input.nodes where node.kind == .tag || node.kind == .author {
+        let candidates = node.kind == .tag ? tags : authors
+        if let missing = node.values?.first(where: { !candidates.contains(Data($0.utf8)) }) {
+          throw AIToolError("not_found", field: node.kind.rawValue,
+                            message: "No exact match for “\(missing)”. Use list_filter_options or ask the user; do not drop the condition.")
+        }
+      }
+    }
+    let names = input.shelfNames
+    var references: [AIBookFilterSuggestion.Shelf] = []
+    if !names.isEmpty {
+      let shelves = LibraryQueryRules.filterShelves(try await reader.shelves())
+      for name in names {
+        let matches = shelves.filter { LibraryQueryRules.filterShelfName($0).utf8.elementsEqual(name.utf8) }
+        guard let shelf = matches.first else {
+          throw AIToolError("not_found", field: "shelf",
+                            message: "No exact shelf name “\(name)”. Use list_filter_options or ask the user.")
+        }
+        if matches.count == 1 { references.append(.init(name: name, reference: AIBookFilterSuggestion.shelfReference(shelf))) }
+      }
+    }
+    return .init(data: .init(filter: input, shelves: references))
+  }
   private func availability(_ row: LibraryEntry) -> String {
     row.needsDownload ? "needs_download" : row.bookId == nil ? "needs_parse" : "ready"
   }

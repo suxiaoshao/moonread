@@ -118,9 +118,10 @@ private struct SavedFilterRow: View {
 struct SavedFilterDestination: View {
     let model: LibraryModel
     let id: UUID
+    var host = AppSearchHost()
     var body: some View {
         if let entry = model.savedFilters.entries.first(where: { $0.id == id }) {
-            SavedFilterPage(model: model, entry: entry).id(id)
+            SavedFilterPage(model: model, entry: entry, host: host).id(id)
         } else {
             ContentUnavailableView("虚拟书架已移除", systemImage: "line.3.horizontal.decrease.circle").themedPage()
         }
@@ -130,18 +131,20 @@ struct SavedFilterDestination: View {
 private struct SavedFilterPage: View {
     let model: LibraryModel
     let entry: SavedFilter
+    let host: AppSearchHost
     @State private var search: AppSearch
 
-    init(model: LibraryModel, entry: SavedFilter) {
+    init(model: LibraryModel, entry: SavedFilter, host: AppSearchHost) {
         self.model = model
         self.entry = entry
+        self.host = host
         let search = AppSearch()
         search.configuration = entry.configuration
         _search = State(initialValue: search)
     }
 
     var body: some View {
-        AppSearchView(model: model, search: search, savedFilter: entry)
+        AppSearchView(model: model, search: search, host: host, savedFilter: entry)
     }
 }
 

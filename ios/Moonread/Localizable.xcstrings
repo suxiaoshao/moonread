@@ -1,6 +1,13 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "筛选建议": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Filter suggestion"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"篩選建議"}}}},
+    "阅读状态 · %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading status · %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"閱讀狀態 · %@"}}}},
+    "查看搜索结果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"View search results"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"查看搜尋結果"}}}},
+    "选择书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Choose a bookshelf"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"選擇書架"}}}},
+    "书架「%@」当前不可用，可在对话中调整筛选。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The bookshelf “%@” is unavailable. You can revise the filter in the conversation."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書架「%@」目前無法使用，可在對話中調整篩選。"}}}},
+    "查找筛选选项": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Find filter options"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"尋找篩選選項"}}}},
+    "建议书架筛选": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Suggest a bookshelf filter"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"建議書架篩選"}}}},
     "已选 %lld": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%lld Selected"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已選 %lld"}}}},
     "尚未选择标签": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No tags selected"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"尚未選擇標籤"}}}},
     "筛选没有标签的小说": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Find Untagged Books"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"篩選沒有標籤的小說"}}}},

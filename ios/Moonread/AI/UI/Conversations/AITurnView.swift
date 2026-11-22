@@ -419,6 +419,7 @@ struct AIMessageRowView: View {
     let taskObject: AITaskObject?
     let preview: (AIReadingAttachment) -> Void
     let loadEarlier: () -> Void
+    let openFilter: (AIBookFilterSuggestion) -> Void
     let toggleProcessItem: AIProcessExpansionHandler
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
@@ -468,7 +469,13 @@ struct AIMessageRowView: View {
                 }.padding(LayoutTokens.content)
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: LayoutTokens.inputRadius))
             case .image(let image): AIGeneratedImageView(owner: conversationID, attachment: image)
-            case .result(let result, _): AIResultCard(result: result)
+            case .result(let result, _):
+                if case .bookFilter(let suggestion, let summary) = result.body {
+                    AIBookFilterCard(suggestion: suggestion, configuration: summary) { openFilter(suggestion) }
+                        .accessibilityIdentifier("aiResult-\(result.id)")
+                } else {
+                    AIResultCard(result: result)
+                }
             case .error(let text): Label(text, systemImage: "exclamationmark.circle").font(.subheadline).foregroundStyle(Color(uiColor: theme.destructive))
             case .actions(let answer, let outcome):
                 HStack(spacing: LayoutTokens.compact) {

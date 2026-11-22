@@ -418,7 +418,7 @@ private struct BookSearchRulePage: View {
         case .status: BookSearchStatus.allCases.map { .text($0.rawValue) }
         case .tag: []
         case .author: (options?.authors ?? []).map(BookSearchValue.text)
-        case .shelf: model.shelves.filter { $0.error == nil }.map { .text($0.id) }
+        case .shelf: LibraryQueryRules.filterShelves(model.shelves).map { .text($0.id) }
         }
     }
     private var concreteValues: [BookSearchValue] {
@@ -540,8 +540,12 @@ private struct BookSearchRulePage: View {
         } label: {
             HStack {
                 VStack(alignment: .leading) {
-                    Text(node.valueTitle(value, shelfTitle: model.shelfTitle))
-                        .foregroundStyle(Color(uiColor: theme.ink))
+                    if field == .shelf, case .text(let id) = value, let shelf = model.shelves.first(where: { $0.id == id }) {
+                        BookSearchShelfOptionLabel(shelf: shelf, service: model.service)
+                    } else {
+                        Text(node.valueTitle(value, shelfTitle: model.shelfTitle))
+                            .foregroundStyle(Color(uiColor: theme.ink))
+                    }
                     if !available.contains(value) {
                         Text("当前不可用，保留已选值").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                     }
@@ -554,6 +558,33 @@ private struct BookSearchRulePage: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
         .listRowBackground(Color(uiColor: theme.surface))
         .listRowSeparatorTint(Color(uiColor: theme.separator))
+    }
+}
+
+struct BookSearchShelfOptionLabel: View {
+    let shelf: LibraryShelf
+    let service: AppDataService
+    var showsLocation = false
+    @Environment(\.theme) private var theme
+    @State private var parentLocation: String?
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(verbatim: LibraryQueryRules.filterShelfName(shelf)).foregroundStyle(Color(uiColor: theme.ink))
+            if showsLocation {
+                Text(parentLocation ?? locationKind).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+            }
+        }
+        .task(id: shelf.id) {
+            guard showsLocation, !shelf.builtin,
+                  case .external(.usable(let url, _))? = try? await service.shelfSource(shelf) else { return }
+            parentLocation = url.deletingLastPathComponent().path(percentEncoded: false)
+        }
+    }
+
+    private var locationKind: String {
+        if shelf.location == "icloud" { return "iCloud Drive" }
+        return shelf.builtin ? String(localized: "本机") : String(localized: "文件夹")
     }
 }
 

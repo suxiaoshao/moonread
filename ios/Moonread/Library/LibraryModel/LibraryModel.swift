@@ -290,6 +290,7 @@ final class LibraryModel {
     /// Opens a result in the current tab's stack, or through a host's own `push`
     /// (a reading context) once the file is ready and the host still shows the result.
     func shelfTitle(_ id: String) -> String {
-        id == "builtin" ? String(localized: "我的书架") : shelves.first(where: { $0.id == id })?.name ?? String(localized: "书架")
+        if let shelf = shelves.first(where: { $0.id == id }) { return LibraryQueryRules.filterShelfName(shelf) }
+        return id == "builtin" ? String(localized: "我的书架") : String(localized: "书架")
     }
 }
