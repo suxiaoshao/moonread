@@ -16,6 +16,11 @@ struct DeveloperMetadataCleanupView: View {
     @State private var completed: Int?
 
     var body: some View {
+        let preview = inventory.map { inventory in
+            Result { try inventory.confirmation(selected: selection, fields: fields) }
+        }
+        let candidate = preview.flatMap { try? $0.get() }
+        let count = candidate?.count ?? 0
         ZStack {
             if let completed {
                 ContentUnavailableView {
@@ -30,6 +35,9 @@ struct DeveloperMetadataCleanupView: View {
                 }
             } else if let inventory {
                 form(inventory)
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        cleanupStatus(preview, count: count)
+                    }
             } else if let error {
                 ContentUnavailableView {
                     Label {
@@ -48,6 +56,18 @@ struct DeveloperMetadataCleanupView: View {
         .navigationTitle(completed == nil ? Text("清理小说资料", tableName: "DeveloperTools")
                          : Text("清理结果", tableName: "DeveloperTools"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if completed == nil {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(role: .destructive) {
+                        guard let candidate else { return }
+                        confirmation = candidate
+                        confirming = true
+                    } label: { Text("清理", tableName: "DeveloperTools") }
+                        .disabled(count == 0 || !task.canCleanMetadata)
+                }
+            }
+        }
         .onAppear {
             if inventory == nil { startInventoryLoad() }
         }
@@ -67,10 +87,7 @@ struct DeveloperMetadataCleanupView: View {
     }
 
     private func form(_ inventory: MetadataCleanupInventory) -> some View {
-        let preview = Result { try inventory.confirmation(selected: selection, fields: fields) }
-        let value = try? preview.get()
-        let count = value?.count ?? 0
-        return Form {
+        Form {
             Section {
                 NavigationLink {
                     DeveloperMetadataBookPicker(books: inventory.books, selected: selection) { selection = $0 }
@@ -107,29 +124,39 @@ struct DeveloperMetadataCleanupView: View {
                 libraryLabel(inventory.lease.scope).listRowBackground(Color(uiColor: theme.surface))
             } header: { Text("当前资料库", tableName: "DeveloperTools") }
             footer: { Text(impact(of: inventory.lease.scope)) }
+        }.scrollContentBackground(.hidden)
+    }
 
-            Section {
-                Button(role: .destructive) {
-                    confirmation = value
-                    confirming = true
-                } label: {
-                    if selection.isEmpty {
-                        Text("清理所选资料", tableName: "DeveloperTools")
-                    } else {
-                        Text("清理 \(count) 本的资料", tableName: "DeveloperTools")
+    @ViewBuilder private func cleanupStatus(_ preview: Result<MetadataCleanupConfirmation, Error>?, count: Int) -> some View {
+        let message = cleanupMessage(preview, count: count)
+        if task.cleaningMetadata || message != nil {
+            HStack {
+                if task.cleaningMetadata {
+                    ProgressView {
+                        Text("正在清理小说资料", tableName: "DeveloperTools")
                     }
-                }.disabled(count == 0 || !task.canCleanMetadata)
-                    .listRowBackground(Color(uiColor: theme.surface))
-            } footer: {
-                if let error { Text(error) }
-                else if task.cleaningMetadata { Text("正在清理小说资料", tableName: "DeveloperTools") }
-                else if !task.canCleanMetadata { Text("小说资料任务尚未结束，请结束任务后再清理。", tableName: "DeveloperTools") }
-                else if case .failure(let error) = preview { Text(ReaderMessages.error(error)) }
-                else if !selection.isEmpty && !fields.isEmpty && count == 0 {
-                    Text("所选小说没有需要清理的内容。", tableName: "DeveloperTools")
+                } else if let message {
+                    message
                 }
             }
-        }.scrollContentBackground(.hidden)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(LayoutTokens.content)
+            .background(Color(uiColor: theme.canvas))
+        }
+    }
+
+    private func cleanupMessage(_ preview: Result<MetadataCleanupConfirmation, Error>?, count: Int) -> Text? {
+        if let error { return Text(error) }
+        if !task.canCleanMetadata {
+            return Text("小说资料任务尚未结束，请结束任务后再清理。", tableName: "DeveloperTools")
+        }
+        if case .failure(let error)? = preview { return Text(ReaderMessages.error(error)) }
+        if !selection.isEmpty && !fields.isEmpty && count == 0 {
+            return Text("所选小说没有需要清理的内容。", tableName: "DeveloperTools")
+        }
+        return nil
     }
 
     @ViewBuilder private func libraryLabel(_ scope: DataScope) -> some View {
