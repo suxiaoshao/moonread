@@ -3,12 +3,8 @@ name: TestFlight
 on:
   workflow_dispatch:
     inputs:
-      source_branch:
-        description: 'Approved source branch: release/x.y or hotfix/x.y.z'
-        required: true
-        type: string
       expected_sha:
-        description: 'Full SHA at the branch HEAD, with successful push CI'
+        description: 'Full SHA at the selected release or hotfix branch HEAD, with successful push CI'
         required: true
         type: string
       mode:
@@ -43,28 +39,30 @@ jobs:
       branch: ${{ steps.source.outputs.branch }}
       ci_run: ${{ steps.source.outputs.ci_run }}
     steps:
-      - name: Require main dispatch and successful exact-SHA push CI
+      - name: Require protected branch dispatch and successful exact-SHA push CI
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_BRANCH: ${{ inputs.source_branch }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
-          WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           python3 - <<'PY'
           import json, os, re, subprocess
           def api(path):
               return json.loads(subprocess.check_output(['gh', 'api', path]))
           repo = os.environ['GITHUB_REPOSITORY']
-          branch, sha = os.environ['SOURCE_BRANCH'], os.environ['EXPECTED_SHA']
-          if (os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch' or
-              os.environ['GITHUB_REF'] != 'refs/heads/main' or
-              os.environ['WORKFLOW_REF'] != repo + '/.github/workflows/testflight.yml@refs/heads/main'):
-              raise SystemExit('Only the reviewed workflow dispatched from main may sign.')
-          if not re.fullmatch(r'(release/\d+\.\d+|hotfix/\d+\.\d+\.\d+)', branch):
-              raise SystemExit('Invalid release/hotfix branch.')
+          ref = os.environ['GITHUB_REF']
+          target = re.fullmatch(r'refs/heads/(release/[0-9]+\.[0-9]+|hotfix/[0-9]+\.[0-9]+\.[0-9]+)', ref)
+          if os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch' or not target:
+              raise SystemExit('Dispatch TestFlight from the release or hotfix branch being packaged.')
+          if os.environ['GITHUB_REF_PROTECTED'] != 'true':
+              raise SystemExit('The selected branch must be protected.')
+          if os.environ['GITHUB_WORKFLOW_REF'] != f'{repo}/.github/workflows/testflight.yml@{ref}':
+              raise SystemExit('The workflow must come from the selected branch.')
+          branch, sha = target[1], os.environ['EXPECTED_SHA']
           if not re.fullmatch(r'[0-9a-f]{40}', sha):
               raise SystemExit('A full lowercase commit SHA is required.')
+          if sha != os.environ['GITHUB_SHA'] or sha != os.environ['GITHUB_WORKFLOW_SHA']:
+              raise SystemExit('The dispatch and workflow commits must both match expected_sha.')
           if api(f'repos/{repo}/git/ref/heads/{branch}')['object']['sha'] != sha:
               raise SystemExit('Branch HEAD differs from expected_sha.')
           workflow = api(f'repos/{repo}/actions/workflows/ci.yml')
@@ -122,7 +120,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
-      - name: Recheck branch after Environment approval and require exact Xcode
+      - name: Recheck branch after entering the signing Environment and require exact Xcode
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
