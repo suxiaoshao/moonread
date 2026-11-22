@@ -492,6 +492,11 @@ private struct BookSearchRulePage: View {
 
     private var optionList: some View {
         List {
+            Section {
+                Toggle("排除此条件", isOn: $node.excluded)
+                    .accessibilityIdentifier("excludeSearchCondition")
+                    .listRowBackground(Color(uiColor: theme.surface))
+            }
             if !concreteValues.isEmpty {
                 Section {
                     ForEach(choices, id: \.self) { choiceRow($0) }

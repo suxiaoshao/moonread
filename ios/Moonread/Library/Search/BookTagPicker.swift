@@ -675,6 +675,7 @@ struct BookSearchTagRulePage: View {
     let complete: (BookSearchNode?) -> Void
     @State private var relation: Relation
     @State private var words: [String]
+    @State private var excluded: Bool
     @State private var preservesExistingUntagged: Bool
 
     init(initial: BookSearchNode, onChange: @escaping (Bool) -> Void,
@@ -685,13 +686,16 @@ struct BookSearchTagRulePage: View {
         let isUntagged = initial.match == .any && initial.values == [.untagged]
         _relation = State(initialValue: isUntagged ? .untagged : Relation(initial.match))
         _words = State(initialValue: initial.values.compactMap { if case .text(let word) = $0 { word } else { nil } })
+        _excluded = State(initialValue: initial.excluded)
         _preservesExistingUntagged = State(initialValue: !isUntagged && initial.values.contains(.untagged))
     }
 
     private var node: BookSearchNode {
-        if preservesExistingUntagged, relation != .untagged { return initial }
         var node = initial
-        node.kind = .rule(relation == .untagged ? .untagged : .tag(relation.match, words.map(BookSearchValue.text)))
+        node.excluded = excluded
+        if !preservesExistingUntagged || relation == .untagged {
+            node.kind = .rule(relation == .untagged ? .untagged : .tag(relation.match, words.map(BookSearchValue.text)))
+        }
         return node
     }
 
@@ -707,9 +711,11 @@ struct BookSearchTagRulePage: View {
                 }
                 .pickerStyle(.segmented)
                 .disabled(preservesExistingUntagged)
+                Toggle("排除此条件", isOn: $excluded)
+                    .accessibilityIdentifier("excludeSearchCondition")
                 if preservesExistingUntagged {
                     // A saved mixed or negative predicate keeps its exact meaning until explicitly edited.
-                    Text(initial.expression { $0 }).font(.footnote)
+                    Text(node.expression { $0 }).font(.footnote)
                     Button("移除无标签选项") { preservesExistingUntagged = false }
                 }
             }
