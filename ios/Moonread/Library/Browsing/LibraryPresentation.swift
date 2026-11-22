@@ -117,14 +117,13 @@ struct LibraryFolderCover: View {
 struct LibraryBookTile: View {
     let model: LibraryModel
     let entry: LibraryEntry
-    var selected = false
-    var select: (() -> Void)?
     var showPath = false
+    let interaction: LibraryItemInteraction
     @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { if let select { select() } else { model.open(entry) } } label: {
+            Button { interaction.activate(entry, in: model) } label: {
                 VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                     Group {
                         if case .folder(let folder) = entry.item {
@@ -132,14 +131,14 @@ struct LibraryBookTile: View {
                         } else { BookCoverView(title: entry.title, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).aspectRatio(0.7, contentMode: .fit) }
                     }
                         .overlay {
-                            if selected {
+                            if interaction.isSelected {
                                 RoundedRectangle(cornerRadius: entry.directory ? 7 : 6)
                                     .fill(Color(uiColor: theme.accent).opacity(0.12)).allowsHitTesting(false)
                             }
                         }
                         .overlay(alignment: .bottomTrailing) {
-                            if select != nil {
-                                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                            if interaction.isEditing {
+                                Image(systemName: interaction.isSelected ? "checkmark.circle.fill" : "circle")
                                     .font(.title3).foregroundStyle(Color(uiColor: theme.accent))
                                     .padding(LayoutTokens.compact)
                             }
@@ -148,9 +147,9 @@ struct LibraryBookTile: View {
                         .foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2, reservesSpace: true)
                 }.contentShape(.rect)
             }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
-                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityAddTraits(interaction.isSelected ? .isSelected : [])
                 .overlay(alignment: .top) {
-                    if select == nil && !entry.directory {
+                    if !interaction.isEditing && !entry.directory {
                         LibraryFileAvailability(entry: entry).aspectRatio(0.7, contentMode: .fit)
                     }
                 }
@@ -158,20 +157,26 @@ struct LibraryBookTile: View {
                 Text(verbatim: entry.directory ? entry.libraryDetail : entry.libraryProgress).font(.caption)
                     .foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
                 Spacer(minLength: 0)
-                Menu {
-                    LibraryItemMenu(model: model, entry: entry)
-                    if showPath { LibraryLocationAction(model: model, entry: entry) }
-                } label: {
-                    Image(systemName: "ellipsis").foregroundStyle(Color(uiColor: theme.secondary))
-                        .frame(width: LayoutTokens.hit, height: LayoutTokens.hit)
-                }.accessibilityLabel(String(localized: "\(entry.name)的操作"))
-                    .opacity(select == nil ? 1 : 0).disabled(select != nil).accessibilityHidden(select != nil)
+                if let host = interaction.menuHost {
+                    Menu {
+                        LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
+                    } label: {
+                        Image(systemName: "ellipsis").foregroundStyle(Color(uiColor: theme.secondary))
+                            .frame(width: LayoutTokens.hit, height: LayoutTokens.hit)
+                    }.accessibilityLabel(String(localized: "\(entry.name)的操作"))
+                }
             }
+            .frame(minHeight: LayoutTokens.hit)
             if showPath {
                 Text(verbatim: entry.parentPath.isEmpty ? model.shelfTitle(entry.shelfId) : entry.parentPath)
                     .font(.caption2).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
             }
         }.frame(maxWidth: .infinity, alignment: .topLeading)
+            .contextMenu {
+                if let host = interaction.menuHost {
+                    LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
+                }
+            }
     }
 }
 
@@ -268,14 +273,5 @@ struct LibraryFileAvailability: View {
                     .padding(compact ? 2 : 6)
             }.allowsHitTesting(false).accessibilityLabel("待下载")
         }
-    }
-}
-
-struct LibraryLocationAction: View {
-    let model: LibraryModel
-    let entry: LibraryEntry
-    var body: some View {
-        Button("所在文件夹", systemImage: "folder") { model.shell.path.append(.folder(entry.parent)) }
-            .accessibilityIdentifier("library-result-path")
     }
 }

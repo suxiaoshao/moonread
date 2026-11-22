@@ -431,6 +431,7 @@ struct BookInformationSections: View {
     let model: BookInformationModel
     let target: StatisticsRoute
     let library: LibraryModel?
+    let host: LibraryBrowsingHost
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
@@ -445,11 +446,11 @@ struct BookInformationSections: View {
         } else if let entry = model.entry, let library {
             Button {
                 let metadata = model.details?.metadata
-                library.open(entry.withMetadata(metadata?.sha == entry.readingIdentity?.formalSHA256 ? metadata : nil))
+                host.open(entry.withMetadata(metadata?.sha == entry.readingIdentity?.formalSHA256 ? metadata : nil), in: library)
             } label: { Text(entry.lastRead == 0 ? "开始阅读" : "继续阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         } else if let book = model.readableBook, let library {
-            Button { library.shell.path.append(.reader(OpeningRequest(target: .book(book.id)))) } label: { Text("继续阅读").frame(maxWidth: .infinity) }
+            Button { host.navigate(.reader(OpeningRequest(target: .book(book.id))), in: library) } label: { Text("继续阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         }
     }
@@ -457,7 +458,7 @@ struct BookInformationSections: View {
     private func search(_ token: AppSearchSeed) {
         guard let library else { return }
         let scope = AppSearchScope(seeds: [token])
-        if target.fromReader { readerSearch = scope } else { library.shell.path.append(.search(scope)) }
+        if target.fromReader { readerSearch = scope } else { host.navigate(.search(scope), in: library) }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {

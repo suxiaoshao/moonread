@@ -12,6 +12,7 @@ struct LibraryAllBooksView: View {
     }
     @Bindable var model: LibraryModel
     let shelfID: String
+    let host: LibraryBrowsingHost
     @State private var catalogue = CatalogueStore(service: .shared)
 
     private struct CatalogueRequest: Hashable {
@@ -49,8 +50,7 @@ struct LibraryAllBooksView: View {
                         ForEach(groups) { group in
                             Section {
                                 ForEach(group.entries, id: \.id) { entry in
-                                    LibraryFileRow(model: model, entry: entry, showPath: true)
-                                        .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
+                                    LibraryFileRow(model: model, entry: entry, showPath: true, interaction: .browse(host))
                                         .listRowInsets(EdgeInsets(top: 0, leading: LayoutTokens.page, bottom: 0, trailing: LayoutTokens.page))
                                         .alignmentGuide(.listRowSeparatorLeading) { _ in LibraryFileRow.textLeading }
                                         .listRowBackground(Color.clear)
@@ -74,8 +74,7 @@ struct LibraryAllBooksView: View {
                                 ForEach(groups) { group in
                                     Section {
                                         ForEach(group.entries, id: \.id) { entry in
-                                            LibraryBookTile(model: model, entry: entry, showPath: true)
-                                                .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
+                                            LibraryBookTile(model: model, entry: entry, showPath: true, interaction: .browse(host))
                                                 .padding(.bottom, LayoutTokens.section)
                                                 .id(entry.id)
                                                 .anchorPreference(key: NameGroupBounds.self, value: .bounds) { [group.id: [$0]] }
@@ -163,8 +162,7 @@ struct LibraryAllBooksView: View {
                     Section {
                         ForEach(group.fileIDs, id: \.self) { fileID in
                             if let entry = card(fileID) {
-                                LibraryFileRow(model: model, entry: entry, showPath: true)
-                                    .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
+                                LibraryFileRow(model: model, entry: entry, showPath: true, interaction: .browse(host))
                                     .listRowInsets(EdgeInsets(top: 0, leading: LayoutTokens.page, bottom: 0, trailing: LayoutTokens.page))
                                     .alignmentGuide(.listRowSeparatorLeading) { _ in LibraryFileRow.textLeading }
                                     .listRowBackground(Color.clear)
@@ -185,8 +183,7 @@ struct LibraryAllBooksView: View {
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumBookWidth), spacing: LayoutTokens.content)], alignment: .leading, spacing: LayoutTokens.section) {
                                 ForEach(group.fileIDs, id: \.self) { fileID in
                                     if let entry = card(fileID) {
-                                        LibraryBookTile(model: model, entry: entry, showPath: true)
-                                            .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
+                                        LibraryBookTile(model: model, entry: entry, showPath: true, interaction: .browse(host))
                                     }
                                 }
                             }
@@ -200,7 +197,7 @@ struct LibraryAllBooksView: View {
     @ViewBuilder private func tagHeading(_ group: CatalogueTagSection) -> some View {
         if group.kind == .tag {
             Button {
-                model.shell.path.append(.search(AppSearchScope(seeds: [.shelf(shownShelfID), .tag(group.tag)])))
+                host.navigate(.search(AppSearchScope(seeds: [.shelf(shownShelfID), .tag(group.tag)])), in: model)
             } label: {
                 tagHeadingLabel(group)
             }.buttonStyle(.plain).accessibilityIdentifier("library-tag-\(group.tag)")

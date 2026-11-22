@@ -178,6 +178,49 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
 }
 
 final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
+  @MainActor func testBrowsingActionsUseTheirHostAndSelectionKeepsItsOwnTap() async throws {
+    let (root, service, core, _, _, _, suite) = try singleBookFixture()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+    }
+    let files = try core.sourceFiles(shelfId: "builtin")
+    let currentFile = try XCTUnwrap(files.first { $0.relativePath == "a.txt" })
+    let otherFile = try XCTUnwrap(files.first { $0.relativePath == "b.txt" })
+    let current = try await service.libraryEntry(currentFile.id)
+    let other = try await service.libraryEntry(otherFile.id)
+    let model = LibraryModel(service: service, prepareLibrary: {}, refreshLibrary: {})
+    var pushed: [LibraryRoute] = []
+    var returns = 0
+    var visible = true
+    let host = LibraryBrowsingHost(
+      push: { pushed.append($0) }, isCurrent: { visible }, allowsFileBrowsing: false,
+      isOpenBook: { $0.readingKey == current.readingKey }, returnToOpenBook: { returns += 1 })
+    let browse = LibraryItemInteraction.browse(host)
+    XCTAssertFalse(browse.isEditing)
+    XCTAssertNil(browse.menuHost)
+    browse.activate(current, in: model)
+    XCTAssertEqual(returns, 1)
+    XCTAssertTrue(pushed.isEmpty)
+    browse.activate(other, in: model)
+    guard case .reader(let request) = pushed.first,
+          case .source(let source) = request.target else { return XCTFail("Expected a hosted reader") }
+    XCTAssertEqual(source.id, other.id)
+    XCTAssertTrue(model.shell.path.isEmpty)
+
+    let editing = LibraryItemInteraction.selecting(selected: true)
+    XCTAssertTrue(editing.isEditing)
+    XCTAssertTrue(editing.isSelected)
+    XCTAssertNil(editing.menuHost)
+    editing.activate(other, in: model)
+    visible = false
+    browse.activate(current, in: model)
+    browse.activate(other, in: model)
+    XCTAssertEqual(pushed.count, 1)
+    XCTAssertEqual(returns, 1)
+    XCTAssertTrue(model.shell.path.isEmpty)
+  }
+
   // S333: 书架结构与可见页面的最近阅读分别发布，替换同一文件不产生两个入口。
   @MainActor func testHomeAndRecentReadingFollowVisibleChanges() async throws
   {

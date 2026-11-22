@@ -565,6 +565,7 @@ private struct MoonreadRoot: View {
 struct LibraryDestination: View {
     @Environment(AIHost.self) private var ai
     let route: LibraryRoute
+    var host: LibraryBrowsingHost = .main
     @Environment(LibraryModel.self) private var library
     @Environment(\.readerTheme) private var readerTheme
 
@@ -578,13 +579,13 @@ struct LibraryDestination: View {
                 // A destination's onAppear can run before that write finishes.
                 Task { await library.reloadBook(reader.target) }
             }.id(reader.id).themeScope(readerTheme)
-        case .folder(let location): LibraryFolderView(model: library, location: location)
-        case .allBooks(let shelfID): LibraryAllBooksView(model: library, shelfID: shelfID)
+        case .folder(let location): LibraryFolderView(model: library, location: location, host: host)
+        case .allBooks(let shelfID): LibraryAllBooksView(model: library, shelfID: shelfID, host: host)
         case .recent: RecentLibraryView(model: library)
         case .savedFilters: SavedFilterIndex(model: library)
-        case .savedFilter(let id): SavedFilterDestination(model: library, id: id)
+        case .savedFilter(let id): SavedFilterDestination(model: library, id: id, host: host)
         case .manage: LibraryManagementView(model: library)
-        case .statistics(let target): StatisticsView(library: library, target: target)
+        case .statistics(let target): StatisticsView(library: library, target: target, host: host)
         case .conversation(let id, let anchor):
             if ai.availability.isAvailable { AIEntry { AIChatView(conversationID: id, anchor: anchor) } }
         // Contextual routes delegate to the same task content.
@@ -592,8 +593,29 @@ struct LibraryDestination: View {
         #if DEBUG
         case .screenshotReaderSettings: PageShotReaderSettings()
         #endif
-        case .search(let scope): AppSearchPage(model: library, scope: scope)
+        case .search(let scope): AppSearchPage(model: library, scope: scope, host: host)
         }
+    }
+}
+
+/// A destination in a local stack owns the next push while keeping its browsing policy.
+struct HostedLibraryDestination: View {
+    let route: LibraryRoute
+    let host: LibraryBrowsingHost
+    @State private var pushed: LibraryRoute?
+    @State private var visible = false
+
+    private var pageHost: LibraryBrowsingHost {
+        var local = host
+        local.push = { pushed = $0 }
+        local.isCurrent = { visible }
+        return local
+    }
+
+    var body: some View {
+        LibraryDestination(route: route, host: pageHost)
+            .navigationDestination(item: $pushed) { HostedLibraryDestination(route: $0, host: host) }
+            .onAppear { visible = true }.onDisappear { visible = false }
     }
 }
 
