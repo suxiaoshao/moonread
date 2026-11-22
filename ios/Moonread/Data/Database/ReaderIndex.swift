@@ -100,15 +100,6 @@ final class ReaderIndex: @unchecked Sendable {
         return text
     }
 
-    func readChunk(bookId: String, index: UInt32) throws -> TextChunk {
-        try read { db in
-            let body = try Self.body(db, id: bookId, scope: self.lease.scope.key)
-            guard let chunk = try Self.chunks(db, id: body.id, from: index, limit: 1).first,
-                  chunk.index == index else { throw ReaderError.NotFound }
-            return chunk
-        }
-    }
-
     func resolveBookIdentity(bookId: String) throws -> ResolvedBookIdentity {
         try read { db in
             let body = try Self.body(db, id: bookId, scope: self.lease.scope.key)

@@ -288,10 +288,10 @@ import SwiftUI
     }
 
     private let service: AppDataService
-    @ObservationIgnored private let systemExecution = MetadataSystemExecution()
+    @ObservationIgnored private let systemExecution = DataExchangeSystemExecution()
     @ObservationIgnored private var work: Task<Void, Never>?
     private var retryStep: Step?
-    private var interruption: MetadataExchangeModel.PauseReason?
+    private var interruption: DataExchangeSystemExecution.PauseReason?
     private(set) var phase = Phase.idle
     private(set) var stopping = false
     var canRetry: Bool { retryStep != nil }

@@ -42,7 +42,6 @@ struct ReaderScreen: View {
     private var rendered: ReaderRenderSnapshot { nativeHost.node ?? render }
     var controlsVisible: Bool { rendered.controls }
     private var taskID: String? { rendered.taskID }
-    private var isSearch: Bool { rendered.compact == .search }
     private var isLibrary: Bool { rendered.taskID == "library" }
     private var isAI: Bool { rendered.taskID == "ai" }
     private var sheetPresented: Bool { nativeHost.token != nil }
