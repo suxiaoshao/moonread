@@ -251,6 +251,8 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         AD1000000000000000000002 = {isa = PBXBuildFile; fileRef = AD2000000000000000000002; };
         AD1000000000000000000001 = {isa = PBXBuildFile; fileRef = AD2000000000000000000001; };
         AC1000000000000000000001 = {isa = PBXBuildFile; fileRef = AC2000000000000000000001; };
+        E28400000000000000000001 /* DeveloperMetadataCleanupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28400000000000000000002; };
+        E28400000000000000000003 /* DeveloperTools.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E28400000000000000000004; };
         AC1000000000000000000002 = {isa = PBXBuildFile; fileRef = AC2000000000000000000002; };
         AC1000000000000000000003 = {isa = PBXBuildFile; fileRef = AC2000000000000000000003; };
         AC1000000000000000000004 = {isa = PBXBuildFile; fileRef = AC2000000000000000000004; };
@@ -759,6 +761,8 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         AD2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingTypography.swift"; sourceTree = "<group>"; };
         AD2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBackNavigation.swift"; sourceTree = "<group>"; };
         AC2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+        E28400000000000000000002 /* DeveloperMetadataCleanupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperMetadataCleanupView.swift; sourceTree = "<group>"; };
+        E28400000000000000000004 /* DeveloperTools.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = DeveloperTools.xcstrings; sourceTree = "<group>"; };
         AC2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
         AC2000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonView.swift; sourceTree = "<group>"; };
         AC2000000000000000000077 /* MoonCharacter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonCharacter.swift; sourceTree = "<group>"; };
@@ -1263,6 +1267,8 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			children = (
 				D50620000000000000000005 /* DataManagement.xcstrings */,
 				C77FEFA6FC6D2D5785EE3779 /* DataManagement */,
+                E28400000000000000000002 /* DeveloperMetadataCleanupView.swift */,
+                E28400000000000000000004 /* DeveloperTools.xcstrings */,
 				AC2000000000000000000002 /* SettingsView.swift */,
 				F01600000000000000000002 /* Onboarding.swift */,
 				F01700000000000000000004 /* TipJar.storekit */,
@@ -2132,6 +2138,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 005AC664DBAF46D4BDDD504A /* AppShortcuts.xcstrings */,
                 D720FF62FEF54991885AE8D3 /* SystemReading.xcstrings in Resources */,
                 D84AF1EE58BF3D4813B23CFA /* MetadataExchange.xcstrings in Resources */,
+                E28400000000000000000003 /* DeveloperTools.xcstrings in Resources */,
                 D50610000000000000000005 /* DataManagement.xcstrings in Resources */,
                 B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */,
                 F14900000000000000000003 /* FullIndex.xcstrings in Resources */,
@@ -2511,6 +2518,7 @@ F01900000000000000000001,
 				A10000000000000000000001 /* MoonreadApp.swift in Sources */,
 				6330E9327FF2417A990DB18A /* AppShellModel.swift in Sources */,
                 AC1000000000000000000001,
+                E28400000000000000000001 /* DeveloperMetadataCleanupView.swift in Sources */,
                 AC1000000000000000000002,
                 F01600000000000000000001,
                 AC1000000000000000000003,
@@ -2799,6 +2807,9 @@ F01900000000000000000001,
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(MOONREAD_TOOLS_CONDITION)";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(inherited) DeveloperTools.xcstrings";
+				INCLUDED_SOURCE_FILE_NAMES = "$(inherited) $(MOONREAD_TOOLS_RESOURCES_$(MOONREAD_TOOLS_CONDITION))";
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
@@ -2832,6 +2843,9 @@ F01900000000000000000001,
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(MOONREAD_TOOLS_CONDITION)";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(inherited) DeveloperTools.xcstrings";
+				INCLUDED_SOURCE_FILE_NAMES = "$(inherited) $(MOONREAD_TOOLS_RESOURCES_$(MOONREAD_TOOLS_CONDITION))";
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
@@ -2876,6 +2890,7 @@ F01900000000000000000001,
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadTests;
 				CODE_SIGN_ENTITLEMENTS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(MOONREAD_TOOLS_CONDITION)";
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";

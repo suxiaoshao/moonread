@@ -2,6 +2,121 @@ import MoonreadAI
 import Foundation
 import CryptoKit
 
+#if MOONREAD_INTERNAL_TOOLS
+enum MetadataCleanupError: LocalizedError {
+    case busy
+
+    var errorDescription: String? {
+        String(localized: "小说资料任务尚未结束，请结束任务后再清理。", table: "DeveloperTools")
+    }
+}
+
+struct MetadataCleanupInventory: Sendable {
+    struct Book: Identifiable, Sendable {
+        let id: String
+        let title: String
+        let shelf: String
+        let copies: UInt64
+    }
+
+    let lease: DataSessionLease
+    let configuration: UUID
+    let books: [Book]
+    let inputs: MetadataExchangeRows.Result
+
+    static let fields: [MetadataField] = [.author, .description, .tags, .cover, .readingState]
+
+    func confirmation(selected: Set<String>, fields: Set<MetadataField>) throws -> MetadataCleanupConfirmation {
+        try .init(lease: lease, configuration: configuration, selected: selected, fields: fields,
+                  values: Self.selectedValues(from: inputs, selected: selected, fields: fields))
+    }
+
+    static func empty(sha: String) -> BookMetadata {
+        .init(sha: sha, author: "", synopsis: "", tags: [], cover: nil, status: .unread)
+    }
+
+    static func selectedValues(from inputs: MetadataExchangeRows.Result, selected: Set<String>,
+                               fields: Set<MetadataField>) throws -> [BookMetadata] {
+        guard selected.isDisjoint(with: inputs.formalBlockedMetadata) else { throw UserSyncCompatibilityError() }
+        let books = inputs.read.books.filter { selected.contains($0.metadata.sha) }
+        guard selected.count == books.count else { throw ReadingDataError.changed }
+        return try books.map { book in
+            let source = book.metadata
+            var selected = empty(sha: source.sha)
+            if fields.contains(.author) { selected.author = source.author }
+            if fields.contains(.description) { selected.synopsis = source.synopsis }
+            if fields.contains(.tags) { selected.tags = source.tags }
+            if fields.contains(.cover) { selected.cover = source.cover }
+            if fields.contains(.readingState) {
+                let status = inputs.storedStatuses[source.sha] ?? .unread
+                if case .other = status { throw UserSyncCompatibilityError() }
+                selected.status = status
+            }
+            return selected
+        }
+    }
+}
+
+struct MetadataCleanupConfirmation: Sendable {
+    let lease: DataSessionLease
+    let configuration: UUID
+    let selected: Set<String>
+    let fields: Set<MetadataField>
+    fileprivate let values: [BookMetadata]
+
+    fileprivate var changes: [BookMetadata] {
+        values.filter { $0 != MetadataCleanupInventory.empty(sha: $0.sha) }
+    }
+    var count: Int { changes.count }
+}
+
+extension AppDataService {
+    func metadataCleanupInventory() async throws -> MetadataCleanupInventory {
+        let index = try relationalUserIndex()
+        let lease = index.lease, configuration = userCloudConfigurationRevision
+        let inputs = try await index.session.readUsersForPublication(lease) {
+            try MetadataExchangeRows.read($0, request: .export(shelfId: nil), scope: lease.scope.key)
+        }
+        guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+        let counts = Dictionary(uniqueKeysWithValues: inputs.read.books.map { ($0.metadata.sha, $0.sourceCount) })
+        var seen = Set<String>()
+        let books: [MetadataCleanupInventory.Book] = inputs.read.exportFiles.compactMap { entry in
+            guard let sha = entry.sha, let copies = counts[sha], seen.insert(sha).inserted else { return nil }
+            return .init(id: sha, title: (entry.file.name as NSString).deletingPathExtension,
+                         shelf: entry.file.shelfName, copies: copies)
+        }
+        return .init(lease: lease, configuration: configuration, books: books, inputs: inputs)
+    }
+
+    func cleanMetadata(_ confirmation: MetadataCleanupConfirmation) async throws -> Int {
+        guard confirmation.count > 0 else { return 0 }
+        try await acquireCancellableUserDataOperation()
+        defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex(), lease = index.lease
+        guard confirmation.configuration == userCloudConfigurationRevision,
+              confirmation.lease == lease else { throw ReadingDataError.changed }
+        let device = userDevice, now = userValueClock
+        let plans = try index.session.writeUsers(lease) { db in
+            let inputs = try MetadataExchangeRows.read(db, request: .import(shas: confirmation.selected.sorted()),
+                                                       scope: lease.scope.key)
+            let current = try MetadataCleanupInventory.selectedValues(from: inputs, selected: confirmation.selected,
+                                                                      fields: confirmation.fields)
+            guard current == confirmation.values else { throw ReadingDataError.changed }
+            let fields = Set(confirmation.fields.map(\.metadataKey))
+            let plans = try confirmation.changes.map { base in
+                try metadataEditPlan(base: base, edited: MetadataCleanupInventory.empty(sha: base.sha), fields: fields)
+            }
+            try UserValueRows.putMetadata(db, plans.map { .init(plan: $0, cover: nil) },
+                                          device: device, now: now, scope: lease.scope)
+            return plans
+        }
+        publishMetadataCommit(plans)
+        return plans.count
+    }
+}
+#endif
+
 extension AppDataService {
     func metadataImportScope() -> String {
         guard let scope = try? indexStore().lease.scope else { return "unavailable" }

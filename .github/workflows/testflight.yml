@@ -460,7 +460,7 @@ jobs:
           common=(-project ios/Moonread.xcodeproj -scheme Moonread -destination 'generic/platform=iOS'
                   -derivedDataPath build/DeviceDerivedData -disableAutomaticPackageResolution
                   -onlyUsePackageVersionsFromResolvedFile CODE_SIGN_STYLE=Automatic "DEVELOPMENT_TEAM=$APPLE_TEAM_ID"
-                  "MOONREAD_NIX=$(command -v nix)")
+                  "MOONREAD_NIX=$(command -v nix)" MOONREAD_TOOLS_CONDITION=)
           # Full Xcode/signing output stays private. Publish only stage + error category.
           run_xcode() {
             local stage="$1"; shift
@@ -494,12 +494,12 @@ jobs:
             for target in $targets; do
               run_xcode "settings-$config-$target" -project ios/Moonread.xcodeproj -target "$target" \
                 -sdk iphoneos -configuration "$config" -disableAutomaticPackageResolution \
-                -onlyUsePackageVersionsFromResolvedFile -showBuildSettings -json
+                -onlyUsePackageVersionsFromResolvedFile MOONREAD_TOOLS_CONDITION= -showBuildSettings -json
             done
           done
           set_stage versions
           python3 - > "$private/versions.log" 2> "$private/versions.stderr.log" <<'PY'
-          import json, os, pathlib, re, subprocess
+          import json, os, pathlib, re, shlex, subprocess
           root = pathlib.Path(os.environ['TF_PRIVATE'])
           versions = set()
           expected = json.loads((root / 'expected-targets.json').read_text())
@@ -513,6 +513,10 @@ jobs:
                   versions.add((s['MARKETING_VERSION'], s['CURRENT_PROJECT_VERSION']))
                   if config == 'Release' and 'DEBUG' in s.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS', '').split():
                       raise SystemExit('DEBUG is enabled in Release.')
+                  conditions = s.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS', '').split()
+                  flags = ' '.join(shlex.split(s.get('OTHER_SWIFT_FLAGS', '')))
+                  if 'MOONREAD_INTERNAL_TOOLS' in conditions or re.search(r'(^|\s)-D\s*MOONREAD_INTERNAL_TOOLS(\s|$)', flags):
+                      raise SystemExit('Internal tools are enabled in distribution settings.')
           if len(versions) != 1: raise SystemExit('Debug/Release and application/extension versions differ.')
           version, build = versions.pop()
           if version != os.environ['SOURCE_BRANCH'].split('/')[1]: raise SystemExit('Marketing version differs from branch version.')
@@ -624,9 +628,11 @@ jobs:
           for path in privacy: require(isinstance(plistlib.loads((app / path).read_bytes()), dict), 'invalid privacy plist')
           require(not any(p.suffix in ('.storekit', '.xctest') or p.name.endswith('.debug.dylib') or p.name == '__preview.dylib'
                           for p in app.rglob('*')), 'test/DEBUG resource in IPA')
+          require(not any(p.stem == 'DeveloperTools' for p in app.rglob('*')), 'internal tool resource in IPA')
           # Audit the App and every declared extension, including Widget fixtures.
           markers = [b'--ui-test', b'--disable-tips', b'--initialize-cloudkit-development-schema', b'--reader-open-benchmark']
           markers += [b'--reader-open-session', b'--store-shot', b'StoreScreenshots.language', b'STORE_SCREENSHOT_SCENE', b'PAGE_SHOT_SCENE']
+          markers.append(b'moonreadInternalMetadataCleanup')
           for bundle in bundles:
               info = plistlib.loads((bundle / 'Info.plist').read_bytes())
               strings = command('strings', '-a', str(bundle / info['CFBundleExecutable']))
