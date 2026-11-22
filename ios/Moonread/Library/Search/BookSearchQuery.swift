@@ -155,9 +155,9 @@ struct BookSearchNode: Hashable, Identifiable, Sendable, Codable {
         }
         return nil
     }
-    var supportsQuickEditing: Bool {
+    func supportsQuickEditing(includingExcluded: Bool) -> Bool {
         guard group == .all, !excluded else { return false }
-        let fields = children.compactMap { $0.excluded ? nil : $0.field }
+        let fields = children.compactMap { $0.excluded && !includingExcluded ? nil : $0.field }
         return fields.count == children.count && Set(fields).count == fields.count
     }
 
@@ -171,7 +171,7 @@ struct BookSearchNode: Hashable, Identifiable, Sendable, Codable {
             return value
         }
     }
-    func expression(shelfTitle: (String) -> String) -> String {
+    func expression(includingExclusion: Bool = true, shelfTitle: (String) -> String) -> String {
         let text: String
         switch kind {
         case .group(let relation, let children):
@@ -202,7 +202,7 @@ struct BookSearchNode: Hashable, Identifiable, Sendable, Codable {
                 }
             }
         }
-        return excluded ? String(localized: "排除（\(text)）") : text
+        return excluded && includingExclusion ? String(localized: "排除（\(text)）") : text
     }
 
 }
