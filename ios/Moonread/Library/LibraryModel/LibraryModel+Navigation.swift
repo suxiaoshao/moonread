@@ -1,6 +1,29 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Browsing pages carry their navigation owner through both layouts.
+@MainActor
+struct LibraryBrowsingHost {
+    var push: ((LibraryRoute) -> Void)?
+    var isCurrent: () -> Bool = { true }
+    var allowsFileBrowsing = true
+    var isOpenBook: (LibraryEntry) -> Bool = { _ in false }
+    var returnToOpenBook: () -> Void = {}
+
+    static var main: Self { .init(push: nil) }
+
+    func open(_ entry: LibraryEntry, in model: LibraryModel) {
+        guard isCurrent() else { return }
+        if !entry.directory && isOpenBook(entry) { returnToOpenBook() }
+        else { model.open(entry, push: push, isCurrent: isCurrent) }
+    }
+
+    func navigate(_ route: LibraryRoute, in model: LibraryModel) {
+        guard isCurrent() else { return }
+        if let push { push(route) } else { model.shell.path.append(route) }
+    }
+}
+
 extension LibraryModel {
     func openIndexFailure(_ id: String) {
         Task {

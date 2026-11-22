@@ -73,30 +73,18 @@ struct AppSearchScope: Hashable {
     var seeds: [AppSearchSeed]
 }
 
-/// Where a search's results lead. Without `push`, results navigate in the current
-/// tab's stack like any library page. A reading context pushes above the suspended
-/// reader instead and offers no folder browsing.
-struct AppSearchHost {
-    var push: ((LibraryRoute) -> Void)?
-    var isCurrent: () -> Bool = { true }
-    var showsFolders = true
-    /// A result for the book already open beneath returns to it rather than opening it twice.
-    var isOpenBook: (LibraryEntry) -> Bool = { _ in false }
-    var returnToOpenBook: () -> Void = {}
-}
-
 /// A contextual search: its own session, pre-scoped, pushed on the current stack.
 struct AppSearchPage: View {
     let model: LibraryModel
-    var host = AppSearchHost()
+    let host: LibraryBrowsingHost
     private let allowsSaving: Bool
     @State private var search: AppSearch
-    init(model: LibraryModel, scope: AppSearchScope, host: AppSearchHost = AppSearchHost()) {
+    init(model: LibraryModel, scope: AppSearchScope, host: LibraryBrowsingHost = .main) {
         self.model = model; self.host = host
         allowsSaving = false
         _search = State(initialValue: AppSearch(seeds: scope.seeds))
     }
-    init(model: LibraryModel, configuration: BookSearchConfiguration, host: AppSearchHost) {
+    init(model: LibraryModel, configuration: BookSearchConfiguration, host: LibraryBrowsingHost) {
         self.model = model; self.host = host
         allowsSaving = true
         _search = State(initialValue: AppSearch(configuration: configuration))
@@ -135,10 +123,10 @@ struct ReaderContextSearch: View {
     @State private var pushed: LibraryRoute?
     @State private var visible = false
     var body: some View {
-        AppSearchPage(model: model, scope: scope,
-                      host: AppSearchHost(push: { pushed = $0 }, isCurrent: { visible }, showsFolders: false,
-                                          isOpenBook: isOpenBook, returnToOpenBook: returnToBook))
-            .navigationDestination(item: $pushed) { LibraryDestination(route: $0) }
+        let host = LibraryBrowsingHost(push: { pushed = $0 }, isCurrent: { visible }, allowsFileBrowsing: false,
+                                       isOpenBook: isOpenBook, returnToOpenBook: returnToBook)
+        AppSearchPage(model: model, scope: scope, host: host)
+            .navigationDestination(item: $pushed) { HostedLibraryDestination(route: $0, host: host) }
             .onAppear { visible = true }.onDisappear { visible = false }
     }
 }
@@ -158,7 +146,7 @@ private enum AppSearchSheet: Identifiable {
 struct AppSearchView: View {
     @Bindable var model: LibraryModel
     let search: AppSearch
-    var host = AppSearchHost()
+    var host: LibraryBrowsingHost = .main
     var savedFilter: SavedFilter?
     var allowsSaving = false
     @Environment(AIHost.self) private var ai
@@ -178,7 +166,7 @@ struct AppSearchView: View {
     private var error: String? { results.error }
     private var loading: LoadingState { results.loading }
     private var books: [LibraryEntry] { entries.filter { !$0.directory } }
-    private var folders: [LibraryEntry] { host.showsFolders ? entries.filter(\.directory) : [] }
+    private var folders: [LibraryEntry] { host.allowsFileBrowsing ? entries.filter(\.directory) : [] }
     private var groupCount: Int { [!books.isEmpty, !folders.isEmpty, ai.availability.isAvailable && !conversations.isEmpty].filter { $0 }.count }
     private var key: SearchKey {
         SearchKey(term: search.term, configuration: search.configuration, virtualShelf: virtualShelf, revision: results.authorityRevision,
@@ -303,8 +291,7 @@ struct AppSearchView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumBookWidth), spacing: LayoutTokens.content)],
                           alignment: .leading, spacing: LayoutTokens.section) {
                     ForEach(books, id: \.id) { entry in
-                        LibraryBookTile(model: model, entry: entry, showPath: true)
-                            .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
+                        LibraryBookTile(model: model, entry: entry, showPath: true, interaction: .browse(host))
                     }
                 }
             }
@@ -401,7 +388,7 @@ struct AppSearchView: View {
     private func openCreatedFilter() {
         guard let id = createdFilter else { return }
         createdFilter = nil
-        if let push = host.push { push(.savedFilter(id)) }
+        if host.push != nil { host.navigate(.savedFilter(id), in: model) }
         else { model.shell.openNewSavedFilter(id, replacing: savedFilter?.id) }
     }
 
@@ -435,25 +422,11 @@ struct AppSearchView: View {
         }
     }
     private func navigate(_ route: LibraryRoute) {
-        if let push = host.push { push(route) } else { model.shell.path.append(route) }
-    }
-    @ViewBuilder private func row(_ entry: LibraryEntry) -> some View {
-        if host.push == nil {
-            LibraryFileRow(model: model, entry: entry, showPath: true, query: search.term)
-                .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
-        } else {
-            LibraryFileRow(model: model, entry: entry, showPath: true, query: search.term) {
-                if host.isOpenBook(entry) { host.returnToOpenBook() }
-                else { model.open(entry, push: host.push, isCurrent: host.isCurrent) }
-            }
-            .contextMenu {
-                if host.showsFolders { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
-            }
-        }
+        host.navigate(route, in: model)
     }
     private func rows(_ entries: [LibraryEntry]) -> some View {
         ForEach(entries, id: \.id) { entry in
-            row(entry)
+            LibraryFileRow(model: model, entry: entry, showPath: true, query: search.term, interaction: .browse(host))
                 .listRowInsets(EdgeInsets(top: 0, leading: LayoutTokens.page, bottom: 0, trailing: LayoutTokens.page))
                 .alignmentGuide(.listRowSeparatorLeading) { _ in LibraryFileRow.textLeading }
                 .listRowBackground(Color.clear)

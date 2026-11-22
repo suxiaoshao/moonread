@@ -118,7 +118,7 @@ private struct SavedFilterRow: View {
 struct SavedFilterDestination: View {
     let model: LibraryModel
     let id: UUID
-    var host = AppSearchHost()
+    var host: LibraryBrowsingHost = .main
     var body: some View {
         if let entry = model.savedFilters.entries.first(where: { $0.id == id }) {
             SavedFilterPage(model: model, entry: entry, host: host).id(id)
@@ -131,10 +131,10 @@ struct SavedFilterDestination: View {
 private struct SavedFilterPage: View {
     let model: LibraryModel
     let entry: SavedFilter
-    let host: AppSearchHost
+    let host: LibraryBrowsingHost
     @State private var search: AppSearch
 
-    init(model: LibraryModel, entry: SavedFilter, host: AppSearchHost) {
+    init(model: LibraryModel, entry: SavedFilter, host: LibraryBrowsingHost) {
         self.model = model
         self.entry = entry
         self.host = host

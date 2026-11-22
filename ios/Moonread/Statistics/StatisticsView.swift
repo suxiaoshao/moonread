@@ -4,6 +4,7 @@ import Charts
 
 struct StatisticsView: View {
     let library: LibraryModel
+    let host: LibraryBrowsingHost
     private enum Destination { case all, book(StatisticsRoute) }
     private let destination: Destination
     private var target: StatisticsRoute? { if case .book(let route) = destination { return route }; return nil }
@@ -23,8 +24,9 @@ struct StatisticsView: View {
     @State private var removingTask: AISessionSummary?
     @Environment(AIHost.self) private var ai
 
-    init(library: LibraryModel, target: StatisticsRoute? = nil) {
+    init(library: LibraryModel, target: StatisticsRoute? = nil, host: LibraryBrowsingHost = .main) {
         self.library = library
+        self.host = host
         _information = State(initialValue: BookInformationModel(service: library.service))
         destination = target.map(Destination.book) ?? .all
         let initial = target?.window ?? StatisticsWindow()
@@ -193,7 +195,7 @@ struct StatisticsView: View {
 
     @ViewBuilder private var contextSections: some View {
         if let target {
-            BookInformationSections(model: information, target: target, library: library)
+            BookInformationSections(model: information, target: target, library: library, host: host)
         } else {
             VStack(alignment: .leading, spacing: 16) {
                 Picker("统计范围", selection: periodSelection) {

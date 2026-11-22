@@ -8,6 +8,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
     // Resolve this dependency in the SwiftUI parent, before UIKit retains the configuration.
     let ai: AIHost
     let model: LibraryModel
+    let host: LibraryBrowsingHost
     let location: LibraryLocation
     let entries: [LibraryEntry]
     let shelf: LibraryShelf?
@@ -122,7 +123,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
             (cell as? UICollectionViewListCell)?.accessories = []
             if case .overview = item {
                 cell.contentConfiguration = UIHostingConfiguration {
-                    FolderOverview(model: config.model, location: config.location, shelf: config.shelf)
+                    FolderOverview(model: config.model, host: config.host, location: config.location, shelf: config.shelf)
                         .disabled(config.editing.isEditing || config.disabled).environment(\.theme, config.theme)
                 }.margins(.all, 0)
                 cell.isAccessibilityElement = false
@@ -130,6 +131,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
             }
             guard case let .file(id) = item, let entry = entriesByID[id] else { return }
             let selecting = config.editing.isEditing, selected = config.selection.contains(id)
+            let interaction: LibraryItemInteraction = selecting ? .selecting(selected: selected) : .browse(config.host)
             if config.layout == .list, let listCell = cell as? UICollectionViewListCell {
                 listCell.accessories = [.multiselect(options: .init(tintColor: config.theme.accent))]
                 cell.configurationUpdateHandler = { [weak self] cell, state in
@@ -143,16 +145,15 @@ struct LibraryCollection: UIViewControllerRepresentable {
             cell.contentConfiguration = UIHostingConfiguration {
                 Group {
                     if config.layout == .grid {
-                        LibraryBookTile(model: config.model, entry: entry, selected: selected, select: selecting ? {} : nil)
+                        LibraryBookTile(model: config.model, entry: entry, interaction: interaction)
                     } else {
-                        LibraryFileRow(model: config.model, entry: entry, select: selecting ? {} : nil)
+                        LibraryFileRow(model: config.model, entry: entry, interaction: interaction)
                             .alignmentGuide(.listRowSeparatorLeading) { _ in LibraryFileRow.textLeading }
                     }
                 }
                 .environment(\.theme, config.theme)
                 .disabled(config.disabled)
                 .allowsHitTesting(!selecting)
-                .contextMenu { if !selecting { LibraryItemMenu(model: config.model, entry: entry) } }
                 .environment(config.ai)
             }.margins(.vertical, 0).margins(.horizontal, config.layout == .list ? LayoutTokens.page : 0)
             // A selected cell is one accessible control; hosted buttons must not
@@ -229,7 +230,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
             if config.editing.isEditing { config.selection.insert(entry.id) }
             else if let session = droppingSession, entry.directory, springOpenedID != entry.id, canDrop(session, at: entry.location) {
                 springOpenedID = entry.id
-                config.model.open(entry)
+                config.host.open(entry, in: config.model)
             }
         }
         override func collectionView(_ collectionView: UICollectionView, didDeselectItemAt indexPath: IndexPath) {
@@ -336,6 +337,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
 
 private struct FolderOverview: View {
     let model: LibraryModel
+    let host: LibraryBrowsingHost
     let location: LibraryLocation
     let shelf: LibraryShelf?
     @Environment(\.theme) private var theme
@@ -346,7 +348,7 @@ private struct FolderOverview: View {
                 Text(verbatim: error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
             }
             if location.path.isEmpty {
-                Button { model.shell.path.append(.allBooks(location.shelfID)) } label: {
+                Button { host.navigate(.allBooks(location.shelfID), in: model) } label: {
                     HStack(spacing: LayoutTokens.compact) {
                         Label("全部小说", systemImage: "books.vertical").font(.subheadline.weight(.medium)).foregroundStyle(Color(uiColor: theme.accent))
                         Spacer()

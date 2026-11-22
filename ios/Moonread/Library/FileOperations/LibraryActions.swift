@@ -190,13 +190,15 @@ struct LibraryItemMenu: View {
     @Environment(AIHost.self) private var ai
     let model: LibraryModel
     let entry: LibraryEntry
-    var body: some View {
+    let host: LibraryBrowsingHost
+    let showsLocation: Bool
+    @ViewBuilder var body: some View {
         Group {
             Button("重命名", systemImage: "pencil") { model.sheet = .rename(entry) }
             Button("移动", systemImage: "folder") { model.sheet = .move([entry]) }
             if !entry.directory {
                 Button("小说详情", systemImage: "info.circle") {
-                    model.shell.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title)))
+                    host.navigate(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title)), in: model)
                 }
                 if ai.availability.isAvailable {
                     Button("完善资料", systemImage: "sparkles") { model.shell.aiRequest = .library([entry], family: .metadata) }
@@ -208,6 +210,10 @@ struct LibraryItemMenu: View {
             Divider()
             Button("删除", systemImage: "trash", role: .destructive) { model.deleteEntries([entry]) }
         }.disabled(!model.canAcceptFileWork)
+        if showsLocation {
+            Button("所在文件夹", systemImage: "folder") { host.navigate(.folder(entry.parent), in: model) }
+                .accessibilityIdentifier("library-result-path")
+        }
     }
 }
 

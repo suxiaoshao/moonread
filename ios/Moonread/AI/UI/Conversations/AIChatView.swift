@@ -182,8 +182,8 @@ private struct AIChatSearchPage: View {
     @State private var visible = false
 
     var body: some View {
-        let host = AppSearchHost(push: { pushed = $0 }, isCurrent: { visible }, showsFolders: reading == nil,
-                                 isOpenBook: { reading?.isOpenBook($0) ?? false }, returnToOpenBook: { reading?.returnToBook() })
+        let host = LibraryBrowsingHost(push: { pushed = $0 }, isCurrent: { visible }, allowsFileBrowsing: reading == nil,
+                                       isOpenBook: { reading?.isOpenBook($0) ?? false }, returnToOpenBook: { reading?.returnToBook() })
         Group {
             switch destination {
             case .suggestion(let configuration): AppSearchPage(model: model, configuration: configuration, host: host)
@@ -195,7 +195,7 @@ private struct AIChatSearchPage: View {
             if case .savedFilter(let id) = route {
                 AIChatSearchPage(model: model, destination: .savedShelf(id), reading: reading)
             } else {
-                LibraryDestination(route: route)
+                HostedLibraryDestination(route: route, host: host)
             }
         }
         .onAppear { visible = true }.onDisappear { visible = false }
