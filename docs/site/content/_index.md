@@ -9,4 +9,5 @@ listening_alt = "月读听书播放条与逐句高亮"
 typography_alt = "月读阅读设置"
 widget_alt = "月读桌面续读小组件"
 library_alt = "月读文件夹书架"
+backup_preview_alt = "阅读数据备份导入预览"
 +++
