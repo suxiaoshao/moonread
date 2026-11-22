@@ -37,7 +37,7 @@ SwiftPM 的共享仓库缓存放在 `build/DerivedData/SwiftPMPackageCache`，�
 
 每个新包（含编译缓存）API 存储量预算为 4 GiB。独立清理作业先确认成功 key 在精确 writer ref 唯一可见且在预算内，再删除同命名空间更旧 ID 及明确列出的旧 Cargo/DerivedData 前缀；保留当前和更晚并发代，保存失败或 API 不可确认时不删旧。新代超预算只移除该新代，保留旧种子并报告容量未通过；不提高额度。迁移清理仅作用于 Actions cache ID，不删除日志、xcresult 或 TestFlight artifact。
 
-缓存不决定测试源码：每次仍运行当前 Cargo、UniFFI 和 Xcode build-for-testing；先移除缓存中的旧 xctestrun，要求成功构建产生唯一当前 manifest，再显式用于 test-without-building。不会仅因 cache hit 直接测试旧 App，也不按提交时间伪造 mtime。UniFFI 先写临时目录，验证三个既有输出完整，再逐文件 cmp；未变保留 mtime，缺失/有变化才替换，失败停止构建。
+缓存不决定测试源码：每次仍运行当前 Cargo、UniFFI 和 Xcode build-for-testing。先移除缓存中的旧 xctestrun，再用 `generic/platform=iOS Simulator` 和 `ARCHS=arm64` 预编译并生成唯一的当前 manifest。`test-without-building` 使用该 manifest 和前面选定的模拟器 UDID，设备由执行测试的 Xcode 命令启动。不会仅因 cache hit 直接测试旧 App，也不按提交时间伪造 mtime。UniFFI 先写临时目录，验证三个既有输出完整，再逐文件 cmp；未变保留 mtime，缺失/有变化才替换，失败停止构建。
 
 阶段耗时、源码与环境身份、展开尺寸（CAS 与 SwiftPM 单列但不重复计入 DerivedData）、缓存命中、SwiftPM 解析日志、编译缓存诊断、Xcode build timing、Rust/Swift 测试日志和 xcresult 保留七天；restore/save 耗时以 Actions 步骤为准，压缩包大小以 API 为准。冷缓存 PR 只读，热缓存及 Swift/Rust 源码负向对照等待 release push 生成首个种子后执行。本工作流没有打包上传逻辑，不能将性能检查当发布或真实环境验收。
 

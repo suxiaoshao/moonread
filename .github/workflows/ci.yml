@@ -268,8 +268,6 @@ jobs:
           printf 'swiftpm_resolve\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
       - name: Compile current MoonreadTests (never skip a restored build)
         id: ios-build
-        env:
-          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           # Remove only old launch manifests. The current build must create its own.
           python3 - <<'PY'
@@ -277,15 +275,15 @@ jobs:
           for manifest in pathlib.Path('build/DerivedData/Build/Products').glob('*.xctestrun'):
               manifest.unlink()
           PY
-          nohup xcrun simctl boot "$SIMULATOR_UDID" >build/CI/simulator-boot.log 2>&1 &
           start=$SECONDS
           nix develop --no-update-lock-file -c xcodebuild \
             -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
-            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/DerivedData -showBuildTimingSummary \
             -packageCachePath "$GITHUB_WORKSPACE/$SWIFTPM_CACHE" \
             -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/$SWIFTPM_WORKSPACE" \
             -onlyUsePackageVersionsFromResolvedFile \
+            ARCHS=arm64 \
             COMPILATION_CACHE_ENABLE_CACHING=YES COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES \
             "COMPILATION_CACHE_CAS_PATH=$GITHUB_WORKSPACE/build/DerivedData/CompilationCache.noindex" \
             -only-testing:MoonreadTests -parallel-testing-enabled NO \
