@@ -66,6 +66,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 搜索与筛选按用途取数 | Swift `LibrarySearchQuery.swift` / `FolderQuery.swift` / `LibraryQueryRules.swift`；Apollo 生成固定结果类型 | 筛选取当前作者及标签，选项查询按正文身份一次汇总标签用量；普通搜索按条件选列，匹配在事务外执行，再核对输入并只给命中项补卡。AI 保留简介与正式资料兼容屏障。两者沿用写入时结算的 pending 整对象覆盖 | 搜索与选择页按需观察 |
 | 标签选择页的浏览分组与顺序 | Swift `Library/Search/BookTagCategories.swift` | 原词查随包词表，按标签使用本数和拼音分组排序。计数复用选项查询，两种入口共享展示规则，查询与存储仍使用原词 | 仅展示，不写用户数据 |
 | AI 工具输入/schema/输出契约与执行 | Swift `AI/Tools/Reading/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 只拆契约、执行和 `AppDataService+AIReading.swift` 平台适配的物理文件；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
+| AI 对话筛选建议 | 包内 `AIBookFilterContracts` 与宿主 `AIReadingTools`、`AICommittedResultDecoder` | 候选与手动筛选同源；宿主复用 `BookSearchConfiguration` 校验与查询。建议随成功工具结果保存，用户点击才打开独立搜索。书架 ID 与歧义选择留在本机 | 搜索、排序与虚拟书架由原领域持有 |
 | AI b: 引用协议 | Swift `AI/Tools/Reading/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验。外部字符串解码为书或文件引用，准备权限独立；共享准备由 AppDataService 持有，最后一个等待者释放工作 | 共享引用解析 |
 | v2 导入、搜索、重建及计时纯计算 | Rust `reading/compute.rs`、`reading/input/text.rs`、`library/tools/search_compute.rs`、`user/statistics/mod.rs` | 每步消费前态。导入共享发布规范化与原文／正文 SHA；搜索按显式范围每步最多 50 条；章节复用发布扫描器。计时新接口拒绝单步超过一天；生产采集调用连续段接口，旧切片入口仅供历史数据和 DEBUG 夹具 | 正文三项已由 Swift 用显式票据调用 |
 | v2 文件归属、连接池与本机归户 | Swift `Data/Database/DataSession.swift`、`LocalScopeImport.swift` | 唯一会话 owner 决定 `index.sqlite` 和所挂 `usr`；失去账户确认时仍可本机读写、不同步；明确登出使用 local。首次确认启用时冻结后合并目标证据，由目标同事务结算非事实当前值并写完成标记，成功后独立清理源；旧会话代次不得访问另一账户 | 归户后由当前用户库接入同步 |

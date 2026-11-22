@@ -293,6 +293,15 @@ extension AppDataService {
         try relationalUserIndex().metadataOptionsUpdates(shelfID: shelfID)
     }
 
+    func metadataOptions(shelfID: String?) async throws -> LibraryMetadataOptions {
+        try await fixedReaderRead { index in
+            try index.session.readUsers(index.lease) { db in
+                let options = try LibrarySearchRead.options(db, scope: index.lease.scope, shelfID: shelfID)
+                return LibrarySearchRead.optionValues(options)
+            }
+        }
+    }
+
     func searchInvalidations(_ spec: LibraryQueryRules.SearchSpec) throws -> AsyncThrowingStream<Void, Error> {
         try relationalUserIndex().searchInvalidations(spec)
     }

@@ -169,6 +169,10 @@
 | `propose_bookmark` | bookRef, offsetUtf8:integer | 预览已存在/新增，确认是“确保存在”，不调用 toggle 导致已有书签被删 |
 | `propose_cover` | bookRef, attachmentRef | 确认替换预览；必须是此任务可访问的有效图片附件，应用后转为用户封面资源 |
 | `propose_library_organization` | scopeRef, folders:[{temporaryRef,parentRef,name}], placements:[{fileRef,parentRef,name?}] | 虚拟目录树、变更、冲突、previewRef；应用捕获源原始 SHA 与父目录状态快照，不接受模型提供的 baseRevision。parentRef 只能是本方案 scopeRef 范围内目录或本方案 temporaryRef；名称校验，禁止循环/重复归属/删除/覆盖；未提到对象保持原样 |
+| `list_filter_options` | field:`tag/author/shelf`, query?:string, cursor?:string | `data.names` 与分页信息。复用筛选器的标签、作者和可用真实书架；候选仅包含名称，沿用当前聊天接收方的 reading 许可。 |
+| `propose_book_filter` | nodes:[{kind,parent?,relation?,excluded?,values?}], sorts:[{field,descending}] | 返回可重放的筛选建议。节点以先父后子的顺序提交，第一项为组，后续 `parent` 是父组的零起始下标。组用 `all/any`，标签用 `all/any/none`，`untagged` 是独立条件。排序键按优先级使用 `recent/name/author`，可只排序。 |
+
+建议按实际支持的筛选条件生成。无法表达或找不到精确名称时，模型应解释并向用户确认如何改写。标签与作者按原始 UTF-8 核对，唯一书架以不透明引用保留原身份，名称歧义由用户在本机选择。工具运行仅生成建议，点击成功提交到对话历史的卡片才使用现有搜索查询。筛选修改只作用于当次结果，另存虚拟书架仍由用户明确命名。
 
 整理 temporaryRef 必须唯一，并与 scopeRef、所有 placement fileRef 及真实引用保留命名空间（prefix: 形式）分离，校验发生在目录准备和预览变更前。普通 f/source 等名称仍有效；有效临时目录引用继续支持嵌套父子与文件 placement。
 

@@ -59,6 +59,12 @@ extension LibraryQueryRules {
     static func filterSuggestions(_ values: [String], query: String) -> [String] {
         values.filter { selectionMatches($0, query: query) }
     }
+    static func filterShelves(_ shelves: [LibraryShelf]) -> [LibraryShelf] {
+        shelves.filter { $0.error == nil }
+    }
+    static func filterShelfName(_ shelf: LibraryShelf) -> String {
+        shelf.id == "builtin" ? String(localized: "我的书架") : shelf.name
+    }
     static func statusName(_ status: BookReadingStatus) -> String {
         switch status {
         case .unread: "unread"

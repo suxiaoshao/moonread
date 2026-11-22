@@ -19,6 +19,7 @@ enum AppSearchSeed: Hashable {
     var configuration = BookSearchConfiguration()
     var keyboardDismissals = 0
     init(seeds: [AppSearchSeed] = []) { configuration.root.children = seeds.map(\.node) }
+    init(configuration: BookSearchConfiguration) { self.configuration = configuration }
     var term: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     var hasCriteria: Bool { !term.isEmpty || configuration.booksOnly }
 }
@@ -88,13 +89,20 @@ struct AppSearchHost {
 struct AppSearchPage: View {
     let model: LibraryModel
     var host = AppSearchHost()
+    private let allowsSaving: Bool
     @State private var search: AppSearch
     init(model: LibraryModel, scope: AppSearchScope, host: AppSearchHost = AppSearchHost()) {
         self.model = model; self.host = host
+        allowsSaving = false
         _search = State(initialValue: AppSearch(seeds: scope.seeds))
     }
+    init(model: LibraryModel, configuration: BookSearchConfiguration, host: AppSearchHost) {
+        self.model = model; self.host = host
+        allowsSaving = true
+        _search = State(initialValue: AppSearch(configuration: configuration))
+    }
     var body: some View {
-        AppSearchView(model: model, search: search, host: host)
+        AppSearchView(model: model, search: search, host: host, allowsSaving: allowsSaving)
             .modifier(AppSearchField(model: model, search: search))
     }
 }
@@ -152,6 +160,7 @@ struct AppSearchView: View {
     let search: AppSearch
     var host = AppSearchHost()
     var savedFilter: SavedFilter?
+    var allowsSaving = false
     @Environment(AIHost.self) private var ai
     @Environment(\.theme) private var theme
     @State private var results = AppSearchResults()
@@ -176,7 +185,7 @@ struct AppSearchView: View {
                   retry: retry, aiAvailable: ai.availability.isAvailable)
     }
     private var showsSaveActions: Bool {
-        search.configuration.booksOnly && (virtualShelf || search === model.shell.search)
+        search.configuration.booksOnly && (virtualShelf || allowsSaving || search === model.shell.search)
             && savedFilter?.configuration != search.configuration
     }
 
@@ -392,7 +401,8 @@ struct AppSearchView: View {
     private func openCreatedFilter() {
         guard let id = createdFilter else { return }
         createdFilter = nil
-        model.shell.openNewSavedFilter(id, replacing: savedFilter?.id)
+        if let push = host.push { push(.savedFilter(id)) }
+        else { model.shell.openNewSavedFilter(id, replacing: savedFilter?.id) }
     }
 
     private func openEditor() {
@@ -435,6 +445,9 @@ struct AppSearchView: View {
             LibraryFileRow(model: model, entry: entry, showPath: true, query: search.term) {
                 if host.isOpenBook(entry) { host.returnToOpenBook() }
                 else { model.open(entry, push: host.push, isCurrent: host.isCurrent) }
+            }
+            .contextMenu {
+                if host.showsFolders { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
             }
         }
     }

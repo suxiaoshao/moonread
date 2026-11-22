@@ -15,6 +15,8 @@ public enum AIToolPresentation {
         case "generate_image": String(localized: "生成图片")
         case "ls": String(localized: "浏览书架")
         case "search_books": String(localized: "查找书籍")
+        case "list_filter_options": String(localized: "查找筛选选项")
+        case "propose_book_filter": String(localized: "建议书架筛选")
         case "get_book": String(localized: "查看书籍资料")
         case "get_chapters": String(localized: "查看目录")
         case "read": String(localized: "阅读正文")
@@ -38,6 +40,8 @@ public enum AIToolPresentation {
         case "generate_image": "photo.badge.plus"
         case "ls": "folder"
         case "search_books": "magnifyingglass"
+        case "list_filter_options": "magnifyingglass"
+        case "propose_book_filter": "line.3.horizontal.decrease.circle"
         case "get_book": "book.closed"
         case "get_chapters": "list.bullet"
         case "read": "book"
