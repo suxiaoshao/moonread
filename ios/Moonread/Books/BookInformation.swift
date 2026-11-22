@@ -350,8 +350,6 @@ struct BookMetadataEditor: View {
                     NavigationLink {
                         BookTagPicker(service: draft.service, purpose: .metadata, selection: $draft.value.tags) {
                             EmptyView()
-                        } footer: {
-                            EmptyView()
                         } status: {
                             EmptyView()
                         }

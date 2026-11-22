@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 /// Both entry points select original strings. Their parent owns when the draft commits.
-struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
+struct BookTagPicker<Controls: View, Status: View>: View {
     enum Purpose {
         case filter, metadata
     }
@@ -14,7 +14,6 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
     var match: BookSearchMatch?
     @Binding var selection: [String]
     @ViewBuilder let controls: () -> Controls
-    @ViewBuilder let footer: () -> Footer
     @ViewBuilder let status: () -> Status
 
     @Environment(\.theme) private var theme
@@ -48,6 +47,8 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
 
     var body: some View {
         let groups = groups
+        let browsesCategories = showsChoices && browsing && options != nil && error == nil
+        let currentGroup = browsesCategories ? groups.first { $0.id == activeGroup } : nil
         // The system toolbar applies its own scroll-edge material to this page.
         ScrollViewReader { scroll in
             Group {
@@ -58,7 +59,6 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
                         controls()
                         ScrollView { status().frame(maxWidth: .infinity) }
                             .defaultScrollAnchor(.center, for: .alignment)
-                        footer()
                     }
                     .padding(.leading, horizontalMargins?.leading)
                     .padding(.trailing, horizontalMargins?.trailing)
@@ -68,20 +68,49 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
                 BookTagSystemMargins { horizontalMargins = $0 }.allowsHitTesting(false)
             }
             .toolbar {
-                if showsChoices && browsing && options != nil && error == nil && !groups.isEmpty {
+                if let currentGroup {
+                    if #available(iOS 26, *) {
+                        ToolbarItem(placement: .subtitle) {
+                            Text(currentGroup.category.title)
+                        }
+                    } else {
+                        ToolbarItem(placement: .principal) {
+                            VStack(spacing: 0) {
+                                Text("标签").font(.headline)
+                                Text(currentGroup.category.title).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .lineLimit(1)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityAddTraits(.isHeader)
+                        }
+                    }
+                }
+                if browsesCategories && !groups.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            ForEach(groups) { group in
-                                Button {
-                                    viewport.pending = nil
-                                    withAnimation(reduceMotion ? nil : .default) {
-                                        scroll.scrollTo(group.id, anchor: .top)
+                            if let currentGroup, canExpand(currentGroup) {
+                                let category = currentGroup.category
+                                if expanded.contains(category) {
+                                    Button("收起「\(category.title)」") {
+                                        expanded.remove(category)
+                                        jump(to: category, using: scroll)
                                     }
-                                } label: {
-                                    if group.id == (activeGroup ?? groups.first?.id) {
-                                        Label(group.category.title, systemImage: "checkmark")
-                                    } else {
-                                        Text(group.category.title)
+                                } else {
+                                    Button("展开「\(category.title)」") {
+                                        expanded.insert(category)
+                                    }
+                                }
+                            }
+                            Section("跳到分类") {
+                                ForEach(groups) { group in
+                                    Button {
+                                        jump(to: group.id, using: scroll)
+                                    } label: {
+                                        if group.id == (currentGroup?.id ?? groups.first?.id) {
+                                            Label(group.category.title, systemImage: "checkmark")
+                                        } else {
+                                            Text(group.category.title)
+                                        }
                                     }
                                 }
                             }
@@ -136,6 +165,13 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
         position.scrollTo(edge: .top)
     }
 
+    private func jump(to category: BookTagCategory, using scroll: ScrollViewProxy) {
+        viewport.pending = nil
+        withAnimation(reduceMotion ? nil : .default) {
+            scroll.scrollTo(category, anchor: .top)
+        }
+    }
+
     private var selectionHeader: some View {
         let words = Array(selection.reversed())
         return VStack(alignment: .leading, spacing: 0) {
@@ -186,7 +222,7 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
         let known = Set((options ?? []).map { Data($0.name.utf8) })
         let missing = purpose == .filter ? selected.subtracting(known) : []
         return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 controls()
                 selectionHeader
                 if let error {
@@ -209,7 +245,6 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
                 } else {
                     filteredChoices(groups, selected: selected, missing: missing)
                 }
-                footer().padding(.top, LayoutTokens.control)
             }
             .padding(.bottom, LayoutTokens.content)
             .transformAnchorPreference(key: BookTagViewportAnchors.self, value: .bounds) { $0.content = $1 }
@@ -261,6 +296,8 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
                 if visible.contains(where: { missing.contains($0.id) }) { unavailableNote }
             }
             .padding(.bottom, LayoutTokens.page)
+            // The menu scrolls to the body so the heading can hand off to the subtitle.
+            .id(group.id)
             .transformAnchorPreference(key: BookTagViewportAnchors.self, value: .bounds) {
                 $0.groupBodies[group.id] = $1
             }
@@ -269,7 +306,7 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
                 Text(group.category.title).font(.subheadline.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                if let count = foldedCounts[group.id], count < group.tags.count {
+                if canExpand(group) {
                     Button(opened ? "收起" : "展开") {
                         if !expanded.insert(group.id).inserted { expanded.remove(group.id) }
                     }
@@ -279,12 +316,14 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
                 }
             }
             .padding(.vertical, LayoutTokens.compact)
-            .background(Color(uiColor: theme.canvas))
             .anchorPreference(key: BookTagViewportAnchors.self, value: .bounds) {
                 .init(headers: [group.id: $0])
             }
         }
-        .id(group.id)
+    }
+
+    private func canExpand(_ group: BookTagGroup) -> Bool {
+        foldedCounts[group.id].map { $0 < group.tags.count } ?? false
     }
 
     @ViewBuilder private func filteredChoices(_ groups: [BookTagGroup], selected: Set<Data>, missing: Set<Data>) -> some View {
@@ -359,10 +398,7 @@ struct BookTagPicker<Controls: View, Footer: View, Status: View>: View {
         viewport.frames = frames
         let insets = viewport.metrics.insets
         let top = insets.top
-        let active = categories.last { group in
-            guard let body = frames.groupBodies[group], let header = frames.headers[group] else { return false }
-            return body.minY - header.height <= top + 2
-        }
+        let active = frames.category(above: top, orderedBy: categories)
         if activeGroup != active { activeGroup = active }
         guard let pending = viewport.pending, frames.selection == pending.selection else { return }
         viewport.pending = nil
@@ -414,6 +450,17 @@ private struct BookTagSystemMargins: UIViewControllerRepresentable {
         let choices: [Data: CGRect]
         let groupBodies: [BookTagCategory: CGRect]
         let headers: [BookTagCategory: CGRect]
+
+        func category(above top: CGFloat, orderedBy categories: [BookTagCategory]) -> BookTagCategory? {
+            // The body's top is the heading's bottom, even if the lazy stack has recycled the heading.
+            let firstMeasured = categories.firstIndex { headers[$0] != nil || groupBodies[$0] != nil }
+            let lastCrossed = categories.lastIndex {
+                guard let bottom = headers[$0]?.maxY ?? groupBodies[$0]?.minY else { return false }
+                return bottom <= top + 0.5
+            }
+            let index = lastCrossed ?? firstMeasured.map { $0 - 1 }
+            return index.flatMap { categories.indices.contains($0) ? categories[$0] : nil }
+        }
     }
 
     struct ScrollMetrics: Equatable {
@@ -442,11 +489,8 @@ private struct BookTagSystemMargins: UIViewControllerRepresentable {
     func firstVisibleChoice(excluding id: Data) -> (Data, CGRect)? {
         guard let frames else { return nil }
         let insets = metrics.insets
-        let pinnedBottom = frames.headers.values
-            .filter { $0.minY <= insets.top + 2 && $0.maxY > insets.top }
-            .map(\.maxY).max() ?? insets.top
         return frames.choices.filter { entry in
-            entry.key != id && entry.value.minY >= pinnedBottom && entry.value.maxY <= frames.height - insets.bottom
+            entry.key != id && entry.value.minY >= insets.top && entry.value.maxY <= frames.height - insets.bottom
         }.min { lhs, rhs in
             (lhs.value.minY, lhs.value.minX) < (rhs.value.minY, rhs.value.minX)
         }
@@ -622,19 +666,16 @@ struct BookSearchTagRulePage: View {
 
     let initial: BookSearchNode
     let onChange: (Bool) -> Void
-    let complete: (BookSearchNode) -> Void
-    let remove: (() -> Void)?
+    let complete: (BookSearchNode?) -> Void
     @State private var relation: Relation
     @State private var words: [String]
     @State private var preservesExistingUntagged: Bool
-    @Environment(\.theme) private var theme
 
     init(initial: BookSearchNode, onChange: @escaping (Bool) -> Void,
-         complete: @escaping (BookSearchNode) -> Void, remove: (() -> Void)?) {
+         complete: @escaping (BookSearchNode?) -> Void) {
         self.initial = initial
         self.onChange = onChange
         self.complete = complete
-        self.remove = remove
         let isUntagged = initial.match == .any && initial.values == [.untagged]
         _relation = State(initialValue: isUntagged ? .untagged : Relation(initial.match))
         _words = State(initialValue: initial.values.compactMap { if case .text(let word) = $0 { word } else { nil } })
@@ -667,24 +708,20 @@ struct BookSearchTagRulePage: View {
                 }
             }
             .padding(.top, LayoutTokens.compact)
-        } footer: {
-            if let remove {
-                Button("移除标签条件", role: .destructive, action: remove)
-                    .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
-                    .padding(.horizontal, LayoutTokens.control)
-                    .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: LayoutTokens.inputRadius))
-            }
         } status: {
             if relation == .untagged {
                 BookTagUntaggedStatus(restorableCount: words.count)
             }
         }
-        .onChange(of: node) { _, value in onChange(value != initial) }
+        .onChange(of: node) { _, value in
+            onChange(value != initial && (!value.values.isEmpty || !initial.values.isEmpty))
+        }
         .onDisappear { onChange(false) }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                SystemToolbarButton("完成", role: .confirm) { complete(node) }
-                    .disabled(node.validation() != nil)
+                SystemToolbarButton("完成", role: .confirm) {
+                    complete(node.values.isEmpty ? nil : node)
+                }
                     .accessibilityIdentifier("saveSearchCondition")
             }
         }

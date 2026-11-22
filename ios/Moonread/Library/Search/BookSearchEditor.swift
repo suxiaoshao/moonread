@@ -123,10 +123,11 @@ struct BookSearchEditor: View {
             if node.field == .tag {
                 BookSearchTagRulePage(initial: node, onChange: { draft.pendingRuleChanged = $0 },
                                       complete: { value in
-                    draft.save(value, parent: parent)
-                    path.removeLast()
-                }, remove: draft.node(node.id) == nil ? nil : {
-                    draft.edit(parent) { $0.children.removeAll { $0.id == node.id } }
+                    if let value {
+                        draft.save(value, parent: parent)
+                    } else if draft.node(node.id) != nil {
+                        draft.edit(parent) { $0.children.removeAll { $0.id == node.id } }
+                    }
                     path.removeLast()
                 })
             } else {
