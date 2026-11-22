@@ -182,7 +182,8 @@ struct DataV2MigrationTests {
         try check.close()
     }
 
-    @Test func upgradesVersionSevenUserStoreForLocalSavedFilters() throws {
+    @Test(arguments: [7, 8])
+    func upgradesUserStoreForUnfetchedHistoryDeletes(from oldVersion: Int) throws {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
@@ -191,10 +192,15 @@ struct DataV2MigrationTests {
         try first.close()
         let old = try DatabaseQueue(path: layout.user(.local).path)
         try old.write { db in
+            if oldVersion < 8 {
+                try db.execute(sql: "DROP TABLE local_saved_filter")
+            } else {
+                try db.execute(sql: "INSERT INTO local_saved_filter VALUES (1, 'filter', 'Existing filter', X'01')")
+            }
             try db.execute(sql: """
-                DROP TABLE local_saved_filter;
+                DROP TABLE cloud_history_delete_unfetched;
                 INSERT INTO local_shelf_recovery VALUES ('fixture', 'binding', X'01');
-                PRAGMA user_version=7;
+                PRAGMA user_version=\(oldVersion);
                 """)
         }
         try old.close()
@@ -202,13 +208,15 @@ struct DataV2MigrationTests {
         let upgraded = try DataSession(layout: layout)
         defer { try? upgraded.close() }
         let (lease, _) = try upgraded.activate(.signedOut)
-        let (version, filters, recovery) = try upgraded.read(lease) { db in
+        let (version, filters, deletes, recovery) = try upgraded.read(lease) { db in
             (try DataV2Schema.version(db, in: "usr"),
-             try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.local_saved_filter"),
+             try String.fetchAll(db, sql: "SELECT name FROM usr.local_saved_filter"),
+             try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.cloud_history_delete_unfetched"),
              try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.local_shelf_recovery WHERE key='fixture'"))
         }
         #expect(version == DataV2Schema.userVersion)
-        #expect(filters == 0)
+        #expect(filters == (oldVersion == 8 ? ["Existing filter"] : []))
+        #expect(deletes == 0)
         #expect(recovery == 1)
     }
 

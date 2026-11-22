@@ -86,7 +86,7 @@ struct ReadingDataInventory: Sendable {
     var configuration: UUID? = nil
 }
 enum ReadingDataError: LocalizedError {
-    case invalid, updateRequired, missingAsset, pendingIdentity, busy, changed, tooLarge
+    case invalid, updateRequired, missingAsset, pendingIdentity, busy, changed, tooLarge, pendingHistoryDeletion
     var errorDescription: String? {
         switch self {
         case .invalid: String(localized: "备份数据无效或包含冲突的记录", table: "DataManagement")
@@ -96,6 +96,7 @@ enum ReadingDataError: LocalizedError {
         case .busy: String(localized: "请先关闭相关阅读和未保存的编辑，再清除数据", table: "DataManagement")
         case .changed: String(localized: "数据或账户已变化，请重新预览", table: "DataManagement")
         case .tooLarge: String(localized: "备份超过一次事务可处理的范围", table: "DataManagement")
+        case .pendingHistoryDeletion: String(localized: "上次删除仍在同步，请稍后再导入", table: "DataManagement")
         }
     }
 }
@@ -358,6 +359,7 @@ struct UserBackupRestore: Sendable {
     }
 
     func preview(_ db: Database, scope: DataScope, cancellation: BackupCancellation) throws -> BackupRestoreReview {
+        try requireHistoryDeletionsSettled(db, scope: scope, cancellation: cancellation)
         var result = BackupRestoreReview()
         for entry in entries {
             try cancellation.check()
@@ -406,6 +408,7 @@ struct UserBackupRestore: Sendable {
     }
 
     func merge(_ db: Database, scope: DataScope, syncRequested: Bool, cancellation: BackupCancellation) throws {
+        try requireHistoryDeletionsSettled(db, scope: scope, cancellation: cancellation)
         let queueForSync = try syncRequested && scope != .local
             && CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready
             && ReadingCloudInitialization.traffic(db) == .ordinary
@@ -458,6 +461,25 @@ struct UserBackupRestore: Sendable {
             }
         }
         try cancellation.check()
+    }
+
+    private func requireHistoryDeletionsSettled(_ db: Database, scope: DataScope, cancellation: BackupCancellation) throws {
+        guard scope != .local else { return }
+        let pending = try CloudTransportRows.pendingHistoryDeletionIDs(db, zone: ReadingHistoryTransport.zone,
+                                                                      cancellation: cancellation)
+        guard !pending.isEmpty else { return }
+        for entry in entries {
+            try cancellation.check()
+            let type: ReadingHistoryTransport.RecordType
+            let id: String
+            switch entry {
+            case .fact(_, let value): (type, id) = (.fact, ReadingFactRows.identity(value.slice.id))
+            case .segment(let record): (type, id) = (.segment, record.id)
+            case .clear(let record): (type, id) = (.clear, record.id)
+            default: continue
+            }
+            if pending[type]?.contains(Data(id.utf8)) == true { throw ReadingDataError.pendingHistoryDeletion }
+        }
     }
 }
 

@@ -75,6 +75,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private var joiningZoneFinished = false
     private var interruptedBaseline = false
     private var ownZoneMissingDuringFetch = false
+    private var ownZoneFetchSucceeded = false
     private var offered: [CKRecord.ID: Offered] = [:]
 
     private init(journal: CloudCallbackJournal, database: CKDatabase, account: CKRecord.ID, staging: URL,
@@ -279,6 +280,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         try await fetchOwnZone(engine)
         try await verifyRecords(engine)
         try await sendDurable(engine)
+        // One follow-up pull lets a restore retry after the delete echoes have been consumed.
+        if try await journal.historyDeletionNeedsFetch() { try await fetchOwnZone(engine) }
     }
 
     private func uploadFirstInitialization(_ control: ReadingCloudInitialization.Control, engine: CKSyncEngine) async throws {
@@ -366,10 +369,16 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private func fetchOwnZone(_ engine: CKSyncEngine) async throws {
         try checkActive(engine)
         ownZoneMissingDuringFetch = false
+        ownZoneFetchSucceeded = false
         defer { ownZoneMissingDuringFetch = false }
         try await engine.fetchChanges(.init(scope: .zoneIDs([zone])))
         try checkActive(engine)
         if ownZoneMissingDuringFetch { throw CloudZoneRecoverySignal.verificationRequired }
+        if ownZoneFetchSucceeded, !engine.state.zoneIDsWithUnfetchedServerChanges.contains(zone) {
+            // The SDK has awaited the inbox and checkpoint callbacks for this fetch.
+            try await journal.finishHistoryDeletionFetch()
+            try checkActive(engine)
+        }
     }
 
     private func fetchJoiningBaseline(_ ready: ReadingCloudInitialization.Control, engine: CKSyncEngine) async throws {
@@ -633,6 +642,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                 }
             case .didFetchRecordZoneChanges(let event) where event.zoneID == zone:
                 if joiningControl != nil { joiningZoneFinished = event.error == nil }
+                else { ownZoneFetchSucceeded = event.error == nil }
                 if event.error?.code == .zoneNotFound { ownZoneMissingDuringFetch = true }
             case .didFetchChanges:
                 initialSignInAllowed = false

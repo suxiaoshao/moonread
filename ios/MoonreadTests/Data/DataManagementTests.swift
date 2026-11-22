@@ -205,6 +205,127 @@ import XCTest
         }
     }
 
+    func testBackupWaitsForMatchingHistoryDeletionAndTheNextZoneFetch() async throws {
+        let account = try DataScope.confirmed(container: "fixture.invalid", environment: .production, recordName: "backup-account")
+        let (sourceRoot, source, book, sourceRows) = try await editorFixture()
+        let (targetRoot, target, _, targetRows) = try await editorFixture(account: account)
+        defer {
+            for fixture in [sourceRows, targetRows] { try? fixture.index.session.close() }
+            for root in [sourceRoot, targetRoot] { try? FileManager.default.removeItem(at: root) }
+        }
+        let sha = book.fixtureSHA256
+        let started: Int64 = 1_728_000_000_000
+        let factID = "backup-fact"
+        let segmentID = "backup-segment"
+        let clear = ReadingClearRows.Value(v: 2, scopeKind: .captured, book: sha, session: nil,
+                                          throughMs: started - 1, factIds: [], segments: [])
+        let segment = ReadingSegment(header: .init(id: segmentID,
+            author: .init(ownerInstanceId: "fixture", sessionId: "new", title: "Fixture", device: "fixture"),
+            visitId: "new", startedMs: started + 2_000, endedMs: started + 3_000, localDay: 20000,
+            utcOffsetSeconds: 0, preview: false, revision: 1, durationMs: 1_000, sealed: true),
+            firstExposureStart: 0, exposuresText: #"[{"start_utf8":0,"end_utf8":8,"duration_ms":1000}]"#)
+        try await source.saveReading([.init(id: factID, sessionId: "legacy", visitId: "legacy", bookId: book.id,
+            startedMs: started, endedMs: started + 1_000, localDay: 20000,
+            utcOffsetSeconds: 0, preview: false, exposures: [])], generation: 0)
+        try sourceRows.index.session.writeUsers(sourceRows.index.lease) { db in
+            let origin = ReadingFactSettlement.Origin(source: "fixture", id: segmentID)
+            XCTAssertTrue(try ReadingSegmentRows.ingest(db, value: segment, book: sha, partition: 0,
+                                                       intake: .local(owner: "fixture"), origin: origin))
+            XCTAssertTrue(try ReadingClearRows.insert(db, clear, partition: 0))
+        }
+        let archive = try await source.exportReadingData()
+        defer { try? FileManager.default.removeItem(at: archive.deletingLastPathComponent()) }
+        let index = targetRows.index
+        let zone = ReadingHistoryTransport.zone
+        let keys = [ReadingHistoryTransport.key(.fact, id: factID),
+                    ReadingHistoryTransport.key(.segment, id: segmentID),
+                    ReadingHistoryTransport.key(.clear, id: clear.stableID)]
+        target.cloudSyncIntent.set(true)
+        XCTAssertEqual(try index.session.activate(.confirmed(account, syncRequested: true)).0, index.lease)
+        try index.session.writeUsers(index.lease) { db in
+            try UpgradeOrigins.finish(db)
+            try CloudTransportRows.initializeZone(db, zone: zone, exists: true)
+        }
+        let journal = try CloudCallbackJournal(session: index.session, lease: index.lease)
+        defer { journal.retire() }
+        func offered() throws -> [CloudCallbackJournal.Sent] {
+            try index.session.readUsers(index.lease) { db in
+                try keys.map { .init(attempt: try XCTUnwrap(CloudTransportRows.pending(db, $0)), systemFields: nil) }
+            }
+        }
+
+        let task = DataManagementModel(service: target).backupImport
+        task.receive(archive)
+        await task.waitForStop()
+        guard case .review(let preview) = task.phase else { return XCTFail("Expected initial import preview") }
+        defer { try? FileManager.default.removeItem(at: preview.staging.ownedRoot) }
+        try await target.importReadingBackup(preview)
+        let saves = try offered()
+        let saved = try await journal.acknowledge(saves)
+        XCTAssertEqual(saved, keys.count)
+        _ = try await target.deleteReadingData([sha])
+        let deletions = try offered()
+        XCTAssertTrue(deletions.allSatisfy { $0.attempt.intent == .delete })
+        let message = try XCTUnwrap(ReadingDataError.pendingHistoryDeletion.errorDescription)
+
+        task.confirm()
+        await task.waitForStop()
+        guard case .failed(.importing, let importError) = task.phase else { return XCTFail("Expected a write-time recheck") }
+        XCTAssertEqual(importError, message)
+        XCTAssertTrue(task.canRetry)
+        try index.session.readUsers(index.lease) { db in
+            for table in ["reading_fact", "reading_segment", "statistics_clear"] {
+                XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.\(table)"), 0)
+            }
+        }
+        task.resume()
+        await task.waitForStop()
+        guard case .failed(.checking, let previewError) = task.phase else { return XCTFail("Expected a preview block") }
+        XCTAssertEqual(previewError, message)
+
+        let confirmed = try await journal.acknowledge(deletions)
+        XCTAssertEqual(confirmed, keys.count)
+        journal.retire()
+        let resumed = try CloudCallbackJournal(session: index.session, lease: index.lease)
+        defer { resumed.retire() }
+        task.resume()
+        await task.waitForStop()
+        guard case .failed(.checking, let awaitingFetch) = task.phase else { return XCTFail("ACK alone cannot permit import") }
+        XCTAssertEqual(awaitingFetch, message)
+        XCTAssertTrue(task.canRetry)
+        try await target.cleanupOldBackupExports()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: preview.staging.ownedRoot.path))
+
+        try await resumed.applyOwnInbox(records: [], deletions: keys.map { .init(type: $0.type, name: $0.name) })
+        task.resume()
+        await task.waitForStop()
+        guard case .failed(.checking, _) = task.phase else { return XCTFail("A fetched page is not a completed fetch") }
+        try await resumed.persistCheckpoint(Data([1]))
+        try await resumed.finishHistoryDeletionFetch()
+        try index.session.writeUsers(index.lease) { db in
+            let otherType = ReadingHistoryTransport.key(.segment, id: factID)
+            try CloudTransportRows.enqueueDelete(db, otherType, businessID: factID)
+            let otherZone = CloudTransportRows.Key(zone: "other", type: keys[0].type, name: keys[0].name)
+            try CloudTransportRows.enqueueDelete(db, otherZone, businessID: factID)
+        }
+        task.resume()
+        await task.waitForStop()
+        guard case .review = task.phase else { return XCTFail("Unrelated deletes must not prevent re-preview") }
+        task.confirm()
+        await task.waitForStop()
+        guard case .completed = task.phase else { return XCTFail("Expected complete restore after fetch") }
+        let restored = try offered()
+        XCTAssertEqual(restored.map(\.attempt.intent), saves.map(\.attempt.intent))
+        XCTAssertTrue(zip(restored, deletions).allSatisfy { $0.attempt.generation > $1.attempt.generation })
+        let again = try await target.previewReadingBackup(preview.staging)
+        XCTAssertFalse(again.review.needsRestore)
+        let snapshot = try index.session.readUsers(index.lease) {
+            try StatisticsHistoryRead.overview($0, scope: account, window: .init(20000, 20000), target: .all)
+        }
+        guard case .value(let inputs, key: nil, incomplete: false) = snapshot else { return XCTFail("Expected restored history") }
+        XCTAssertEqual(try StatisticsHistoryRead.summarize(inputs).totalDurationMs, "2000")
+    }
+
     func testBackupReviewKeepsGlobalChangesAndMissingCoverSeparateFromNewerProgress() async throws {
         let (sourceRoot, source, book, sourceRows) = try await editorFixture()
         let (targetRoot, target, _, targetRows) = try await editorFixture()

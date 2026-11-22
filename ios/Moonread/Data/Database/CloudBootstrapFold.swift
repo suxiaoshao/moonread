@@ -91,10 +91,7 @@ enum CloudBootstrapFold {
         let possibleAssets = try String.fetchAll(db, sql: "SELECT DISTINCT asset_id FROM usr.cover_candidate WHERE partition=0 AND asset_id IS NOT NULL")
         // Local transport state was built against a different baseline. Do not
         // replay its pre-ACK compactions, sends or guessed server change tags.
-        try db.execute(sql: """
-            DELETE FROM usr.cloud_outbox WHERE zone=:zone;
-            DELETE FROM usr.cloud_record_state WHERE zone=:zone;
-            """, arguments: ["zone": ReadingHistoryTransport.zone])
+        try CloudTransportRows.resetZoneRecords(db, zone: ReadingHistoryTransport.zone)
         for domain in Domain.allCases {
             try db.execute(sql: "DELETE FROM usr.\(domain.rawValue) WHERE \(formalScope(domain))")
         }
