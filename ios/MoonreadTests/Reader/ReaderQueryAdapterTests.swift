@@ -476,6 +476,7 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
         try Self.metadata(db, book: a, field: "tag-1", value: "\"Group 2\"")
         try Self.metadata(db, book: a, field: "tag-2", value: "\"Group 10\"")
         try Self.metadata(db, book: b, field: "synopsis", value: "\"Unique synopsis token\"")
+        try Self.metadata(db, book: b, field: "tag-1", value: "\"Group 2\"")
         _ = try ReadingPositionRows.recordPosition(db, book: a, offset: 3, hint: nil,
           file: nil, device: "fixture", now: 10, token: "read")
         // A restored legacy position can have a nonzero offset and a zero clock.
@@ -516,7 +517,8 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
         try LibrarySearchRead.options(db, scope: index.lease.scope, shelfID: "builtin").bookFilterOptions
       }
       XCTAssertEqual(options.authors, ["Synthetic Writer"])
-      XCTAssertEqual(options.tags, ["Group 10", "Group 2"])
+      XCTAssertEqual(options.tags.map(\.name), ["Group 10", "Group 2"])
+      XCTAssertEqual(options.tags.map(\.bookCount), [1, 2])
 
       try index.session.writeUsers(index.lease) { db in
         try db.execute(sql: """
@@ -533,6 +535,34 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
           catalogue: .shelf(shelfId: "builtin", parentPath: "", recursive: false))
       }
     }
+  }
+
+  @MainActor func testUntaggedBookCountMatchesTheUnscopedFilter() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "UntaggedTests-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let index = try prepareFolder(at: root)
+    defer { try? index.session.close() }
+    let tagged = String(repeating: "a", count: 64)
+    let untagged = String(repeating: "b", count: 64)
+    try index.session.writeUsers(index.lease) { db in
+      try Self.addFile(db, id: "tagged", path: "tagged.txt", key: tagged)
+      try Self.addFile(db, id: "untagged", path: "untagged.txt", key: untagged)
+      try Self.addFile(db, id: "copy", path: "copy.txt")
+      try Self.addFile(db, id: "unknown", path: "unknown.txt")
+      try db.execute(sql: """
+        UPDATE main.library_files SET directory=0,book_id='body-untagged' WHERE id='copy';
+        UPDATE main.library_files SET directory=0 WHERE id='unknown'
+        """)
+      try Self.metadata(db, book: tagged, field: "tag-example", value: UserSyncJSON.encode("Example"))
+    }
+    let service = AppDataService(core: index)
+    let rule = BookSearchNode(kind: .rule(.untagged))
+    let configuration = BookSearchConfiguration(root: .init(kind: .group(.all, [rule])))
+    let outcome = try await service.searchLibrary(query: "", configuration: configuration)
+    let count = try await service.untaggedBookCount()
+    XCTAssertEqual(Set(outcome.entries.map(\.id)), ["untagged", "copy"])
+    XCTAssertEqual(outcome.unknownCount, 1)
+    XCTAssertEqual(count, outcome.entries.count)
   }
 
   @MainActor func testSearchAndOptionsObserveAnAttachedMetadataCommit() async throws {

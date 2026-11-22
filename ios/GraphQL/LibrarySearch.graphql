@@ -6,5 +6,5 @@ query SearchCandidates($shelfID: ID, $path: String) {
 }
 
 query BookFilterOptions($shelfID: ID) {
-  bookFilterOptions(shelfID: $shelfID) { authors tags }
+  bookFilterOptions(shelfID: $shelfID) { authors tags { name bookCount } }
 }

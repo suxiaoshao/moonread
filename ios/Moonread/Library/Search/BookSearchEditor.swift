@@ -120,7 +120,19 @@ struct BookSearchEditor: View {
             BookSearchGroupPage(draft: draft, id: id, model: model, navigate: { path.append($0) })
                 .navigationTitle(id == draft.value.root.id ? Text("组合条件") : Text("条件组"))
         case .rule(let parent, let node):
-            BookSearchRulePage(draft: draft, parent: parent, initial: node, model: model, path: $path)
+            if node.field == .tag {
+                BookSearchTagRulePage(initial: node, onChange: { draft.pendingRuleChanged = $0 },
+                                      complete: { value in
+                    if let value {
+                        draft.save(value, parent: parent)
+                    } else if draft.node(node.id) != nil {
+                        draft.edit(parent) { $0.children.removeAll { $0.id == node.id } }
+                    }
+                    path.removeLast()
+                })
+            } else {
+                BookSearchRulePage(draft: draft, parent: parent, initial: node, model: model, path: $path)
+            }
         }
     }
 
@@ -392,7 +404,7 @@ private struct BookSearchRulePage: View {
     @State private var node: BookSearchNode
     @State private var query = ""
     @State private var selectedOnly = false
-    @State private var options: BookFilterOptions?
+    @State private var options: LibraryMetadataOptions?
     @State private var error: String?
     @State private var loading = false
     @State private var retry = 0
@@ -404,14 +416,13 @@ private struct BookSearchRulePage: View {
     private var available: [BookSearchValue] {
         switch field {
         case .status: BookSearchStatus.allCases.map { .text($0.rawValue) }
-        case .tag: [.untagged] + (options?.tags ?? []).map(BookSearchValue.text)
+        case .tag: []
         case .author: (options?.authors ?? []).map(BookSearchValue.text)
         case .shelf: model.shelves.filter { $0.error == nil }.map { .text($0.id) }
         }
     }
     private var concreteValues: [BookSearchValue] {
-        let values = available + node.values.filter { !available.contains($0) }
-        return values.filter { $0 != .untagged }
+        available + node.values.filter { !available.contains($0) }
     }
     private var choices: [BookSearchValue] {
         concreteValues.filter { value in
@@ -419,27 +430,14 @@ private struct BookSearchRulePage: View {
                 && LibraryQueryRules.selectionMatches(node.valueTitle(value, shelfTitle: model.shelfTitle), query: query)
         }
     }
-    private var hasTagOptions: Bool { field == .tag && !concreteValues.isEmpty }
     private var canLimitChoices: Bool {
-        concreteValues.count > 1 && node.values.contains { $0 != .untagged }
-    }
-    private var tagConflict: String? {
-        guard hasTagOptions, node.match == .all, node.values.contains(.untagged) else { return nil }
-        return node.validation()
-    }
-    private var tagExplanation: LocalizedStringKey {
-        switch node.match {
-        case .any: "显示带有任一所选标签的小说"
-        case .all: "显示同时带有全部所选标签的小说"
-        case .none: "不显示带有所选标签的小说"
-        }
+        concreteValues.count > 1 && !node.values.isEmpty
     }
     private var removalTitle: LocalizedStringKey? {
         switch field {
-        case .tag: "移除标签条件"
         case .author: "移除作者条件"
         case .shelf: "移除书架条件"
-        case .status: nil
+        case .status, .tag: nil
         }
     }
     private var isExisting: Bool { draft.node(initial.id) != nil }
@@ -454,7 +452,7 @@ private struct BookSearchRulePage: View {
                 } actions: {
                     Button("重试") { retry += 1 }
                 }
-            } else if loading || (options == nil && (field == .tag || field == .author)) {
+            } else if loading || (options == nil && field == .author) {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 optionList
@@ -476,7 +474,7 @@ private struct BookSearchRulePage: View {
             options = nil; retry += 1
         }
         .task(id: retry) {
-            guard field == .tag || field == .author else { return }
+            guard field == .author else { return }
             let request = retry
             loading = true; error = nil
             defer { if request == retry { loading = false } }
@@ -494,21 +492,6 @@ private struct BookSearchRulePage: View {
 
     private var optionList: some View {
         List {
-            if hasTagOptions {
-                Section {
-                    Picker("标签关系", selection: $node.match) {
-                        ForEach([BookSearchMatch.any, .all, .none], id: \.self) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .listRowBackground(Color(uiColor: theme.surface))
-                } footer: {
-                    if let tagConflict {
-                        Text(tagConflict).foregroundStyle(Color(uiColor: theme.destructive))
-                    } else {
-                        Text(tagExplanation)
-                    }
-                }
-            }
             if !concreteValues.isEmpty {
                 Section {
                     ForEach(choices, id: \.self) { choiceRow($0) }
@@ -528,13 +511,6 @@ private struct BookSearchRulePage: View {
                     }
                 }
             }
-            if field == .tag {
-                Section {
-                    choiceRow(.untagged)
-                } footer: {
-                    Text(hasTagOptions ? "没有任何标签的小说" : "书库中还没有标签，只能筛选没有标签的小说。")
-                }
-            }
             if isExisting, let removalTitle {
                 Section {
                     Button(removalTitle, role: .destructive) {
@@ -547,7 +523,7 @@ private struct BookSearchRulePage: View {
         }
         .scrollContentBackground(.hidden)
         .overlay {
-            if field != .tag && concreteValues.isEmpty && !isExisting {
+            if concreteValues.isEmpty && !isExisting {
                 ContentUnavailableView("暂无可选项", systemImage: "line.3.horizontal.decrease")
             }
         }
@@ -581,13 +557,14 @@ private struct BookSearchRulePage: View {
     }
 }
 
-private struct BookSearchOptionSearch: ViewModifier {
+struct BookSearchOptionSearch: ViewModifier {
     let enabled: Bool
     @Binding var query: String
+    var prompt: LocalizedStringKey = "搜索选项"
 
     func body(content: Content) -> some View {
         if enabled {
-            content.searchable(text: $query, prompt: "搜索选项")
+            content.searchable(text: $query, prompt: prompt)
         } else {
             content
         }

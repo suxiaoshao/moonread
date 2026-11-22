@@ -9,7 +9,7 @@ extension MoonreadQueries {
     static let operationName: String = "BookFilterOptions"
     static let operationDocument: ApolloAPI.OperationDocument = .init(
       definition: .init(
-        #"query BookFilterOptions($shelfID: ID) { bookFilterOptions(shelfID: $shelfID) { __typename authors tags } }"#
+        #"query BookFilterOptions($shelfID: ID) { bookFilterOptions(shelfID: $shelfID) { __typename authors tags { __typename name bookCount } } }"#
       ))
 
     public var shelfID: GraphQLNullable<ID>
@@ -54,24 +54,56 @@ extension MoonreadQueries {
         static var __selections: [ApolloAPI.Selection] { [
           .field("__typename", String.self),
           .field("authors", [String].self),
-          .field("tags", [String].self),
+          .field("tags", [Tag].self),
         ] }
         static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
           BookFilterOptionsQuery.Data.BookFilterOptions.self
         ] }
 
         var authors: [String] { __data["authors"] }
-        var tags: [String] { __data["tags"] }
+        var tags: [Tag] { __data["tags"] }
 
         init(
           authors: [String],
-          tags: [String]
+          tags: [Tag]
         ) {
           self.init(unsafelyWithData: [
             "__typename": MoonreadQueries.Objects.SearchOptions.typename,
             "authors": authors,
-            "tags": tags,
+            "tags": tags._fieldData,
           ])
+        }
+
+        /// BookFilterOptions.Tag
+        ///
+        /// Parent Type: `SearchTagOption`
+        nonisolated struct Tag: MoonreadQueries.SelectionSet {
+          let __data: DataDict
+          init(_dataDict: DataDict) { __data = _dataDict }
+
+          static var __parentType: any ApolloAPI.ParentType { MoonreadQueries.Objects.SearchTagOption }
+          static var __selections: [ApolloAPI.Selection] { [
+            .field("__typename", String.self),
+            .field("name", String.self),
+            .field("bookCount", Int.self),
+          ] }
+          static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
+            BookFilterOptionsQuery.Data.BookFilterOptions.Tag.self
+          ] }
+
+          var name: String { __data["name"] }
+          var bookCount: Int { __data["bookCount"] }
+
+          init(
+            name: String,
+            bookCount: Int
+          ) {
+            self.init(unsafelyWithData: [
+              "__typename": MoonreadQueries.Objects.SearchTagOption.typename,
+              "name": name,
+              "bookCount": bookCount,
+            ])
+          }
         }
       }
     }

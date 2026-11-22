@@ -127,6 +127,26 @@ final class LibraryQueryRulesTests: XCTestCase {
             XCTAssertEqual(LibraryQueryRules.filterAndRank([candidate(title + ".txt", ordinal: 0)], spec: .init(profile: .library, query: spelling)).count, 1, "Use the same system-default polyphonic reading")
         }
     }
+    func testBundledTagMapResolvesExactTermsAndSuppliesGroupOrder() {
+        let examples: [(String, BookTagCategory)] = [
+            ("硬科幻", .fiction), ("签到流", .plot), ("机甲", .world), ("宫廷", .setting),
+            ("宫廷贵族", .character), ("F/F", .relationship), ("群像", .narrative),
+            ("資料庫", .subject), ("口述史", .form), ("Canon Divergence", .origin),
+            ("HE", .ending), ("Young Adult", .audience), ("R-18", .content), ("he", .uncategorized),
+        ]
+        let choices = examples.reversed().map { name, expected in
+            let category = BookTagCategory.category(for: name)
+            XCTAssertEqual(category, expected, name)
+            return BookTagChoice(name: name, bookCount: 1, category: category)
+        }
+
+        XCTAssertEqual(BookTagCategory.groups(choices).map(\.category), examples.map(\.1))
+        XCTAssertEqual(BookTagCategory.category(for: "Fandom: Example"), .origin)
+        XCTAssertEqual(BookTagCategory.category(for: "Character: Example"), .character)
+        XCTAssertEqual(BookTagCategory.category(for: "Relationship: Example"), .relationship)
+        XCTAssertEqual(BookTagCategory.category(for: "Fandom: "), .uncategorized)
+    }
+
     func testBookSearchExpressionsKeepUnknownDistinctFromAbsenceAndCompose() {
         let known = candidate("已索引.txt", ordinal: 0, metadata: .init(sha: String(repeating: "a", count: 64), author: "林澄", synopsis: "", tags: [], cover: nil, status: .unread))
         let unknown = candidate("未索引.txt", ordinal: 1)

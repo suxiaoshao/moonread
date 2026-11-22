@@ -221,7 +221,12 @@ type SearchFile {
 
 type SearchOptions {
   authors: [String!]!
-  tags: [String!]!
+  tags: [SearchTagOption!]!
+}
+
+type SearchTagOption {
+  name: String!
+  bookCount: Int!
 }
 
 type ReadingStatisticsOverview {
