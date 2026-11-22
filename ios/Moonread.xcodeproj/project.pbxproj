@@ -2687,7 +2687,7 @@ F01900000000000000000001,
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 17;
+                CURRENT_PROJECT_VERSION = 18;
                 MARKETING_VERSION = 1.8;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
@@ -2738,7 +2738,7 @@ F01900000000000000000001,
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 17;
+                CURRENT_PROJECT_VERSION = 18;
                 MARKETING_VERSION = 1.8;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
