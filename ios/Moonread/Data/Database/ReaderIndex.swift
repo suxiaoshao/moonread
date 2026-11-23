@@ -145,14 +145,12 @@ extension ReaderIndex {
         FROM main.books b WHERE b.content_sha256 NOT LIKE 'pending:%' AND b.chunk_count>0
         """
 
-    func cacheInventory(protectedBookIds: [String]) throws -> [CachedBody] {
+    static func cacheInventory(_ db: Database, protectedBookIds: [String]) throws -> [CachedBody] {
         let protected = Set(protectedBookIds)
-        return try read { db in
-            try Row.fetchAll(db, sql: Self.cacheRows).map { row in
-                let id: String = row["id"], hasJob: Bool = row["has_job"]
-                return .init(bookId: id, contentSha256: row["content_sha256"], title: row["title"],
-                             bytes: row["bytes"], protected: hasJob || protected.contains(id))
-            }
+        return try Row.fetchAll(db, sql: cacheRows).map { row in
+            let id: String = row["id"], hasJob: Bool = row["has_job"]
+            return .init(bookId: id, contentSha256: row["content_sha256"], title: row["title"],
+                         bytes: row["bytes"], protected: hasJob || protected.contains(id))
         }
     }
 

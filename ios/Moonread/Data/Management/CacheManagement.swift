@@ -12,12 +12,23 @@ struct BodyCacheInventory: Sendable {
 }
 
 extension AppDataService {
-    func bodyCacheInventory() throws -> BodyCacheInventory {
+    func bodyCacheInventory() async throws -> BodyCacheInventory {
         try Task.checkCancellation()
-        let core = try indexStore()
-        let bodies = try core.cacheInventory(protectedBookIds: cacheImportBookIDs())
-        return .init(lease: core.lease, clearable: bodies.filter { !$0.protected },
-                     held: bodies.filter(\.protected), coverFiles: try verifiedCoverCacheFiles())
+        let index = try relationalUserIndex(), protected = cacheImportBookIDs()
+        let directory = try coverDirectory(), thumbnails = try thumbnailCacheDirectory()
+        let work = Task.detached(priority: .utility) {
+            // Let the pooled reader scan without holding the session lifecycle lock.
+            let (bodies, copies) = try await index.session.readUsersForPublication(index.lease) { db in
+                (try ReaderIndex.cacheInventory(db, protectedBookIds: protected), try UserValueRows.verifiedCoverCopies(db))
+            }
+            let files = try Self.verifiedCoverCacheFiles(copies: copies, directory: directory, thumbnails: thumbnails)
+            return BodyCacheInventory(lease: index.lease, clearable: bodies.filter { !$0.protected },
+                                      held: bodies.filter(\.protected), coverFiles: files)
+        }
+        let inventory = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+        try Task.checkCancellation()
+        guard try indexStore().lease == inventory.lease else { throw CancellationError() }
+        return inventory
     }
 
     func storageBodyCanClose(_ body: CachedBody, lease: DataSessionLease) throws -> Bool {
@@ -38,22 +49,23 @@ extension AppDataService {
             .appending(path: dataDirectoryName + "/Covers", directoryHint: .isDirectory)
     }
 
-    private func verifiedCoverCacheFiles() throws -> [StorageFile] {
-        let writer = try relationalUserIndex()
-        let copies = try writer.session.readUsers(writer.lease) { try UserValueRows.verifiedCoverCopies($0) }
-        let dir = try coverDirectory()
+    private nonisolated static func verifiedCoverCacheFiles(copies: [UserValueRows.CoverCopy], directory: URL,
+                                                            thumbnails: URL) throws -> [StorageFile] {
         let byPrefix = Set(copies.map { $0.id + "-" + $0.sha256 })
-        let covers = try StorageFile.files(in: dir).filter { file in
+        let covers = try StorageFile.files(in: directory).filter { file in
             let base = file.url.deletingPathExtension().lastPathComponent
             guard byPrefix.contains(base), let bytes = try? Data(contentsOf: file.url) else { return false }
             return DataIdentity.sha(bytes) == base.suffix(64)
         }
-        return try covers + StorageFile.files(in: thumbnailCacheDirectory())
+        return try covers + StorageFile.files(in: thumbnails)
     }
 
     func clearStorageCoverCaches(_ confirmed: [StorageFile], lease: DataSessionLease) throws -> UInt64 {
         guard try indexStore().lease == lease else { throw ReadingDataError.changed }
-        let current = Set(try verifiedCoverCacheFiles())
+        let writer = try relationalUserIndex()
+        let copies = try writer.session.readUsers(writer.lease) { try UserValueRows.verifiedCoverCopies($0) }
+        let current = Set(try Self.verifiedCoverCacheFiles(copies: copies, directory: coverDirectory(),
+                                                          thumbnails: thumbnailCacheDirectory()))
         return StorageFile.remove(confirmed.filter(current.contains))
     }
 
@@ -64,7 +76,8 @@ extension AppDataService {
         }
         let protected = cacheProtectedBookIDs()
         var allRemoved = true
-        for body in try index.cacheInventory(protectedBookIds: protected) where selectedSHAs.contains(body.contentSha256) {
+        let bodies = try index.read { try ReaderIndex.cacheInventory($0, protectedBookIds: protected) }
+        for body in bodies where selectedSHAs.contains(body.contentSha256) {
             let removed = try index.evictCachedBody(body, protectedBookIds: protected)
             if !removed { allRemoved = false }
         }
