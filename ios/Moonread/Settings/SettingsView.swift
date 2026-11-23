@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum SettingsTask: Hashable {
-    case reading, statistics, system, library, data, cloud, ai, appearance, guide, about, support
+    case reading, statistics, system, library, data, storage, cloud, ai, appearance, guide, about, support
     #if MOONREAD_INTERNAL_TOOLS
     case metadataCleanup
     #endif
@@ -138,6 +138,11 @@ struct SettingsView: View {
                     settingsLink(.data) {
                         SettingsEntry(title: LocalizedStringResource("数据管理", table: "DataManagement"), symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"), selected: sizeClass == .regular && navigation.selectedTask == .data)
                     }.accessibilityIdentifier("dataManagementSettings")
+                    settingsLink(.storage) {
+                        SettingsEntry(title: LocalizedStringResource("存储空间", table: "Storage"), symbol: "internaldrive",
+                                      summary: String(localized: "管理缓存、临时文件和旧版数据", table: "Storage"),
+                                      selected: sizeClass == .regular && navigation.selectedTask == .storage)
+                    }.accessibilityIdentifier("storageSettings")
                     if CloudConfiguration.availableInBuild {
                         settingsLink(.cloud) {
                             SettingsEntry(title: "iCloud", symbol: "icloud", summary: cloud.settingsSummary, selected: sizeClass == .regular && navigation.selectedTask == .cloud)
@@ -292,6 +297,7 @@ struct SettingsTaskContent: View {
         case .system: SystemIntegrationSettingsView(library: library)
         case .library: LibraryManagementView(model: library)
         case .data: DataManagementView(model: library.shell.dataManagement).navigationBarTitleDisplayMode(.large)
+        case .storage: StorageSpaceView(data: library.shell.dataManagement)
         case .cloud: CloudSettingsView()
         case .ai: if ai.availability.isAvailable { AIEntry { AISettingsView() } }
         case .appearance: AppThemePreferencesView()

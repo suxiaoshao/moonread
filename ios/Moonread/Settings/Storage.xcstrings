@@ -1,5 +1,4 @@
 {"sourceLanguage":"zh-Hans","strings":{
-    "本机存储": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"On-Device Storage"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"本機儲存空間"}}}},
     "存储空间": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Storage"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"儲存空間"}}}},
     "管理缓存、临时文件和旧版数据": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Manage caches, temporary files, and old data"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"管理快取、暫存檔案和舊版資料"}}}},
     "阅读与封面缓存": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading and Cover Caches"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"閱讀與封面快取"}}}},
@@ -27,8 +26,6 @@
     "其他缓存": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Other Caches"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"其他快取"}}}},
     "偏好与其他文件": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Preferences and Other Files"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"偏好與其他檔案"}}}},
     "月读总占用": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Moonread Storage Used"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"月讀總用量"}}}},
-    "按月读可读取的本机文件统计，可能与 iOS 设置略有不同。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Based on local files Moonread can read. Usage may differ from iOS Settings."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"依月讀可讀取的本機檔案統計，可能與 iOS 設定略有不同。"}}}},
-    "部分文件无法读取，当前只显示已统计的占用。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Some files couldn’t be read. Only measured usage is shown."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"部分檔案無法讀取，目前只顯示已統計的用量。"}}}},
     "按类别管理": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Manage by Category"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"依類別管理"}}}},
     "选择清理项目": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Choose Items to Clear"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"選擇清理項目"}}}},
     "可管理内容": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Manage Storage"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"可管理內容"}}}},

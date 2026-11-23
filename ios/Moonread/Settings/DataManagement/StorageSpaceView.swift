@@ -49,12 +49,6 @@ private extension StorageOther {
     }
 }
 
-private enum StorageRoute: Hashable {
-    case category(StorageCategory)
-    case cleanup(StorageCleanupKind?)
-    case offline
-}
-
 struct StorageSpaceView: View {
     let data: DataManagementModel
     @State private var model: StorageSpaceModel
@@ -73,8 +67,6 @@ struct StorageSpaceView: View {
                     Text("月读总占用", tableName: "Storage").font(.headline)
                     Text(StorageSpaceModel.formatted(overview.total)).font(.largeTitle.bold())
                     if overview.total > 0 { storageBar(overview) }
-                    StorageHint("按月读可读取的本机文件统计，可能与 iOS 设置略有不同。")
-                    if overview.readingIncomplete { StorageHint("部分文件无法读取，当前只显示已统计的占用。") }
                 }
                 StorageGroup("按类别管理") {
                     ForEach(StorageCategory.allCases) { category in
@@ -82,13 +74,13 @@ struct StorageSpaceView: View {
                                              bytes: overview.sizes[category, default: 0], color: category.color(theme),
                                              navigates: category != .app)
                         if category == .app { row }
-                        else { NavigationLink(value: StorageRoute.category(category)) { row }.buttonStyle(.plain) }
+                        else {
+                            NavigationLink {
+                                StorageCategoryPage(category: category, model: model, data: data)
+                            } label: { row }
+                            .buttonStyle(.plain).accessibilityIdentifier("storageCategory-\(category.rawValue)")
+                        }
                     }
-                }
-                if !model.available.isEmpty {
-                    NavigationLink(value: StorageRoute.cleanup(nil)) {
-                        Text("选择清理项目", tableName: "Storage").frame(maxWidth: .infinity)
-                    }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
                 }
                 if let message = model.cleanupMessage { Text(verbatim: message).font(.footnote) }
             } else if let error = model.overviewError {
@@ -100,11 +92,14 @@ struct StorageSpaceView: View {
         .task { await model.refresh() }
         .refreshable { await model.refresh() }
         .accessibilityIdentifier("storageOverview")
-        .navigationDestination(for: StorageRoute.self) { route in
-            switch route {
-            case .category(let kind): StorageCategoryPage(category: kind, model: model, data: data)
-            case .cleanup(let kind): StorageSelectionPage(model: model, mode: .cleanup(kind))
-            case .offline: StorageSelectionPage(model: model, mode: .offline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if model.overview != nil, !model.available.isEmpty {
+                    NavigationLink {
+                        StorageSelectionPage(model: model, mode: .cleanup(nil))
+                    } label: { Text("清理", tableName: "Storage") }
+                    .accessibilityIdentifier("storageCleanup")
+                }
             }
         }
     }
@@ -163,7 +158,9 @@ private struct StorageCategoryPage: View {
                     StorageGroup("可管理内容") {
                         link(.cache)
                         if !bodies.offline.isEmpty {
-                            NavigationLink(value: StorageRoute.offline) {
+                            NavigationLink {
+                                StorageSelectionPage(model: model, mode: .offline)
+                            } label: {
                                 StorageRow(title: .init("离线正文", table: "Storage"),
                                            detail: .init("原文件暂不可用 · 按书移除", table: "Storage"),
                                            bytes: bodies.offline.reduce(0) { $0 + $1.bytes }, navigates: true)
@@ -225,7 +222,9 @@ private struct StorageCategoryPage: View {
     @ViewBuilder private func link(_ kind: StorageCleanupKind) -> some View {
         let bytes = model.bytes(for: kind)
         if bytes > 0 {
-            NavigationLink(value: StorageRoute.cleanup(kind)) {
+            NavigationLink {
+                StorageSelectionPage(model: model, mode: .cleanup(kind))
+            } label: {
                 StorageRow(title: kind.title, bytes: bytes, navigates: true)
             }.buttonStyle(.plain)
         } else {

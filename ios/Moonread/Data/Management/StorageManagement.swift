@@ -14,7 +14,6 @@ struct StorageOverview: Sendable {
     var sizes: [StorageCategory: UInt64] = [:]
     var other: [StorageOther: UInt64] = [:]
     var activeDatabase: UInt64 = 0
-    var readingIncomplete = false
     var total: UInt64 { sizes.values.reduce(0, +) }
 }
 
@@ -71,15 +70,15 @@ extension AppDataService {
 
     private nonisolated static func scanStorage(support: URL, userDatabase: URL, thumbnails: URL) throws -> StorageOverview {
         let manager = FileManager.default
-        let home = URL(filePath: NSHomeDirectory(), directoryHint: .isDirectory)
         let bundle = Bundle.main.bundleURL
         let appGroup = manager.containerURL(forSecurityApplicationGroupIdentifier: SystemReadingSnapshotFile.groupIdentifier)
-        let caches = home.appending(path: "Library/Caches", directoryHint: .isDirectory)
+        let library = try manager.url(for: .libraryDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+        let caches = try manager.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
         let temp = manager.temporaryDirectory
         let covers = support.appending(path: "Assets/Covers", directoryHint: .isDirectory)
         let parent = support.appending(path: "Data/v3", directoryHint: .isDirectory)
         let appData = support.appending(path: "Data", directoryHint: .isDirectory)
-        let documents = home.appending(path: "Documents", directoryHint: .isDirectory)
+        let documents = try manager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
         let share = appGroup?.appending(path: "ShareInbox", directoryHint: .isDirectory)
         let work = ["MetadataImport", "ReadingBackups"].map { support.appending(path: $0, directoryHint: .isDirectory) }
         let tempWork = ["Moonread-MetadataImports", support.lastPathComponent + "-CoverDrafts",
@@ -122,8 +121,10 @@ extension AppDataService {
             return (.other, .preferences)
         }
 
-        for root in [bundle, home, appGroup].compactMap({ $0 }) {
-            let files = try StorageFile.files(in: root) { _ in result.readingIncomplete = true }
+        // The container root also contains iOS-private directories, such as
+        // SystemData. Measure the app's public container directories directly.
+        for root in [bundle, library, documents, temp, appGroup].compactMap({ $0 }) {
+            let files = try StorageFile.files(in: root)
             for file in files where seen[file.device, default: []].insert(file.inode).inserted {
                 let (category, detail) = allocation(file.url)
                 result.sizes[category, default: 0] += file.bytes

@@ -57,7 +57,7 @@ struct StorageCleanupRequest {
     func loadOverview() async {
         do { overview = try await service.storageOverview(); overviewError = nil }
         catch is CancellationError {}
-        catch { overviewError = ReaderMessages.error(error) }
+        catch { overview = nil; overviewError = ReaderMessages.error(error) }
     }
 
     func loadChoices() async {

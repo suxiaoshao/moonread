@@ -34,18 +34,13 @@ struct StorageFile: Hashable, Sendable {
         }
     }
 
-    static func files(in root: URL, onError: ((any Error) -> Void)? = nil) throws -> [Self] {
+    static func files(in root: URL) throws -> [Self] {
         if let file = try file(at: root) { return [file] }
         var work = try children(of: root), files: [Self] = []
         while let url = work.popLast() {
             try Task.checkCancellation()
-            do {
-                if let file = try file(at: url) { files.append(file) }
-                else { work += try children(of: url) }
-            } catch {
-                guard let onError else { throw error }
-                onError(error)
-            }
+            if let file = try file(at: url) { files.append(file) }
+            else { work += try children(of: url) }
         }
         return files
     }

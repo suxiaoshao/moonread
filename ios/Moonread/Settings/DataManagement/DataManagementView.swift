@@ -57,20 +57,6 @@ struct DataManagementView: View {
                         }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
                     }.accessibilityIdentifier("readingDataList")
                 }
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("本机存储", tableName: "Storage").font(.headline)
-                    NavigationLink { StorageSpaceView(data: model) } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("存储空间", tableName: "Storage").font(.body.weight(.medium))
-                                Text("管理缓存、临时文件和旧版数据", tableName: "Storage")
-                                    .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.footnote)
-                        }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
-                    }.accessibilityIdentifier("readingDataCaches")
-                }
             }.padding(20).frame(maxWidth: 690, alignment: .leading).frame(maxWidth: .infinity)
         }
         .themedPage().navigationTitle(Text("数据管理", tableName: "DataManagement"))
