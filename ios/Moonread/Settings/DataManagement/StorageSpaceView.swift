@@ -19,7 +19,7 @@ private extension StorageCategory {
         case .database: Color(uiColor: theme.success)
         case .work: Color(uiColor: theme.warning)
         case .old: Color(uiColor: theme.destructive)
-        case .app: Color(uiColor: theme.ink)
+        case .app: Color(uiColor: .systemGray)
         case .other: Color(uiColor: theme.secondary)
         }
     }
