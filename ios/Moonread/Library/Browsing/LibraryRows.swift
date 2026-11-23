@@ -54,7 +54,7 @@ struct LibraryEmptyFolder: View {
 /// Editing belongs to the collection. Browsing can use any navigation host.
 @MainActor
 enum LibraryItemInteraction {
-    case browse(LibraryBrowsingHost)
+    case browse(LibraryBrowsingHost, beforeOpen: (() -> Void)? = nil)
     case selecting(selected: Bool)
 
     var isEditing: Bool {
@@ -66,11 +66,96 @@ enum LibraryItemInteraction {
         return false
     }
     var menuHost: LibraryBrowsingHost? {
-        if case .browse(let host) = self, host.allowsFileBrowsing { return host }
+        if case .browse(let host, _) = self, host.allowsFileBrowsing { return host }
         return nil
     }
     func activate(_ entry: LibraryEntry, in model: LibraryModel) {
-        if case .browse(let host) = self { host.open(entry, in: model) }
+        if case .browse(let host, let beforeOpen) = self {
+            beforeOpen?()
+            host.open(entry, in: model)
+        }
+    }
+}
+
+@MainActor struct LibraryItemLabel {
+    let entry: LibraryEntry
+    let theme: ThemeSurface
+    var match: LibraryQueryRules.SearchMatch?
+
+    func title() -> Text {
+        let range: Range<String.Index>?
+        if case .title(let hit) = match { range = hit } else { range = nil }
+        return Text(Self.highlight(entry.title, range: range, theme: theme))
+            .foregroundColor(Color(uiColor: theme.ink))
+    }
+
+    var authorMatched: Bool {
+        if case .author = match { return true }
+        return false
+    }
+
+    func detail(showsChapter: Bool = false) -> Text {
+        if case .author(let name, let range) = match {
+            let author = Text(Self.highlight(name, range: range, theme: theme))
+            return Text("作者 \(author)")
+        }
+        return Text(verbatim: showsChapter || entry.directory ? entry.libraryDetail : entry.libraryProgress)
+    }
+
+    func pathText(in model: LibraryModel) -> Text {
+        Text(verbatim: model.shelfTitle(entry.shelfId) + (entry.parentPath.isEmpty ? "" : " / " + entry.parentPath))
+    }
+
+    func path(in model: LibraryModel) -> some View {
+        let full = pathText(in: model)
+        return Label {
+            full.lineLimit(1).truncationMode(.middle)
+        } icon: {
+            Image(systemName: "folder").accessibilityHidden(true)
+        }
+        .labelStyle(CompactLibraryPathLabel())
+        .accessibilityLabel(full)
+    }
+
+    @ViewBuilder func cover(compact: Bool) -> some View {
+        if case .folder(let folder) = entry.item {
+            LibraryFolderCover(previews: folder.coverPreviews)
+        } else {
+            BookCoverView(title: entry.title, compact: compact, cover: entry.displayMetadata?.cover,
+                          contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author)
+        }
+    }
+
+    static func highlight(_ value: String, range: Range<String.Index>?, theme: ThemeSurface) -> AttributedString {
+        var text = AttributedString(value)
+        if let range, let lower = AttributedString.Index(range.lowerBound, within: text),
+           let upper = AttributedString.Index(range.upperBound, within: text), lower < upper {
+            text[lower..<upper].backgroundColor = Color(uiColor: theme.search)
+            text[lower..<upper].foregroundColor = Color(uiColor: theme.accent)
+        }
+        return text
+    }
+
+}
+
+private struct CompactLibraryPathLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) { configuration.icon; configuration.title }
+    }
+}
+
+struct LibraryItemMore<Actions: View>: View {
+    let entry: LibraryEntry
+    @ViewBuilder let actions: Actions
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Menu { actions } label: {
+            Image(systemName: "ellipsis")
+                .foregroundStyle(Color(uiColor: theme.secondary))
+                .frame(width: LayoutTokens.hit, height: LayoutTokens.hit)
+        }
+        .accessibilityLabel(String(localized: "\(entry.name)的操作"))
     }
 }
 
@@ -78,36 +163,30 @@ struct LibraryFileRow: View {
     let model: LibraryModel
     let entry: LibraryEntry
     var showPath = false
-    var query = ""
+    var match: LibraryQueryRules.SearchMatch?
     let interaction: LibraryItemInteraction
     static let coverSize = CGSize(width: 32, height: 44)
     private var coverSize: CGSize { Self.coverSize }
     static let textLeading: CGFloat = 32 + LayoutTokens.control
     @ScaledMetric(relativeTo: .body) private var rowHeight = 60.0
     @Environment(\.theme) private var theme
+    private var label: LibraryItemLabel { .init(entry: entry, theme: theme, match: match) }
     var body: some View {
             HStack(spacing: 4) {
                 Button { interaction.activate(entry, in: model) } label: {
                     HStack(spacing: LayoutTokens.control) {
-                        if case .folder(let folder) = entry.item {
-                            LibraryFolderCover(previews: folder.coverPreviews).frame(width: coverSize.width, height: coverSize.height)
-                        } else { BookCoverView(title: entry.title, compact: true, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).frame(width: coverSize.width, height: coverSize.height) }
+                        label.cover(compact: true).frame(width: coverSize.width, height: coverSize.height)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(highlighted).font(.body.weight(.medium)).lineLimit(1)
+                            label.title().font(.body.weight(.medium)).lineLimit(1)
                             if showPath {
                                 HStack(spacing: 6) {
-                                    Text(verbatim: entry.directory ? entry.libraryDetail : entry.libraryProgress)
-                                        .fixedSize(horizontal: true, vertical: false)
+                                    label.detail().fixedSize(horizontal: !label.authorMatched, vertical: false)
                                     Text("·").accessibilityHidden(true)
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "folder").accessibilityHidden(true)
-                                        Text(verbatim: model.shelfTitle(entry.shelfId) + (entry.parentPath.isEmpty ? "" : " / " + entry.parentPath))
-                                            .lineLimit(1).truncationMode(.middle)
-                                    }
+                                    label.path(in: model)
                                 }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                                     .lineLimit(1)
                             } else {
-                                Text(verbatim: entry.libraryDetail).font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
+                                label.detail(showsChapter: true).font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }.padding(.vertical, LayoutTokens.compact).contentShape(.rect)
@@ -118,11 +197,9 @@ struct LibraryFileRow: View {
                         }
                     }
                 if let host = interaction.menuHost {
-                    Menu {
+                    LibraryItemMore(entry: entry) {
                         LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
-                    } label: {
-                        Image(systemName: "ellipsis").frame(width: LayoutTokens.hit, height: LayoutTokens.hit).foregroundStyle(Color(uiColor: theme.secondary))
-                    }.accessibilityLabel(String(localized: "\(entry.name)的操作"))
+                    }
                 }
             }.frame(height: rowHeight)
                 .contextMenu {
@@ -130,12 +207,5 @@ struct LibraryFileRow: View {
                         LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
                     }
                 }
-    }
-    private var highlighted: AttributedString {
-        var text = AttributedString(entry.title); text.foregroundColor = Color(uiColor: theme.ink)
-        if !query.isEmpty, let range = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) {
-            text[range].backgroundColor = Color(uiColor: theme.search); text[range].foregroundColor = Color(uiColor: theme.accent)
-        }
-        return text
     }
 }

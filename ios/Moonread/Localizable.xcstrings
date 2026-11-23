@@ -58,6 +58,7 @@
     " 或 ": {"localizations":{"en":{"stringUnit":{"state":"translated","value":" or "}},"zh-Hant":{"stringUnit":{"state":"translated","value":" 或 "}}}},
     "（%@）": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"(%@)"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"（%@）"}}}},
     "作者「%@」": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Author “%@”"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"作者「%@」"}}}},
+    "作者 %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Author %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"作者 %@"}}}},
     "作者（%@）": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Authors (%@)"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"作者（%@）"}}}},
     "书架「%@」": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Shelf “%@”"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書架「%@」"}}}},
     "书架（%@）": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Shelves (%@)"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書架（%@）"}}}},
