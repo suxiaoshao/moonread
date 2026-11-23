@@ -145,9 +145,9 @@ extension AppDataService {
               (try? parseSha256(value: cover.sha256)) != nil else { throw CocoaError(.fileReadCorruptFile) }
         return try coverDirectory().appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
     }
+    func coverDraftRoot() -> URL { MetadataTemporaryFiles.root("\(dataDirectoryName)-CoverDrafts") }
     func coverDraftURL(_ cover: BookCoverAsset) -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("\(dataDirectoryName)-CoverDrafts", isDirectory: true)
-            .appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
+        MetadataTemporaryFiles.current(coverDraftRoot()).appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
     }
     func discardCoverDraft(_ cover: BookCoverAsset) { try? FileManager.default.removeItem(at: coverDraftURL(cover)) }
     fileprivate struct NormalizedCover {
@@ -346,6 +346,7 @@ extension AppDataService {
         let bytes = normalized.bytes
         let cover = BookCoverAsset(id: UUID().uuidString, sha256: Self.coverDigestString(bytes, digest: digest),
                                   extension: normalized.ext, width: normalized.width, height: normalized.height)
+        _ = MetadataTemporaryFiles.prepare(coverDraftRoot())
         let url = coverDraftURL(cover)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try bytes.write(to: url, options: .atomic)
@@ -477,7 +478,7 @@ actor CoverResourceLoader {
             try manager.createDirectory(at: main.deletingLastPathComponent(), withIntermediateDirectories: true)
             try bytes.write(to: main, options: .atomic)
         }
-        let draft = manager.temporaryDirectory.appendingPathComponent("\(directory)-CoverDrafts")
+        let draft = MetadataTemporaryFiles.current(MetadataTemporaryFiles.root("\(directory)-CoverDrafts"))
             .appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
         let url = manager.fileExists(atPath: main.path) ? main : draft
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),

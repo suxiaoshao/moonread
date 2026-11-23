@@ -53,16 +53,19 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
       _ = try await service.makeCover(Data("invalid image".utf8))
       XCTFail("invalid cover accepted")
     } catch {}
-    let cover = try await service.makeCover(data)
+    let draft = try await service.makeCover(data)
+    let draftReadout = try await service.coverURL(draft)
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: draftReadout.path), "Selection stays a draft until Save")
+    var edited = base
+    edited.cover = draft
+    try await service.saveMetadata(base: base, edited: edited)
+    let persisted = try await service.details(bookID: book.id).metadata
+    let cover = try XCTUnwrap(persisted.cover)
+    XCTAssertNotEqual(cover.id, draft.id)
+    XCTAssertEqual(cover.sha256, draft.sha256)
     let url = try await service.coverURL(cover)
     defer { try? FileManager.default.removeItem(at: url) }
-    XCTAssertFalse(
-      FileManager.default.fileExists(atPath: url.path), "Selection stays a draft until Save")
-    var edited = base
-    edited.cover = cover
-    try await service.saveMetadata(base: base, edited: edited)
-    let saved = try await service.details(bookID: book.id).metadata
-    XCTAssertEqual(saved.cover, cover)
     var cache = AppDataService.PreviewCoverCache()
     var candidates = AppDataService.PreviewCoverCandidates()
     var reuseDrafts: [URL] = []

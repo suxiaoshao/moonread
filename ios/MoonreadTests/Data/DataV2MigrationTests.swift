@@ -40,7 +40,7 @@ struct DataV2MigrationTests {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
-        let oldURL = root.appending(path: "reader source.sqlite3")
+        let oldURL = root.appending(path: "reader.sqlite3")
         let old = try DatabaseQueue(path: oldURL.path)
         try await old.write { db in
             try db.execute(sql: DataV2Schema.sql("schema"))
@@ -61,7 +61,9 @@ struct DataV2MigrationTests {
 
         let owner = try DataSession(layout: layout)
         let (lease, _) = try await owner.activate(.unknown)
+        #expect(try owner.importedLegacyIndexFiles(lease).isEmpty)
         try await owner.importLegacyIndex(oldURL, token: lease)
+        #expect(try owner.importedLegacyIndexFiles(lease).isEmpty)
         let result = try await owner.read(lease) { db in
             let text = try String.fetchOne(db, sql: "SELECT text FROM main.chunks WHERE book_id='reading'")
             let bookmark = try Data.fetchOne(db, sql: "SELECT bookmark FROM main.library_shelves")
@@ -73,6 +75,9 @@ struct DataV2MigrationTests {
         #expect(result.1 == Data([1,2,3,0]))
         #expect(result.2 == "reading" && result.3 == 17 && result.4 == "local")
         #expect(result.5 == 0)
+        try owner.prepareIndex(oldURL, token: lease)
+        let obsolete = try owner.importedLegacyIndexFiles(lease)
+        #expect(obsolete.contains { $0.url.path == oldURL.standardizedFileURL.path })
         await #expect(throws: DataV2Error.migrationAlreadyComplete) { try await owner.importLegacyIndex(oldURL, token: lease) }
         try await owner.close()
         let check = try DatabaseQueue(path: oldURL.path)
@@ -382,6 +387,7 @@ struct DataV2MigrationTests {
         try reopened.prepareUsers(reopenedLease) { nil }
         reopened.removeAdoptedReleasedStoreAfterStartup()
         #expect(!files.fileExists(atPath: published.path))
+        #expect(try reopened.importedLegacyIndexFiles(reopenedLease).isEmpty)
         #expect(try ReadingDataLayoutUpgrade.prepare(production) == .mislabelledProduction(approvedScope: oldA.scope.key))
         #expect(reopenedLease.scope == newA.scope)
         #expect(try offset(ReaderIndex(session: reopened, lease: reopenedLease)) == 56)

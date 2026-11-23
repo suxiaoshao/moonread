@@ -391,6 +391,7 @@ import GRDB
             error = failure
             phase = .failed
             checkpoint = nil
+            preview = nil
         } else {
             phase = .completed
             checkpoint = nil
@@ -443,6 +444,7 @@ import GRDB
     func reviewAgain() {
         guard work == nil, let inputURL, canRepreview else { return }
         checkpoint = nil
+        preview = nil
         result = nil
         requiresNewPreview = false
         record?.finished = false

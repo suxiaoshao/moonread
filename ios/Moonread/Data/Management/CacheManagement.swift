@@ -1,91 +1,144 @@
 import Foundation
-import CryptoKit
-import os
 
-struct CacheCleanupResult: Sendable { var bytes: UInt64 = 0; var removed = 0; var retained = 0 }
+struct BodyCacheInventory: Sendable {
+    let lease: DataSessionLease
+    var rebuildable: [CachedBody] = []
+    var offline: [CachedBody] = []
+    var held: [CachedBody] = []
+    var coverFiles: [StorageFile] = []
 
-/// Source authorization remains scoped throughout hashing and the eviction transaction.
-private final class CacheSourceWork: @unchecked Sendable {
-    private let cancelled = OSAllocatedUnfairLock(initialState: false)
-    private let probe = SourceIdentityProbe()
-    private let access = ProtectedFileAccess()
-    func cancel() { cancelled.withLock { $0 = true }; probe.cancel(); access.cancel() }
-    func run(body: CachedBody, file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderIndex, protected: [String]) async throws -> Bool {
-        try await Task.detached(priority: .utility) { [self] in
-            let source = try ProtectedFileAccess.Source(bookmark: Data(shelf.bookmark), relativePath: file.relativePath)
-            defer { withExtendedLifetime(source) {} }
-            let url = source.url
-            guard !file.needsDownload, source.contains() else { return false }
-            let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey, .fileSizeKey, .contentModificationDateKey]
-            let initial = try url.resourceValues(forKeys: keys)
-            guard initial.isUbiquitousItem != true || initial.ubiquitousItemDownloadingStatus == .current else { return false }
-            return try access.coordinatedRead(at: url) { readable in
-                let before = try readable.resourceValues(forKeys: keys)
-                guard before.isRegularFile == true, before.isSymbolicLink != true,
-                      before.fileSize.map(UInt64.init) == file.size,
-                      Int64((before.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000) == file.modified else { return false }
-                let identity = try probe.identify(filePath: readable.path, decoding: file.decoding)
-                guard identity.contentSha256 == body.contentSha256 else { return false }
-                var freshURL = readable; freshURL.removeAllCachedResourceValues()
-                let after = try freshURL.resourceValues(forKeys: keys)
-                guard before.fileSize == after.fileSize, before.contentModificationDate == after.contentModificationDate else { return false }
-                return try cancelled.withLock { flag in
-                    guard !flag else { throw CancellationError() }
-                    guard try core.publishSourceIdentity(file: file, identity: identity) else { return false }
-                    return try core.evictCachedBody(bookId: body.bookId, contentSha256: body.contentSha256, verifiedFile: file, protectedBookIds: protected, discardOffline: false)
-                }
-            } ?? false
-        }.value
+    var rebuildableBytes: UInt64 {
+        rebuildable.reduce(0) { $0 + $1.bytes } + coverFiles.reduce(0) { $0 + $1.bytes }
     }
 }
-extension AppDataService {
-    func cacheSummary() async throws -> CacheSummary {
-        let core = try indexStore(), protected = cacheProtectedBookIDs()
-        // Only the handle and active IDs belong to the service actor.
-        return try await Task.detached(priority: .utility) {
-            try core.cacheSummary(protectedBookIds: protected)
-        }.value
+
+/// Authorizes and verifies the snapshot under coordination. Only execution
+/// publishes the verified association and evicts the matching cached identity.
+private final class CacheSourceWork: Sendable {
+    private let probe = SourceIdentityProbe()
+    private let access = ProtectedFileAccess()
+
+    func cancel() { probe.cancel(); access.cancel() }
+
+    func withVerifiedSource(body: CachedBody, file: SourceFileSnapshot, shelf: LibraryShelf,
+                            use: (SourceTextIdentity) throws -> Bool) throws -> Bool {
+        try Task.checkCancellation()
+        let source: ProtectedFileAccess.Source
+        do { source = try .init(bookmark: Data(shelf.bookmark), relativePath: file.relativePath) }
+        catch { return false }
+        defer { withExtendedLifetime(source) {} }
+        let url = source.url
+        guard !file.needsDownload, source.contains() else { return false }
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .isUbiquitousItemKey,
+            .ubiquitousItemDownloadingStatusKey, .fileSizeKey, .contentModificationDateKey]
+        guard let initial = try? url.resourceValues(forKeys: keys),
+              initial.isUbiquitousItem != true || initial.ubiquitousItemDownloadingStatus == .current else { return false }
+        return try access.coordinatedRead(at: url) { readable in
+            guard let before = try? readable.resourceValues(forKeys: keys),
+                  before.isRegularFile == true, before.isSymbolicLink != true,
+                  before.fileSize.map(UInt64.init) == file.size,
+                  Int64((before.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000) == file.modified else { return false }
+            guard let identity = try? probe.identify(filePath: readable.path, decoding: file.decoding),
+                  identity.contentSha256 == body.contentSha256 else { return false }
+            var freshURL = readable
+            freshURL.removeAllCachedResourceValues()
+            guard let after = try? freshURL.resourceValues(forKeys: keys),
+                  before.fileSize == after.fileSize, before.contentModificationDate == after.contentModificationDate else { return false }
+            try Task.checkCancellation()
+            return try use(identity)
+        } ?? false
     }
-    func clearRebuildableCaches() async throws -> CacheCleanupResult {
-        let core = try indexStore(), bodies = try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs())
-        var result = CacheCleanupResult()
+}
+
+extension AppDataService {
+    func bodyCacheInventory() async throws -> BodyCacheInventory {
+        let core = try indexStore()
+        let bodies = try core.cacheInventory(protectedBookIds: cacheImportBookIDs())
+        var inventory = BodyCacheInventory(lease: core.lease)
         for body in bodies {
             try Task.checkCancellation()
-            guard !body.protected, identityMayRun() else { result.retained += 1; continue }
-            var removed = false
-            for file in try core.sourceFilesForSha(sha: body.contentSha256) where !file.needsDownload {
-                guard let shelf = try? libraryShelf(file.shelfId), shelf.error == nil else { continue }
-                let work = CacheSourceWork(), protected = cacheProtectedBookIDs()
-                do {
-                    removed = try await withTaskCancellationHandler {
-                        try await withReadingIdleWork(cancel: { work.cancel() }) {
-                            try await work.run(body: body, file: file, shelf: shelf, core: core, protected: protected)
-                        }
-                    } onCancel: { work.cancel() }
-                } catch is CancellationError { throw CancellationError() }
-                catch { continue }
-                if removed { break }
+            if body.protected {
+                inventory.held.append(body)
+                continue
             }
-            if removed { result.removed += 1; result.bytes += body.bytes }
-            else { result.retained += 1 }
+            let sources = try cacheSources(for: body, index: core)
+            let work = CacheSourceWork()
+            let verified = try await withTaskCancellationHandler {
+                try await Task.detached(priority: .utility) {
+                    try sources.contains { file, shelf in
+                        try work.withVerifiedSource(body: body, file: file, shelf: shelf) { _ in true }
+                    }
+                }.value
+            } onCancel: { work.cancel() }
+            try Task.checkCancellation()
+            if verified { inventory.rebuildable.append(body) }
+            else { inventory.offline.append(body) }
         }
-        // Only thumbnail copies and persisted, verified cover read-outs. Never drafts.
+        guard try indexStore().lease == core.lease else { throw ReadingDataError.changed }
+        inventory.coverFiles = try verifiedCoverCacheFiles()
+        return inventory
+    }
+
+    private func cacheSources(for body: CachedBody, index: ReaderIndex) throws -> [(SourceFileSnapshot, LibraryShelf)] {
+        try index.sourceFilesForSha(sha: body.contentSha256).compactMap { file in
+            guard !file.needsDownload, let shelf = try? libraryShelf(file.shelfId), shelf.error == nil else { return nil }
+            return (file, shelf)
+        }
+    }
+
+    func storageBodyCanClose(_ body: CachedBody, lease: DataSessionLease) throws -> Bool {
+        let core = try indexStore()
+        guard lease == core.lease, !cacheImportBookIDs().contains(body.bookId) else { return false }
+        return try core.canEvictCachedBody(body)
+    }
+
+    func evictStorageBody(_ body: CachedBody, offline: Bool, lease: DataSessionLease) async throws -> Bool {
+        let work = CacheSourceWork()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            let core = try indexStore(), protected = cacheProtectedBookIDs()
+            guard lease == core.lease, !protected.contains(body.bookId) else { return false }
+            let sources = try cacheSources(for: body, index: core)
+            for (file, shelf) in sources {
+                var found = false
+                let removed = try work.withVerifiedSource(body: body, file: file, shelf: shelf) { identity in
+                    found = true
+                    guard !offline, try core.publishSourceIdentity(file: file, identity: identity) else { return false }
+                    return try core.evictCachedBody(bookId: body.bookId, contentSha256: body.contentSha256,
+                        verifiedFile: file, protectedBookIds: protected, discardOffline: false)
+                }
+                if removed { return true }
+                if offline, found { return false }
+            }
+            guard offline else { return false }
+            try Task.checkCancellation()
+            return try core.evictCachedBody(bookId: body.bookId, contentSha256: body.contentSha256,
+                verifiedFile: nil, protectedBookIds: protected, discardOffline: true)
+        } onCancel: { work.cancel() }
+    }
+
+    func thumbnailCacheDirectory() throws -> URL {
+        try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+            .appending(path: dataDirectoryName + "/Covers", directoryHint: .isDirectory)
+    }
+
+    private func verifiedCoverCacheFiles() throws -> [StorageFile] {
         let writer = try relationalUserIndex()
-        guard writer.lease == core.lease else { throw CancellationError() }
         let copies = try writer.session.readUsers(writer.lease) { try UserValueRows.verifiedCoverCopies($0) }
-        let directory = try coverDirectory()
-        for name in (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [] {
-            let url = directory.appendingPathComponent(name)
-            guard let matched = copies.first(where: { name.hasPrefix($0.id + "-" + $0.sha256 + ".") }),
-                  (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
-                  let bytes = try? Data(contentsOf: url),
-                  SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == matched.sha256 else { continue }
-            try? FileManager.default.removeItem(at: url)
+        let dir = try coverDirectory()
+        let byPrefix = Set(copies.map { $0.id + "-" + $0.sha256 })
+        let covers = try StorageFile.files(in: dir).filter { file in
+            let base = file.url.deletingPathExtension().lastPathComponent
+            guard byPrefix.contains(base), let bytes = try? Data(contentsOf: file.url) else { return false }
+            return DataIdentity.sha(bytes) == base.suffix(64)
         }
-        let thumbs = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent(dataDirectoryName).appendingPathComponent("Covers")
-        if FileManager.default.fileExists(atPath: thumbs.path) { try FileManager.default.removeItem(at: thumbs) }
-        NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
-        return result
+        return try covers + StorageFile.files(in: thumbnailCacheDirectory())
+    }
+
+    func clearStorageCoverCaches(_ confirmed: [StorageFile], lease: DataSessionLease) throws -> UInt64 {
+        guard try indexStore().lease == lease else { throw ReadingDataError.changed }
+        let current = Set(try verifiedCoverCacheFiles())
+        return StorageFile.remove(confirmed.filter(current.contains))
     }
 
     func clearDeletedReadingBodyCaches(_ selectedSHAs: Set<String>, index: ReaderIndex) throws -> Bool {

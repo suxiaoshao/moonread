@@ -384,8 +384,11 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
         D50610000000000000000001 /* UserDataBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000001; };
         D50610000000000000000002 /* ReadingDataManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000002; };
         D50610000000000000000003 /* CacheManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000003; };
+        A36101000000000000000002 /* StorageManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000002 /* StorageManagement.swift */; };
+        A36101000000000000000001 /* StorageFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000001 /* StorageFiles.swift */; };
         D50610000000000000000004 /* DataManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000004; };
         D50610000000000000000005 /* DataManagement.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000005; };
+        A36101000000000000000005 /* Storage.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000005 /* Storage.xcstrings */; };
         D50610000000000000000006 /* DataManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000006; };
         D50610000000000000000007 /* CacheManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000007; };
 		7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */; };
@@ -487,6 +490,8 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802F64D6FADEC829D9FABA3E /* AIComposer.swift */; };
 		88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */; };
 		90709A613E0B26BF14B9F308 /* DataManagementModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */; };
+		A36101000000000000000004 /* StorageSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000004 /* StorageSpaceView.swift */; };
+		A36101000000000000000003 /* StorageSpaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000003 /* StorageSpaceModel.swift */; };
 		4E5986F68A44B334B7F8643D /* ReadingDataListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */; };
 		42F0869878D5AA951138E187 /* ReadingDataIssuesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */; };
 		2D2BA9F36327CC9404EEC2D1 /* AIModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */; };
@@ -903,8 +908,11 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
         D50620000000000000000001 /* UserDataBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserDataBackup.swift"; sourceTree = "<group>"; };
         D50620000000000000000002 /* ReadingDataManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingDataManagement.swift"; sourceTree = "<group>"; };
         D50620000000000000000003 /* CacheManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CacheManagement.swift"; sourceTree = "<group>"; };
+        A36102000000000000000002 /* StorageManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageManagement.swift; sourceTree = "<group>"; };
+        A36102000000000000000001 /* StorageFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageFiles.swift; sourceTree = "<group>"; };
         D50620000000000000000004 /* DataManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementView.swift; sourceTree = "<group>"; };
         D50620000000000000000005 /* DataManagement.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = DataManagement.xcstrings; sourceTree = "<group>"; };
+        A36102000000000000000005 /* Storage.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Storage.xcstrings; sourceTree = "<group>"; };
         D50620000000000000000006 /* DataManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DataManagementTests.swift"; sourceTree = "<group>"; };
         D50620000000000000000007 /* CacheManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CacheManagementTests.swift"; sourceTree = "<group>"; };
 		3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingSnapshot.swift; sourceTree = "<group>"; };
@@ -998,6 +1006,8 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		802F64D6FADEC829D9FABA3E /* AIComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIComposer.swift; sourceTree = "<group>"; };
 		3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIReadingAttachmentPreview.swift; sourceTree = "<group>"; };
 		C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementModel.swift; sourceTree = "<group>"; };
+		A36102000000000000000004 /* StorageSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSpaceView.swift; sourceTree = "<group>"; };
+		A36102000000000000000003 /* StorageSpaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSpaceModel.swift; sourceTree = "<group>"; };
 		B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataListView.swift; sourceTree = "<group>"; };
 		B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataIssuesView.swift; sourceTree = "<group>"; };
 		36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModelDetailView.swift; sourceTree = "<group>"; };
@@ -1284,6 +1294,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
 				D50620000000000000000005 /* DataManagement.xcstrings */,
+				A36102000000000000000005 /* Storage.xcstrings */,
 				C77FEFA6FC6D2D5785EE3779 /* DataManagement */,
                 E28400000000000000000002 /* DeveloperMetadataCleanupView.swift */,
                 E28400000000000000000004 /* DeveloperTools.xcstrings */,
@@ -1938,6 +1949,8 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				3F77F001BB3A5E69A7C058C1 /* UserBackupRestore.swift */,
 				D50620000000000000000002 /* ReadingDataManagement.swift */,
 				D50620000000000000000003 /* CacheManagement.swift */,
+				A36102000000000000000002 /* StorageManagement.swift */,
+				A36102000000000000000001 /* StorageFiles.swift */,
 			);
 			path = "Management";
 			sourceTree = "<group>";
@@ -2010,6 +2023,8 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			children = (
 				D50620000000000000000004 /* DataManagementView.swift */,
 				C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */,
+				A36102000000000000000004 /* StorageSpaceView.swift */,
+				A36102000000000000000003 /* StorageSpaceModel.swift */,
 				B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */,
 				B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */,
 			);
@@ -2164,6 +2179,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 D84AF1EE58BF3D4813B23CFA /* MetadataExchange.xcstrings in Resources */,
                 E28400000000000000000003 /* DeveloperTools.xcstrings in Resources */,
                 D50610000000000000000005 /* DataManagement.xcstrings in Resources */,
+                A36101000000000000000005 /* Storage.xcstrings in Resources */,
                 B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */,
                 F14900000000000000000003 /* FullIndex.xcstrings in Resources */,
                 83C1F3DE49DE5AC693D3E8E8,
@@ -2352,6 +2368,8 @@ OS1000000000000000000001,
 				F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */,
 				88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */,
 				90709A613E0B26BF14B9F308 /* DataManagementModel.swift in Sources */,
+				A36101000000000000000004 /* StorageSpaceView.swift in Sources */,
+				A36101000000000000000003 /* StorageSpaceModel.swift in Sources */,
 				4E5986F68A44B334B7F8643D /* ReadingDataListView.swift in Sources */,
 				42F0869878D5AA951138E187 /* ReadingDataIssuesView.swift in Sources */,
 
@@ -2417,6 +2435,8 @@ OS1000000000000000000001,
 				7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */,
                 D50610000000000000000004 /* DataManagementView.swift in Sources */,
                 D50610000000000000000003 /* CacheManagement.swift in Sources */,
+                A36101000000000000000002 /* StorageManagement.swift in Sources */,
+                A36101000000000000000001 /* StorageFiles.swift in Sources */,
                 D50610000000000000000002 /* ReadingDataManagement.swift in Sources */,
 				ACDA3BF15FB2502D8E9807A4 /* CloudCallbackJournal.swift in Sources */,
 				F618FD57698B568994D28CB0 /* CloudInboxRows.swift in Sources */,

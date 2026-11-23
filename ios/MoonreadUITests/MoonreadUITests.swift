@@ -749,9 +749,8 @@ import XCTest
     ready(app.buttons["readingDataCaches"])
     snapshot("data-overview")
     app.buttons["readingDataCaches"].tap()
-    ready(app.buttons["clearRebuildableCaches"])
-    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "有 0 本正在使用")).firstMatch.exists)
-    snapshot("data-cache")
+    ready(app.staticTexts["月读总占用"])
+    snapshot("data-storage")
     app.navigationBars.buttons.firstMatch.tap()
     ready(app.buttons["exportAllReadingData"]).tap()
     // Export/restore our bytes; do not drive the system share UI in this test.

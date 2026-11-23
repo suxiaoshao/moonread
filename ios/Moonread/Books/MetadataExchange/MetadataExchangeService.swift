@@ -205,11 +205,11 @@ extension AppDataService {
         if let expectedScope, expectedScope != metadataImportScope() { throw ReadingDataError.changed }
         let configuration = userCloudConfigurationRevision
         let source = ProtectedFileAccess.Source(selectedFile: url)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-MetadataImports", isDirectory: true)
+        let root = MetadataTemporaryFiles.root("Moonread-MetadataImports")
         progress?(.readingPackage)
         let document = try await ProtectedFileAccess().readAsync(at: source.url) { readable in
             defer { withExtendedLifetime(source) {} }
-            return try MetadataImportDocument(input: readable, stagingRoot: root)
+            return try MetadataImportDocument(input: readable, stagingRoot: MetadataTemporaryFiles.prepare(root))
         }
         let session = MetadataImportSession(document: document, configuration: configuration)
         return try await metadataPreview(session, progress: progress)

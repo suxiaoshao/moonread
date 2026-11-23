@@ -157,25 +157,15 @@ extension ReaderIndex {
         }
     }
 
-    func cacheSummary(protectedBookIds: [String]) throws -> CacheSummary {
-        let protected = Set(protectedBookIds)
-        return try read { db in
-            let available = Set(try String.fetchAll(db, sql: """
-                SELECT DISTINCT sha FROM (
-                    SELECT \(Self.indexedSourceSHA) AS sha FROM main.library_files f
-                    WHERE f.directory=0 AND f.needs_download=0
-                ) WHERE sha IS NOT NULL
-                """))
-            var total = CacheSummary(bytes: 0, protected: 0, bodies: 0)
-            for row in try Row.fetchAll(db, sql: Self.cacheRows) {
-                let id: String = row["id"], hasJob: Bool = row["has_job"]
-                if !hasJob && !protected.contains(id) && available.contains(row["content_sha256"]) {
-                    total.bytes += row["bytes"] as UInt64
-                    total.bodies += 1
-                } else { total.protected += 1 }
-            }
-            return total
-        }
+    private static func evictableBody(_ db: Database, bookId: String, sha: String) throws -> Bool {
+        try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM main.books b WHERE b.id=? AND b.content_sha256=?
+              AND NOT EXISTS(SELECT 1 FROM main.import_jobs j WHERE j.book_id=b.id OR j.canonical_id=b.id))
+            """, arguments: [bookId,sha]) == true
+    }
+
+    func canEvictCachedBody(_ body: CachedBody) throws -> Bool {
+        try read { try Self.evictableBody($0, bookId: body.bookId, sha: body.contentSha256) }
     }
 
     func evictCachedBody(bookId: String, contentSha256: String, verifiedFile: SourceFileSnapshot?,
@@ -183,10 +173,7 @@ extension ReaderIndex {
         _ = try parseSha256(value: contentSha256)
         guard !protectedBookIds.contains(bookId) else { return false }
         return try write { db in
-            guard try Bool.fetchOne(db, sql: """
-                SELECT EXISTS(SELECT 1 FROM main.books b WHERE b.id=? AND b.content_sha256=?
-                  AND NOT EXISTS(SELECT 1 FROM main.import_jobs j WHERE j.book_id=b.id OR j.canonical_id=b.id))
-                """, arguments: [bookId,contentSha256]) == true else { return false }
+            guard try Self.evictableBody(db, bookId: bookId, sha: contentSha256) else { return false }
             if !discardOffline {
                 guard let f = verifiedFile, try Bool.fetchOne(db, sql: """
                     SELECT EXISTS(SELECT 1 FROM main.library_files f JOIN main.valid_indexed_identities v ON v.file_id=f.id

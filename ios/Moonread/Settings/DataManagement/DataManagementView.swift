@@ -58,32 +58,24 @@ struct DataManagementView: View {
                     }.accessibilityIdentifier("readingDataList")
                 }
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("可重建缓存", tableName: "DataManagement").font(.headline)
-                    Text("清理缓存不删除小说文件与阅读数据。", tableName: "MetadataExchange")
-                        .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                    NavigationLink { ReadingDataCacheView(model: model) } label: {
+                    Text("本机存储", tableName: "Storage").font(.headline)
+                    NavigationLink { StorageSpaceView(data: model) } label: {
                         HStack {
-                            Text("清理缓存", tableName: "DataManagement")
-                            Spacer()
-                            if let cache = model.cache {
-                                Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: cache.bytes), countStyle: .file)).foregroundStyle(Color(uiColor: theme.secondary))
-                            } else if model.cacheError == nil {
-                                ProgressView().controlSize(.small)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("存储空间", tableName: "Storage").font(.body.weight(.medium))
+                                Text("管理缓存、临时文件和旧版数据", tableName: "Storage")
+                                    .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                             }
+                            Spacer()
                             Image(systemName: "chevron.right").font(.footnote)
-                        }
-                    }.foregroundStyle(Color(uiColor: theme.accent)).accessibilityIdentifier("readingDataCaches")
+                        }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
+                    }.accessibilityIdentifier("readingDataCaches")
                 }
             }.padding(20).frame(maxWidth: 690, alignment: .leading).frame(maxWidth: .infinity)
         }
         .themedPage().navigationTitle(Text("数据管理", tableName: "DataManagement"))
         .navigationBarTitleDisplayMode(.inline)
         .modifier(ReadingDataWorking(model: model))
-        .refreshable { await model.loadCache() }
-        .task { await model.loadCache() }
-        .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { _ in
-            if !model.busy { Task { await model.loadCache() } }
-        }
         .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged)
             .merge(with: NotificationCenter.default.publisher(for: .cloudStatusChanged),
                    NotificationCenter.default.publisher(for: .cloudDataReceived),
@@ -242,41 +234,6 @@ struct ReadingDataWorking: ViewModifier {
                     if model.canCancel { Button("取消") { model.cancel() } }
                 }.padding().background(theme.floatingBackground(), in: .rect(cornerRadius: 12)).accessibilityIdentifier("readingDataWorking")
             }
-        }
-    }
-}
-private struct ReadingDataCacheView: View {
-    @Environment(\.theme) private var theme
-    @Bindable var model: DataManagementModel
-    @State private var confirmation = false
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let cache = model.cache {
-                    Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: cache.bytes), countStyle: .file)).font(.largeTitle.bold())
-                    if cache.protected > 0 {
-                        Text("有 \(Int(clamping: cache.protected)) 本正在使用或找不到原文件，暂不清理", tableName: "DataManagement").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                    }
-                } else if model.cacheError == nil {
-                    ProgressView()
-                }
-                Text("正文缓存可以随时重新生成，清理后再打开小说会稍慢一些。", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
-                if let error = model.cacheError {
-                    Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
-                    Button("重试") { Task { await model.loadCache() } }
-                }
-                Button { confirmation = true } label: { Text("清理可重建缓存", tableName: "DataManagement").frame(maxWidth: .infinity) }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("clearRebuildableCaches")
-                if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
-                if let error = model.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
-                Spacer()
-            }.padding()
-        }.themedPage().navigationTitle(Text("可重建缓存", tableName: "DataManagement"))
-        .task { if model.cache == nil { await model.loadCache() } }
-        .refreshable { await model.loadCache() }
-        .modifier(ReadingDataWorking(model: model))
-        .alert(Text("清理可重建缓存？", tableName: "DataManagement"), isPresented: $confirmation) {
-            Button(role: .destructive) { Task { await model.clearCache() } } label: { Text("确认清理缓存", tableName: "DataManagement") }
-            Button("取消", role: .cancel) {}
         }
     }
 }

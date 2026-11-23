@@ -231,6 +231,13 @@ actor CloudSyncCoordinator {
     }
     func currentStatus() -> CloudSyncStatus { status }
 
+    func organizeReadingDatabase(session: DataSession, lease: DataSessionLease) throws -> StorageDatabaseResult {
+        guard transition == nil, turn == nil, !status.syncing else { throw StorageMaintenanceError.busy }
+        // Keep coordinator admission while the session drains its readers.
+        // The engine is manually driven, so no new sync turn can enter here.
+        return try session.organizeUserDatabase(lease)
+    }
+
     nonisolated func persistIntent(_ enabled: Bool) { service.cloudSyncIntent.set(enabled) }
 
     func setEnabled(_ enabled: Bool) async {
