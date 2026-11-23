@@ -80,7 +80,7 @@ struct StorageSpaceView: View {
             if let overview, overview.total > 0 {
                 storageBar(overview)
             } else if overview == nil {
-                Capsule().fill(Color(uiColor: theme.secondary).opacity(0.16))
+                RoundedRectangle(cornerRadius: 3).fill(Color(uiColor: theme.secondary).opacity(0.16))
                     .frame(height: 14).accessibilityHidden(true)
             }
         }
@@ -109,11 +109,12 @@ struct StorageSpaceView: View {
             BarMark(xStart: .value("Start", Double(start)),
                     xEnd: .value("End", Double(start + overview.sizes[item, default: 0])),
                     y: .value("Storage", "Moonread"))
+                .cornerRadius(0)
                 .foregroundStyle(item.color(theme))
         }
         .chartXAxis(.hidden).chartYAxis(.hidden)
         .chartXScale(domain: 0...Double(overview.total))
-        .frame(height: 14).clipShape(.capsule)
+        .frame(height: 14).clipShape(.rect(cornerRadius: 3))
         .accessibilityHidden(true)
     }
 }
