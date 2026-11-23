@@ -42,6 +42,8 @@ struct StorageSpaceView: View {
     let data: DataManagementModel
     let model: StorageSpaceModel
     @Environment(\.theme) private var theme
+    private let storageBarHeight: CGFloat = 14
+    private let storageBarShape = RoundedRectangle(cornerRadius: 5, style: .circular)
 
     var body: some View {
         StoragePage(title: .init("存储空间", table: "Storage")) {
@@ -80,8 +82,8 @@ struct StorageSpaceView: View {
             if let overview, overview.total > 0 {
                 storageBar(overview)
             } else if overview == nil {
-                RoundedRectangle(cornerRadius: 5).fill(Color(uiColor: theme.secondary).opacity(0.16))
-                    .frame(height: 14).accessibilityHidden(true)
+                storageBarShape.fill(Color(uiColor: theme.secondary).opacity(0.16))
+                    .frame(height: storageBarHeight).accessibilityHidden(true)
             }
         }
         StorageGroup("按类别管理") {
@@ -108,14 +110,16 @@ struct StorageSpaceView: View {
                 .reduce(UInt64(0)) { $0 + overview.sizes[$1, default: 0] }
             BarMark(xStart: .value("Start", Double(start)),
                     xEnd: .value("End", Double(start + overview.sizes[item, default: 0])),
-                    y: .value("Storage", "Moonread"))
+                    y: .value("Storage", "Moonread"),
+                    height: .fixed(storageBarHeight))
                 .cornerRadius(0)
                 .foregroundStyle(item.color(theme))
         }
         .chartXAxis(.hidden).chartYAxis(.hidden)
         .chartXScale(domain: 0...Double(overview.total))
-        .chartPlotStyle { $0.clipShape(.rect(cornerRadius: 5)) }
-        .frame(height: 14)
+        .chartYScale(range: .plotDimension(padding: 0))
+        .chartPlotStyle { $0.clipShape(storageBarShape) }
+        .frame(height: storageBarHeight)
         .accessibilityHidden(true)
     }
 }
