@@ -210,15 +210,16 @@ private struct BackupExportView: View {
     }
 }
 struct ReadingDataWorking: ViewModifier {
-    @Environment(\.theme) private var theme
-    @Bindable var model: DataManagementModel
+    let model: DataManagementModel
+    var showsInBottomBar = false
+
     func body(content: Content) -> some View {
-        content.disabled(model.busy).overlay {
-            if let working = model.working {
-                VStack(spacing: 12) {
-                    ProgressView(working)
-                    if model.canCancel { Button("取消") { model.cancel() } }
-                }.padding().background(theme.floatingBackground(), in: .rect(cornerRadius: 12)).accessibilityIdentifier("readingDataWorking")
+        content.disabled(model.busy).toolbar {
+            if !showsInBottomBar, let working = model.working {
+                ToolbarItem(placement: .topBarTrailing) {
+                    InlineTaskProgress(title: Text(verbatim: working))
+                        .accessibilityIdentifier("readingDataWorking")
+                }
             }
         }
     }

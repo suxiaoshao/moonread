@@ -126,6 +126,7 @@ struct LibraryAllBooksView: View {
                 } label: { Label("显示方式", systemImage: "ellipsis") }.toolbarGlyph().accessibilityIdentifier("folderActions")
             }
         }
+        .modifier(LibraryFileActivity(model: model))
         .refreshable {
             catalogue.retryIfFailed()
             await model.refresh(showIndicator: false, userInitiated: true)

@@ -314,6 +314,7 @@ struct AppSearchView: View {
         .scrollBounceBehavior(.always)
         .accessibilityIdentifier("appSearchResults")
         .navigationTitle(savedFilter.map { Text($0.name) } ?? Text("搜索")).navigationBarTitleDisplayMode(.inline)
+        .modifier(LibraryFileActivity(model: model))
         .toolbar {
             if virtualShelf {
                 ToolbarItem(placement: .topBarTrailing) {

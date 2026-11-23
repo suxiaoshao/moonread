@@ -94,15 +94,21 @@ struct LibraryPresentations: ViewModifier {
                 Button("移除书架", role: .destructive) { model.removingShelf = nil; model.removeShelf(shelf) }
                 Button("取消", role: .cancel) { model.removingShelf = nil }
             } message: { shelf in Text("移除“\(shelf.name)”的入口，目录中的文件仍然保留。") }
-            .overlay {
-                if model.processingFiles && model.shell.path.last?.isReader != true {
-                    DeferredLoading(delay: model.busy ? .zero : LoadingTiming.inlineDelay) { _ in
-                        LoadingActivity(size: 32, waitingLabel: "正在处理文件", delay: .zero).padding(24)
-                            .background(theme.floatingBackground(), in: .rect(cornerRadius: 20))
-                            .accessibilityLabel("正在处理文件")
-                    }
+    }
+}
+
+struct LibraryFileActivity: ViewModifier {
+    let model: LibraryModel
+
+    func body(content: Content) -> some View {
+        content.toolbar {
+            if model.processingFiles {
+                ToolbarItem(placement: .topBarTrailing) {
+                    InlineTaskProgress(title: Text("正在处理文件"))
+                        .accessibilityIdentifier("libraryFileActivity")
                 }
             }
+        }
     }
 }
 

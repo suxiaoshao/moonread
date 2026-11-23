@@ -90,22 +90,6 @@ import SwiftUI
     var deleting: DeletionRequest?
     var issueErrors: [String: String] = [:]
     private(set) var duplicateNames: [String: (index: Int, count: Int)] = [:]
-    private var operationTask: Task<Void, Never>?
-    var canCancel: Bool { operationTask != nil }
-    func cancel() { operationTask?.cancel() }
-    private func runCancellable(_ operation: DataOperation, _ action: @escaping @MainActor () async throws -> DataOperation) async {
-        guard !busy else { return }
-        dataOperation = operation
-        let task = Task {
-            do {
-                try Task.checkCancellation()
-                dataOperation = try await action()
-            } catch is CancellationError {
-                dataOperation = .idle
-            } catch { dataOperation = .failed(ReaderMessages.error(error)) }
-        }
-        operationTask = task; await task.value; operationTask = nil
-    }
     private var nameOrder: [String] = []
     private var recentOrder: [String] = []
     init(service: AppDataService = .shared) {

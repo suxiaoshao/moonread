@@ -123,6 +123,7 @@ struct LibraryFolderView: View {
                 ToolbarItem(placement: .bottomBar) { Spacer() }
             }
         }
+        .modifier(LibraryFileActivity(model: model))
         .sheet(isPresented: $metadataExporting) {
             MetadataExportView(task: MetadataExchangeModel.shared.exportTask, shelfID: location.shelfID,
                                shelfName: model.shelfTitle(location.shelfID)).presentationSizing(.page)

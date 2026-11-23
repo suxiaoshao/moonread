@@ -750,7 +750,8 @@ import XCTest
     ready(file(sample))
     selectTab("设置")
     ready(element("storageSettings")).tap()
-    ready(app.staticTexts["月读总占用"], timeout: 40)
+    ready(app.staticTexts["月读总占用"])
+    XCTAssertTrue(element("storageInventoryProgress").waitForNonExistence(timeout: 90))
 
     for (id, title) in [
       ("books", "正文与封面"), ("database", "阅读数据库"), ("work", "导入与临时文件"),
@@ -803,7 +804,7 @@ import XCTest
     ready(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-")).firstMatch).tap()
     ready(app.buttons["deleteSelectedReadingData"]).tap()
     ready(app.buttons["confirmDeleteReadingData"].firstMatch).tap()
-    waitUntil { rows.count == 0 && !self.app.otherElements["readingDataWorking"].exists }
+    waitUntil { rows.count == 0 && !self.element("readingDataWorking").exists }
     ready(element("readingDataResult"))
     ready(element("readingDataEmpty"))
     XCTAssertFalse(element("readingDataError").exists)

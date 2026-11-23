@@ -41,6 +41,7 @@ struct LibraryView: View {
                 #endif
             }
         }
+        .modifier(LibraryFileActivity(model: model))
         .safeAreaInset(edge: .top, spacing: 0) {
             if model.showsImportTip, themes.loaded, model.shell.libraryPath.isEmpty, model.shell.selectedTab == .library {
                 TipView(Onboarding.shared.imports).tipViewStyle(ThemedTipStyle()).padding(.horizontal)

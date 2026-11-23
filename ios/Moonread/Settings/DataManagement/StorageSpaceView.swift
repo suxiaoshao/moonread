@@ -45,31 +45,10 @@ struct StorageSpaceView: View {
 
     var body: some View {
         StoragePage(title: .init("存储空间", table: "Storage")) {
-            if let overview = model.overview {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("月读总占用", tableName: "Storage").font(.headline)
-                    Text(StorageSpaceModel.formatted(overview.total)).font(.largeTitle.bold())
-                    if overview.total > 0 { storageBar(overview) }
-                }
-                StorageGroup("按类别管理") {
-                    ForEach(StorageCategory.allCases) { category in
-                        let row = StorageRow(title: category.title,
-                                             bytes: overview.sizes[category, default: 0], color: category.color(theme),
-                                             navigates: category != .app)
-                        if category == .app { row }
-                        else {
-                            NavigationLink {
-                                StorageCategoryPage(category: category, model: model, data: data)
-                            } label: { row }
-                            .buttonStyle(.plain).accessibilityIdentifier("storageCategory-\(category.rawValue)")
-                        }
-                    }
-                }
-                if let message = model.cleanupMessage { Text(verbatim: message).font(.footnote) }
-            } else if let error = model.overviewError {
+            if let error = model.overviewError {
                 StorageErrorRow(message: error) { await model.refresh() }
             } else {
-                ProgressView().frame(maxWidth: .infinity)
+                overviewContent(model.overview)
             }
         }
         .task { await model.loadForPresentation() }
@@ -85,6 +64,42 @@ struct StorageSpaceView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder private func overviewContent(_ overview: StorageOverview?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("月读总占用", tableName: "Storage").font(.headline)
+            HStack(spacing: 12) {
+                StorageAmount(bytes: overview?.total).font(.largeTitle.bold())
+                if overview == nil {
+                    ProgressView()
+                        .accessibilityLabel(Text("正在统计占用", tableName: "Storage"))
+                        .accessibilityIdentifier("storageInventoryProgress")
+                }
+            }
+            if let overview, overview.total > 0 {
+                storageBar(overview)
+            } else if overview == nil {
+                Capsule().fill(Color(uiColor: theme.secondary).opacity(0.16))
+                    .frame(height: 14).accessibilityHidden(true)
+            }
+        }
+        StorageGroup("按类别管理") {
+            ForEach(StorageCategory.allCases) { category in
+                let row = StorageRow(title: category.title,
+                                     bytes: overview.map { $0.sizes[category, default: 0] },
+                                     color: category.color(theme), navigates: category != .app, loadingAmount: overview == nil)
+                if category == .app { row }
+                else {
+                    NavigationLink {
+                        StorageCategoryPage(category: category, model: model, data: data)
+                    } label: { row }
+                    .buttonStyle(.plain).disabled(overview == nil)
+                    .accessibilityIdentifier("storageCategory-\(category.rawValue)")
+                }
+            }
+        }
+        if let message = model.cleanupMessage { Text(verbatim: message).font(.footnote) }
     }
 
     private func storageBar(_ overview: StorageOverview) -> some View {
@@ -228,7 +243,6 @@ private struct StorageSelectionPage: View {
     @State private var selectedKinds = Set<StorageCleanupKind>()
     @State private var selectedBooks = Set<String>()
     @State private var request: StorageCleanupRequest?
-    @State private var work: Task<Void, Never>?
 
     private var offline: Bool { if case .offline = mode { true } else { false } }
 
@@ -264,20 +278,20 @@ private struct StorageSelectionPage: View {
                 Text("将关闭的阅读页：\(selection.readerTitles.formatted(.list(type: .and)))", tableName: "Storage")
                     .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             }
-            Button { request = selection } label: {
-                Text(selectionTitle).frame(maxWidth: .infinity)
-            }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
-                .disabled(selection.bytes == 0 || model.busy)
-                .accessibilityIdentifier("clearRebuildableCaches")
+            StorageAction(title: selectionTitle, progress: cleanupProgress, disabled: selection.bytes == 0 || model.busy) {
+                request = selection
+            }.accessibilityIdentifier("clearRebuildableCaches")
             if let message = model.cleanupMessage { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
         }
         .disabled(model.busy)
-        .overlay {
-            if model.busy {
-                VStack(spacing: 12) {
-                    ProgressView { Text("正在清理…", tableName: "Storage") }
-                    Button("取消") { work?.cancel() }
-                }.padding().background(theme.floatingBackground(), in: .rect(cornerRadius: 12))
+        .toolbar {
+            if cleanupProgress != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("取消", action: model.cancelCleanup)
+                        .toolbarGlyph()
+                        .disabled(model.operation == .cancelling)
+                        .accessibilityIdentifier("cancelStorageCleanup")
+                }
             }
         }
         .onAppear {
@@ -285,14 +299,11 @@ private struct StorageSelectionPage: View {
                 selectedKinds = kind.map { [$0] } ?? Set(model.available)
             }
         }
-        .refreshable { await model.refresh() }
+        .refreshable { if !model.busy { await model.refresh() } }
         .alert(Text(alertTitle), isPresented: Binding(get: { request != nil }, set: { if !$0 { request = nil } }),
                presenting: request) { confirmed in
             Button(role: .destructive) {
-                work = Task {
-                    await model.clean(confirmed, shell: library.shell)
-                    work = nil
-                }
+                model.clean(confirmed, shell: library.shell)
             } label: { Text(actionTitle(confirmed)) }
             Button("取消", role: .cancel) {}
         } message: { confirmed in
@@ -306,6 +317,14 @@ private struct StorageSelectionPage: View {
             if !confirmed.readerTitles.isEmpty {
                 Text("将保存进度并关闭\(confirmed.readerTitles.formatted(.list(type: .and)))。听书和自动阅读也会停止。", tableName: "Storage")
             }
+        }
+    }
+
+    private var cleanupProgress: LocalizedStringResource? {
+        switch model.operation {
+        case .cleaning: .init("正在清理…", table: "Storage")
+        case .cancelling: .init("正在取消…", table: "Storage")
+        default: nil
         }
     }
 
@@ -345,9 +364,7 @@ private struct StorageDatabasePage: View {
 
     var body: some View {
         StoragePage(title: .init("阅读数据库", table: "Storage")) {
-            if model.busy {
-                ProgressView { Text("正在整理数据库…", tableName: "Storage") }.frame(maxWidth: .infinity)
-            } else if let inventory = model.database {
+            if let inventory = model.database {
                 StorageGroup("当前阅读数据库") {
                     StorageRow(title: .init("可复用的空闲空间", table: "Storage"), bytes: inventory.freeBytes)
                     StorageRow(title: .init("未使用的封面", table: "Storage"),
@@ -360,11 +377,15 @@ private struct StorageDatabasePage: View {
                     }
                 }
                 StorageHint("整理会移除无引用的封面并收回数据库空闲空间。")
-                Button { confirmation = true } label: {
-                    Text("整理数据库", tableName: "Storage").frame(maxWidth: .infinity)
-                }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
-                    .disabled(!inventory.canOrganize || unavailable)
-                if unavailable { StorageHint("请在阅读数据同步或其他任务结束后再整理。") }
+                let organizing = model.operation == .organizing
+                StorageAction(title: .init("整理数据库", table: "Storage"),
+                              progress: organizing ? .init("正在整理…", table: "Storage") : nil,
+                              disabled: !inventory.canOrganize || unavailable || model.busy) { confirmation = true }
+                if organizing {
+                    StorageHint("整理开始后无法取消。")
+                } else if unavailable {
+                    StorageHint("请在阅读数据同步或其他任务结束后再整理。")
+                }
             } else if model.errors[.database] == nil {
                 ProgressView().frame(maxWidth: .infinity)
             }
@@ -382,7 +403,7 @@ private struct StorageDatabasePage: View {
             }
         }
         .task { await model.load(.database) }
-        .refreshable { await model.loadOverview(); await model.load(.database) }
+        .refreshable { if !model.busy { await model.loadOverview(); await model.load(.database) } }
         .alert(Text("整理当前账户的阅读数据库？", tableName: "Storage"), isPresented: $confirmation, presenting: model.database) { value in
             Button { Task { if !unavailable { await model.organize(value) } } } label: { Text("整理", tableName: "Storage") }
             Button("取消", role: .cancel) {}
@@ -390,6 +411,34 @@ private struct StorageDatabasePage: View {
             if value.orphanCount > 0 { Text("将清除 \(value.orphanCount) 个未使用的封面。", tableName: "Storage") }
             Text("将收回空闲空间。进度、批注和正在使用的封面会保留。", tableName: "Storage")
         }
+    }
+}
+
+private struct StorageAction: View {
+    @Environment(\.theme) private var theme
+    let title: LocalizedStringResource
+    let progress: LocalizedStringResource?
+    let disabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Group {
+            if let progress {
+                Button(action: action) {
+                    InlineTaskProgress(title: Text(progress))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(Color(uiColor: theme.ink))
+                .disabled(true)
+            } else {
+                Button(action: action) {
+                    Text(title).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(ThemedProminentButtonStyle())
+                .disabled(disabled)
+            }
+        }.controlSize(.large)
     }
 }
 
@@ -441,6 +490,7 @@ private struct StorageRow: View {
     var color: Color? = nil
     var navigates = false
     var picked: Bool? = nil
+    var loadingAmount = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -454,8 +504,8 @@ private struct StorageRow: View {
                 if let literal { Text(verbatim: literal) }
                 if let detail { Text(detail).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
             }.frame(maxWidth: .infinity, alignment: .leading)
-            if let bytes {
-                Text(StorageSpaceModel.formatted(bytes)).font(.subheadline.monospacedDigit())
+            if bytes != nil || loadingAmount {
+                StorageAmount(bytes: bytes).font(.subheadline.monospacedDigit())
                     .foregroundStyle(Color(uiColor: theme.secondary))
             }
             if navigates {
@@ -464,6 +514,18 @@ private struct StorageRow: View {
             }
         }.padding(14).frame(minHeight: 44).contentShape(.rect)
             .accessibilityElement(children: .combine)
+    }
+}
+
+private struct StorageAmount: View {
+    let bytes: UInt64?
+
+    var body: some View {
+        if let bytes {
+            Text(StorageSpaceModel.formatted(bytes))
+        } else {
+            Text(verbatim: "00.0 MB").redacted(reason: .placeholder).accessibilityHidden(true)
+        }
     }
 }
 

@@ -34,6 +34,8 @@ struct StorageCleanupRequest {
 }
 
 @MainActor @Observable final class StorageSpaceModel {
+    enum Operation { case cleaning, cancelling, organizing }
+
     let service: AppDataService
     private(set) var overview: StorageOverview?
     private(set) var bodies: BodyCacheInventory?
@@ -44,7 +46,9 @@ struct StorageCleanupRequest {
     private(set) var overviewError: String?
     private(set) var cleanupMessage: String?
     private(set) var databaseResult: StorageDatabaseResult?
-    private(set) var busy = false
+    private(set) var operation: Operation?
+    var busy: Bool { operation != nil }
+    @ObservationIgnored private var cleanupTask: Task<Void, Never>?
     private let overviewLoad = LoadingState()
     private var loadingChoices = false
 
@@ -131,10 +135,23 @@ struct StorageCleanupRequest {
                      offline: offline != nil, readers: readers.mapValues(\.bookID), bodyLease: bodies?.lease)
     }
 
-    func clean(_ request: StorageCleanupRequest, shell: AppShellModel) async {
+    func clean(_ request: StorageCleanupRequest, shell: AppShellModel) {
         guard !busy else { return }
-        busy = true; cleanupMessage = nil
-        defer { busy = false }
+        operation = .cleaning
+        cleanupMessage = nil
+        cleanupTask = Task {
+            defer { cleanupTask = nil; operation = nil }
+            await performCleanup(request, shell: shell)
+        }
+    }
+
+    func cancelCleanup() {
+        guard operation == .cleaning else { return }
+        operation = .cancelling
+        cleanupTask?.cancel()
+    }
+
+    private func performCleanup(_ request: StorageCleanupRequest, shell: AppShellModel) async {
         var removed: UInt64 = 0
         var skipped = false
         var blocked = Set<String>()
@@ -157,42 +174,44 @@ struct StorageCleanupRequest {
                 } else { skipped = true }
             } catch { skipped = true }
         }
-        if let lease = request.bodyLease, !request.covers.isEmpty {
+        if !Task.isCancelled, let lease = request.bodyLease, !request.covers.isEmpty {
             do { removed += try await service.clearStorageCoverCaches(request.covers, lease: lease) }
             catch { skipped = true }
         }
-        if let work = request.work {
+        if !Task.isCancelled, let work = request.work {
             do { removed += try await service.clearStorageWork(work) }
             catch { skipped = true }
         }
-        if !request.legacy.isEmpty {
+        if !Task.isCancelled, !request.legacy.isEmpty {
             do { removed += try await service.clearStorageOldIndex(request.legacy) }
             catch { skipped = true }
         }
         if request.bodies.count > 0 { NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil) }
-        let size = StorageSpaceModel.formatted(removed)
-        let message = if skipped || removed < request.bytes || Task.isCancelled {
+        // A cancelled task may already have removed files. A fresh read must
+        // finish before the action becomes available again.
+        await Task {
+            await loadOverview()
+            if request.work != nil { await load(.work) }
+            if !request.legacy.isEmpty { await load(.old) }
+            if request.offline || request.kinds.contains(.cache) { await load(.books) }
+        }.value
+        let size = Self.formatted(removed)
+        cleanupMessage = if Task.isCancelled {
+            String(localized: "已取消，已清理 \(size)。", table: "Storage")
+        } else if skipped || removed < request.bytes {
             String(localized: "已清理约 \(size)，部分项目保留。", table: "Storage")
         } else {
             String(localized: "已清理约 \(size)。", table: "Storage")
         }
-        // Refresh the inventories even if cleanup was cancelled after deleting some files.
-        let refresh = Task {
-            if request.work != nil { await load(.work) }
-            if !request.legacy.isEmpty { await load(.old) }
-            if request.offline || request.kinds.contains(.cache) { await load(.books) }
-            await loadOverview()
-        }
-        if !Task.isCancelled { await refresh.value }
-        cleanupMessage = message
     }
 
     func organize(_ inventory: StorageDatabaseInventory) async {
         guard !busy else { return }
-        busy = true
-        defer { busy = false }
+        operation = .organizing
+        defer { operation = nil }
         databaseResult = nil
-        do { databaseResult = try await service.organizeStorageDatabase(inventory) }
+        let result: StorageDatabaseResult
+        do { result = try await service.organizeStorageDatabase(inventory) }
         catch is StorageMaintenanceError {
             errors[.database] = String(localized: "请在阅读数据同步或其他任务结束后再整理。", table: "Storage")
             return
@@ -202,6 +221,7 @@ struct StorageCleanupRequest {
         }
         await load(.database)
         await loadOverview()
+        databaseResult = result
     }
 
     static func formatted(_ bytes: UInt64) -> String { ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file) }
