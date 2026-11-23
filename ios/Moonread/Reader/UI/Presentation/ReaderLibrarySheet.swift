@@ -35,10 +35,12 @@ struct ReaderLibrarySheet: View {
     let edit: (ReaderMark) -> Void
     let close: () -> Void
     let editing: ReaderLibraryEditing
+    let locatingInChapters: Bool
     var editorClosed: () -> Void = {}
     var body: some View {
         NavigationStack {
-            ReaderLibraryContent(model: model, session: session, navigate: navigate, edit: edit, close: close, editing: editing, editorClosed: editorClosed)
+            ReaderLibraryContent(model: model, session: session, navigate: navigate, edit: edit, close: close,
+                                 editing: editing, locatingInChapters: locatingInChapters, editorClosed: editorClosed)
         }
     }
 }
@@ -53,7 +55,9 @@ struct ReaderLibraryContent: View {
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @FocusState private var chapterFilterFocused: Bool
     @Bindable var editing: ReaderLibraryEditing
+    let locatingInChapters: Bool
     var editorClosed: () -> Void = {}
+    @State private var chapterLocationDelayElapsed = false
 
     private var listTitle: String {
         switch model.tab {
@@ -71,6 +75,16 @@ struct ReaderLibraryContent: View {
     }
     @ToolbarContentBuilder private var libraryToolbar: some ToolbarContent {
         if model.tab == .chapters { ToolbarItem(placement: .topBarLeading) { outlineActions } }
+        if locatingInChapters && chapterLocationDelayElapsed {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 8) {
+                    Text(listTitle).font(.headline)
+                    InlineTaskProgress(title: Text("正在定位"))
+                        .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                }
+                .lineLimit(1)
+            }
+        }
         ToolbarItem(placement: .topBarTrailing) { closeButton }
     }
 
@@ -81,6 +95,15 @@ struct ReaderLibraryContent: View {
             .navigationTitle(listTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { libraryToolbar }
+            .task(id: locatingInChapters) {
+                chapterLocationDelayElapsed = false
+                guard locatingInChapters else { return }
+                do {
+                    try await Task.sleep(for: LoadingTiming.inlineDelay)
+                    try Task.checkCancellation()
+                    chapterLocationDelayElapsed = true
+                } catch {}
+            }
     }
 
     private var libraryContent: some View {

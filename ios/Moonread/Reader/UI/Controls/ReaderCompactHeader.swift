@@ -7,6 +7,7 @@ struct ReaderCompactHeader: View {
     let book: BookInfo
     let readerWidth: CGFloat
     let compactHeaderHeight: CGFloat
+    let sharingExcerpt: Bool
     let showControls: () -> Void
     @Environment(\.theme) private var theme
     var body: some View {
@@ -22,7 +23,9 @@ struct ReaderCompactHeader: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if session.atPreparedEdge {
+            if sharingExcerpt {
+                InlineTaskProgress(title: Text("正在准备分享")).fixedSize()
+            } else if session.atPreparedEdge {
                 Button { showControls() } label: {
                     Text(session.preparing ? String(localized: "后续准备中") : (session.snapshot?.preparation.isFailed == true ? String(localized: "查看问题") : String(localized: "准备已暂停")))
                         .fixedSize()
@@ -53,7 +56,7 @@ struct ReaderCompactHeader: View {
         // The full-screen reader supplies the continuous paper behind this overlay.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerCompactHeader")
-        .allowsHitTesting(session.atPreparedEdge)
+        .allowsHitTesting(session.atPreparedEdge && !sharingExcerpt)
     }
 
     private func progress(book: BookInfo) -> some View {

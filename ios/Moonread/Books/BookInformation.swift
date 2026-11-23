@@ -328,10 +328,18 @@ struct BookMetadataEditor: View {
                 Section {
                     VStack(spacing: 16) {
                         BookCoverView(title: title, cover: draft.value.cover, contentSHA256: draft.value.sha, author: draft.value.author).frame(width: 112, height: 160)
-                            .overlay { if draft.choosingImage { ProgressView("正在处理图片").padding(8).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12)) } }
-                        ViewThatFits(in: .horizontal) {
-                            HStack(spacing: 12) { coverActions }
-                            VStack(spacing: 12) { coverActions }
+                        ZStack {
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: 12) { coverActions }
+                                VStack(spacing: 12) { coverActions }
+                            }
+                            .opacity(draft.choosingImage ? 0 : 1)
+                            .accessibilityHidden(draft.choosingImage)
+                            if draft.choosingImage {
+                                InlineTaskProgress(title: Text("正在处理图片"))
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color(uiColor: theme.secondary))
+                            }
                         }
                         if draft.value.cover != nil {
                             Menu {
