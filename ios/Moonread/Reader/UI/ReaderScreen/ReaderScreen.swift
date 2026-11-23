@@ -72,7 +72,8 @@ struct ReaderScreen: View {
                 .overlay(alignment: .top) {
                     if isWide, !session.isLeaving, !readerNavigationVisible, let book = session.book {
                         ReaderCompactHeader(session: session, battery: battery, book: book, readerWidth: geometry.size.width,
-                            compactHeaderHeight: compactHeaderHeight, showControls: { sendTool(.showChrome) })
+                            compactHeaderHeight: compactHeaderHeight, sharingExcerpt: sharingExcerpt,
+                            showControls: { sendTool(.showChrome) })
                             .padding(.top, localHeaderTop)
                             .opacity(navigationPresentation.isSuspended ? 0 : 1)
                     }
@@ -451,6 +452,12 @@ struct ReaderScreen: View {
             .toolbarBackground(Color(uiColor: theme.paper), for: .navigationBar)
             .toolbarBackground(readerOwnsChrome ? .visible : .automatic, for: .navigationBar)
             .toolbar {
+                if sharingExcerpt && readerOwnsChrome && readerNavigationVisible && !navigationPresentation.revealsNavigation {
+                    ToolbarItem(placement: .principal) {
+                        InlineTaskProgress(title: Text("正在准备分享"))
+                            .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("小说详情", systemImage: "info.circle") { openBookDetails() }
                         .labelStyle(.iconOnly).toolbarGlyph()
@@ -508,7 +515,6 @@ struct ReaderScreen: View {
         .onChange(of: isLibrary) { old, new in
             if old && !new { tools.finishNoteSelection() }
         }
-        .overlay { if sharingExcerpt { ProgressView().padding().background(Color(uiColor: theme.surface), in: .capsule) } }
         .sheet(item: $excerptShare) { LibraryShareSheet(files: $0.files, text: $0.text) }
         .modifier(SystemReadingConfirmation(active: !sheetPresented))
         .alert("阅读遇到问题", isPresented: readingErrorPresented) {
@@ -632,6 +638,8 @@ struct ReaderScreen: View {
         let snapshot = rendered
         let context = snapshot.context
         let token = nativeHost.token
+        let locating = session.navigating && !session.isLeaving
+        let presentsChapters = if case .library(.listing(.chapters)) = snapshot.visit?.route { true } else { false }
         let showsFooterTools = session.book != nil
             && (snapshot.controls || snapshot.compact == .automatic || (snapshot.compact == .listening && listening?.active != true))
         let toolRowHeight = max(56, scaledToolRowHeight)
@@ -690,6 +698,7 @@ struct ReaderScreen: View {
             }
         } taskContent: { measureAnnotations in
             ReaderTaskContent(visit: snapshot.visit, session: session, tools: tools, toolSession: toolSession,
+                locatingInChapters: locating && presentsChapters,
                 aiConversationID: $aiConversationID, openingIsActive: { exitPhase == .reading && !session.isLeaving },
                 closeTask: { if let visit = snapshot.visit { sendTool(.closeVisit(visit.id), from: context) } },
                 measureAnnotations: measureAnnotations,
@@ -703,7 +712,7 @@ struct ReaderScreen: View {
         .environment(\.readerNativeToolScope, toolSession.nativeToolScope(for: context))
         .background(ReaderModalChildProbe(host: nativeHost))
         .overlay {
-            if session.navigating && !session.isLeaving { LoadingActivity(size: 24, waitingLabel: "正在定位").allowsHitTesting(false) }
+            if locating && !presentsChapters { LoadingActivity(size: 24, waitingLabel: "正在定位").allowsHitTesting(false) }
         }
     }
 
@@ -811,7 +820,8 @@ struct ReaderScreen: View {
 
     private func compactHeader(book: BookInfo) -> some View {
         ReaderCompactHeader(session: session, battery: battery, book: book, readerWidth: readerWidth,
-                            compactHeaderHeight: compactHeaderHeight, showControls: { sendTool(.showChrome) })
+                            compactHeaderHeight: compactHeaderHeight, sharingExcerpt: sharingExcerpt,
+                            showControls: { sendTool(.showChrome) })
     }
     private var readerOwnsChrome: Bool {
         // Keep the outgoing reader in charge of the shared bar during interactive pop.

@@ -65,6 +65,7 @@ extension ReaderIndex {
 struct ChapterRebuildProgress: Sendable {
     let fraction: Double
     let count: UInt64
+    let newHeadings: [ChapterInfo]
     let done: Bool
     let cancelled: Bool
 }
@@ -122,7 +123,10 @@ final class ChapterRebuild: @unchecked Sendable {
                 ticket = step.next
                 nextChunk = step.nextChunk
                 count += UInt64(step.chapters.count)
-                return progress()
+                let newHeadings = end ? [] : step.chapters.map {
+                    ChapterInfo(title: $0.title, startUtf8: $0.startUtf8, level: $0.level)
+                }
+                return progress(newHeadings: newHeadings)
             } catch {
                 stop.withLock { cancelled = true }
                 try? clear()
@@ -131,18 +135,18 @@ final class ChapterRebuild: @unchecked Sendable {
         }
     }
 
-    private func progress() -> ChapterRebuildProgress {
-        .init(fraction: Double(nextChunk) / Double(max(1,body.count)), count: count,
+    private func progress(newHeadings: [ChapterInfo] = []) -> ChapterRebuildProgress {
+        .init(fraction: Double(nextChunk) / Double(max(1,body.count)), count: count, newHeadings: newHeadings,
               done: ticket == nil && !stopped && nextChunk == body.count, cancelled: stopped)
     }
 
-    func preview(fromUtf8: UInt64, limit: UInt32) throws -> [ChapterInfo] {
+    func preview() throws -> [ChapterInfo] {
         let id = run
         return try index.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT start_utf8,title,level FROM main.chapter_scan_stage
-                WHERE run_id=? AND start_utf8>=? ORDER BY start_utf8 LIMIT ?
-                """, arguments: [id,min(fromUtf8,UInt64(Int64.max)),max(1,min(80,limit))]).map {
+                WHERE run_id=? ORDER BY start_utf8
+                """, arguments: [id]).map {
                     .init(title: $0["title"], startUtf8: $0["start_utf8"], level: $0["level"])
                 }
         }

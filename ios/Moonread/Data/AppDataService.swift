@@ -727,7 +727,7 @@ actor AppDataService {
     }
     func rebuildChapters(_ id: String) throws -> ChapterRebuild { try indexStore().rebuildChapters(bookId: id) }
     func advanceRebuild(_ job: ChapterRebuild) throws -> ChapterRebuildProgress { try job.nextBatch() }
-    func rebuildPreview(_ job: ChapterRebuild, from offset: UInt64 = 0) throws -> [ChapterInfo] { try job.preview(fromUtf8: offset, limit: 80) }
+    func rebuildPreview(_ job: ChapterRebuild) throws -> [ChapterInfo] { try job.preview() }
     func applyRebuild(_ job: ChapterRebuild) throws { try job.apply(); dataChanged() }
     func savePosition(bookID: String, offset: UInt64, admission: DataSessionLease? = nil) async throws {
         try await writePosition(bookID, offset: offset, admission: admission)
