@@ -42,6 +42,7 @@ struct StorageSpaceView: View {
     let data: DataManagementModel
     let model: StorageSpaceModel
     @Environment(\.theme) private var theme
+    private let storageBarHeight: CGFloat = 20
 
     var body: some View {
         StoragePage(title: .init("存储空间", table: "Storage")) {
@@ -81,7 +82,7 @@ struct StorageSpaceView: View {
                 storageBar(overview)
             } else if overview == nil {
                 Capsule().fill(Color(uiColor: theme.secondary).opacity(0.16))
-                    .frame(height: 14).accessibilityHidden(true)
+                    .frame(height: storageBarHeight).accessibilityHidden(true)
             }
         }
         StorageGroup("按类别管理") {
@@ -103,17 +104,28 @@ struct StorageSpaceView: View {
     }
 
     private func storageBar(_ overview: StorageOverview) -> some View {
-        Chart(StorageCategory.allCases) { item in
-            let start = StorageCategory.allCases.prefix(while: { $0 != item })
-                .reduce(UInt64(0)) { $0 + overview.sizes[$1, default: 0] }
-            BarMark(xStart: .value("Start", Double(start)),
-                    xEnd: .value("End", Double(start + overview.sizes[item, default: 0])),
-                    y: .value("Storage", "Moonread"))
-                .foregroundStyle(item.color(theme))
+        let categories = StorageCategory.allCases.filter { overview.sizes[$0, default: 0] > 0 }
+        return GeometryReader { geometry in
+            Chart(categories) { item in
+                let start = categories.prefix(while: { $0 != item })
+                    .reduce(UInt64(0)) { $0 + overview.sizes[$1, default: 0] }
+                let bytes = overview.sizes[item, default: 0]
+                let width = geometry.size.width * (CGFloat(bytes) / CGFloat(overview.total))
+                // Keep each inner edge inset to at most a quarter of its mark's width.
+                let inset = min(0.5, width / 4)
+                BarMark(xStart: .value("Start", Double(start)),
+                        xEnd: .value("End", Double(start + bytes)),
+                        y: .value("Storage", "Moonread"),
+                        height: .fixed(storageBarHeight))
+                    .offset(xStart: item == categories.first ? 0 : inset,
+                            xEnd: item == categories.last ? 0 : -inset)
+                    .cornerRadius(2)
+                    .foregroundStyle(item.color(theme))
+            }
+            .chartXAxis(.hidden).chartYAxis(.hidden)
+            .chartXScale(domain: 0...Double(overview.total), range: .plotDimension(padding: 0))
         }
-        .chartXAxis(.hidden).chartYAxis(.hidden)
-        .chartXScale(domain: 0...Double(overview.total))
-        .frame(height: 14).clipShape(.capsule)
+        .frame(height: storageBarHeight)
         .accessibilityHidden(true)
     }
 }
