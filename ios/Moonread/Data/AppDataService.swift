@@ -30,12 +30,15 @@ final class ReadingLease: Sendable {
     let id: String
     let writeAdmission: DataSessionLease?
     let service: AppDataService
+    let released: AsyncStream<Void>
+    private let releaseSignal: AsyncStream<Void>.Continuation
     init(id: String, service: AppDataService, writeAdmission: DataSessionLease? = nil) {
         self.id = id; self.service = service; self.writeAdmission = writeAdmission
+        (released, releaseSignal) = AsyncStream.makeStream(of: Void.self)
     }
     deinit {
-        let id = id, service = service
-        Task { await service.releaseReading(id) }
+        let id = id, service = service, releaseSignal = releaseSignal
+        Task { await service.releaseReading(id); releaseSignal.finish() }
     }
 }
 
@@ -277,6 +280,7 @@ actor AppDataService {
     }
     func identityMayRun() -> Bool { foregroundHolds.isEmpty }
     func cacheProtectedBookIDs() -> [String] { Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs)) }
+    func cacheImportBookIDs() -> [String] { Array(Set(imports.keys).union(pendingPromotionIDs)) }
     func activeReadingIDsForDeletion() throws -> Set<String> {
         guard foregroundHolds.keys.allSatisfy({ $0.hasPrefix("book:") }) else { throw ReadingDataError.busy }
         return Set(readers.keys)

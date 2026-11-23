@@ -32,28 +32,23 @@ import SwiftUI
     }
     private enum OperationResult {
         case deleted(cacheCleaned: Bool)
-        case cacheCleaned(removed: Int, retained: Int)
 
         var message: String? {
             switch self {
             case .deleted(let cleaned):
                 String(localized: cleaned ? "阅读数据已清除，小说文件未变" : "阅读数据已清除，部分本机缓存未清理", table: "DataManagement")
-            case .cacheCleaned(let removed, let retained):
-                String(localized: "已清理 \(removed) 本缓存，保留 \(retained) 本", table: "DataManagement")
             }
         }
     }
     private enum DataOperation {
         case idle, promoting, preparingPending
         case deleting(Set<String>)
-        case cleaningCache
         case completed(OperationResult)
         case failed(String)
 
         var working: String? {
             switch self {
             case .deleting: String(localized: "正在清除…", table: "DataManagement")
-            case .cleaningCache: String(localized: "正在清理缓存…", table: "DataManagement")
             case .promoting: String(localized: "正在关联阅读数据…", table: "DataManagement")
             case .preparingPending: String(localized: "正在准备正文", table: "DataManagement")
             default: nil
@@ -64,10 +59,6 @@ import SwiftUI
     private var dataOperation = DataOperation.idle
     var inventory: ReadingDataInventory { dataLoad.result?.inventory ?? .init(items: [], pending: 0, unsupported: 0) }
     private(set) var issueCount: Int?
-    private(set) var cache: CacheSummary?
-    private(set) var cacheError: String?
-    @ObservationIgnored private var cacheLoad: Task<Void, Never>?
-    @ObservationIgnored private var cacheRefreshRequested = false
     var busy: Bool { working != nil }
     var loading: Bool { if case .loading = dataLoad { true } else { false } }
     var loaded: Bool { dataLoad.result != nil }
@@ -99,22 +90,6 @@ import SwiftUI
     var deleting: DeletionRequest?
     var issueErrors: [String: String] = [:]
     private(set) var duplicateNames: [String: (index: Int, count: Int)] = [:]
-    private var operationTask: Task<Void, Never>?
-    var canCancel: Bool { operationTask != nil }
-    func cancel() { operationTask?.cancel() }
-    private func runCancellable(_ operation: DataOperation, _ action: @escaping @MainActor () async throws -> DataOperation) async {
-        guard !busy else { return }
-        dataOperation = operation
-        let task = Task {
-            do {
-                try Task.checkCancellation()
-                dataOperation = try await action()
-            } catch is CancellationError {
-                dataOperation = .idle
-            } catch { dataOperation = .failed(ReaderMessages.error(error)) }
-        }
-        operationTask = task; await task.value; operationTask = nil
-    }
     private var nameOrder: [String] = []
     private var recentOrder: [String] = []
     init(service: AppDataService = .shared) {
@@ -156,25 +131,6 @@ import SwiftUI
             } while inventoryRefreshRequested
         }
         inventoryLoad = task
-        await task.value
-    }
-    func loadCache() async {
-        if let cacheLoad {
-            cacheRefreshRequested = true
-            await cacheLoad.value
-            return
-        }
-        let task = Task { @MainActor in
-            defer { cacheLoad = nil }
-            repeat {
-                cacheRefreshRequested = false
-                do {
-                    cache = try await service.cacheSummary()
-                    cacheError = nil
-                } catch { cacheError = ReaderMessages.error(error) }
-            } while cacheRefreshRequested
-        }
-        cacheLoad = task
         await task.value
     }
     func updateInventory(_ value: ReadingDataInventory) {
@@ -246,16 +202,8 @@ import SwiftUI
             let cleaned = try await service.deleteReadingData(keys, configuration: request.configuration)
             selected.subtract(keys)
             if loaded { await load() }
-            await loadCache()
             dataOperation = .completed(.deleted(cacheCleaned: cleaned))
         } catch { dataOperation = .failed(ReaderMessages.error(error)) }
-    }
-    func clearCache() async {
-        await runCancellable(.cleaningCache) {
-            let result = try await self.service.clearRebuildableCaches()
-            await self.loadCache()
-            return .completed(.cacheCleaned(removed: result.removed, retained: result.retained))
-        }
     }
     func chooseBackup() -> URL? {
         #if DEBUG

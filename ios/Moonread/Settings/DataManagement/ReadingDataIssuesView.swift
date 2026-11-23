@@ -48,6 +48,7 @@ struct ReadingDataIssuesView: View {
                 }
             }
         }.themedPage().navigationTitle(Text("需要处理", tableName: "DataManagement"))
+        .modifier(LibraryFileActivity(model: library))
         .task { await model.prepareIssues() }
         .refreshable { await model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in Task { await model.load() } }

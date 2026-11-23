@@ -742,17 +742,37 @@ import XCTest
     add(screenshot)
   }
 
+  func testStorageNavigationOpensCategoryAndCleanupPages() {
+    launch(["--ui-test-storefront", "CHN"])
+    shelf()
+    open()
+    backFromReader()
+    ready(file(sample))
+    selectTab("设置")
+    ready(element("storageSettings")).tap()
+    ready(app.staticTexts["月读总占用"])
+    XCTAssertTrue(element("storageInventoryProgress").waitForNonExistence(timeout: 90))
+
+    for (id, title) in [
+      ("books", "正文与封面"), ("database", "阅读数据库"), ("work", "导入与临时文件"),
+      ("old", "旧版数据"), ("other", "其他"),
+    ] {
+      ready(element("storageCategory-\(id)")).tap()
+      ready(app.navigationBars[title])
+      app.navigationBars[title].buttons.firstMatch.tap()
+      ready(app.navigationBars["存储空间"])
+    }
+
+    ready(app.navigationBars["存储空间"].buttons["storageCleanup"], timeout: 30).tap()
+    ready(app.navigationBars["选择清理项目"])
+    ready(app.staticTexts["阅读与封面缓存"])
+  }
+
   func testU21ExportAllDeleteAndRestoreReadingData() {
     launch(["--ui-test-data-management", "--ui-test-storefront", "CHN"])
     ready(app.buttons["设置"]).tap()
     ready(element("dataManagementSettings")).tap()
-    ready(app.buttons["readingDataCaches"])
     snapshot("data-overview")
-    app.buttons["readingDataCaches"].tap()
-    ready(app.buttons["clearRebuildableCaches"])
-    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "有 0 本正在使用")).firstMatch.exists)
-    snapshot("data-cache")
-    app.navigationBars.buttons.firstMatch.tap()
     ready(app.buttons["exportAllReadingData"]).tap()
     // Export/restore our bytes; do not drive the system share UI in this test.
     ready(app.buttons["shareReadingBackup"])
@@ -784,7 +804,7 @@ import XCTest
     ready(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-")).firstMatch).tap()
     ready(app.buttons["deleteSelectedReadingData"]).tap()
     ready(app.buttons["confirmDeleteReadingData"].firstMatch).tap()
-    waitUntil { rows.count == 0 && !self.app.otherElements["readingDataWorking"].exists }
+    waitUntil { rows.count == 0 && !self.element("readingDataWorking").exists }
     ready(element("readingDataResult"))
     ready(element("readingDataEmpty"))
     XCTAssertFalse(element("readingDataError").exists)

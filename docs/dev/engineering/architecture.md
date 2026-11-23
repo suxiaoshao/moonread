@@ -137,15 +137,16 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 备份 ZIP 布局、受限解包、路径/摘要与正文缓存 SQL 驱逐 | Rust `storage/maintenance/backup_archive.rs` 管 ZIP；Swift `ReaderIndex` 管缓存驱逐 | 缓存驱逐使用同一个 GRDB 池，保留索引/授权/任务 | 单源 |
 | 来源栈 Tab 显隐 | Swift `LibrarySourceTabVisibility` | 按该栈路径中的阅读器及当前叶子目录的选择 preference 统一判定；目录只上报选择位置，不另提交相反显隐策略，不持久化全局选择标志 | 单一 owner |
 | 笔记快照与可读导出 | Swift `NoteDocument.swift`、批注当前头、定点章节和正文长度读取 | 三入口共用摘录/出处与 TXT/Markdown 输出；快照不压缩候选，未知记录按范围阻止不完整导出；出处只取选中正文位置和可证的完整字节数 | 不增同步格式 |
-| 用户备份 envelope、非事实恢复、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift`；同步删除状态由 `CloudTransportRows` 和 `CloudCallbackJournal` 持有 | 归档核验和字节准备先于写事务；恢复以候选及附件为输入，通过各领域同事务更新 current。只读预览复用各领域裁决，按正文 SHA 聚合差异并单列全局记录，无待恢复内容就跳过写事务。预览与写事务共用历史 ID 删除检查。同 ID 待发删除须先确认，再完整拉取本区后才放行 | 导出从同一用户库快照读取可携带的候选、附件及历史；无法完整编码时明确阻止导出 |
-| 受保护来源的 bookmark 解析、安全作用域、协调读取与物理路径边界 | Swift `Data/Sources/ProtectedFileAccess.swift` | 开书、导入、索引、恢复、缓存和备份共用；沿用 `.withoutUI` 与可解析的陈旧书签，不增加拒绝条件；作用域覆盖各阶段，accessor 内不等待 actor | 平台边界 |
+| 用户备份 envelope、非事实恢复、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift`；同步删除状态由 `CloudTransportRows` 和 `CloudCallbackJournal` 持有 | 归档核验和字节准备先于写事务；恢复以候选及附件为输入，通过各领域同事务更新 current。封面附件只按合并后的候选引用入库，导出的封面取自实际导出的候选。只读预览复用各领域裁决，按正文 SHA 聚合差异并单列全局记录，无待恢复内容就跳过写事务。预览与写事务共用历史 ID 删除检查。同 ID 待发删除须先确认，再完整拉取本区后才放行 | 导出从同一用户库快照读取可携带的候选、附件及历史；无法完整编码时明确阻止导出 |
+| 受保护来源的 bookmark 解析、安全作用域、协调读取与物理路径边界 | Swift `Data/Sources/ProtectedFileAccess.swift` | 开书、导入、索引、恢复和备份共用；沿用 `.withoutUI` 与可解析的陈旧书签，不增加拒绝条件；作用域覆盖各阶段，accessor 内不等待 actor | 平台边界 |
 | 本机来源下载可用性与目录发布 | Swift `AppDataService.prepareSourceFile`、`LibraryService`、`IndexSources` | 协调访问成功后只改同位置现有行；旧源准入复核及通知由服务负责 | 唯一索引 writer |
-| 缓存来源可读性证明与清理准入 | Swift `CacheManagement.swift` | 借用公共文件访问组件，证明期内调用 Rust 重验事务；页面不判断可清性 | 平台边界 |
+| 正文缓存清理准入 | Swift `CacheManagement.swift`、`ReaderIndex` | 盘点读取缓存索引。打开的阅读请求先按正常退出流程保存并释放 lease。执行时复核当前活动持有者、缓存目标和导入任务 | 只操作派生正文 |
+| 存储盘点与数据库维护 | Swift `StorageManagement`、`DataSession` 和 `CloudSyncCoordinator` | 文件按容器归类、去重，删除资格由各数据所有者给出；手动整理只操作当前附加用户库，排除在途同步。附件回收与同字节封面复用归 `UserValueRows`。提交后由缓存清理与封面加载器移除闲置读出副本，盘点时核对共用目录对应的各本机库 | 不改变持久化格式 |
 
 维护约定：新增规则先查本表；已存在则调用 owner。新增或改变归属必须在同一 PR 更新表、实现入口及测试位置。两个策略若故意不同，命名其输入/输出契约；不能仅以语言或调用入口不同为理由再实现一份。
 
 
-备份容器布局、受限解包与路径/摘要验证由 Rust `storage/maintenance/backup_archive.rs` 负责；用户备份 envelope 和非事实接入由 Swift `UserDataBackup.swift` 调用各领域关系 writer。`ReadingDataManagement.swift` 只编排本机事务交接，`ProtectedFileAccess.swift` 负责 bookmark、安全作用域和协调读取；`CacheManagement.swift` 保留清理准入与可读性证明；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
+备份容器布局、受限解包与路径/摘要验证由 Rust `storage/maintenance/backup_archive.rs` 负责；用户备份 envelope 和非事实接入由 Swift `UserDataBackup.swift` 调用各领域关系 writer。`ReadingDataManagement.swift` 只编排本机事务交接，`ProtectedFileAccess.swift` 负责 bookmark、安全作用域和协调读取；`CacheManagement.swift` 负责缓存清理准入与活动保护，`StorageManagement.swift` 汇总存储空间；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
 
 ## Rust 源码目录
 
@@ -176,7 +177,7 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 | `Reader/Rendering` | `ReadingView` 是 SwiftUI 适配入口；`ReadingController/` 汇集原控制器及 Pages/Scroll/Navigation/Selection 扩展，`Pages/` 保存叶页/扉页控制器，`Text/` 保存排版装配、坐标、原生正文与背景；ReadingPagination、ReadingViewport 和设备控制保留原入口/owner |
 | `Books` | 小说详情与完整 `BookMetadata`；封面展示、加载及服务私有辅助保留原文件边界 |
 | `Statistics` | `StatisticsView` 保留总览/单书详情的状态和路由；models、书目列表与统计设置保留入口，`Charts/` 汇集时长条/节奏/时段图，`Details/` 保存日期与时段详情；`ReadingStatistics` 的 writer、recorder 与日期辅助保持原 owner |
-| `Settings` | `SettingsView` 只保留首页与私有入口辅助；`Reading/` 汇集阅读偏好、唯一 store/缓存与预览，`Reading/Fonts/` 保存系统/导入字体；`Appearance/` 汇集应用外观与配色选择/预览/编辑，`Cloud/` 汇集云设置和状态，`About/` 汇集关于及许可；`DataManagement/` 按现有类型分别保存唯一 `DataManagementModel`、根页、阅读数据列表及待处理页，根页保留缓存／备份小视图；专题入口和原 owner 不变 |
+| `Settings` | `SettingsView` 只保留首页与私有入口辅助；`Reading/` 汇集阅读偏好、唯一 store/缓存与预览，`Reading/Fonts/` 保存系统/导入字体；`Appearance/` 汇集应用外观与配色选择/预览/编辑，`Cloud/` 汇集云设置和状态，`About/` 汇集关于及许可；`DataManagement/` 按现有类型分别保存唯一 `DataManagementModel`、根页、阅读数据列表及待处理页，根页保留备份小视图和存储空间入口；专题入口和原 owner 不变 |
 | `Data` | `AppDataService`、GRDB 用户数据及同步协调；`UserData/` 中 UserDataModels/UserDataValues 保留原模型与载荷，UserDataStore 的事务/存储留在同目录 UserData.swift，Values/Annotations/Statistics/Projection/Transfer 只物理拆分方法；UserDataService/Backup/SyncJSON/Themes 归入同目录，`Cloud/` 汇集云同步，`Restoration/` 汇集续读恢复，`Management/` 汇集备份/缓存编排，`Sources/` 汇集受保护访问与编码解析；正文准备、导入、云目录 owner 与紧耦合私有类型仍在 `AppDataService` |
 | `SystemIntegration` / `SystemIntegrationShared` | 主 App 派生快照、系统入口路由与平台更新；共享部分只有稳定链接、只读 DTO、最小 Entity/配置与无状态文字卡片。Widget/Control 目标不含数据库/正文服务；任意队列系统回调显式 nonisolated / @Sendable 后再交接 |
 | `Shared` | `Theme`、`MoonView`/`MoonCharacter`/`BrandSeal`、输入焦点及跨功能错误文案 `ReaderMessages` |

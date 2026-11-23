@@ -53,16 +53,19 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
       _ = try await service.makeCover(Data("invalid image".utf8))
       XCTFail("invalid cover accepted")
     } catch {}
-    let cover = try await service.makeCover(data)
+    let draft = try await service.makeCover(data)
+    let draftReadout = try await service.coverURL(draft)
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: draftReadout.path), "Selection stays a draft until Save")
+    var edited = base
+    edited.cover = draft
+    try await service.saveMetadata(base: base, edited: edited)
+    let persisted = try await service.details(bookID: book.id).metadata
+    let cover = try XCTUnwrap(persisted.cover)
+    XCTAssertNotEqual(cover.id, draft.id)
+    XCTAssertEqual(cover.sha256, draft.sha256)
     let url = try await service.coverURL(cover)
     defer { try? FileManager.default.removeItem(at: url) }
-    XCTAssertFalse(
-      FileManager.default.fileExists(atPath: url.path), "Selection stays a draft until Save")
-    var edited = base
-    edited.cover = cover
-    try await service.saveMetadata(base: base, edited: edited)
-    let saved = try await service.details(bookID: book.id).metadata
-    XCTAssertEqual(saved.cover, cover)
     var cache = AppDataService.PreviewCoverCache()
     var candidates = AppDataService.PreviewCoverCandidates()
     var reuseDrafts: [URL] = []
@@ -88,7 +91,11 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
     await service.discardCoverDraft(cancelled)
     let discarded = try await service.coverImage(cancelled, pixels: 123)
     XCTAssertNil(discarded)
-
+    XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    var removed = persisted
+    removed.cover = nil
+    try await service.saveMetadata(base: persisted, edited: removed)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "Removing the last reference reclaims the materialized copy")
   }
 }
 
@@ -145,20 +152,24 @@ final class BookCoverUserDataTests: UserDataFixture {
     XCTAssertNil(display.image(book: "synthetic", scope: scope, asset: nil, ready: nil))
     display.accept(book: "synthetic", scope: scope, asset: nil, ready: nil)
     XCTAssertNil(display.image(book: "synthetic", scope: scope, asset: new, ready: nil))
-    // A completed attachment save wakes the current subscriber without a hosted view.
+    // A saved cover loads through the real attachment service.
     do {
-
-      let (root, service, book, _) = try await editorFixture()
-      defer { try? FileManager.default.removeItem(at: root) }
+      let (root, service, book, rows) = try await editorFixture()
+      defer {
+        XCTAssertNoThrow(try rows.index.session.close())
+        try? FileManager.default.removeItem(at: root)
+      }
       let png = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 120)).pngData { context in
         UIColor.systemTeal.setFill()
         context.fill(CGRect(x: 0, y: 0, width: 80, height: 120))
       }
-      let cover = try await service.makeCover(png)
+      let draft = try await service.makeCover(png)
       let base = try await service.details(bookID: book.id).metadata
       var edited = base
-      edited.cover = cover
+      edited.cover = draft
       try await service.saveMetadata(base: base, edited: edited)
+      let persisted = try await service.details(bookID: book.id).metadata
+      let cover = try XCTUnwrap(persisted.cover)
       let loader = CoverImageLoader { asset, pixels in
         try await service.coverImage(asset, pixels: pixels)
       }
@@ -166,7 +177,6 @@ final class BookCoverUserDataTests: UserDataFixture {
       await awaitState { first.presentation.phase == .ready }
       XCTAssertNotNil(first.presentation.image)
       XCTAssertTrue(loader.subscribe(cover, pixels: 600).presentation === first.presentation)
-
     }
   }
 }

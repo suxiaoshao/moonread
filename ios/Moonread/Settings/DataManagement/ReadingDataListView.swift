@@ -79,8 +79,13 @@ struct ReadingDataListView: View {
                     Button { model.toggleVisibleSelection() } label: { Text(model.allVisibleSelected ? "取消全选" : "全选", tableName: "DataManagement") }
                         .accessibilityIdentifier("selectAllReadingData")
                     Spacer()
-                    Button(role: .destructive) { model.requestDelete(model.selected) } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
-                        .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
+                    if let working = model.working {
+                        InlineTaskProgress(title: Text(verbatim: working))
+                            .accessibilityIdentifier("readingDataWorking")
+                    } else {
+                        Button(role: .destructive) { model.requestDelete(model.selected) } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
+                            .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
+                    }
                 }
             }
         }
@@ -97,7 +102,8 @@ struct ReadingDataListView: View {
             if !model.busy { Task { await model.load() } }
         }
         .onDisappear { model.selecting = false; model.selected.removeAll() }
-        .modifier(ReadingDataWorking(model: model)).modifier(ReadingDataDeletionPrompt(model: model))
+        .modifier(ReadingDataWorking(model: model, showsInBottomBar: model.selecting))
+        .modifier(ReadingDataDeletionPrompt(model: model))
         .sheet(item: $detail) { item in
             NavigationStack {
                 VStack(alignment: .leading, spacing: 20) {

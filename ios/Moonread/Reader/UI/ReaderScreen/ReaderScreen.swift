@@ -27,6 +27,7 @@ struct ReaderScreen: View {
     @State private var localHeaderTop: CGFloat = 0
     @State private var battery = ReaderBattery()
     @State private var exitPhase = ReaderExitPhase.reading
+    @State private var storageExit: CheckedContinuation<Bool, Never>?
     @State private var navigationPresentation = NavigationPresentationState()
     // Same View-owned storage; extensions only read the existing owner/binding values.
     var readerSession: ReaderSession { session }
@@ -361,6 +362,14 @@ struct ReaderScreen: View {
 
     private var lifecycleReader: some View {
         presentationAwareReader
+        .onChange(of: session.readingID, initial: true) { _, bookID in
+            guard let id = openingRequest?.id else { return }
+            if let bookID {
+                library.shell.storageReaders[id] = .init(bookID: bookID) { await closeForStorage(id) }
+            } else {
+                library.shell.storageReaders[id] = nil
+            }
+        }
         .onChange(of: controlsVisible) { _, visible in
             if visible { session.refreshBookmark(); Onboarding.shared.didShowControls() }
         }
@@ -721,11 +730,32 @@ struct ReaderScreen: View {
     }
 
     private func finishReturning() {
-        guard exitPhase == .ready, !sheetPresented else { return }
+        guard exitPhase == .ready, !sheetPresented || (storageExit != nil && !sourceSelected) else { return }
         aiConversationID = nil
         exitPhase = .returned
         session.clearTransientState()
+        if let id = openingRequest?.id {
+            library.shell.storageReaders[id] = nil
+            if let storageExit {
+                self.storageExit = nil
+                let saved = session.error == nil
+                let released = session.relinquishClosingBody()
+                library.shell.removeReaderDestination(id)
+                Task {
+                    if let released { for await _ in released {} }
+                    storageExit.resume(returning: saved)
+                }
+            }
+        }
         onExit(session.error, reviewExitIsNormal && StatisticsWriter.shared.error == nil ? session.activity.effectiveReadingMilliseconds : 0)
+    }
+
+    private func closeForStorage(_ id: UUID) async -> Bool {
+        guard exitPhase == .reading, library.shell.containsReaderDestination(id) else { return false }
+        return await withCheckedContinuation { continuation in
+            storageExit = continuation
+            completeReturning()
+        }
     }
 
     private var undoCapsuleVisible: Bool {

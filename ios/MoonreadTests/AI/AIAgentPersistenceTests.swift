@@ -186,8 +186,9 @@ final class AIAgentPersistenceBookAITests: BookAIFixture {
     } catch {}
     let current = try await reader.details(sha: book.fixtureSHA256).metadata
     XCTAssertEqual(current.author, "Saved author")
-    XCTAssertEqual(current.cover?.id, cover.id)
-    let appliedBytes = try await reader.coverBytes(cover)
+    let savedCover = try XCTUnwrap(current.cover)
+    XCTAssertEqual(savedCover.sha256, cover.sha256)
+    let appliedBytes = try await reader.coverBytes(savedCover)
     XCTAssertFalse(
       appliedBytes.isEmpty, "Deleting the AI session does not remove the independent business cover"
     )

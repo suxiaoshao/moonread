@@ -1,91 +1,164 @@
 import Foundation
-import CryptoKit
-import os
+import GRDB
 
-struct CacheCleanupResult: Sendable { var bytes: UInt64 = 0; var removed = 0; var retained = 0 }
+struct BodyCacheInventory: Sendable {
+    let lease: DataSessionLease
+    let clearable: [CachedBody]
+    let held: [CachedBody]
+    let coverFiles: [StorageFile]
 
-/// Source authorization remains scoped throughout hashing and the eviction transaction.
-private final class CacheSourceWork: @unchecked Sendable {
-    private let cancelled = OSAllocatedUnfairLock(initialState: false)
-    private let probe = SourceIdentityProbe()
-    private let access = ProtectedFileAccess()
-    func cancel() { cancelled.withLock { $0 = true }; probe.cancel(); access.cancel() }
-    func run(body: CachedBody, file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderIndex, protected: [String]) async throws -> Bool {
-        try await Task.detached(priority: .utility) { [self] in
-            let source = try ProtectedFileAccess.Source(bookmark: Data(shelf.bookmark), relativePath: file.relativePath)
-            defer { withExtendedLifetime(source) {} }
-            let url = source.url
-            guard !file.needsDownload, source.contains() else { return false }
-            let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey, .fileSizeKey, .contentModificationDateKey]
-            let initial = try url.resourceValues(forKeys: keys)
-            guard initial.isUbiquitousItem != true || initial.ubiquitousItemDownloadingStatus == .current else { return false }
-            return try access.coordinatedRead(at: url) { readable in
-                let before = try readable.resourceValues(forKeys: keys)
-                guard before.isRegularFile == true, before.isSymbolicLink != true,
-                      before.fileSize.map(UInt64.init) == file.size,
-                      Int64((before.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000) == file.modified else { return false }
-                let identity = try probe.identify(filePath: readable.path, decoding: file.decoding)
-                guard identity.contentSha256 == body.contentSha256 else { return false }
-                var freshURL = readable; freshURL.removeAllCachedResourceValues()
-                let after = try freshURL.resourceValues(forKeys: keys)
-                guard before.fileSize == after.fileSize, before.contentModificationDate == after.contentModificationDate else { return false }
-                return try cancelled.withLock { flag in
-                    guard !flag else { throw CancellationError() }
-                    guard try core.publishSourceIdentity(file: file, identity: identity) else { return false }
-                    return try core.evictCachedBody(bookId: body.bookId, contentSha256: body.contentSha256, verifiedFile: file, protectedBookIds: protected, discardOffline: false)
-                }
-            } ?? false
-        }.value
+    var clearableBytes: UInt64 {
+        clearable.reduce(0) { $0 + $1.bytes } + coverFiles.reduce(0) { $0 + $1.bytes }
     }
 }
-extension AppDataService {
-    func cacheSummary() async throws -> CacheSummary {
-        let core = try indexStore(), protected = cacheProtectedBookIDs()
-        // Only the handle and active IDs belong to the service actor.
-        return try await Task.detached(priority: .utility) {
-            try core.cacheSummary(protectedBookIds: protected)
-        }.value
-    }
-    func clearRebuildableCaches() async throws -> CacheCleanupResult {
-        let core = try indexStore(), bodies = try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs())
-        var result = CacheCleanupResult()
-        for body in bodies {
-            try Task.checkCancellation()
-            guard !body.protected, identityMayRun() else { result.retained += 1; continue }
-            var removed = false
-            for file in try core.sourceFilesForSha(sha: body.contentSha256) where !file.needsDownload {
-                guard let shelf = try? libraryShelf(file.shelfId), shelf.error == nil else { continue }
-                let work = CacheSourceWork(), protected = cacheProtectedBookIDs()
-                do {
-                    removed = try await withTaskCancellationHandler {
-                        try await withReadingIdleWork(cancel: { work.cancel() }) {
-                            try await work.run(body: body, file: file, shelf: shelf, core: core, protected: protected)
-                        }
-                    } onCancel: { work.cancel() }
-                } catch is CancellationError { throw CancellationError() }
-                catch { continue }
-                if removed { break }
+
+private struct CoverCacheScope: Sendable {
+    let layout: DataLayout
+    let current: URL
+
+    // Assets/Covers is shared by environments and accounts, and was also
+    // used to recover missing SwiftData attachments during migration.
+    func otherCopies(legacyPartitions: Set<Int>) throws -> Set<UserValueRows.CoverCopy>? {
+        let support = layout.applicationSupport
+        let released = support.appending(path: "Data/v2", directoryHint: .isDirectory)
+        let roots = [
+            layout.parent.appending(path: "development"), layout.parent.appending(path: "production"),
+            released, released.appending(path: "development"),
+        ]
+        var copies = Set<UserValueRows.CoverCopy>()
+        var migrated = legacyPartitions
+        for root in roots {
+            let owners = [root.appending(path: "local")] + (try StorageFile.children(of: root.appending(path: "accounts")))
+            for owner in owners {
+                let file = owner.appending(path: "user.sqlite").standardizedFileURL
+                guard file != current, try StorageFile.file(at: file) != nil else { continue }
+                var configuration = Configuration()
+                configuration.readonly = true
+                let database = try DatabaseQueue(path: file.path, configuration: configuration)
+                try database.read { db in
+                    // An empty user store has no attachments or legacy import.
+                    if try db.tableExists("cover_asset") {
+                        copies.formUnion(try Row.fetchAll(db, sql: "SELECT legacy_cover_id,expected_sha FROM cover_asset")
+                            .compactMap(UserValueRows.CoverCopy.init))
+                    }
+                    if try db.tableExists("legacy_import_state") {
+                        migrated.formUnion(try Self.migratedLegacyPartitions(db, schema: "main"))
+                    }
+                }
             }
-            if removed { result.removed += 1; result.bytes += body.bytes }
-            else { result.retained += 1 }
         }
-        // Only thumbnail copies and persisted, verified cover read-outs. Never drafts.
-        let writer = try relationalUserIndex()
-        guard writer.lease == core.lease else { throw CancellationError() }
-        let copies = try writer.session.readUsers(writer.lease) { try UserValueRows.verifiedCoverCopies($0) }
-        let directory = try coverDirectory()
-        for name in (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [] {
-            let url = directory.appendingPathComponent(name)
-            guard let matched = copies.first(where: { name.hasPrefix($0.id + "-" + $0.sha256 + ".") }),
-                  (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true,
-                  let bytes = try? Data(contentsOf: url),
-                  SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == matched.sha256 else { continue }
-            try? FileManager.default.removeItem(at: url)
+        for (partition, name) in ["user-data.store", "pending-users.store"].enumerated() {
+            if !migrated.contains(partition), try StorageFile.file(at: support.appending(path: name)) != nil { return nil }
         }
-        let thumbs = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent(dataDirectoryName).appendingPathComponent("Covers")
-        if FileManager.default.fileExists(atPath: thumbs.path) { try FileManager.default.removeItem(at: thumbs) }
-        NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
-        return result
+        return copies
+    }
+
+    static func migratedLegacyPartitions(_ db: Database, schema: String = "usr") throws -> Set<Int> {
+        Set(try Int.fetchAll(db, sql: """
+            SELECT partition FROM \(schema).legacy_import_state
+            WHERE source_model IN ('UserCover','UserValue')
+            GROUP BY partition,source_id
+            HAVING count(*)=2 AND min(completeness)='complete' AND max(completeness)='complete'
+            """))
+    }
+}
+
+extension AppDataService {
+    func bodyCacheInventory() async throws -> BodyCacheInventory {
+        try Task.checkCancellation()
+        let index = try relationalUserIndex(), protected = cacheImportBookIDs()
+        let directory = try coverDirectory(), thumbnails = try thumbnailCacheDirectory()
+        let scope = try coverCacheScope(index)
+        let work = Task.detached(priority: .utility) {
+            // Let the pooled reader scan without holding the session lifecycle lock.
+            let (bodies, copies, legacy) = try await index.session.readUsersForPublication(index.lease) { db in
+                (try ReaderIndex.cacheInventory(db, protectedBookIds: protected), try UserValueRows.verifiedCoverCopies(db),
+                 try CoverCacheScope.migratedLegacyPartitions(db))
+            }
+            let files = try Self.clearableCoverCacheFiles(copies: copies, scope: scope, legacy: legacy,
+                                                          directory: directory, thumbnails: thumbnails)
+            return BodyCacheInventory(lease: index.lease, clearable: bodies.filter { !$0.protected },
+                                      held: bodies.filter(\.protected), coverFiles: files)
+        }
+        let inventory = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+        let idle = await coverResources.idleCacheFiles(inventory.coverFiles)
+        try Task.checkCancellation()
+        guard try indexStore().lease == inventory.lease else { throw CancellationError() }
+        return .init(lease: inventory.lease, clearable: inventory.clearable, held: inventory.held, coverFiles: idle)
+    }
+
+    func storageBodyCanClose(_ body: CachedBody, lease: DataSessionLease) throws -> Bool {
+        let core = try indexStore()
+        guard lease == core.lease, !cacheImportBookIDs().contains(body.bookId) else { return false }
+        return try core.canEvictCachedBody(body)
+    }
+
+    func evictStorageBody(_ body: CachedBody, lease: DataSessionLease) throws -> Bool {
+        try Task.checkCancellation()
+        let core = try indexStore()
+        guard lease == core.lease else { return false }
+        return try core.evictCachedBody(body, protectedBookIds: cacheProtectedBookIDs())
+    }
+
+    func thumbnailCacheDirectory() throws -> URL {
+        try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+            .appending(path: dataDirectoryName + "/Covers", directoryHint: .isDirectory)
+    }
+
+    private func coverCacheScope(_ index: ReaderIndex) throws -> CoverCacheScope {
+        // The service owns the disk cache. Layout is its bound database authority.
+        .init(layout: index.session.layout, current: try index.session.layout.user(index.lease.scope).standardizedFileURL)
+    }
+
+    private nonisolated static func clearableCoverCacheFiles(copies: [UserValueRows.CoverCopy: Bool],
+                                                             scope: CoverCacheScope, legacy: Set<Int>, directory: URL,
+                                                             thumbnails: URL) throws -> [StorageFile] {
+        let other = try? scope.otherCopies(legacyPartitions: legacy)
+        let covers = try StorageFile.files(in: directory).filter { file in
+            guard let copy = UserValueRows.CoverCopy(file: file.url) else { return false }
+            guard let recoverable = copies[copy] else { return other?.contains(copy) == false }
+            guard recoverable, let bytes = try? Data(contentsOf: file.url) else { return false }
+            return DataIdentity.sha(bytes) == copy.sha256
+        }
+        return try covers + StorageFile.files(in: thumbnails)
+    }
+
+    func clearStorageCoverCaches(_ confirmed: [StorageFile], lease: DataSessionLease) async throws -> UInt64 {
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        let index = try relationalUserIndex()
+        guard index.lease == lease else { throw ReadingDataError.changed }
+        let directory = try coverDirectory(), thumbnails = try thumbnailCacheDirectory(), scope = try coverCacheScope(index)
+        let work = Task.detached(priority: .utility) {
+            let (copies, legacy) = try await index.session.readUsersForPublication(lease) {
+                (try UserValueRows.verifiedCoverCopies($0), try CoverCacheScope.migratedLegacyPartitions($0))
+            }
+            return try Self.clearableCoverCacheFiles(copies: copies, scope: scope, legacy: legacy,
+                                                     directory: directory, thumbnails: thumbnails)
+        }
+        let current = Set(try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() })
+        try Task.checkCancellation()
+        guard try indexStore().lease == lease else { throw ReadingDataError.changed }
+        return await coverResources.removeCacheFiles(confirmed.filter(current.contains))
+    }
+
+    /// The SQL writer returns these identities only after its transaction commits.
+    func removeReclaimedCoverCopies(_ copies: [UserValueRows.CoverCopy], index: ReaderIndex) async {
+        guard !copies.isEmpty, let directory = try? coverDirectory(), let scope = try? coverCacheScope(index) else { return }
+        let reclaimed = Set(copies)
+        let files = await Task.detached(priority: .utility) { () -> [StorageFile] in
+            let snapshot = try? await index.session.readUsersForPublication(index.lease) { db in
+                (Set(try Row.fetchAll(db, sql: "SELECT legacy_cover_id,expected_sha FROM usr.cover_asset")
+                    .compactMap(UserValueRows.CoverCopy.init)), try CoverCacheScope.migratedLegacyPartitions(db))
+            }
+            guard let (known, legacy) = snapshot, let other = try? scope.otherCopies(legacyPartitions: legacy),
+                  let files = try? StorageFile.files(in: directory) else { return [] }
+            let orphans = reclaimed.subtracting(known).subtracting(other)
+            return files.filter { file in
+                UserValueRows.CoverCopy(file: file.url).map(orphans.contains) == true
+            }
+        }.value
+        guard (try? indexStore().lease) == index.lease else { return }
+        _ = await coverResources.removeCacheFiles(files)
     }
 
     func clearDeletedReadingBodyCaches(_ selectedSHAs: Set<String>, index: ReaderIndex) throws -> Bool {
@@ -95,9 +168,9 @@ extension AppDataService {
         }
         let protected = cacheProtectedBookIDs()
         var allRemoved = true
-        for body in try index.cacheInventory(protectedBookIds: protected) where selectedSHAs.contains(body.contentSha256) {
-            let removed = try index.evictCachedBody(bookId: body.bookId, contentSha256: body.contentSha256,
-                                                    verifiedFile: nil, protectedBookIds: protected, discardOffline: true)
+        let bodies = try index.read { try ReaderIndex.cacheInventory($0, protectedBookIds: protected) }
+        for body in bodies where selectedSHAs.contains(body.contentSha256) {
+            let removed = try index.evictCachedBody(body, protectedBookIds: protected)
             if !removed { allRemoved = false }
         }
         return allRemoved

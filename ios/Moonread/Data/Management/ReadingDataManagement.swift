@@ -346,9 +346,10 @@ extension AppDataService {
             guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
             let index = try relationalUserIndex()
             guard index.lease == lease else { throw ReadingDataError.changed }
-            try index.session.writeUsers(index.lease) {
+            let reclaimed = try index.session.writeUsers(index.lease) {
                 try plan.merge($0, scope: index.lease.scope, syncRequested: cloudSyncIntent.requested, cancellation: cancellation)
             }
+            await removeReclaimedCoverCopies(reclaimed, index: index)
         } onCancel: { cancellation.cancel() }
         dataChanged()
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
