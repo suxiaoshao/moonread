@@ -90,6 +90,42 @@ import XCTest
         XCTAssertEqual(unknown.retained, 8)
     }
 
+    func testCacheCleanupIncludesOrphanCoverCopiesButKeepsOtherStoreAttachments() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        let index = try makeReaderIndexFixture(at: root)
+        let service = AppDataService(core: index)
+        let covers = try await service.coverDirectory()
+        defer {
+            try? index.session.close()
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: covers)
+        }
+        let payload = Data(repeating: 0x61, count: 64)
+        let sha = DataIdentity.sha(payload)
+        let orphan = UserValueRows.CoverCopy(id: UUID().uuidString, sha256: sha)
+        let other = UserValueRows.CoverCopy(id: UUID().uuidString, sha256: sha)
+        let orphanURL = covers.appending(path: orphan.name + ".png")
+        let otherURL = covers.appending(path: other.name + ".png")
+        try payload.write(to: orphanURL)
+        try payload.write(to: otherURL)
+        let peer = try DataLayout(applicationSupport: root, environment: .development).user(.local)
+        try FileManager.default.createDirectory(at: peer.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let database = try DatabaseQueue(path: peer.path)
+        try await database.write { db in
+            try db.execute(sql: "CREATE TABLE cover_asset (legacy_cover_id TEXT, expected_sha TEXT)")
+            try db.execute(sql: "INSERT INTO cover_asset VALUES (?,?)", arguments: [other.id, other.sha256])
+        }
+        try database.close()
+
+        let inventory = try await service.bodyCacheInventory()
+        XCTAssertTrue(inventory.coverFiles.contains { $0.url == orphanURL })
+        XCTAssertFalse(inventory.coverFiles.contains { $0.url == otherURL })
+        let freed = try await service.clearStorageCoverCaches(inventory.coverFiles, lease: inventory.lease)
+        XCTAssertEqual(freed, UInt64(payload.count))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphanURL.path))
+        XCTAssertEqual(try Data(contentsOf: otherURL), payload)
+    }
+
     func testOrdinaryCleanupEvictsBodiesRegardlessOfSourceAndPreservesReadingData() async throws {
         let a = Data("第一章 原创甲\n测试正文。\n".utf8)
         let b = Data("第一章 原创乙\n原文件随后移除。\n".utf8)

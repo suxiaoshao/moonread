@@ -106,10 +106,11 @@ extension AppDataService {
         try Task.checkCancellation()
         let index = try relationalUserIndex()
         guard admission == index.lease else { throw ReadingDataError.changed }
-        try index.session.writeUsers(index.lease) {
+        let reclaimed = try index.session.writeUsers(index.lease) {
             try UserValueRows.putMetadata($0, [.init(plan: plan, cover: asset)], device: userDevice, now: userValueClock, scope: index.lease.scope)
         }
         publishMetadataCommit([plan])
+        await removeReclaimedCoverCopies(reclaimed, index: index)
     }
     nonisolated static func readCoverDraft(_ cover: BookCoverAsset, url: URL, length: Int?) throws -> UserValueRows.CoverWrite {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
@@ -424,7 +425,7 @@ extension AppDataService {
 actor CoverResourceLoader {
     private struct Ready { let image: UIImage; let cost: Int; var used: UInt64 }
     private var ready: [String: Ready] = [:]
-    private var running: [String: (UUID, Task<UIImage?, Error>)] = [:]
+    private var running: [String: (token: UUID, copy: UserValueRows.CoverCopy, task: Task<UIImage?, Error>)] = [:]
     private var tick: UInt64 = 0
     private var activeScope: UUID?
     private let budget = 32 * 1024 * 1024
@@ -432,7 +433,7 @@ actor CoverResourceLoader {
                attachment: @escaping @Sendable () async throws -> Data?) async throws -> UIImage? {
         if activeScope != scope {
             activeScope = scope; ready.removeAll()
-            for (_, task) in running.values { task.cancel() }; running.removeAll()
+            for value in running.values { value.task.cancel() }; running.removeAll()
         }
         let key = CoverImageLoader.key(cover, pixels, exact: true)
         tick &+= 1
@@ -440,13 +441,13 @@ actor CoverResourceLoader {
             let candidate = CoverImageLoader.key(cover, size, exact: true)
             if var value = ready[candidate] { value.used = tick; ready[candidate] = value; return value.image }
         }
-        if let (_, task) = running[key] { return try await task.value }
+        if let load = running[key] { return try await load.task.value }
         let token = UUID()
         let task = Task { try await self.read(cover, pixels: pixels, directory: directory, attachment: attachment) }
-        running[key] = (token, task)
+        running[key] = (token, .init(id: cover.id, sha256: cover.sha256), task)
         do {
             let image = try await task.value
-            guard activeScope == scope, running[key]?.0 == token else { throw CancellationError() }
+            guard activeScope == scope, running[key]?.token == token else { throw CancellationError() }
             running[key] = nil
             if let image {
                 let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? pixels * pixels * 4
@@ -457,7 +458,20 @@ actor CoverResourceLoader {
                 }
             }
             return image
-        } catch { if running[key]?.0 == token { running[key] = nil }; throw error }
+        } catch { if running[key]?.token == token { running[key] = nil }; throw error }
+    }
+
+    func idleCacheFiles(_ files: [StorageFile]) -> [StorageFile] {
+        let names = Set(running.values.map(\.copy.name))
+        guard !names.isEmpty else { return files }
+        return files.filter { file in
+            let name = file.url.deletingPathExtension().lastPathComponent
+            return !names.contains(name) && !names.contains { name.hasPrefix($0 + "-") }
+        }
+    }
+
+    func removeCacheFiles(_ files: [StorageFile]) -> UInt64 {
+        StorageFile.remove(idleCacheFiles(files))
     }
     private func read(_ cover: BookCoverAsset, pixels: Int, directory: String,
                       attachment: @escaping @Sendable () async throws -> Data?) async throws -> UIImage? {

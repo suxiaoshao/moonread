@@ -97,7 +97,7 @@ extension AppDataService {
         guard confirmation.configuration == userCloudConfigurationRevision,
               confirmation.lease == lease else { throw ReadingDataError.changed }
         let device = userDevice, now = userValueClock
-        let plans = try index.session.writeUsers(lease) { db in
+        let (plans, reclaimed) = try index.session.writeUsers(lease) { db in
             let inputs = try MetadataExchangeRows.read(db, request: .import(shas: confirmation.selected.sorted()),
                                                        scope: lease.scope.key)
             let current = try MetadataCleanupInventory.selectedValues(from: inputs, selected: confirmation.selected,
@@ -107,11 +107,12 @@ extension AppDataService {
             let plans = try confirmation.changes.map { base in
                 try metadataEditPlan(base: base, edited: MetadataCleanupInventory.empty(sha: base.sha), fields: fields)
             }
-            try UserValueRows.putMetadata(db, plans.map { .init(plan: $0, cover: nil) },
-                                          device: device, now: now, scope: lease.scope)
-            return plans
+            let reclaimed = try UserValueRows.putMetadata(db, plans.map { .init(plan: $0, cover: nil) },
+                                                          device: device, now: now, scope: lease.scope)
+            return (plans, reclaimed)
         }
         publishMetadataCommit(plans)
+        await removeReclaimedCoverCopies(reclaimed, index: index)
         return plans.count
     }
 }
@@ -477,7 +478,7 @@ extension AppDataService {
                     try Task.checkCancellation()
                     try validateMetadataScope(confirmed, indices: prepared.map(\.index))
                     let writer = try relationalUserIndex()
-                    try writer.session.writeUsers(confirmed.lease) {
+                    let reclaimed = try writer.session.writeUsers(confirmed.lease) {
                         try UserValueRows.putMetadata($0, entries, device: userDevice, now: userValueClock, scope: confirmed.lease.scope)
                     }
                     // A successful save is a fact even when a stop raced the return.
@@ -489,6 +490,7 @@ extension AppDataService {
                             message: nil, cover: book.edited?.cover, savedFieldCount: book.changedMetadataFields.count)
                     }
                     publishMetadataCommit(prepared.map(\.plan))
+                    await removeReclaimedCoverCopies(reclaimed, index: writer)
                 }
                 progress(.init(phase: .saving, completed: checkpoint.committed, total: writes.count))
             }

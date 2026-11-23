@@ -242,7 +242,8 @@ struct UserBackupRestore: Sendable {
         return result
     }
 
-    func merge(_ db: Database, scope: DataScope, syncRequested: Bool, cancellation: BackupCancellation) throws {
+    @discardableResult
+    func merge(_ db: Database, scope: DataScope, syncRequested: Bool, cancellation: BackupCancellation) throws -> [UserValueRows.CoverCopy] {
         try requireHistoryDeletionsSettled(db, scope: scope, cancellation: cancellation)
         let queueForSync = try syncRequested && scope != .local
             && CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready
@@ -299,8 +300,9 @@ struct UserBackupRestore: Sendable {
                 try ReadingHistoryTransport.enqueueClear(db, id: id, value: value, scope: scope)
             }
         }
-        try UserValueRows.reclaimCovers(db, ids: replaced.union(needed.map(\.id)))
+        let reclaimed = try UserValueRows.reclaimCovers(db, ids: replaced.union(needed.map(\.id)))
         try cancellation.check()
+        return reclaimed
     }
 
     private func requireHistoryDeletionsSettled(_ db: Database, scope: DataScope, cancellation: BackupCancellation) throws {

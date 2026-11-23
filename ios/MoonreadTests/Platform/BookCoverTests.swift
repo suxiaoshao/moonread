@@ -91,7 +91,11 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
     await service.discardCoverDraft(cancelled)
     let discarded = try await service.coverImage(cancelled, pixels: 123)
     XCTAssertNil(discarded)
-
+    XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    var removed = persisted
+    removed.cover = nil
+    try await service.saveMetadata(base: persisted, edited: removed)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "Removing the last reference reclaims the materialized copy")
   }
 }
 

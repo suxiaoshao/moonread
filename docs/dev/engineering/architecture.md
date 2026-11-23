@@ -141,7 +141,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 受保护来源的 bookmark 解析、安全作用域、协调读取与物理路径边界 | Swift `Data/Sources/ProtectedFileAccess.swift` | 开书、导入、索引、恢复和备份共用；沿用 `.withoutUI` 与可解析的陈旧书签，不增加拒绝条件；作用域覆盖各阶段，accessor 内不等待 actor | 平台边界 |
 | 本机来源下载可用性与目录发布 | Swift `AppDataService.prepareSourceFile`、`LibraryService`、`IndexSources` | 协调访问成功后只改同位置现有行；旧源准入复核及通知由服务负责 | 唯一索引 writer |
 | 正文缓存清理准入 | Swift `CacheManagement.swift`、`ReaderIndex` | 盘点读取缓存索引。打开的阅读请求先按正常退出流程保存并释放 lease。执行时复核当前活动持有者、缓存目标和导入任务 | 只操作派生正文 |
-| 存储盘点与数据库维护 | Swift `StorageManagement`、`DataSession` 和 `CloudSyncCoordinator` | 文件按容器归类、去重，删除资格由各数据所有者给出；手动整理只操作当前附加用户库，排除在途同步。回收与本地同字节封面复用归 `UserValueRows` | 不改变持久化格式 |
+| 存储盘点与数据库维护 | Swift `StorageManagement`、`DataSession` 和 `CloudSyncCoordinator` | 文件按容器归类、去重，删除资格由各数据所有者给出；手动整理只操作当前附加用户库，排除在途同步。附件回收与同字节封面复用归 `UserValueRows`。提交后由缓存清理与封面加载器移除闲置读出副本，盘点时核对共用目录对应的各本机库 | 不改变持久化格式 |
 
 维护约定：新增规则先查本表；已存在则调用 owner。新增或改变归属必须在同一 PR 更新表、实现入口及测试位置。两个策略若故意不同，命名其输入/输出契约；不能仅以语言或调用入口不同为理由再实现一份。
 

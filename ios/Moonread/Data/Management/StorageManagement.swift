@@ -41,6 +41,7 @@ struct StorageDatabaseResult: Sendable {
     let coversRemoved: Int
     let bytesRecovered: UInt64
     let incomplete: Bool
+    let reclaimedCopies: [UserValueRows.CoverCopy]
 }
 
 enum StorageMaintenanceError: Error { case busy }
@@ -183,6 +184,8 @@ extension AppDataService {
         userDataOperationBusy = true
         defer { releaseUserDataOperation() }
         try Task.checkCancellation()
-        return try await coordinator.organizeReadingDatabase(session: index.session, lease: index.lease)
+        let result = try await coordinator.organizeReadingDatabase(session: index.session, lease: index.lease)
+        await removeReclaimedCoverCopies(result.reclaimedCopies, index: index)
+        return result
     }
 }

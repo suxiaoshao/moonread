@@ -534,14 +534,14 @@ final class DataSession: @unchecked Sendable {
             guard usersReady, token.scope == .local || verifiedAccount == token.scope else { throw StorageMaintenanceError.busy }
             return try writer.barrierWriteWithoutTransaction { db in
                 let before = try StorageDatabaseFiles.bytes(file)
-                var removed = 0
+                var removed: (count: Int, copies: [UserValueRows.CoverCopy]) = (0, [])
                 try db.inTransaction {
                     removed = try UserValueRows.reclaimUnreferencedCovers(db)
                     return .commit
                 }
                 do {
                     let free = try Int.fetchOne(db, sql: "PRAGMA usr.freelist_count") ?? 0
-                    if removed > 0 || free > 0 {
+                    if removed.count > 0 || free > 0 {
                         try db.execute(sql: "VACUUM usr")
                     }
                     try db.checkpoint(.truncate, on: "usr")
@@ -550,10 +550,11 @@ final class DataSession: @unchecked Sendable {
                         throw DataV2Error.migrationNotVerified
                     }
                     let after = try StorageDatabaseFiles.bytes(file)
-                    return .init(coversRemoved: removed, bytesRecovered: before > after ? before - after : 0, incomplete: false)
+                    return .init(coversRemoved: removed.count, bytesRecovered: before > after ? before - after : 0,
+                                 incomplete: false, reclaimedCopies: removed.copies)
                 } catch {
-                    guard removed > 0 else { throw error }
-                    return .init(coversRemoved: removed, bytesRecovered: 0, incomplete: true)
+                    guard removed.count > 0 else { throw error }
+                    return .init(coversRemoved: removed.count, bytesRecovered: 0, incomplete: true, reclaimedCopies: removed.copies)
                 }
             }
         }

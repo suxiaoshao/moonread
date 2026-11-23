@@ -362,18 +362,35 @@ enum UserValueRows {
                           arguments: [assetID(id,sha: sha)])
     }
 
-    struct CoverCopy: Sendable { let id, sha256: String }
+    struct CoverCopy: Hashable, Sendable {
+        let id, sha256: String
+        var name: String { id + "-" + sha256 }
 
-    static func verifiedCoverCopies(_ db: Database) throws -> [CoverCopy] {
+        init(id: String, sha256: String) { self.id = id; self.sha256 = sha256 }
+
+        init?(file: URL) {
+            let name = file.deletingPathExtension().lastPathComponent
+            guard ["jpg", "png"].contains(file.pathExtension), name.utf8.count == 101,
+                  name.dropLast(64).last == "-", UUID(uuidString: String(name.prefix(36))) != nil,
+                  (try? parseSha256(value: String(name.suffix(64)))) != nil else { return nil }
+            self.init(id: String(name.prefix(36)), sha256: String(name.suffix(64)))
+        }
+
+        init?(_ row: Row) {
+            guard let id: String = row["legacy_cover_id"], let sha: String = row["expected_sha"] else { return nil }
+            self.init(id: id, sha256: sha)
+        }
+    }
+
+    static func verifiedCoverCopies(_ db: Database) throws -> [CoverCopy: Bool] {
         let rows = try Row.fetchCursor(db, sql: """
             SELECT legacy_cover_id,expected_sha,bytes FROM usr.cover_asset
-            WHERE availability='available' AND legacy_cover_id IS NOT NULL AND expected_sha IS NOT NULL
+            WHERE legacy_cover_id IS NOT NULL AND expected_sha IS NOT NULL
             """)
-        var copies: [CoverCopy] = []
+        var copies: [CoverCopy: Bool] = [:]
         while let row = try rows.next() {
-            let sha: String = row["expected_sha"]
-            if let bytes = row["bytes"] as Data?, DataIdentity.sha(bytes) == sha {
-                copies.append(.init(id: row["legacy_cover_id"], sha256: sha))
+            if let copy = CoverCopy(row) {
+                copies[copy] = (row["bytes"] as Data?).map { DataIdentity.sha($0) == copy.sha256 } ?? false
             }
         }
         return copies
@@ -392,16 +409,19 @@ enum UserValueRows {
             """) == true
     }
 
-    static func removeUnreferencedCover(_ db: Database, id: String) throws {
-        try db.execute(sql: """
+    @discardableResult
+    static func removeUnreferencedCover(_ db: Database, id: String) throws -> CoverCopy? {
+        try Row.fetchOne(db, sql: """
             DELETE FROM usr.cover_asset WHERE asset_id=? AND NOT EXISTS(
                SELECT 1 FROM usr.cover_candidate c WHERE c.asset_id=cover_asset.asset_id)
-            """, arguments: [id])
+            RETURNING legacy_cover_id,expected_sha
+            """, arguments: [id]).flatMap(CoverCopy.init)
     }
 
-    static func reclaimCovers(_ db: Database, ids: Set<String>) throws {
-        guard !ids.isEmpty, try canReclaimCoverAssets(db) else { return }
-        for id in ids { try removeUnreferencedCover(db, id: id) }
+    @discardableResult
+    static func reclaimCovers(_ db: Database, ids: Set<String>) throws -> [CoverCopy] {
+        guard !ids.isEmpty, try canReclaimCoverAssets(db) else { return [] }
+        return try ids.compactMap { try removeUnreferencedCover(db, id: $0) }
     }
 
     static func unreferencedCovers(_ db: Database) throws -> (count: Int, bytes: UInt64) {
@@ -413,13 +433,14 @@ enum UserValueRows {
         return (row["count"], row["bytes"])
     }
 
-    static func reclaimUnreferencedCovers(_ db: Database) throws -> Int {
-        guard try canReclaimCoverAssets(db) else { return 0 }
-        try db.execute(sql: """
+    static func reclaimUnreferencedCovers(_ db: Database) throws -> (count: Int, copies: [CoverCopy]) {
+        guard try canReclaimCoverAssets(db) else { return (0, []) }
+        let rows = try Row.fetchAll(db, sql: """
             DELETE FROM usr.cover_asset WHERE NOT EXISTS(
                 SELECT 1 FROM usr.cover_candidate c WHERE c.asset_id=cover_asset.asset_id)
+            RETURNING legacy_cover_id,expected_sha
             """)
-        return db.changesCount
+        return (rows.count, rows.compactMap(CoverCopy.init))
     }
 
     static func deviceCover(_ db: Database, key: Key, device: String) throws -> String? {
@@ -456,7 +477,9 @@ enum UserValueRows {
         let cover: CoverWrite?
     }
 
-    static func putMetadata(_ db: Database, _ writes: [MetadataWrite], device: String, now: Int64, scope: DataScope = .local) throws {
+    @discardableResult
+    static func putMetadata(_ db: Database, _ writes: [MetadataWrite], device: String, now: Int64,
+                            scope: DataScope = .local) throws -> [CoverCopy] {
         var books = Set<String>(), keys = Set<String>()
         var fields: [(key: Key, value: String)] = []
         var attached = false
@@ -490,8 +513,9 @@ enum UserValueRows {
             try putLocal(db, key: field.key, value: field.value, device: device, now: now, latest: clocks[field.key.logical] ?? 0, scope: scope)
         }
         if attached { try LegacyUserImport.reconcileCoverCompleteness(db) }
-        try reclaimCovers(db, ids: replaced)
+        let reclaimed = try reclaimCovers(db, ids: replaced)
         for book in books { try CurrentUserRows.settleMetadata(db, book: book) }
+        return reclaimed
     }
 
     /// Inspect every device for the actual edit keys. Only timestamps and
