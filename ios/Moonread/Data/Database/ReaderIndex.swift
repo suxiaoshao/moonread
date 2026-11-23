@@ -131,8 +131,7 @@ final class ReaderIndex: @unchecked Sendable {
 }
 
 extension ReaderIndex {
-    // Use the current version's verified identity first, then a cached
-    // association. A cached association alone never authorizes eviction.
+    // Use the current version's verified identity first, then a cached association.
     static let indexedSourceSHA = """
         COALESCE((SELECT v.content_sha256 FROM main.valid_indexed_identities v WHERE v.file_id=f.id),
                  (SELECT b.content_sha256 FROM main.books b WHERE b.id=COALESCE(
@@ -168,20 +167,12 @@ extension ReaderIndex {
         try read { try Self.evictableBody($0, bookId: body.bookId, sha: body.contentSha256) }
     }
 
-    func evictCachedBody(bookId: String, contentSha256: String, verifiedFile: SourceFileSnapshot?,
-                         protectedBookIds: [String], discardOffline: Bool) throws -> Bool {
-        _ = try parseSha256(value: contentSha256)
+    func evictCachedBody(_ body: CachedBody, protectedBookIds: [String]) throws -> Bool {
+        let bookId = body.bookId
+        _ = try parseSha256(value: body.contentSha256)
         guard !protectedBookIds.contains(bookId) else { return false }
         return try write { db in
-            guard try Self.evictableBody(db, bookId: bookId, sha: contentSha256) else { return false }
-            if !discardOffline {
-                guard let f = verifiedFile, try Bool.fetchOne(db, sql: """
-                    SELECT EXISTS(SELECT 1 FROM main.library_files f JOIN main.valid_indexed_identities v ON v.file_id=f.id
-                      WHERE f.id=? AND f.shelf_id=? AND f.relative_path=? AND f.size=? AND f.modified=?
-                      AND f.decoding=? AND v.content_sha256=? AND f.needs_download=0)
-                    """, arguments: [f.id,f.shelfId,f.relativePath,f.size,f.modified,f.decoding,contentSha256]) == true
-                else { return false }
-            }
+            guard try Self.evictableBody(db, bookId: bookId, sha: body.contentSha256) else { return false }
             try db.execute(sql: "UPDATE main.library_files SET book_id=NULL WHERE book_id=?", arguments: [bookId])
             try db.execute(sql: "DELETE FROM main.books WHERE id=?", arguments: [bookId])
             return true

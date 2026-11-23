@@ -60,7 +60,7 @@ struct StorageSpaceView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if model.overview != nil, !model.available.isEmpty {
                     NavigationLink {
-                        StorageSelectionPage(model: model, mode: .cleanup(nil))
+                        StorageSelectionPage(model: model, preselectedKind: nil)
                     } label: { Text("清理", tableName: "Storage") }
                     .accessibilityIdentifier("storageCleanup")
                 }
@@ -161,14 +161,6 @@ private struct StorageCategoryPage: View {
                 if let bodies = model.bodies {
                     StorageGroup("可管理内容") {
                         link(.cache)
-                        if !bodies.offline.isEmpty {
-                            NavigationLink {
-                                StorageSelectionPage(model: model, mode: .offline)
-                            } label: {
-                                StorageRow(title: .init("离线正文", table: "Storage"),
-                                           bytes: bodies.offline.reduce(0) { $0 + $1.bytes }, navigates: true)
-                            }.buttonStyle(.plain)
-                        }
                     }
                     if !bodies.held.isEmpty {
                         StorageGroup("暂时保留") {
@@ -230,7 +222,7 @@ private struct StorageCategoryPage: View {
         let bytes = model.bytes(for: kind)
         if bytes > 0 {
             NavigationLink {
-                StorageSelectionPage(model: model, mode: .cleanup(kind))
+                StorageSelectionPage(model: model, preselectedKind: kind)
             } label: {
                 StorageRow(title: kind.title, bytes: bytes, navigates: true)
             }.buttonStyle(.plain)
@@ -241,40 +233,28 @@ private struct StorageCategoryPage: View {
 }
 
 private struct StorageSelectionPage: View {
-    enum Mode { case cleanup(StorageCleanupKind?), offline }
     let model: StorageSpaceModel
-    let mode: Mode
+    let preselectedKind: StorageCleanupKind?
     @Environment(LibraryModel.self) private var library
     @Environment(\.theme) private var theme
     @State private var selectedKinds = Set<StorageCleanupKind>()
-    @State private var selectedBooks = Set<String>()
     @State private var request: StorageCleanupRequest?
 
-    private var offline: Bool { if case .offline = mode { true } else { false } }
-
     private var selection: StorageCleanupRequest {
-        model.confirmation(kinds: selectedKinds, offline: offline ? selectedBooks : nil, shell: library.shell)
+        model.confirmation(kinds: selectedKinds, shell: library.shell)
     }
 
     var body: some View {
-        StoragePage(title: offline ? .init("离线正文", table: "Storage") : .init("选择清理项目", table: "Storage")) {
-            if offline {
-                StorageHint("移除后需要重新取得同一份原文才能继续阅读。进度、书签和批注会保留。")
-                StorageGroup("移除本机正文") {
-                    ForEach(model.bodies?.offline ?? [], id: \.bookId) { book in
-                        let picked = selectedBooks.contains(book.bookId)
-                        Button { toggle(book.bookId, in: &selectedBooks) } label: {
-                            StorageRow(title: nil, literal: book.title, bytes: book.bytes, picked: picked)
-                        }.buttonStyle(.plain).accessibilityAddTraits(picked ? .isSelected : [])
-                    }
-                }
-            } else if model.available.isEmpty {
+        StoragePage(title: .init("选择清理项目", table: "Storage")) {
+            if model.available.isEmpty {
                 StorageHint("暂无可清理项目")
             } else {
                 StorageGroup("选择要清理的内容") {
                     ForEach(model.available) { kind in
                         let picked = selectedKinds.contains(kind)
-                        Button { toggle(kind, in: &selectedKinds) } label: {
+                        Button {
+                            if !selectedKinds.insert(kind).inserted { selectedKinds.remove(kind) }
+                        } label: {
                             StorageRow(title: kind.title, bytes: model.bytes(for: kind), picked: picked)
                         }.buttonStyle(.plain).accessibilityAddTraits(picked ? .isSelected : [])
                     }
@@ -301,8 +281,8 @@ private struct StorageSelectionPage: View {
             }
         }
         .onAppear {
-            if case .cleanup(let kind) = mode, selectedKinds.isEmpty {
-                selectedKinds = kind.map { [$0] } ?? Set(model.available)
+            if selectedKinds.isEmpty {
+                selectedKinds = preselectedKind.map { [$0] } ?? Set(model.available)
             }
         }
         .refreshable { if !model.busy { await model.refresh() } }
@@ -313,17 +293,22 @@ private struct StorageSelectionPage: View {
             } label: { Text(actionTitle(confirmed)) }
             Button("取消", role: .cancel) {}
         } message: { confirmed in
-            let size = StorageSpaceModel.formatted(confirmed.bytes)
-            if offline {
-                Text("将移除约 \(size) 的本机正文。再次阅读需要重新取得原文。", tableName: "Storage")
-            } else {
-                let kinds = confirmed.kinds.map { String(localized: $0.title) }.formatted(.list(type: .and))
-                Text("将清理\(kinds)，约 \(size)。", tableName: "Storage")
-            }
-            if !confirmed.readerTitles.isEmpty {
-                Text("将保存进度并关闭\(confirmed.readerTitles.formatted(.list(type: .and)))。听书和自动阅读也会停止。", tableName: "Storage")
-            }
+            Text(verbatim: confirmationMessage(confirmed))
         }
+    }
+
+    private func confirmationMessage(_ confirmed: StorageCleanupRequest) -> String {
+        let size = StorageSpaceModel.formatted(confirmed.bytes)
+        let kinds = confirmed.kinds.map { String(localized: $0.title) }.formatted(.list(type: .and))
+        var message = [String(localized: "将清理\(kinds)，约 \(size)。", table: "Storage")]
+        if !confirmed.bodies.isEmpty {
+            message.append(String(localized: "再次阅读需要原文件。进度、书签、批注和统计会保留。", table: "Storage"))
+        }
+        if !confirmed.readerTitles.isEmpty {
+            let titles = confirmed.readerTitles.formatted(.list(type: .and))
+            message.append(String(localized: "将保存进度并关闭\(titles)。听书和自动阅读也会停止。", table: "Storage"))
+        }
+        return message.joined(separator: "\n\n")
     }
 
     private var cleanupProgress: LocalizedStringResource? {
@@ -335,23 +320,17 @@ private struct StorageSelectionPage: View {
     }
 
     private var selectionTitle: LocalizedStringResource {
-        if offline { return .init("移除所选本机正文", table: "Storage") }
         if selection.bytes == 0 { return .init("清理所选项目", table: "Storage") }
         return .init("清理 \(StorageSpaceModel.formatted(selection.bytes))", table: "Storage")
     }
 
     private var alertTitle: LocalizedStringResource {
         if request?.readers.isEmpty == false { return .init("关闭阅读页并清理？", table: "Storage") }
-        return offline ? .init("移除所选本机正文？", table: "Storage") : .init("清理所选项目？", table: "Storage")
+        return .init("清理所选项目？", table: "Storage")
     }
 
     private func actionTitle(_ confirmed: StorageCleanupRequest) -> LocalizedStringResource {
-        if offline { return confirmed.readers.isEmpty ? .init("移除", table: "Storage") : .init("关闭并移除", table: "Storage") }
         return confirmed.readers.isEmpty ? .init("清理", table: "Storage") : .init("关闭并清理", table: "Storage")
-    }
-
-    private func toggle<T: Hashable>(_ value: T, in selection: inout Set<T>) {
-        if !selection.insert(value).inserted { selection.remove(value) }
     }
 }
 
@@ -489,8 +468,7 @@ private struct StorageGroup<Content: View>: View {
 
 private struct StorageRow: View {
     @Environment(\.theme) private var theme
-    let title: LocalizedStringResource?
-    var literal: String? = nil
+    let title: LocalizedStringResource
     var detail: LocalizedStringResource? = nil
     var bytes: UInt64? = nil
     var color: Color? = nil
@@ -506,8 +484,7 @@ private struct StorageRow: View {
                     .foregroundStyle(Color(uiColor: picked ? theme.accent : theme.secondary)).accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 4) {
-                if let title { Text(title) }
-                if let literal { Text(verbatim: literal) }
+                Text(title)
                 if let detail { Text(detail).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
             }.frame(maxWidth: .infinity, alignment: .leading)
             if bytes != nil || loadingAmount {

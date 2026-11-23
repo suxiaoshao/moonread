@@ -18,7 +18,6 @@ struct StorageCleanupRequest {
     let covers: [StorageFile]
     let work: StorageWorkInventory?
     let legacy: [StorageFile]
-    let offline: Bool
     let readers: [UUID: String]
     let bodyLease: DataSessionLease?
 
@@ -115,7 +114,7 @@ struct StorageCleanupRequest {
 
     func bytes(for kind: StorageCleanupKind) -> UInt64 {
         switch kind {
-        case .cache: bodies?.rebuildableBytes ?? 0
+        case .cache: bodies?.clearableBytes ?? 0
         case .imports: work?.removableBytes ?? 0
         case .legacy: legacy?.reduce(0) { $0 + $1.bytes } ?? 0
         }
@@ -123,16 +122,14 @@ struct StorageCleanupRequest {
 
     var available: [StorageCleanupKind] { StorageCleanupKind.allCases.filter { bytes(for: $0) > 0 } }
 
-    func confirmation(kinds: Set<StorageCleanupKind> = [], offline: Set<String>? = nil, shell: AppShellModel) -> StorageCleanupRequest {
+    func confirmation(kinds: Set<StorageCleanupKind>, shell: AppShellModel) -> StorageCleanupRequest {
         let kinds = available.filter(kinds.contains)
-        let targets: [CachedBody]
-        if let offline { targets = bodies?.offline.filter { offline.contains($0.bookId) } ?? [] }
-        else { targets = kinds.contains(.cache) ? bodies?.rebuildable ?? [] : [] }
+        let targets = kinds.contains(.cache) ? bodies?.clearable ?? [] : []
         let ids = Set(targets.map(\.bookId))
         let readers = shell.storageReaders.filter { ids.contains($0.value.bookID) && shell.containsReaderDestination($0.key) }
         return .init(kinds: kinds, bodies: targets, covers: kinds.contains(.cache) ? bodies?.coverFiles ?? [] : [],
                      work: kinds.contains(.imports) ? work : nil, legacy: kinds.contains(.legacy) ? legacy ?? [] : [],
-                     offline: offline != nil, readers: readers.mapValues(\.bookID), bodyLease: bodies?.lease)
+                     readers: readers.mapValues(\.bookID), bodyLease: bodies?.lease)
     }
 
     func clean(_ request: StorageCleanupRequest, shell: AppShellModel) {
@@ -169,7 +166,7 @@ struct StorageCleanupRequest {
             guard !Task.isCancelled else { break }
             do {
                 if let lease = request.bodyLease, !blocked.contains(body.bookId),
-                   try await service.evictStorageBody(body, offline: request.offline, lease: lease) {
+                   try await service.evictStorageBody(body, lease: lease) {
                     removed += body.bytes
                 } else { skipped = true }
             } catch { skipped = true }
@@ -193,7 +190,7 @@ struct StorageCleanupRequest {
             await loadOverview()
             if request.work != nil { await load(.work) }
             if !request.legacy.isEmpty { await load(.old) }
-            if request.offline || request.kinds.contains(.cache) { await load(.books) }
+            if request.kinds.contains(.cache) { await load(.books) }
         }.value
         let size = Self.formatted(removed)
         cleanupMessage = if Task.isCancelled {

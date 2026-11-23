@@ -90,9 +90,11 @@ import XCTest
         XCTAssertEqual(unknown.retained, 8)
     }
 
-    func testOnlyReadableVerifiedBodyIsClearedWhileMissingOriginalAndUserAssetsStay() async throws {
-        let a = Data("第一章 原创甲\n原件存在，可重新准备。\n".utf8), b = Data("第一章 原创乙\n原件不可访问，保留唯一正文。\n".utf8)
-        let f = try await fixture(["a.txt": a, "b.txt": b]); defer { f.clean() }
+    func testOrdinaryCleanupEvictsBodiesRegardlessOfSourceAndPreservesReadingData() async throws {
+        let a = Data("第一章 原创甲\n测试正文。\n".utf8)
+        let b = Data("第一章 原创乙\n原文件随后移除。\n".utf8)
+        let c = Data("第一章 原创丙\n等待关联的正文。\n".utf8)
+        let f = try await fixture(["a.txt": a, "b.txt": b, "c.txt": c]); defer { f.clean() }
         try await scan(f)
         let first = try importBookFixture(f.core, filePath: f.directory.appendingPathComponent("a.txt").path, title: "A")
         let second = try importBookFixture(f.core, filePath: f.directory.appendingPathComponent("b.txt").path, title: "B")
@@ -101,6 +103,7 @@ import XCTest
         try await f.service.promoteUserData(first.id)
         try await f.service.promoteUserData(second.id)
         try await f.service.reclaimImports(f.core)
+        let awaitingPromotion = try importBookFixture(f.core, filePath: f.directory.appendingPathComponent("c.txt").path, title: "C")
         for file in try f.core.sourceFileSnapshots(fileId: nil) {
             let identity = try SourceIdentityProbe().identify(filePath: f.directory.appendingPathComponent(file.relativePath).path, decoding: "auto")
             XCTAssertTrue(try f.core.publishSourceIdentity(file: file, identity: identity))
@@ -117,31 +120,48 @@ import XCTest
         let cover = try XCTUnwrap(committed.cover)
         let savedCover = try await f.service.coverBytes(cover)
         try await position(f, key: first.fixtureSHA256, hint: nil)
+        _ = try await f.service.ensureBookmark(first.id, at: 0)
+        let annotation = try await f.service.prepareAnnotation(first.id, start: 3, end: 6)
+        _ = try await f.service.saveNote(annotation, text: "Saved note")
+        let marks = try f.rows.annotationHeads(first.fixtureSHA256)
+        XCTAssertEqual(marks.count, 2)
+        try await f.service.saveReading([.init(id: "cleanup-fact", sessionId: "session", visitId: "visit", bookId: first.id,
+            startedMs: 1_728_000_000_000, endedMs: 1_728_000_000_015, localDay: 20000, utcOffsetSeconds: 0,
+            preview: false, exposures: [.init(startUtf8: 0, endUtf8: 6, durationMs: 15)])], generation: 0)
         let before = try snapshot(f)
+        let changedSource = Data("第一章 原件已变更\n".utf8)
+        try changedSource.write(to: f.directory.appendingPathComponent("a.txt"))
         try FileManager.default.removeItem(at: f.directory.appendingPathComponent("b.txt"))
-        let inventory = try await f.service.bodyCacheInventory()
-        XCTAssertEqual(inventory.rebuildable.map(\.bookId), [first.id])
-        XCTAssertEqual(inventory.offline.map(\.bookId), [second.id])
-        let body = try XCTUnwrap(inventory.rebuildable.first)
         var reader: ReadingLease? = try await f.service.openReading(first.id)
         let released = try XCTUnwrap(reader?.released)
-        let blocked = try await f.service.evictStorageBody(body, offline: false, lease: inventory.lease)
+        let inventory = try await f.service.bodyCacheInventory()
+        XCTAssertEqual(Set(inventory.clearable.map(\.bookId)), Set([first.id, second.id]))
+        XCTAssertEqual(inventory.held.map(\.bookId), [awaitingPromotion.id])
+        let held = try XCTUnwrap(inventory.held.first)
+        let heldCleared = try await f.service.evictStorageBody(held, lease: inventory.lease)
+        XCTAssertFalse(heldCleared, "The stored import job still protects its body")
+        let body = try XCTUnwrap(inventory.clearable.first { $0.bookId == first.id })
+        let canClose = try await f.service.storageBodyCanClose(body, lease: inventory.lease)
+        XCTAssertTrue(canClose, "The confirmed cleanup can first close this reader")
+        let blocked = try await f.service.evictStorageBody(body, lease: inventory.lease)
         XCTAssertFalse(blocked, "An open reader still owns this body")
         reader = nil
         for await _ in released {}
-        let cleared = try await f.service.evictStorageBody(body, offline: false, lease: inventory.lease)
-        XCTAssertTrue(cleared)
-        XCTAssertThrowsError(try f.core.importStatus(bookId: first.id))
-        XCTAssertNoThrow(try f.core.importStatus(bookId: second.id))
+        for item in inventory.clearable {
+            let cleared = try await f.service.evictStorageBody(item, lease: inventory.lease)
+            XCTAssertTrue(cleared)
+            XCTAssertThrowsError(try f.core.importStatus(bookId: item.bookId))
+        }
+        XCTAssertNoThrow(try f.core.importStatus(bookId: awaitingPromotion.id))
         let after = try snapshot(f), retainedCover = try await f.service.coverBytes(cover)
         XCTAssertEqual(before, after); XCTAssertEqual(retainedCover, savedCover)
-        XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent("a.txt")), a)
+        XCTAssertEqual(try f.rows.annotationHeads(first.fixtureSHA256), marks)
+        let facts = try f.core.session.readUsers(f.core.lease) { db in
+            try String.fetchAll(db, sql: "SELECT fact_id FROM usr.reading_fact_current")
+        }
+        XCTAssertEqual(facts, ["cleanup-fact"])
+        XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent("a.txt")), changedSource)
         let sources = try f.core.sourceFilesForSha(sha: first.fixtureSHA256)
         XCTAssertEqual(sources.count, 1, "Eviction keeps the index identity and projected progress")
-        let offline = try await f.service.evictStorageBody(XCTUnwrap(inventory.offline.first), offline: true, lease: inventory.lease)
-        XCTAssertTrue(offline)
-        XCTAssertThrowsError(try f.core.importStatus(bookId: second.id))
-        let afterOffline = try snapshot(f)
-        XCTAssertEqual(before, afterOffline)
     }
 }

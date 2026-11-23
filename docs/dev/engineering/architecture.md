@@ -138,15 +138,15 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 来源栈 Tab 显隐 | Swift `LibrarySourceTabVisibility` | 按该栈路径中的阅读器及当前叶子目录的选择 preference 统一判定；目录只上报选择位置，不另提交相反显隐策略，不持久化全局选择标志 | 单一 owner |
 | 笔记快照与可读导出 | Swift `NoteDocument.swift`、批注当前头、定点章节和正文长度读取 | 三入口共用摘录/出处与 TXT/Markdown 输出；快照不压缩候选，未知记录按范围阻止不完整导出；出处只取选中正文位置和可证的完整字节数 | 不增同步格式 |
 | 用户备份 envelope、非事实恢复、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift`；同步删除状态由 `CloudTransportRows` 和 `CloudCallbackJournal` 持有 | 归档核验和字节准备先于写事务；恢复以候选及附件为输入，通过各领域同事务更新 current。封面附件只按合并后的候选引用入库，导出的封面取自实际导出的候选。只读预览复用各领域裁决，按正文 SHA 聚合差异并单列全局记录，无待恢复内容就跳过写事务。预览与写事务共用历史 ID 删除检查。同 ID 待发删除须先确认，再完整拉取本区后才放行 | 导出从同一用户库快照读取可携带的候选、附件及历史；无法完整编码时明确阻止导出 |
-| 受保护来源的 bookmark 解析、安全作用域、协调读取与物理路径边界 | Swift `Data/Sources/ProtectedFileAccess.swift` | 开书、导入、索引、恢复、缓存和备份共用；沿用 `.withoutUI` 与可解析的陈旧书签，不增加拒绝条件；作用域覆盖各阶段，accessor 内不等待 actor | 平台边界 |
+| 受保护来源的 bookmark 解析、安全作用域、协调读取与物理路径边界 | Swift `Data/Sources/ProtectedFileAccess.swift` | 开书、导入、索引、恢复和备份共用；沿用 `.withoutUI` 与可解析的陈旧书签，不增加拒绝条件；作用域覆盖各阶段，accessor 内不等待 actor | 平台边界 |
 | 本机来源下载可用性与目录发布 | Swift `AppDataService.prepareSourceFile`、`LibraryService`、`IndexSources` | 协调访问成功后只改同位置现有行；旧源准入复核及通知由服务负责 | 唯一索引 writer |
-| 缓存来源可读性证明与清理准入 | Swift `CacheManagement.swift` | 借用公共文件访问组件，证明期内由 ReaderIndex 重验事务；离线正文只按书明确确认移除。打开的阅读请求先按正常退出流程保存再释放正文 lease；页面不判断可清性 | 平台边界 |
+| 正文缓存清理准入 | Swift `CacheManagement.swift`、`ReaderIndex` | 盘点读取缓存索引。打开的阅读请求先按正常退出流程保存并释放 lease。执行时复核当前活动持有者、缓存目标和导入任务 | 只操作派生正文 |
 | 存储盘点与数据库维护 | Swift `StorageManagement`、`DataSession` 和 `CloudSyncCoordinator` | 文件按容器归类、去重，删除资格由各数据所有者给出；手动整理只操作当前附加用户库，排除在途同步。回收与本地同字节封面复用归 `UserValueRows` | 不改变持久化格式 |
 
 维护约定：新增规则先查本表；已存在则调用 owner。新增或改变归属必须在同一 PR 更新表、实现入口及测试位置。两个策略若故意不同，命名其输入/输出契约；不能仅以语言或调用入口不同为理由再实现一份。
 
 
-备份容器布局、受限解包与路径/摘要验证由 Rust `storage/maintenance/backup_archive.rs` 负责；用户备份 envelope 和非事实接入由 Swift `UserDataBackup.swift` 调用各领域关系 writer。`ReadingDataManagement.swift` 只编排本机事务交接，`ProtectedFileAccess.swift` 负责 bookmark、安全作用域和协调读取；`CacheManagement.swift` 保留清理准入与可读性证明，`StorageManagement.swift` 汇总存储空间；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
+备份容器布局、受限解包与路径/摘要验证由 Rust `storage/maintenance/backup_archive.rs` 负责；用户备份 envelope 和非事实接入由 Swift `UserDataBackup.swift` 调用各领域关系 writer。`ReadingDataManagement.swift` 只编排本机事务交接，`ProtectedFileAccess.swift` 负责 bookmark、安全作用域和协调读取；`CacheManagement.swift` 负责缓存清理准入与活动保护，`StorageManagement.swift` 汇总存储空间；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
 
 ## Rust 源码目录
 
