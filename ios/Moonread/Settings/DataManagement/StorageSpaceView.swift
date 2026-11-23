@@ -80,7 +80,7 @@ struct StorageSpaceView: View {
             if let overview, overview.total > 0 {
                 storageBar(overview)
             } else if overview == nil {
-                RoundedRectangle(cornerRadius: 3).fill(Color(uiColor: theme.secondary).opacity(0.16))
+                RoundedRectangle(cornerRadius: 5).fill(Color(uiColor: theme.secondary).opacity(0.16))
                     .frame(height: 14).accessibilityHidden(true)
             }
         }
@@ -114,7 +114,8 @@ struct StorageSpaceView: View {
         }
         .chartXAxis(.hidden).chartYAxis(.hidden)
         .chartXScale(domain: 0...Double(overview.total))
-        .frame(height: 14).clipShape(.rect(cornerRadius: 3))
+        .chartPlotStyle { $0.clipShape(.rect(cornerRadius: 5)) }
+        .frame(height: 14)
         .accessibilityHidden(true)
     }
 }
