@@ -33,7 +33,7 @@ enum ReadingDataLayoutUpgrade {
     }
 
     private enum Step: String {
-        case locateSource, prepareStaging, copyContents, recordAdoption, publish
+        case locateSource, prepareStaging, copyContents, recordAdoption, publish, removeAdoptedSource
         case copyDatabaseFiles, validateDatabase, checkpointDatabase, closeDatabase
     }
 
@@ -51,9 +51,9 @@ enum ReadingDataLayoutUpgrade {
         try lock.withLock {
             var step = Step.locateSource
             do {
-                let released = layout.applicationSupport.appending(path: "Data/v2", directoryHint: .isDirectory)
-                let development = released.appending(path: "development", directoryHint: .isDirectory)
-                let adoptionFile = layout.parent.appending(path: "released-development-owner")
+                let development = releasedDevelopmentDirectory(in: layout)
+                let released = development.deletingLastPathComponent()
+                let adoptionFile = adoptionMarker(in: layout)
                 let staging = layout.parent.appending(path: ".\(layout.environment.rawValue)-upgrade", directoryHint: .isDirectory)
                 let adoption: Adoption? = try load(at: adoptionFile)
                 let files = FileManager.default
@@ -96,6 +96,29 @@ enum ReadingDataLayoutUpgrade {
                 throw error
             }
         }
+    }
+
+    /// Called after the destination has passed startup validation. Keep the
+    /// marker: the other environment still needs to know who claimed this source.
+    static func removeAdoptedSource(in layout: DataLayout) {
+        lock.withLock {
+            do {
+                let adoption: Adoption? = try load(at: adoptionMarker(in: layout))
+                guard adoption?.environment == layout.environment else { return }
+                let source = releasedDevelopmentDirectory(in: layout)
+                if try exists(source) { try FileManager.default.removeItem(at: source) }
+            } catch {
+                logFailure(error, at: .removeAdoptedSource)
+            }
+        }
+    }
+
+    private static func releasedDevelopmentDirectory(in layout: DataLayout) -> URL {
+        layout.applicationSupport.appending(path: "Data/v2/development", directoryHint: .isDirectory)
+    }
+
+    private static func adoptionMarker(in layout: DataLayout) -> URL {
+        layout.parent.appending(path: "released-development-owner")
     }
 
     static func exists(_ url: URL) throws -> Bool {

@@ -171,6 +171,13 @@ final class DataSession: @unchecked Sendable {
         owner = state
     }
 
+    func removeAdoptedReleasedStoreAfterStartup() {
+        lifecycle.withLock {
+            guard indexReady, usersReady else { return }
+            ReadingDataLayoutUpgrade.removeAdoptedSource(in: layout)
+        }
+    }
+
     func changeReleasedAccount(_ change: ReadingDataLayoutUpgrade.AccountChange) throws {
         try lifecycle.withLock {
             try closeLocked()

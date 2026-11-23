@@ -324,7 +324,12 @@ struct DataV2MigrationTests {
 
         let other = try DataSession(layout: development)
         #expect(other.releasedLayout == .otherEnvironment)
-        #expect(try other.activate(.unknown).0.scope == .local)
+        let otherLease = try other.activate(.unknown).0
+        #expect(otherLease.scope == .local)
+        try other.prepareIndex(legacyIndex, token: otherLease)
+        try other.prepareUsers(otherLease) { nil }
+        other.removeAdoptedReleasedStoreAfterStartup()
+        #expect(files.fileExists(atPath: published.path))
         #expect(CloudSyncIntent(defaults: defaults, environment: .development).approvedScopeKey == nil)
         try other.close()
         let confirmed = DataIdentityStatus.confirmed(newA.scope, syncRequested: true, verifiedRecordName: newA.identity.recordName)
@@ -372,10 +377,14 @@ struct DataV2MigrationTests {
         defer { try? reopened.close() }
         let reopenedLease = try reopened.activate(.unknown).0
         try reopened.prepareIndex(legacyIndex, token: reopenedLease)
+        reopened.removeAdoptedReleasedStoreAfterStartup()
+        #expect(files.fileExists(atPath: published.path))
         try reopened.prepareUsers(reopenedLease) { nil }
+        reopened.removeAdoptedReleasedStoreAfterStartup()
+        #expect(!files.fileExists(atPath: published.path))
+        #expect(try ReadingDataLayoutUpgrade.prepare(production) == .mislabelledProduction(approvedScope: oldA.scope.key))
         #expect(reopenedLease.scope == newA.scope)
         #expect(try offset(ReaderIndex(session: reopened, lease: reopenedLease)) == 56)
-        #expect(files.fileExists(atPath: published.appending(path: "index.sqlite").path))
     }
 
     @Test func explicitPublishedProductionAndDevelopmentStoresStaySeparate() throws {
@@ -400,6 +409,13 @@ struct DataV2MigrationTests {
             #expect(session.releasedLayout == (environment == .production ? .original : .releasedDevelopment(approvedScope: nil)))
             #expect(try Data(contentsOf: layout.root.appending(path: "fixture")) == Data(environment.rawValue.utf8))
             #expect(!files.fileExists(atPath: layout.root.appending(path: "development").path))
+            let lease = try session.activate(.unknown).0
+            try session.prepareIndex(root.appending(path: "unused"), token: lease)
+            try session.prepareUsers(lease) { nil }
+            session.removeAdoptedReleasedStoreAfterStartup()
+            let oldDevelopment = released.appending(path: "development")
+            #expect(files.fileExists(atPath: oldDevelopment.path) == (environment == .production))
+            #expect(try Data(contentsOf: released.appending(path: "fixture")) == Data("production".utf8))
         }
     }
 

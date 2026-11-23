@@ -153,6 +153,8 @@ struct MoonreadApp: App {
                     if rebound { Task { await themes?.load() } }
                 })
                 try Task.checkCancellation()
+                await service.removeAdoptedReleasedStoreAfterStartup()
+                try Task.checkCancellation()
                 startup = .ready
                 if let request = startupSystemRequest {
                     startupSystemRequest = nil

@@ -641,6 +641,11 @@ actor AppDataService {
 
     var releasedReadingLayout: ReadingDataLayoutUpgrade.Source? { dataSession?.releasedLayout }
 
+    func removeAdoptedReleasedStoreAfterStartup() {
+        guard !Task.isCancelled else { return }
+        dataSession?.removeAdoptedReleasedStoreAfterStartup()
+    }
+
     private func legacyBootstrapScope() throws -> DataScope? {
         guard let value = sourceDefaults.object(forKey: "Moonread.userOwner") else { return nil }
         guard let name = value as? String, !name.isEmpty else { throw DataV2Error.invalidOwnerState }
