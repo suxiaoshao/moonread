@@ -13,17 +13,6 @@ private extension StorageCategory {
         }
     }
 
-    var detail: LocalizedStringResource {
-        switch self {
-        case .books: .init("缓存、离线正文和封面副本", table: "Storage")
-        case .database: .init("阅读记录、资料及同步状态", table: "Storage")
-        case .work: .init("导入、导出和任务使用的文件", table: "Storage")
-        case .old: .init("早期版本留下的数据", table: "Storage")
-        case .app: .init("不可清理", table: "Storage")
-        case .other: .init("书架文件、对话及其他数据", table: "Storage")
-        }
-    }
-
     func color(_ theme: ThemeSurface) -> Color {
         switch self {
         case .books: Color(uiColor: theme.accent)
@@ -51,14 +40,8 @@ private extension StorageOther {
 
 struct StorageSpaceView: View {
     let data: DataManagementModel
-    @State private var model: StorageSpaceModel
+    let model: StorageSpaceModel
     @Environment(\.theme) private var theme
-
-    init(data: DataManagementModel) {
-        self.data = data
-        // The storage destination owns its inventory until the user exits it.
-        _model = State(initialValue: StorageSpaceModel(service: data.service))
-    }
 
     var body: some View {
         StoragePage(title: .init("存储空间", table: "Storage")) {
@@ -70,7 +53,7 @@ struct StorageSpaceView: View {
                 }
                 StorageGroup("按类别管理") {
                     ForEach(StorageCategory.allCases) { category in
-                        let row = StorageRow(title: category.title, detail: category.detail,
+                        let row = StorageRow(title: category.title,
                                              bytes: overview.sizes[category, default: 0], color: category.color(theme),
                                              navigates: category != .app)
                         if category == .app { row }
@@ -89,7 +72,7 @@ struct StorageSpaceView: View {
                 ProgressView().frame(maxWidth: .infinity)
             }
         }
-        .task { await model.refresh() }
+        .task { await model.loadForPresentation() }
         .refreshable { await model.refresh() }
         .accessibilityIdentifier("storageOverview")
         .toolbar {
@@ -162,7 +145,6 @@ private struct StorageCategoryPage: View {
                                 StorageSelectionPage(model: model, mode: .offline)
                             } label: {
                                 StorageRow(title: .init("离线正文", table: "Storage"),
-                                           detail: .init("原文件暂不可用 · 按书移除", table: "Storage"),
                                            bytes: bodies.offline.reduce(0) { $0 + $1.bytes }, navigates: true)
                             }.buttonStyle(.plain)
                         }
@@ -178,7 +160,9 @@ private struct StorageCategoryPage: View {
                 }
             case .work:
                 if let work = model.work {
-                    StorageGroup("可清理") { link(.imports) }
+                    if work.removableBytes > 0 {
+                        StorageGroup("可清理") { link(.imports) }
+                    }
                     let total = model.overview?.sizes[.work, default: 0] ?? 0
                     let accounted = work.removableBytes + work.packages.retained
                     if work.packages.retained > 0 || total > accounted {
@@ -187,13 +171,15 @@ private struct StorageCategoryPage: View {
                                 StorageRow(title: .init("导入任务的原包", table: "Storage"),
                                            detail: work.packages.unverified
                                                ? .init("暂时无法核对原包归属", table: "Storage")
-                                               : .init("供未结束的任务继续使用", table: "Storage"),
+                                               : nil,
                                            bytes: work.packages.retained)
                             }
                             if total > accounted {
                                 StorageRow(title: .init("其余任务与临时文件", table: "Storage"), bytes: total - accounted)
                             }
                         }
+                    } else if work.removableBytes == 0 {
+                        StorageHint("暂无可清理项目")
                     }
                 }
             case .old:
@@ -258,11 +244,12 @@ private struct StorageSelectionPage: View {
                     ForEach(model.bodies?.offline ?? [], id: \.bookId) { book in
                         let picked = selectedBooks.contains(book.bookId)
                         Button { toggle(book.bookId, in: &selectedBooks) } label: {
-                            StorageRow(title: nil, literal: book.title, detail: .init("暂未找到可用原文件", table: "Storage"),
-                                       bytes: book.bytes, picked: picked)
+                            StorageRow(title: nil, literal: book.title, bytes: book.bytes, picked: picked)
                         }.buttonStyle(.plain).accessibilityAddTraits(picked ? .isSelected : [])
                     }
                 }
+            } else if model.available.isEmpty {
+                StorageHint("暂无可清理项目")
             } else {
                 StorageGroup("选择要清理的内容") {
                     ForEach(model.available) { kind in
@@ -272,7 +259,6 @@ private struct StorageSelectionPage: View {
                         }.buttonStyle(.plain).accessibilityAddTraits(picked ? .isSelected : [])
                     }
                 }
-                if model.available.isEmpty { StorageHint("暂无可清理项目") }
             }
             if !selection.readerTitles.isEmpty {
                 Text("将关闭的阅读页：\(selection.readerTitles.formatted(.list(type: .and)))", tableName: "Storage")

@@ -45,9 +45,15 @@ struct StorageCleanupRequest {
     private(set) var cleanupMessage: String?
     private(set) var databaseResult: StorageDatabaseResult?
     private(set) var busy = false
+    private let overviewLoad = LoadingState()
     private var loadingChoices = false
 
     init(service: AppDataService) { self.service = service }
+
+    func loadForPresentation() async {
+        if !overviewLoad.active { await loadOverview() }
+        await loadChoices()
+    }
 
     func refresh() async {
         await loadOverview()
@@ -55,9 +61,20 @@ struct StorageCleanupRequest {
     }
 
     func loadOverview() async {
-        do { overview = try await service.storageOverview(); overviewError = nil }
-        catch is CancellationError {}
-        catch { overview = nil; overviewError = ReaderMessages.error(error) }
+        let request = overviewLoad.begin()
+        defer { overviewLoad.finish(request) }
+        do {
+            let updated = try await service.storageOverview()
+            guard overviewLoad.request == request else { return }
+            overview = updated
+            overviewError = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            guard overviewLoad.request == request else { return }
+            overview = nil
+            overviewError = ReaderMessages.error(error)
+        }
     }
 
     func loadChoices() async {
@@ -154,13 +171,20 @@ struct StorageCleanupRequest {
         }
         if request.bodies.count > 0 { NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil) }
         let size = StorageSpaceModel.formatted(removed)
-        cleanupMessage = if skipped || removed < request.bytes || Task.isCancelled {
+        let message = if skipped || removed < request.bytes || Task.isCancelled {
             String(localized: "已清理约 \(size)，部分项目保留。", table: "Storage")
         } else {
             String(localized: "已清理约 \(size)。", table: "Storage")
         }
-        if Task.isCancelled { Task { await refresh() } }
-        else { await refresh() }
+        // Refresh the inventories even if cleanup was cancelled after deleting some files.
+        let refresh = Task {
+            if request.work != nil { await load(.work) }
+            if !request.legacy.isEmpty { await load(.old) }
+            if request.offline || request.kinds.contains(.cache) { await load(.books) }
+            await loadOverview()
+        }
+        if !Task.isCancelled { await refresh.value }
+        cleanupMessage = message
     }
 
     func organize(_ inventory: StorageDatabaseInventory) async {

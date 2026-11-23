@@ -12,7 +12,7 @@ final class AppShellModel {
     var libraryPath: [LibraryRoute] = []
     var statisticsPath: [LibraryRoute] = []
     var searchPath: [LibraryRoute] = []
-    var settingsNavigation = SettingsNavigation()
+    let settingsNavigation: SettingsNavigation
     var path: [LibraryRoute] {
         get {
             return switch selectedTab {
@@ -46,6 +46,7 @@ final class AppShellModel {
     var aiRequest: AIQuickTaskRequest?
 
     init(service: AppDataService) {
+        settingsNavigation = SettingsNavigation(service: service)
         dataManagement = DataManagementModel(service: service)
     }
 

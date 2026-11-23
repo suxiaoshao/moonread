@@ -15,7 +15,12 @@ enum SettingsTask: Hashable {
     var error: String?
     let loading = LoadingState()
     let readingEditor = ReadingSettingsEditing()
+    let storage: StorageSpaceModel
     var paletteDraft: PaletteDraft?
+
+    init(service: AppDataService) {
+        storage = StorageSpaceModel(service: service)
+    }
 
     var hasDraft: Bool { paletteDraft != nil || readingEditor.draft != nil }
     func select(_ task: SettingsTask) {
@@ -48,6 +53,7 @@ struct SettingsView: View {
             sidebar
                 .navigationTitle("设置")
                 .navigationSplitViewColumnWidth(min: 300, ideal: 360)
+                .task { await navigation.storage.loadOverview() }
         } detail: {
             NavigationStack(path: $navigation.path) {
                 Group {
@@ -136,11 +142,11 @@ struct SettingsView: View {
                         SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"), selected: sizeClass == .regular && navigation.selectedTask == .library)
                     }.accessibilityIdentifier("libraryManagementSettings")
                     settingsLink(.data) {
-                        SettingsEntry(title: LocalizedStringResource("数据管理", table: "DataManagement"), symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"), selected: sizeClass == .regular && navigation.selectedTask == .data)
+                        SettingsEntry(title: LocalizedStringResource("数据管理", table: "DataManagement"), symbol: "externaldrive", summary: String(localized: "备份、恢复"), selected: sizeClass == .regular && navigation.selectedTask == .data)
                     }.accessibilityIdentifier("dataManagementSettings")
                     settingsLink(.storage) {
                         SettingsEntry(title: LocalizedStringResource("存储空间", table: "Storage"), symbol: "internaldrive",
-                                      summary: String(localized: "管理缓存、临时文件和旧版数据", table: "Storage"),
+                                      summary: navigation.storage.overview.map { StorageSpaceModel.formatted($0.total) } ?? "",
                                       selected: sizeClass == .regular && navigation.selectedTask == .storage)
                     }.accessibilityIdentifier("storageSettings")
                     if CloudConfiguration.availableInBuild {
@@ -297,7 +303,7 @@ struct SettingsTaskContent: View {
         case .system: SystemIntegrationSettingsView(library: library)
         case .library: LibraryManagementView(model: library)
         case .data: DataManagementView(model: library.shell.dataManagement).navigationBarTitleDisplayMode(.large)
-        case .storage: StorageSpaceView(data: library.shell.dataManagement)
+        case .storage: StorageSpaceView(data: library.shell.dataManagement, model: navigation.storage)
         case .cloud: CloudSettingsView()
         case .ai: if ai.availability.isAvailable { AIEntry { AISettingsView() } }
         case .appearance: AppThemePreferencesView()
