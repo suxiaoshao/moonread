@@ -403,6 +403,60 @@ struct DataV2MigrationTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func adoptsWALUserStoreWithoutOpeningReleasedFiles(hasPendingWAL: Bool) throws {
+        let root = try sandbox()
+        let files = FileManager.default
+        defer { try? files.removeItem(at: root) }
+        let old = root.appending(path: "Data/v2/development/local/user.sqlite")
+        let wal = old.deletingLastPathComponent().appending(path: "user.sqlite-wal")
+        let shm = old.deletingLastPathComponent().appending(path: "user.sqlite-shm")
+        try files.createDirectory(at: old.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var configuration = Configuration()
+        configuration.journalMode = .wal
+        let writer = try DatabaseQueue(path: old.path, configuration: configuration)
+        defer { if hasPendingWAL { try? writer.close() } }
+        try writer.writeWithoutTransaction { try $0.execute(sql: "PRAGMA wal_autocheckpoint=0") }
+        try writer.write { try $0.execute(sql: "CREATE TABLE fixture(value INTEGER); INSERT INTO fixture VALUES(1)") }
+        _ = try writer.writeWithoutTransaction { try $0.checkpoint(.truncate) }
+
+        let main = try Data(contentsOf: old)
+        let journalFormat = Array(main[18..<20])
+        #expect(journalFormat == [2, 2])
+        let pending: Data?
+        if hasPendingWAL {
+            // Leave this committed value in the WAL while the source is idle.
+            try writer.write { try $0.execute(sql: "UPDATE fixture SET value=2") }
+            try #require(Data(contentsOf: old) == main)
+            let bytes = try Data(contentsOf: wal)
+            try #require(bytes.count > 32)
+            pending = bytes
+        } else {
+            try writer.close()
+            // Some SQLite builds retain the sidecars after a successful
+            // checkpoint. Model the released store with no sidecars.
+            if files.fileExists(atPath: wal.path) {
+                let checkpointed = try Data(contentsOf: wal)
+                try #require(checkpointed.isEmpty)
+                try files.removeItem(at: wal)
+            }
+            if files.fileExists(atPath: shm.path) { try files.removeItem(at: shm) }
+            pending = nil
+        }
+
+        let layout = DataLayout(applicationSupport: root, environment: .development)
+        #expect(try ReadingDataLayoutUpgrade.prepare(layout) == .releasedDevelopment(approvedScope: nil))
+        let migrated = try DatabaseQueue(path: layout.user(.local).path)
+        defer { try? migrated.close() }
+        #expect(try migrated.read { try Int.fetchOne($0, sql: "SELECT value FROM fixture") } == (hasPendingWAL ? 2 : 1))
+        #expect(try Data(contentsOf: old) == main)
+        if let pending {
+            #expect(try Data(contentsOf: wal) == pending)
+        } else {
+            #expect(!files.fileExists(atPath: wal.path) && !files.fileExists(atPath: shm.path))
+        }
+    }
+
     @Test func releasedOwnerImportsIndependentlyInEachCloudEnvironment() async throws {
         let suite = "reading-environments-" + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))

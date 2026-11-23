@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import OSLog
 
 /// The published v2 layout used the same directory for Development and the
 /// ordinary App Store upgrade. Only one environment can take that source.
@@ -25,46 +26,75 @@ enum ReadingDataLayoutUpgrade {
         }
     }
 
+    private enum Store: String {
+        case index, local, account
+
+        var filename: String { self == .index ? "index.sqlite" : "user.sqlite" }
+    }
+
+    private enum Step: String {
+        case locateSource, prepareStaging, copyContents, recordAdoption, publish
+        case copyDatabaseFiles, validateDatabase, checkpointDatabase, closeDatabase
+    }
+
+    private struct DatabaseCopyFailure: Error {
+        let store: Store
+        let step: Step
+        let cause: any Error
+    }
+
     private static let lock = NSLock()
+    private static let logger = Logger(subsystem: "dev.moonread.Moonread", category: "ReadingDataLayoutUpgrade")
 
     static func prepare(_ layout: DataLayout, developmentApproval: String? = nil,
                         beforePublish: () throws -> Void = {}) throws -> Source {
         try lock.withLock {
-            let released = layout.applicationSupport.appending(path: "Data/v2", directoryHint: .isDirectory)
-            let development = released.appending(path: "development", directoryHint: .isDirectory)
-            let adoptionFile = layout.parent.appending(path: "released-development-owner")
-            let staging = layout.parent.appending(path: ".\(layout.environment.rawValue)-upgrade", directoryHint: .isDirectory)
-            let adoption: Adoption? = try load(at: adoptionFile)
-            let files = FileManager.default
+            var step = Step.locateSource
+            do {
+                let released = layout.applicationSupport.appending(path: "Data/v2", directoryHint: .isDirectory)
+                let development = released.appending(path: "development", directoryHint: .isDirectory)
+                let adoptionFile = layout.parent.appending(path: "released-development-owner")
+                let staging = layout.parent.appending(path: ".\(layout.environment.rawValue)-upgrade", directoryHint: .isDirectory)
+                let adoption: Adoption? = try load(at: adoptionFile)
+                let files = FileManager.default
 
-            if let adoption, adoption.environment == layout.environment {
-                // The claim was committed only after the entire copy closed.
-                // A stop between claiming and renaming resumes that same copy.
-                if try !exists(layout.root) { try files.moveItem(at: staging, to: layout.root) }
-                return adoption.source
-            }
+                if let adoption, adoption.environment == layout.environment {
+                    // The claim was committed only after the entire copy closed.
+                    // A stop between claiming and renaming resumes that same copy.
+                    step = .publish
+                    if try !exists(layout.root) { try files.moveItem(at: staging, to: layout.root) }
+                    return adoption.source
+                }
 
-            let hasProduction = try hasReleasedStore(released)
-            let hasDevelopment = try hasReleasedStore(development)
-            let useExplicitProduction = layout.environment == .production && hasProduction
-            let useDevelopment = !useExplicitProduction && adoption == nil && hasDevelopment
-            let source: Source = useExplicitProduction || (!hasProduction && !hasDevelopment && adoption == nil)
-                ? .original : .otherEnvironment
-            guard try !exists(layout.root), useExplicitProduction || useDevelopment else { return source }
+                let hasProduction = try hasReleasedStore(released)
+                let hasDevelopment = try hasReleasedStore(development)
+                let useExplicitProduction = layout.environment == .production && hasProduction
+                let useDevelopment = !useExplicitProduction && adoption == nil && hasDevelopment
+                let source: Source = useExplicitProduction || (!hasProduction && !hasDevelopment && adoption == nil)
+                    ? .original : .otherEnvironment
+                guard try !exists(layout.root), useExplicitProduction || useDevelopment else { return source }
 
-            if try exists(staging) { try files.removeItem(at: staging) }
-            try files.createDirectory(at: staging, withIntermediateDirectories: true)
-            try copyStore(useExplicitProduction ? released : development, to: staging, skipDevelopment: useExplicitProduction)
-            if useDevelopment {
-                let decision = Adoption(environment: layout.environment, approvedScope: developmentApproval)
-                try save(decision, at: adoptionFile)
+                step = .prepareStaging
+                if try exists(staging) { try files.removeItem(at: staging) }
+                try files.createDirectory(at: staging, withIntermediateDirectories: true)
+                step = .copyContents
+                try copyStore(useExplicitProduction ? released : development, to: staging, skipDevelopment: useExplicitProduction)
+                let decision = useDevelopment ? Adoption(environment: layout.environment, approvedScope: developmentApproval) : nil
+                if let decision {
+                    step = .recordAdoption
+                    try save(decision, at: adoptionFile)
+                }
+                step = .publish
                 try beforePublish()
                 try files.moveItem(at: staging, to: layout.root)
-                return decision.source
+                return decision?.source ?? .original
+            } catch let failure as DatabaseCopyFailure {
+                logFailure(failure.cause, at: failure.step, store: failure.store)
+                throw failure.cause
+            } catch {
+                logFailure(error, at: step)
+                throw error
             }
-            try beforePublish()
-            try files.moveItem(at: staging, to: layout.root)
-            return .original
         }
     }
 
@@ -85,52 +115,81 @@ enum ReadingDataLayoutUpgrade {
     }
 
     private static func copyStore(_ root: URL, to destination: URL, skipDevelopment: Bool) throws {
-        try copyDirectory(root, to: destination, databaseName: "index.sqlite") { source, target in
+        try copyDirectory(root, to: destination, store: .index) { source, target in
             switch source.lastPathComponent {
             case "development" where skipDevelopment: return
             case "local":
-                try copyUserDirectory(source, to: target)
+                try copyUserDirectory(source, to: target, store: .local)
             case "accounts":
                 let files = FileManager.default
                 try files.createDirectory(at: target, withIntermediateDirectories: true)
                 for account in try files.contentsOfDirectory(at: source, includingPropertiesForKeys: nil) {
-                    try copyUserDirectory(account, to: target.appending(path: account.lastPathComponent))
+                    try copyUserDirectory(account, to: target.appending(path: account.lastPathComponent), store: .account)
                 }
             default: try FileManager.default.copyItem(at: source, to: target)
             }
         }
     }
 
-    private static func copyUserDirectory(_ root: URL, to destination: URL) throws {
+    private static func copyUserDirectory(_ root: URL, to destination: URL, store: Store) throws {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        try copyDirectory(root, to: destination, databaseName: "user.sqlite") {
+        try copyDirectory(root, to: destination, store: store) {
             try FileManager.default.copyItem(at: $0, to: $1)
         }
     }
 
-    /// Use SQLite's backup snapshot so committed WAL frames travel with the
-    /// database without reusing WAL or shared-memory files in the new layout.
-    private static func copyDirectory(_ root: URL, to destination: URL, databaseName: String,
+    private static func copyDirectory(_ root: URL, to destination: URL, store: Store,
                                       copy: (URL, URL) throws -> Void) throws {
+        let databaseName = store.filename
         for entry in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
             let name = entry.lastPathComponent
             let target = destination.appending(path: name)
             switch name {
-            case databaseName:
-                let reader = try database(at: entry, readOnly: true)
-                let writer = try database(at: target)
-                try reader.backup(to: writer)
-                try writer.close()
-                try reader.close()
+            case databaseName: try copyDatabase(from: entry, to: target, store: store)
             case databaseName + "-wal", databaseName + "-shm", databaseName + "-journal": continue
             default: try copy(entry, target)
             }
         }
     }
 
-    private static func database(at url: URL, readOnly: Bool = false) throws -> DatabaseQueue {
+    /// The released stores are quiescent before the new session opens.
+    /// Keep pending transactions with the copy and let SQLite rebuild the
+    /// shared-memory index there, including when the old WAL has no sidecars.
+    private static func copyDatabase(from source: URL, to staged: URL, store: Store) throws {
+        var step = Step.copyDatabaseFiles
+        do {
+            try FileManager.default.copyItem(at: source, to: staged)
+            for suffix in ["-wal", "-journal"] {
+                let name = store.filename + suffix
+                let journal = source.deletingLastPathComponent().appending(path: name)
+                if try exists(journal) {
+                    try FileManager.default.copyItem(at: journal,
+                        to: staged.deletingLastPathComponent().appending(path: name))
+                }
+            }
+            step = .validateDatabase
+            let copy = try database(at: staged)
+            step = .checkpointDatabase
+            _ = try copy.writeWithoutTransaction { try $0.checkpoint(.truncate) }
+            step = .closeDatabase
+            try copy.close()
+        } catch {
+            throw DatabaseCopyFailure(store: store, step: step, cause: error)
+        }
+    }
+
+    private static func logFailure(_ error: any Error, at step: Step, store: Store? = nil) {
+        let category = store?.rawValue ?? "layout"
+        if let error = error as? DatabaseError {
+            logger.error("step=\(step.rawValue, privacy: .public) store=\(category, privacy: .public) SQLite code=\(error.extendedResultCode.rawValue, privacy: .public)")
+        } else {
+            let error = error as NSError
+            logger.error("step=\(step.rawValue, privacy: .public) store=\(category, privacy: .public) domain=\(error.domain, privacy: .public) code=\(error.code, privacy: .public)")
+        }
+    }
+
+    private static func database(at url: URL) throws -> DatabaseQueue {
         var configuration = Configuration()
-        configuration.readonly = readOnly
         configuration.prepareDatabase { $0.add(collation: CurrentUserRows.tokenCollation) }
         return try DatabaseQueue(path: url.path, configuration: configuration)
     }
