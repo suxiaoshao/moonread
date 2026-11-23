@@ -271,7 +271,7 @@ struct DataV2MigrationTests {
                 INSERT INTO main.books(id,title,content_sha256,encoding) VALUES ('job','Fixture','pending:job','UTF-8');
                 INSERT INTO main.import_jobs(book_id,phase,generation,pending_owner) VALUES ('job','paused',5,?);
                 INSERT INTO main.metadata_import_task VALUES (1,?,?);
-                UPDATE main.library_device_state SET legacy_user_scope=?,legacy_cleanup_done=1;
+                UPDATE main.library_device_state SET legacy_user_scope=?,legacy_cleanup_done=0;
                 """, arguments: [oldA.scope.key, task, record, oldA.scope.key])
         }
         try stagedInput.write(to: development.root.appending(path: "fixture-attachment"))
@@ -316,6 +316,8 @@ struct DataV2MigrationTests {
         #expect(offline.lease.scope == oldA.scope)
         #expect(try offset(offline) == 42)
         #expect(try offline.session.destination(.unknown).maySync == false)
+        try await service.approveReadingCloudDuringLegacyCleanup()
+        #expect(service.cloudSyncIntent.approvedScopeKey == nil)
         #expect(await service.isReadingCloudApproved(newA))
         #expect(!(await service.isReadingCloudApproved(newB)))
         #expect(try Data(contentsOf: production.root.appending(path: "fixture-attachment")) == stagedInput)

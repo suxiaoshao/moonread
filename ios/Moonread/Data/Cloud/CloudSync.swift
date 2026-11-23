@@ -462,6 +462,16 @@ actor CloudSyncCoordinator {
 extension AppDataService {
     func cloudSyncRequested() -> Bool { cloudSyncIntent.requested }
     func setCloudSyncRequested(_ requested: Bool) { cloudSyncIntent.set(requested) }
+    func approveReadingCloudDuringLegacyCleanup() throws {
+        // The mislabelled store may still carry its released Development key.
+        // Production consent is resolved only after verifying the account.
+        if case .mislabelledProduction = releasedReadingLayout { return }
+        let source = try publishedUserSource()
+        if source != .local, cloudSyncIntent.approvedScopeKey == nil {
+            cloudSyncIntent.approve(source)
+        }
+    }
+
     func hasPreviouslyApprovedReadingAccount() -> Bool {
         if cloudSyncIntent.approvedScopeKey != nil { return true }
         switch releasedReadingLayout {

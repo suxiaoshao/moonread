@@ -86,10 +86,7 @@ extension AppDataService {
         let handoff = try dataDirectoryURL().appending(path: "CloudHandoff", directoryHint: .isDirectory)
         do { try FileManager.default.removeItem(at: handoff) }
         catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {}
-        let source = try publishedUserSource()
-        if source != .local, cloudSyncIntent.approvedScopeKey == nil {
-            cloudSyncIntent.approve(source)
-        }
+        try approveReadingCloudDuringLegacyCleanup()
         Self.removeLegacyLocalDefaults(sourceDefaults, domain: domain)
         try index.write { try $0.execute(sql: "UPDATE main.library_device_state SET legacy_cleanup_done=1 WHERE id=1") }
     }
