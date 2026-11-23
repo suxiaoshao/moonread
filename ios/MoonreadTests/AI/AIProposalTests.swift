@@ -175,7 +175,7 @@ final class AIProposalTests: BookAIFixture {
     let model = ChapterRebuildModel(
       bookID: book.id, reader: reader,
       start: { id in starts += 1; return try await reader.rebuildChapters(id) },
-      preview: { _, _ in throw CocoaError(.fileReadUnknown) },
+      preview: { _ in throw CocoaError(.fileReadUnknown) },
       commit: { job in
         writes += 1
         if writes == 1 { throw CocoaError(.fileWriteUnknown) }
@@ -186,7 +186,6 @@ final class AIProposalTests: BookAIFixture {
     XCTAssertEqual(starts, 1, "reappearing does not start another rebuild")
     XCTAssertNotNil(model.actionError)
     XCTAssertTrue(model.canApply)
-    XCTAssertTrue(model.hasMore)
     let failed = await model.apply()
     XCTAssertFalse(failed)
     XCTAssertTrue(model.canApply)
@@ -204,6 +203,47 @@ final class AIProposalTests: BookAIFixture {
     let ignored = await model.apply()
     XCTAssertFalse(ignored)
     XCTAssertEqual(writes, 2)
+  }
+
+  func testChapterRecognitionAppendsBatchesThenLoadsCompletePreview() async throws {
+    let (root, reader, _, store, _) = try await fixture()
+    defer {
+      try? store.index.session.close()
+      try? FileManager.default.removeItem(at: root)
+    }
+    let source = root.appending(path: "catalogue-fixture.txt")
+    let prose = String(repeating: "这是一段目录预览的合成正文。\n", count: 90)
+    let titles = (1...120).map { "第\($0)章 通用标题\($0)" }
+    try titles.map { $0 + "\n" + prose }.joined().write(to: source, atomically: true, encoding: .utf8)
+    let book = try importBookFixture(store.index, filePath: source.path, title: "Catalogue fixture")
+    var provisionalCount = 0
+    var snapshots = 0
+    weak var observed: ChapterRebuildModel?
+    let model = ChapterRebuildModel(
+      bookID: book.id, reader: reader,
+      advance: { job in
+        XCTAssertEqual(observed?.headings.count, provisionalCount)
+        XCTAssertEqual(observed?.canApply, false)
+        let result = try await reader.advanceRebuild(job)
+        if !result.done {
+          provisionalCount += result.newHeadings.count
+          XCTAssertEqual(UInt64(provisionalCount), result.count)
+        }
+        return result
+      },
+      preview: { job in
+        snapshots += 1
+        XCTAssertEqual(observed?.canApply, false)
+        return try await reader.rebuildPreview(job)
+      })
+    observed = model
+    defer { model.cancel() }
+    await model.load()
+    XCTAssertGreaterThan(provisionalCount, 0)
+    XCTAssertLessThan(provisionalCount, titles.count)
+    XCTAssertEqual(snapshots, 1)
+    XCTAssertEqual(model.headings.map(\.title), titles)
+    XCTAssertTrue(model.canApply)
   }
 
   // S104: 笔记建议未确认不写入，重开丢弃草稿并进入同一业务编辑入口。

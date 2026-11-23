@@ -4883,7 +4883,6 @@
     }
   }
 },
-    "显示更多章节": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show more chapters"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "顯示更多章節"}}}},
     "目录预览": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Contents Preview"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目錄預覽"}}}},
     "应用目录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Apply contents"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "套用目錄"}}}},
     "恢复自动目录？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Restore detected contents?"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "恢復自動目錄？"}}}},
