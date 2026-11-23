@@ -36,7 +36,7 @@ extension ReaderSession {
                 cancelNavigation(); navigationTask = nil
                 windowTask = nil; chapterTask = nil; pendingChapterAnchor = nil
                 clearBrowse(); navigation = nil; chapterDraft = nil
-                selectionStart = nil; annotations = []; bookmarkPositions = []
+                selectionStart = nil; annotationWindow = nil; bookmarkPositions = []
                 // Transfer ownership and clear old projection before any more await.
                 activateOpening(request, lease: next); decodingPolicy = nil
                 chapter = nil; displayAnchor = nil

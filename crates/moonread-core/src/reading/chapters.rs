@@ -1,3 +1,5 @@
+use super::text_count::is_counted_scalar;
+
 /// A heading detected in the normalized text. `start_utf8` is its byte offset.
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct ChapterInfo {
@@ -30,7 +32,7 @@ pub struct IndexedChapter {
 impl ChapterScanner {
     pub(crate) fn push_chunk(&mut self, chunk_start_utf8: u64, text: &str) {
         for (byte_index, character) in text.char_indices() {
-            if !character.is_whitespace() {
+            if is_counted_scalar(character) {
                 self.char_count += 1;
             }
             if character == '\n' {

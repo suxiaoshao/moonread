@@ -1,6 +1,42 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "导入阅读数据备份": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Import Reading Data Backup"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"匯入閱讀資料備份"}}}},
+    "正在停止检查…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Stopping Check…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在停止檢查…"}}}},
+    "正在停止…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Stopping…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在停止…"}}}},
+    "检查已停止": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Backup Check Stopped"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"檢查已停止"}}}},
+    "没有导入阅读数据。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No reading data was imported."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"沒有匯入閱讀資料。"}}}},
+    "没有保存此次改动。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No changes from this import were saved."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"沒有儲存此次變更。"}}}},
+    "停止检查": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Stop Checking"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"停止檢查"}}}},
+    "无法检查备份": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t Check Backup"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"無法檢查備份"}}}},
+    "备份中没有阅读数据": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The Backup Contains No Reading Data"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"備份中沒有閱讀資料"}}}},
+    "没有需要导入的数据": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Nothing to Import"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"沒有需要匯入的資料"}}}},
+    "备份数据均已存在。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"All backup data is already present."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"備份資料均已存在。"}}}},
+    "本机较新的记录将保留。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Newer records on this device will be kept."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"本機較新的記錄將保留。"}}}},
+    "已核对 %lld 本，阅读数据均已相同。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Checked %lld books. All reading data already matches."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已核對 %lld 本，閱讀資料均已相同。"}}}},
+    "已核对 %lld 本：%lld 本已相同，%lld 本保留本机较新的记录。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Checked %1$lld books: %2$lld already match, %3$lld will keep newer local records."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已核對 %lld 本：%lld 本已相同，%lld 本保留本機較新的記錄。"}}}},
+    "有全局阅读数据待导入": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Global Reading Data to Import"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"有全域閱讀資料待匯入"}}}},
+    "将更新 %lld 本": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%lld to Update"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"將更新 %lld 本"}}}},
+    "共 %lld 本 · %lld 本已相同 · %lld 本保留本机": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%1$lld Total · %2$lld Match · %3$lld Keep Local"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"共 %lld 本 · %lld 本已相同 · %lld 本保留本機"}}}},
+    "导入 %lld 本": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Import %lld"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"匯入 %lld 本"}}}},
+    "全局阅读数据": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Global Reading Data"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"全域閱讀資料"}}}},
+    "将更新": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Will Update"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"將更新"}}}},
+    "保留本机": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Keep Local"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"保留本機"}}}},
+    "已相同": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Already Matches"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已相同"}}}},
+    "将恢复：%@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Restore: %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"將還原：%@"}}}},
+    "保留本机：%@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Keep Local: %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"保留本機：%@"}}}},
+    "已相同：%@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Already Matches: %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已相同：%@"}}}},
+    "书签": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Bookmarks"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書籤"}}}},
+    "批注": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Annotations"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"批註"}}}},
+    "小说信息": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Book Information"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"小說資訊"}}}},
+    "人工目录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Custom Chapters"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"自訂章節"}}}},
+    "阅读时长": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Time"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"閱讀時長"}}}},
+    "待处理的统计记录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Statistics Records Requiring Attention"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"待處理的統計記錄"}}}},
+    "封面": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Covers"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"封面"}}}},
+    "配色方案": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Color Schemes"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"配色方案"}}}},
+    "文件编码": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"File Encoding"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"檔案編碼"}}}},
+    "未在书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Not on a Bookshelf"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"未在書架"}}}},
+    "未知小说": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Unknown Book"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"未知小說"}}}},
     "导出阅读数据备份": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Export Reading Data Backup"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"匯出閱讀資料備份"}}}},
     "正在生成备份": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Creating Backup"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在建立備份"}}}},
     "备份已生成": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Backup Ready"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"備份已建立"}}}},
@@ -312,29 +348,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Select Reading Data"
-          }
-        }
-      }
-    },
-    "删除全部阅读数据": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "删除全部阅读数据"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "刪除全部閱讀資料"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete All Reading Data"
           }
         }
       }
@@ -947,6 +960,29 @@
     }
   }
 }
+      }
+    },
+    "上次删除仍在同步，请稍后再导入": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次删除仍在同步，请稍后再导入"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次刪除仍在同步，請稍後再匯入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your last deletion is still syncing. Try importing again later."
+          }
+        }
       }
     },
     "备份数据无效或包含冲突的记录": {

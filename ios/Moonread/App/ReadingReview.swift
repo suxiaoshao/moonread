@@ -11,7 +11,7 @@ enum ReadingReviewEligibility {
     static func allows(days: [StatisticsDay], milliseconds: UInt64, version: String,
                        requestedVersions: Set<String>, lastRequest: Date?, now: Date) -> Bool {
         guard milliseconds >= minimumReadingMilliseconds, !version.isEmpty,
-              Set(days.filter { $0.durationMs > 0 }.map(\.day)).count >= 3 else { return false }
+              days.activeDayCount >= 3 else { return false }
         return historyAllows(version: version, requestedVersions: requestedVersions, lastRequest: lastRequest, now: now)
     }
 

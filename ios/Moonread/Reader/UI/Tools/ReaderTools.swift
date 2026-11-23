@@ -5,19 +5,6 @@ import UIKit
 enum ReaderLibraryTab: Hashable { case chapters, bookmarks, notes }
 enum ReaderSelectionAction: Equatable {
     case highlight, comment, paragraph, beginRange, chapter, search, copy, shareExcerpt
-    case removeAnnotations
-}
-
-/// Both tap and manual selection use the actual selected range. The core
-/// resolves the full overlap set when editing or removing annotations.
-struct AnnotationSelection {
-    let marks: [ReaderMark]
-    let start: UInt64
-    let end: UInt64
-    init(start: UInt64, end: UInt64, annotations: [ReaderMark]) {
-        self.start = start; self.end = end
-        marks = annotations.filter { $0.startUtf8 < end && $0.endUtf8 > start }
-    }
 }
 
 extension AnnotationEdit {
@@ -552,24 +539,15 @@ final class ReaderToolsModel {
     func delete(_ mark: ReaderMark) async {
         await delete([mark.id])
     }
-    func delete(_ ids: [String]) async {
+    func delete(_ ids: [String], expected: NoteCandidates? = nil) async {
         guard !isLeaving, !ids.isEmpty else { return }
         error = nil
         do {
-            try await service.deleteMarks(ids, deleted: true, expected: noteSnapshot)
+            try await service.deleteMarks(ids, deleted: true, expected: expected ?? noteSnapshot)
             guard !isLeaving else { return }
             deletedIDs = ids; await loadNotes(reset: true)
         }
         catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
-    }
-    func removeAnnotations(bookID: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async {
-        guard !isLeaving else { return }
-        error = nil
-        do {
-            let ids = try await service.removeAnnotations(bookID, start: start, end: end, admission: admission)
-            guard !isLeaving else { return }
-            deletedIDs = ids; await loadNotes(reset: true)
-        } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
     }
     func undoDelete() async {
         guard !isLeaving, let ids = deletedIDs else { return }

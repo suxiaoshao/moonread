@@ -1,7 +1,49 @@
+import MoonreadAI
 import SwiftUI
 import CoreSpotlight
 import UIKit
 import CloudKit
+
+@MainActor @Observable final class AIHost {
+    private let defaults: UserDefaults
+    let availability: AIAvailability
+    private(set) var runtime: AIService?
+
+    init() {
+        defaults = AIAvailability.applicationDefaults
+        availability = AIAvailability(defaults: defaults)
+    }
+
+    func activate() -> AIService? {
+        guard availability.isAvailable else { return nil }
+        if let runtime { return runtime }
+        let service = AIService(defaults: defaults, availability: availability)
+        runtime = service
+        return service
+    }
+
+    var connectionCount: Int {
+        runtime?.providers.connections.count ?? AIConnectionService.storedConnections(defaults).count
+    }
+}
+
+struct AIEntry<Content: View>: View {
+    @Environment(AIHost.self) private var host
+    var active = true
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        Group {
+            if host.availability.isAvailable {
+                if let runtime = host.runtime { content().environment(runtime) }
+                else if active { ProgressView() }
+            }
+        }
+        .task(id: active && host.availability.isAvailable) {
+            if active { _ = host.activate() }
+        }
+    }
+}
 
 @main
 struct MoonreadApp: App {
@@ -10,7 +52,7 @@ struct MoonreadApp: App {
     @State private var themes = ThemeStore()
     @State private var readerSettings = ReaderSettingsStore.shared
     @State private var cloud = CloudStore()
-    @State private var ai = AIService()
+    @State private var ai = AIHost()
     @State private var tipJar = TipJar()
     private enum Startup {
         case preparing, failed(String), ready
@@ -146,7 +188,6 @@ struct MoonreadApp: App {
         MoonreadRoot(library: library, themes: themes, defersIntroduction: showsUpgradeNotice)
             .environment(cloud).environment(ai).environment(tipJar).environment(readerSettings)
             .task { await tipJar.listenForTransactions() }
-            .task { await ai.load() }
             .task {
                 library.startCloudDiscovery()
                 if await library.load() {
@@ -252,7 +293,7 @@ struct MoonreadApp: App {
                 if phase == .background {
                     Task { await cloud.scene(active: false) }
                     MetadataExchangeModel.shared.sceneDidEnterBackground()
-                    library.shell.dataManagement.backupExport.sceneDidEnterBackground()
+                    library.shell.dataManagement.sceneDidEnterBackground()
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences(); await readerSettings.flush() }
                     Task { await AppDataService.shared.pauseImports() }
                 }
@@ -260,7 +301,9 @@ struct MoonreadApp: App {
                     Task { await cloud.scene(active: true) }
                     readerSettings.refreshBuiltinFonts()
                     Task { await library.service.refreshSystemWidgetConfigurations() }
-                    Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }
+                    if let providers = ai.runtime?.providers, providers.catalogActivated {
+                        Task { await providers.refreshCatalogsIfNeeded() }
+                    }
                     Task {
                         await library.service.resumeSystemReadingPublication()
                         await AppDataService.shared.resumePausedImports(); await library.refresh()
@@ -282,8 +325,9 @@ struct MoonreadApp: App {
                 case .statistics: library.shell.selectedTab = .statistics
                 case .recap:
                     let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
-                    await ai.load()
-                    try await ai.seedStoreShotRecap(fixture)
+                    guard let runtime = ai.activate() else { return }
+                    await runtime.load()
+                    try await runtime.seedStoreShotRecap(fixture)
                     library.shell.selectedTab = .conversations
                 case .widget: break
                 default:
@@ -321,7 +365,7 @@ struct MoonreadApp: App {
             library.shell.selectedTab = .library
             if url.pathExtension.lowercased() == "moonread-backup" {
                 library.shell.openSettings(target: .data)
-                await library.shell.dataManagement.prepareImport(url)
+                library.shell.dataManagement.receiveBackup(url)
             } else { library.receiveSystemURLs([url]) }
         }
     }
@@ -382,7 +426,7 @@ private struct LegacyImportPage: View {
 
 private struct MoonreadRoot: View {
     @Environment(ReaderSettingsStore.self) private var readerSettings
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Bindable var library: LibraryModel
     let themes: ThemeStore
     let defersIntroduction: Bool
@@ -420,12 +464,21 @@ private struct MoonreadRoot: View {
             .environment(\.systemReadingRouter, library.systemReading)
             .environment(\.moonreadReduceMotion, reduceMotion)
             .environment(\.readerTheme, readerTheme)
+            .task(id: library.savedFilters.revision) { await library.savedFilters.load() }
             .onChange(of: library.shell.libraryPath) { _, _ in library.returnedToLibrary() }
             .onReceive(NotificationCenter.default.publisher(for: .libraryFilesChanged).receive(on: DispatchQueue.main)) { _ in library.retryPendingCloudDiscovery(); library.scheduleRefresh() }
             .alert("暂时无法完成", isPresented: Binding(get: { themes.error != nil }, set: { if !$0 { themes.error = nil } })) {
                 Button("知道了", role: .cancel) { themes.error = nil }
                 if !themes.loaded { Button("重试") { Task { await themes.load() } } }
             } message: { Text(themes.error ?? "") }
+            .alert("虚拟书架暂时不可用", isPresented: Binding(get: {
+                library.savedFilters.error != nil
+            }, set: { if !$0 { library.savedFilters.error = nil } })) {
+                Button("知道了", role: .cancel) { library.savedFilters.error = nil }
+                if library.savedFilters.snapshot == nil {
+                    Button("重试") { Task { await library.savedFilters.load() } }
+                }
+            } message: { Text(library.savedFilters.error ?? "") }
             .alert("字体需要下载", isPresented: Binding(get: { readerSettings.fontNotice != nil }, set: { if !$0 { readerSettings.fontNotice = nil } })) {
                 Button("知道了", role: .cancel) { readerSettings.fontNotice = nil }
             } message: { Text(readerSettings.fontNotice ?? "") }
@@ -468,7 +521,9 @@ private struct MoonreadRoot: View {
         return TabView(selection: $shell.selectedTab) {
             Tab("书架", systemImage: "books.vertical", value: AppTab.library) { libraryStack }
             if ai.availability.isAvailable {
-                Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { AIConversationsView() }
+                Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) {
+                    AIEntry(active: shell.selectedTab == .conversations) { AIConversationsView() }
+                }
             }
             Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.statistics) { statisticsStack }
             Tab("设置", systemImage: "gearshape", value: AppTab.settings) { settingsStack }
@@ -508,8 +563,9 @@ private struct MoonreadRoot: View {
 /// The page for a library route. Every navigation stack, and the search pushed
 /// above an open book, builds its pages here from the shared environment.
 struct LibraryDestination: View {
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     let route: LibraryRoute
+    var host: LibraryBrowsingHost = .main
     @Environment(LibraryModel.self) private var library
     @Environment(\.readerTheme) private var readerTheme
 
@@ -523,20 +579,43 @@ struct LibraryDestination: View {
                 // A destination's onAppear can run before that write finishes.
                 Task { await library.reloadBook(reader.target) }
             }.id(reader.id).themeScope(readerTheme)
-        case .folder(let location): LibraryFolderView(model: library, location: location)
-        case .allBooks(let shelfID): LibraryAllBooksView(model: library, shelfID: shelfID)
+        case .folder(let location): LibraryFolderView(model: library, location: location, host: host)
+        case .allBooks(let shelfID): LibraryAllBooksView(model: library, shelfID: shelfID, host: host)
         case .recent: RecentLibraryView(model: library)
+        case .savedFilters: SavedFilterIndex(model: library)
+        case .savedFilter(let id): SavedFilterDestination(model: library, id: id, host: host)
         case .manage: LibraryManagementView(model: library)
-        case .statistics(let target): StatisticsView(library: library, target: target)
+        case .statistics(let target): StatisticsView(library: library, target: target, host: host)
         case .conversation(let id, let anchor):
-            if ai.availability.isAvailable { AIChatView(conversationID: id, anchor: anchor) }
+            if ai.availability.isAvailable { AIEntry { AIChatView(conversationID: id, anchor: anchor) } }
         // Contextual routes delegate to the same task content.
         case .settingsPalette(let appearance): PalettePicker(reader: false, appearance: appearance)
         #if DEBUG
         case .screenshotReaderSettings: PageShotReaderSettings()
         #endif
-        case .search(let scope): AppSearchPage(model: library, scope: scope)
+        case .search(let scope): AppSearchPage(model: library, scope: scope, host: host)
         }
+    }
+}
+
+/// A destination in a local stack owns the next push while keeping its browsing policy.
+struct HostedLibraryDestination: View {
+    let route: LibraryRoute
+    let host: LibraryBrowsingHost
+    @State private var pushed: LibraryRoute?
+    @State private var visible = false
+
+    private var pageHost: LibraryBrowsingHost {
+        var local = host
+        local.push = { pushed = $0 }
+        local.isCurrent = { visible }
+        return local
+    }
+
+    var body: some View {
+        LibraryDestination(route: route, host: pageHost)
+            .navigationDestination(item: $pushed) { HostedLibraryDestination(route: $0, host: host) }
+            .onAppear { visible = true }.onDisappear { visible = false }
     }
 }
 

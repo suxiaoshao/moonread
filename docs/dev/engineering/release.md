@@ -5,14 +5,14 @@
 ## 构建来源与递增
 
 - `main` 对应线上版本；发布后才打 `v*` tag，因此不能用发布 tag 触发候选 TestFlight 构建。
-- 从 **main 的 `.github/workflows/testflight.yml`** 手动 `workflow_dispatch`，指定 `source_branch`（release/x.y 或 hotfix 分支）、`expected_sha` 完整 SHA 和 `mode`。版本分支没有该 workflow 不等于未配置 CI。
+- 从**本次打包的受保护分支**（`release/x.y` 或 `hotfix/x.y.z`）手动触发 TestFlight，填写该分支 HEAD 的完整 `expected_sha` 和 `mode`。工作流、App 源码与成功的 push CI 对应同一提交。工作流需存在于 GitHub 默认分支以供发现，运行时使用所选分支的版本。
 - 版本号/构建号先经 PR 修改工程并合入目标分支，使用那个完整 SHA；不由 CI 临时改号或自动回写。新上传的构建号不能复用已上传号。
 - 默认 `verify`：归档、导出和核验，不上传。CI verify 会记录构建号冲突但不因此阻止核验；upload 才强制递增门槛，verify 不是 ASC 上传唯一性保证。检查通过后，用户明确授权才运行 `upload`，仍固定同一分支/SHA；源分支变化时重新确认目标。
 - Rust 由仓库 Nix 环境编译，Xcode 构建继续调用该环境；不另安装 Rust、复制独立构建脚本或绕过锁定工具链。
 
 ## 自动签名与凭据
 
-当前 main workflow 使用 App Store Connect API Key 自动签名：`xcodebuild -allowProvisioningUpdates` 配合 `-authenticationKeyPath`、`-authenticationKeyID`、`-authenticationKeyIssuerID`。GitHub `testflight` Environment 中的 Secrets 为 `ASC_API_KEY_BASE64`、`ASC_KEY_ID`、`ASC_ISSUER_ID`，变量 `APPLE_TEAM_ID`。权限和临时文件清理以 workflow 为准。
+工作流使用 App Store Connect API Key 自动签名，`xcodebuild -allowProvisioningUpdates` 配合 `-authenticationKeyPath`、`-authenticationKeyID`、`-authenticationKeyIssuerID`。签名凭据和分支允许规则见[开发环境的 TestFlight 设置](development.md#testflight-手动-ci)。权限和临时文件清理以工作流为准。
 
 用户本人创建具有所需权限的 API Key、下载私钥并填写 Secrets；代理只核对名称和运行结果，不读取、打印、复制或记录私钥、密码、token 或个人签名配置。不把旧手动签名七项方案当作当前必填项。账号登录、验证、协议、银行与税务由用户本人完成。
 
@@ -24,6 +24,7 @@
 - 推送、iCloud Documents、CloudKit 使用预期生产授权与容器；不接受无云开发备用配置冒充分发构建。
 - App 及实际链接 SDK 的隐私清单已随包打入；required-reason API 用途与实际调用一致。清单、公开政策与 ASC 隐私标签分别核对，不能以 plist 合法代替用途准确。
 - 无 DEBUG/UI 测试开关、测试夹具、`.storekit` 或凭据；Release 条件编译审计与产物检查一起完成。
+- 面向提审的 TestFlight 构建显式关闭开发工具。核验编译条件与 IPA 中的开发工具入口标识及专用本地化资源。启用工具的本机 Development 试用包用于单独验证。
 - 检查 IPA/归档导出、架构和日志；workflow 的失败分类区分构建/签名/核验与上传服务失败，不把失败当成上传成功。
 
 源工程决定本次应有的扩展集合：旧版本只有 Share，新版本为 Share 与 Widget；缺少或出现未知扩展均拒绝。逐一核对 App、Share、Widget 的版本、签名、profile、App Group、arm64、隐私清单及 Release 测试入口；三个 bundle 的 `CFBundleDisplayName` 必须是非空字符串。不能只检查主 App，或认为 archive/export 成功就已满足上传要求。

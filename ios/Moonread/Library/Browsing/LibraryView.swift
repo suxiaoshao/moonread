@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @Bindable var model: LibraryModel
     @State private var recentUse: RecentReadingUse?
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -61,7 +61,9 @@ struct LibraryView: View {
                     if let current {
                         VStack(alignment: .leading, spacing: 12) {
                             homeHeader("继续阅读", showsAll: following.isEmpty)
-                            ContinueReadingRow(model: model, entry: current).contextMenu { recentMenu(current) }
+                            ContinueReadingRow(model: model, entry: current)
+                                .contextMenu { recentMenu(current) }
+                                .accessibilityActions { recentMenu(current) }
                         }
                     }
                     if let error = model.recentReading.failure {
@@ -70,11 +72,15 @@ struct LibraryView: View {
                     ShelfRecoverySummary(model: model)
                     if sizeClass == .regular && geometry.size.width >= 720 {
                         HStack(alignment: .top, spacing: 24) {
-                            shelves.frame(maxWidth: .infinity, alignment: .topLeading)
+                            VStack(alignment: .leading, spacing: 24) {
+                                shelves
+                                SavedFilterSection(model: model, onHome: true)
+                            }.frame(maxWidth: .infinity, alignment: .topLeading)
                             recentBooks.frame(maxWidth: .infinity, alignment: .topLeading)
                         }
                     } else {
                         shelves
+                        SavedFilterSection(model: model, onHome: true)
                         recentBooks
                     }
                 }.padding([.horizontal, .top], 20).padding(.bottom).frame(maxWidth: 1040).frame(maxWidth: .infinity)
@@ -139,9 +145,8 @@ struct LibraryView: View {
         .textCase(nil).accessibilityElement(children: .contain)
     }
 
-    @ViewBuilder private func recentMenu(_ entry: LibraryEntry) -> some View {
-        Button("小说详情", systemImage: "info.circle") { model.shell.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))) }
-        Button("从最近移除", systemImage: "minus.circle") { Task { await model.hideRecent(entry) } }
+    private func recentMenu(_ entry: LibraryEntry) -> some View {
+        RecentBookActions(model: model, entry: entry)
     }
 }
 
@@ -171,9 +176,18 @@ private struct ContinueReadingRow: View {
     let model: LibraryModel
     let entry: LibraryEntry
     @Environment(\.theme) private var theme
-    private var position: Double { min(1, Double(entry.positionUtf8) / Double(max(1, entry.byteCount))) }
+    private var position: Double { ReadingProgress.fraction(entry.positionUtf8, of: entry.byteCount) }
+    private var progress: String { position.formatted(.percent.precision(.fractionLength(0))) }
+    private var lastRead: String? {
+        guard entry.lastRead > 0 else { return nil }
+        let date = Date(timeIntervalSince1970: Double(entry.lastRead) / 1000)
+        if Date.now.timeIntervalSince(date) < 60 { return String(localized: "刚刚") }
+        return date.formatted(.relative(presentation: .named))
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let lastRead = lastRead
+        Button { model.openRecent(entry) } label: {
             HStack(spacing: 16) {
                 BookCoverView(title: entry.title, compact: true, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).frame(width: 60, height: 84)
                     .overlay { LibraryFileAvailability(entry: entry, compact: true) }
@@ -183,20 +197,40 @@ private struct ContinueReadingRow: View {
                         .foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
                     ProgressView(value: position).tint(Color(uiColor: theme.accent))
                     HStack(spacing: 6) {
-                        Text(position, format: .percent.precision(.fractionLength(0))).monospacedDigit()
-                        if entry.lastRead > 0 {
+                        Text(verbatim: progress).monospacedDigit()
+                        if let lastRead {
                             Text("·")
-                            let lastRead = Date(timeIntervalSince1970: Double(entry.lastRead) / 1000)
-                            if Date.now.timeIntervalSince(lastRead) < 60 { Text("刚刚") }
-                            else { Text(lastRead, format: .relative(presentation: .named)) }
+                            Text(verbatim: lastRead)
                         }
                     }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: theme.secondary))
             }
-            Button { model.openRecent(entry) } label: {
-                Text("继续阅读").frame(maxWidth: .infinity)
-            }.buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("library-file-\(entry.name)")
-        }.padding(16).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 20))
+            .padding(16)
+            .contentShape(.rect(cornerRadius: 20))
+            .accessibilityElement(children: .ignore)
+        }
+        .buttonStyle(ContinueReadingButtonStyle())
+        .accessibilityLabel(Text("\(Text("继续阅读"))，\(entry.title)"))
+        .accessibilityValue(Text(verbatim: [
+            entry.chapterTitle, progress, lastRead,
+            entry.needsDownload ? String(localized: "待下载") : nil,
+        ].compactMap { $0 }.joined(separator: ", ")))
+        .accessibilityIdentifier("library-file-\(entry.name)")
+    }
+}
+
+private struct ContinueReadingButtonStyle: ButtonStyle {
+    @Environment(\.theme) private var theme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Color(uiColor: configuration.isPressed ? theme.ui(\.pressed, system: .tertiarySystemFill) : theme.surface),
+                in: .rect(cornerRadius: 20)
+            )
     }
 }
 
@@ -234,16 +268,17 @@ struct RecentBookRow: View {
         Text(entry.chapterTitle ?? String(localized: "继续阅读")).lineLimit(1)
     }
     private var progress: Text {
-        Text(Double(entry.positionUtf8) / Double(max(1, entry.byteCount)), format: .percent.precision(.fractionLength(1))).monospacedDigit()
+        Text(ReadingProgress.fraction(entry.positionUtf8, of: entry.byteCount), format: .percent.precision(.fractionLength(1))).monospacedDigit()
     }
 }
 
-/// A recent book in the grid layout's home row: its cover, title and reading progress.
+/// A recent book's cover, title and reading progress.
 /// A List lifts a row's context menu to the whole row, which would highlight every
 /// cover at once; a menu button with a primary action highlights only this book.
-private struct RecentCoverTile<Actions: View>: View {
+struct RecentCoverTile<Actions: View>: View {
     let model: LibraryModel
     let entry: LibraryEntry
+    var fillsColumn = false
     @ViewBuilder let actions: Actions
     @Environment(\.theme) private var theme
     @ScaledMetric(relativeTo: .body) private var width = 96.0
@@ -254,10 +289,13 @@ private struct RecentCoverTile<Actions: View>: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: entry.title).font(.subheadline.weight(.medium))
                         .foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2, reservesSpace: true)
-                    Text(Double(entry.positionUtf8) / Double(max(1, entry.byteCount)), format: .percent.precision(.fractionLength(1)))
+                    Text(ReadingProgress.fraction(entry.positionUtf8, of: entry.byteCount), format: .percent.precision(.fractionLength(1)))
                         .font(.caption).monospacedDigit().foregroundStyle(Color(uiColor: theme.secondary))
                 }
-            }.frame(width: width).contentShape(.rect)
+            }
+            .frame(width: fillsColumn ? nil : width)
+            .frame(maxWidth: fillsColumn ? .infinity : nil, alignment: .leading)
+            .contentShape(.rect)
         } primaryAction: { model.open(entry) }
             .buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
             // The cancel control sits beside the button, never inside its label.

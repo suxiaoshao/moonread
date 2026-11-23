@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 
 /// Canonical history is always visible. Editable reviews are fresh, view-lifetime values.
@@ -204,5 +205,100 @@ struct AIResultButtonStyle: ButtonStyle {
             .background(Color(uiColor: configuration.isPressed ? theme.selected : theme.raised), in: .rect(cornerRadius: LayoutTokens.inputRadius))
             .overlay { RoundedRectangle(cornerRadius: LayoutTokens.inputRadius).strokeBorder(Color(uiColor: theme.border), lineWidth: 1) }
             .contentShape(.rect(cornerRadius: LayoutTokens.inputRadius))
+    }
+}
+
+struct AIBookFilterCard: View {
+    let suggestion: AIBookFilterSuggestion
+    let configuration: BookSearchConfiguration
+    let open: () -> Void
+    @Environment(LibraryModel.self) private var library
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let resolution = suggestion.resolveShelves(library.shelves)
+        let root = configuration.root
+        Button(action: open) {
+            VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+                Text("筛选建议").font(.headline)
+                Group {
+                    if root.supportsQuickEditing(includingExcluded: false), !root.children.isEmpty {
+                        ForEach(root.children) { node in
+                            let condition = node.expression(shelfTitle: { $0 })
+                            if node.field == .status { Text("阅读状态 · \(condition)") }
+                            else { Text(verbatim: condition) }
+                        }
+                    } else {
+                        Text(verbatim: root.expression(shelfTitle: { $0 }))
+                    }
+                    Text("排序 · \(configuration.sortDescription(hasTerm: false))")
+                }.font(.subheadline)
+                if resolution.unavailable.isEmpty {
+                    HStack {
+                        if resolution.choices.isEmpty { Text("查看搜索结果") }
+                        else { Text("选择书架") }
+                        Spacer()
+                        Image(systemName: "chevron.forward").accessibilityHidden(true)
+                    }.font(.subheadline.weight(.semibold)).foregroundStyle(Color(uiColor: theme.accent))
+                } else {
+                    let names = resolution.unavailable.joined(separator: "、")
+                    Text("书架「\(names)」当前不可用，可在对话中调整筛选。")
+                        .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.buttonStyle(AIResultButtonStyle()).disabled(!resolution.unavailable.isEmpty)
+    }
+}
+
+struct AIFilterShelfChoiceSheet: View {
+    let suggestion: AIBookFilterSuggestion
+    let open: (BookSearchConfiguration) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(LibraryModel.self) private var library
+    @Environment(\.theme) private var theme
+    @State private var selected: [Data: String] = [:]
+
+    var body: some View {
+        let options = suggestion.resolveShelves(library.shelves)
+        let resolution = suggestion.resolveShelves(library.shelves, selected: selected)
+        NavigationStack {
+            List {
+                ForEach(options.choices) { choice in
+                    Section(choice.name) {
+                        ForEach(choice.candidates, id: \.id) { shelf in
+                            let checked = selected[choice.id] == shelf.id
+                            Button { selected[choice.id] = shelf.id } label: {
+                                HStack {
+                                    BookSearchShelfOptionLabel(shelf: shelf, service: library.service, showsLocation: true)
+                                    Spacer()
+                                    if checked { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
+                                }.contentShape(.rect)
+                            }
+                            .accessibilityAddTraits(checked ? .isSelected : [])
+                            .listRowBackground(Color(uiColor: theme.surface))
+                        }
+                    }
+                }
+                if !options.unavailable.isEmpty {
+                    let names = options.unavailable.joined(separator: "、")
+                    Text("书架「\(names)」当前不可用，可在对话中调整筛选。")
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .themedPage()
+            .navigationTitle("选择书架").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    SystemToolbarButton("取消", role: .cancel) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("查看搜索结果") {
+                        guard let configuration = try? resolution.configuration(suggestion) else { return }
+                        open(configuration)
+                        dismiss()
+                    }.disabled(!resolution.complete)
+                }
+            }
+        }
     }
 }

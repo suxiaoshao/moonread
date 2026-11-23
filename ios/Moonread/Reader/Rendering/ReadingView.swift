@@ -33,6 +33,7 @@ struct ReadingView: UIViewControllerRepresentable {
     var focusRange: TextRange?
     var selectionStart: UInt64?
     var selection: (UInt64, UInt64, ReaderSelectionAction) -> Void = { _, _, _ in }
+    var annotationsTapped: ([String]) -> Void = { _ in }
     var allowsBackGesture = false
     var prepareInteractivePop: () -> Void = {}
     var endUnstartedInteractivePop: () -> Void = {}
@@ -87,6 +88,7 @@ struct ReadingView: UIViewControllerRepresentable {
         controller.deviceControls.brightnessChanged = brightnessChanged
         controller.deviceControls.orientationFailed = orientationFailed
         controller.deviceControls.update(settings)
+        controller.annotationsTapped = annotationsTapped
         controller.annotationChooserChanged = annotationChooserChanged
         controller.bodyDisplayed = bodyDisplayed
         controller.statisticsInteraction = statisticsInteraction

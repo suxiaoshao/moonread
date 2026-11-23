@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 struct LibraryFolderView: View {
     @Bindable var model: LibraryModel
     let location: LibraryLocation
-    @Environment(AIService.self) private var ai
+    let host: LibraryBrowsingHost
+    @Environment(AIHost.self) private var ai
     @Environment(\.theme) private var theme
     @State private var folder = FolderStore(service: .shared)
     @State private var selection = Set<String>()
@@ -69,20 +70,19 @@ struct LibraryFolderView: View {
                                 .accessibilityIdentifier("organizeFolder")
                         }
                         Divider()
-                        Picker("显示方式", selection: $model.layout) {
-                            Label("列表", systemImage: "list.bullet").tag(LibraryLayout.list)
-                            Label("网格", systemImage: "square.grid.3x3").tag(LibraryLayout.grid)
-                        }.pickerStyle(.inline)
+                        LibraryDisplayPicker(selection: $model.layout)
                         Divider()
                         if !location.path.isEmpty {
-                            NavigationLink(value: LibraryRoute.allBooks(location.shelfID)) {
-                                Label("全部小说", systemImage: "books.vertical")
+                            Button("全部小说", systemImage: "books.vertical") {
+                                host.navigate(.allBooks(location.shelfID), in: model)
                             }
                         }
                         Button { metadataExporting = true } label: {
                             Label { Text("导出本书架信息", tableName: "MetadataExchange") } icon: { Image(systemName: "doc.text") }
                         }
-                        Button("在此书架中搜索", systemImage: "magnifyingglass") { model.shell.path.append(.search(AppSearchScope(seeds: [.shelf(location.shelfID)]))) }
+                        Button("在此书架中搜索", systemImage: "magnifyingglass") {
+                            host.navigate(.search(AppSearchScope(seeds: [.shelf(location.shelfID)])), in: model)
+                        }
                             .accessibilityIdentifier("searchShelf")
                     } label: { Label("文件夹操作", systemImage: "ellipsis") }.menuOrder(.fixed).toolbarGlyph().accessibilityIdentifier("folderActions").disabled(fileActionsDisabled)
                 }
@@ -147,7 +147,7 @@ struct LibraryFolderView: View {
     }
 
     private var browser: some View {
-        LibraryCollection(ai: ai, model: model, location: location, entries: entries, shelf: shelf,
+        LibraryCollection(ai: ai, model: model, host: host, location: location, entries: entries, shelf: shelf,
                           layout: model.layout, theme: theme, disabled: fileActionsDisabled,
                           retryObservation: folder.retryIfFailed,
                           showsEmpty: (folder.snapshot != nil || (builtinRoot && folder.failed)) && !folder.loading.active && !model.refreshing.active && model.shelfScans[location.shelfID] == nil && entries.isEmpty && (shelf?.error == nil || (location.shelfID == "builtin" && location.path.isEmpty && model.builtinDiscovery == .unavailable)),

@@ -51,12 +51,35 @@ struct LibraryEmptyFolder: View {
     }
 }
 
+/// Editing belongs to the collection. Browsing can use any navigation host.
+@MainActor
+enum LibraryItemInteraction {
+    case browse(LibraryBrowsingHost)
+    case selecting(selected: Bool)
+
+    var isEditing: Bool {
+        if case .selecting = self { return true }
+        return false
+    }
+    var isSelected: Bool {
+        if case .selecting(let selected) = self { return selected }
+        return false
+    }
+    var menuHost: LibraryBrowsingHost? {
+        if case .browse(let host) = self, host.allowsFileBrowsing { return host }
+        return nil
+    }
+    func activate(_ entry: LibraryEntry, in model: LibraryModel) {
+        if case .browse(let host) = self { host.open(entry, in: model) }
+    }
+}
+
 struct LibraryFileRow: View {
     let model: LibraryModel
     let entry: LibraryEntry
     var showPath = false
     var query = ""
-    var select: (() -> Void)? = nil
+    let interaction: LibraryItemInteraction
     static let coverSize = CGSize(width: 32, height: 44)
     private var coverSize: CGSize { Self.coverSize }
     static let textLeading: CGFloat = 32 + LayoutTokens.control
@@ -64,7 +87,7 @@ struct LibraryFileRow: View {
     @Environment(\.theme) private var theme
     var body: some View {
             HStack(spacing: 4) {
-                Button { if let select { select() } else { model.open(entry) } } label: {
+                Button { interaction.activate(entry, in: model) } label: {
                     HStack(spacing: LayoutTokens.control) {
                         if case .folder(let folder) = entry.item {
                             LibraryFolderCover(previews: folder.coverPreviews).frame(width: coverSize.width, height: coverSize.height)
@@ -90,19 +113,23 @@ struct LibraryFileRow: View {
                     }.padding(.vertical, LayoutTokens.compact).contentShape(.rect)
                 }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
                     .overlay(alignment: .leading) {
-                        if select == nil && !entry.directory {
+                        if !interaction.isEditing && !entry.directory {
                             LibraryFileAvailability(entry: entry, compact: true).frame(width: coverSize.width, height: coverSize.height)
                         }
                     }
-                if select == nil {
+                if let host = interaction.menuHost {
                     Menu {
-                        LibraryItemMenu(model: model, entry: entry)
-                        if showPath { LibraryLocationAction(model: model, entry: entry) }
+                        LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
                     } label: {
                         Image(systemName: "ellipsis").frame(width: LayoutTokens.hit, height: LayoutTokens.hit).foregroundStyle(Color(uiColor: theme.secondary))
                     }.accessibilityLabel(String(localized: "\(entry.name)的操作"))
                 }
             }.frame(height: rowHeight)
+                .contextMenu {
+                    if let host = interaction.menuHost {
+                        LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
+                    }
+                }
     }
     private var highlighted: AttributedString {
         var text = AttributedString(entry.title); text.foregroundColor = Color(uiColor: theme.ink)

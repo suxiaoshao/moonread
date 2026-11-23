@@ -57,7 +57,7 @@ struct ReaderCompactHeader: View {
     }
 
     private func progress(book: BookInfo) -> some View {
-        let fraction = Double(session.anchor) / Double(max(book.byteCount, 1))
+        let fraction = ReadingProgress.fraction(session.anchor, of: book.byteCount)
         return Text(fraction, format: .percent.precision(.fractionLength(1)))
             .monospacedDigit()
             .accessibilityLabel("阅读进度")

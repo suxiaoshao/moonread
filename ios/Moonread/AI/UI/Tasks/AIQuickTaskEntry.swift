@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 
 /// What an entry asks for: the task kind, the object it works on, and the attachments

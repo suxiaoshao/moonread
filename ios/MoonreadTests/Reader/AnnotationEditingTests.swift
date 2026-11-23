@@ -9,9 +9,9 @@ import XCTest
 @testable import Moonread
 
 final class AnnotationEditingReaderIntegrationTests: ReaderIntegrationFixture {
-  // S357: 部分选择编辑保存使用完整合并批注链，不截断旧注释内容；候选裁决另在 UserData。
+  // A selection creates its own note. Detail edits, deletion and undo each target one saved ID.
   @MainActor
-  func testPartialSelectionOpensOneEditorAndSavesMergedComments() async throws {
+  func testSelectionAndSingleAnnotationEditingPreserveOverlappingMarks() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let core = try makeReaderIndexFixture(at: root)
@@ -34,28 +34,42 @@ final class AnnotationEditingReaderIntegrationTests: ReaderIntegrationFixture {
       predicate: NSPredicate { _, _ in session.editor != nil }, object: nil)
     await fulfillment(of: [opened], timeout: 5)
     let edit = try XCTUnwrap(session.editor)
-    XCTAssertEqual(edit.note, "First comment\n\nSecond comment")
-    XCTAssertEqual(edit.startUtf8, offset(1))
-    XCTAssertEqual(edit.endUtf8, offset(12))
-    let unchanged = try await service.mark(left.id)
-    XCTAssertEqual(unchanged.endUtf8, offset(5), "Opening must not commit range changes")
+    XCTAssertEqual(edit.note, "")
+    XCTAssertEqual(edit.startUtf8, offset(4))
+    XCTAssertEqual(edit.endUtf8, offset(9))
     let draft = try XCTUnwrap(session.noteEditorModel)
-    XCTAssertTrue(draft.hasUnsavedChanges, "The uncommitted range merge is itself a change")
-    draft.text = "Edited together"
+    XCTAssertTrue(draft.hasUnsavedChanges)
+    draft.text = "Exact selection"
     let write = try XCTUnwrap(draft.beginCommit())
     XCTAssertTrue(draft.saving, "Save admission is synchronous before task scheduling")
     let saved = await write.value
     XCTAssertTrue(saved)
     XCTAssertFalse(draft.hasUnsavedChanges)
-    let persisted = try await service.prepareAnnotation(book.id, start: edit.startUtf8, end: edit.endUtf8)
-    let existing = NoteEditorModel(edit: persisted, service: service)
+    session.editor = nil
+
+    let window = try await service.annotationWindow(book.id, start: offset(4), end: offset(5))
+    XCTAssertEqual(Set(window.marks.map(\.note)), ["First comment", "Exact selection"])
+    try session.openAnnotation(left, shown: window.candidates)
+    let existing = try XCTUnwrap(session.noteEditorModel)
     XCTAssertFalse(existing.hasUnsavedChanges)
-    existing.text += "changed"; XCTAssertTrue(existing.hasUnsavedChanges)
-    existing.text = persisted.note; XCTAssertFalse(existing.hasUnsavedChanges)
-    existing.conflictChoice = true; XCTAssertTrue(existing.hasUnsavedChanges)
-    let marks = try await service.marks(book.id, kind: .annotation, offset: 0).items
-    XCTAssertEqual(marks.count, 1)
-    XCTAssertEqual(marks.first?.note, "Edited together")
+    await existing.loadConflicts()
+    XCTAssertTrue(existing.conflicts.isEmpty)
+    existing.text = "Edited one"
+    XCTAssertTrue(existing.hasUnsavedChanges)
+    let edited = await existing.commit()
+    XCTAssertTrue(edited)
+    session.editor = nil
+
+    let updated = try await service.annotationWindow(book.id, start: offset(4), end: offset(5))
+    let tools = session.toolsSession.tools
+    await tools.delete([left.id], expected: updated.candidates)
+    XCTAssertEqual(tools.deletedIDs, [left.id])
+    let remaining = try await service.marks(book.id, kind: .annotation, offset: 0).items
+    XCTAssertEqual(Set(remaining.map(\.note)), ["Second comment", "Exact selection"])
+    await tools.undoDelete()
+    let restored = try await service.mark(left.id)
+    XCTAssertEqual(restored.note, "Edited one")
+    XCTAssertEqual(restored.endUtf8, offset(5))
     XCTAssertEqual(session.anchor, position)
     await session.leave().value
   }

@@ -17,7 +17,7 @@ enum DataV2Error: Error, Equatable {
 enum DataV2Schema {
     static let indexVersion = 2
     // Version 3 belonged only to the removed, unpublished live bridge.
-    static let userVersion = 7
+    static let userVersion = 9
 
     static func sql(_ name: String, in bundle: Bundle = .main) throws -> String {
         guard let path = bundle.url(forResource: name, withExtension: "sql") else {
@@ -43,7 +43,7 @@ enum DataV2Schema {
             let index = try version(db, in: "main")
             let user = try version(db, in: "usr")
             guard [0, indexVersion].contains(index) else { throw DataV2Error.unsupportedSchema("main", index) }
-            guard [0, 1, 2, 4, 5, 6, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
+            guard [0, 1, 2, 4, 5, 6, 7, 8, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
             if index == 0 { try checkFresh(db, in: "main") }
             if user == 0 { try checkFresh(db, in: "usr") }
             guard try String.fetchOne(db, sql: "PRAGMA usr.journal_mode=WAL")?.lowercased() == "wal" else {
@@ -189,6 +189,28 @@ enum DataV2Schema {
                         key TEXT NOT NULL, kind TEXT NOT NULL, value BLOB, PRIMARY KEY(key,kind)
                     );
                     PRAGMA usr.user_version=7;
+                    """)
+            }
+        }
+        if user < 8 {
+            try writer.write { db in
+                try db.execute(sql: """
+                    CREATE TABLE usr.local_saved_filter(
+                        sequence INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE,
+                        name TEXT NOT NULL, configuration BLOB NOT NULL
+                    );
+                    PRAGMA usr.user_version=8;
+                    """)
+            }
+        }
+        if user < 9 {
+            try writer.write { db in
+                try db.execute(sql: """
+                    CREATE TABLE usr.cloud_history_delete_unfetched(
+                        zone TEXT NOT NULL, record_type TEXT NOT NULL, business_id TEXT NOT NULL,
+                        PRIMARY KEY(zone,record_type,business_id)
+                    );
+                    PRAGMA usr.user_version=9;
                     """)
             }
         }

@@ -246,7 +246,9 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
                 return cell
             }
             let cell = table.dequeueReusableCell(withIdentifier: "message", for: path) as! AIHostedMessageCell
-            if let self, let row = rows[id] { cell.configure(hostedContent(id), height: hostedHeight(row), parent: self) }
+            if let self, let row = rows[id] {
+                cell.configure(hostedContent(id, observingResultHeight: true), height: hostedHeight(row), parent: self)
+            }
             cell.selectionStyle = .none; cell.backgroundColor = .clear
             return cell
         }
@@ -267,19 +269,25 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         tap.cancelsTouchesInView = false; tap.delegate = self
         tableView.addGestureRecognizer(tap)
     }
-    private func hostedContent(_ id: String) -> AnyView {
-        AnyView(render?(id, { [weak self] item in
+    private func hostedContent(_ id: String, observingResultHeight: Bool = false) -> AnyView {
+        let content = render?(id, { [weak self] item in
             self?.toggleProcessItem(rowID: id, item: item)
         }).id(id)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
-            // Result cards change height from their own state (reviews, save feedback), not a row version.
-            // Only result rows act on it; every other row is re-measured by its version.
-            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { [weak self] height in
-                DispatchQueue.main.async { self?.hostedContentResized(id, height: height) }
+            .environment(\.moonreadReduceMotion, reducedMotion)
+        // Result cards can resize without a new row version. Only the displayed
+        // content observes those changes; the offscreen sizer uses sizeThatFits.
+        guard observingResultHeight, let row = rows[id], case .result = row.content else { return AnyView(content) }
+        let version = row.version
+        return AnyView(content.onGeometryChange(for: CGSize.self, of: { $0.size }) { [weak self] size in
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.rows[id]?.version == version,
+                      abs(size.width - self.tableView.bounds.width) < 0.5 else { return }
+                self.hostedContentResized(id, height: size.height)
             }
-            .environment(\.moonreadReduceMotion, (appearance?.reduceMotion ?? false) || UIAccessibility.isReduceMotionEnabled))
+        })
     }
     private func measureHosted(_ content: AnyView) -> CGFloat {
         if rowSizer == nil {
@@ -294,7 +302,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         let key = heightKey(row)
         if let cached = conversation?.messageHeights[key] { return cached }
         let height = measureHosted(hostedContent(row.id))
-        if !animatingExpansion { conversation?.messageHeights[key] = height }
+        if !animatingExpansion { storeMeasuredHeight(height, for: key) }
         return height
     }
     /// Re-measures a visible row whose content grew or shrank without a new row version.
@@ -307,7 +315,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         }
         let key = heightKey(row), height = ceil(height)
         guard let cached = conversation?.messageHeights[key], abs(cached - height) > 0.5 else { return }
-        conversation?.messageHeights[key] = height
+        storeMeasuredHeight(height, for: key)
         guard let path = source.indexPath(for: id), let cell = tableView.cellForRow(at: path) as? AIHostedMessageCell else { return }
         cell.resize(height)
         UIView.performWithoutAnimation { tableView.performBatchUpdates(nil) }
@@ -359,7 +367,6 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             }
         }
         adjusting = false
-        let anchor = expansionAnchor ?? stableAnchor ?? captureAnchor()
         let old = rows
         if streamVisible && !nextAppearance.reduceMotion && nextRows.contains(where: { $0.nativeText?.streaming == true }) {
             smoothFollowing = true
@@ -385,6 +392,24 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         let ids = nextRows.map(\.id)
         let previous = source.snapshot().itemIdentifiers
         let existing = Set(previous)
+        let anchor = expansionAnchor
+            ?? stableAnchor.flatMap { rows[$0.id] == nil ? nil : $0 }
+            ?? captureAnchor(where: { rows[$0] != nil })
+        var completionAnchor: Anchor?
+        if following && smoothFollowing && streamVisible && !reducedMotion && previous != ids {
+            // A completed turn can insert its process control above visible prose.
+            let completedTurns = Set(nextRows.compactMap { row -> String? in
+                guard !existing.contains(row.id), case .processToggle = row.content else { return nil }
+                return row.turnID
+            })
+            if !completedTurns.isEmpty {
+                completionAnchor = captureAnchor { id in
+                    guard old[id]?.nativeText != nil, let row = rows[id], row.nativeText != nil,
+                          let turnID = row.turnID else { return false }
+                    return completedTurns.contains(turnID)
+                }
+            }
+        }
         let changed = ids.filter { id in
             guard existing.contains(id) else { return false }
             // Authority can advance while the displayed prefix has not. Do not
@@ -403,6 +428,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             })
             let content = hostedContent(anchor.id)
             let height = measureHosted(content)
+            if let row = rows[anchor.id] { storeMeasuredHeight(height, for: heightKey(row)) }
             let oldHeight = tableView.rectForRow(at: path).height
             expansionHeights = [anchor.id: oldHeight]
             CATransaction.begin()
@@ -446,7 +472,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
                     self.tableView.selfSizingInvalidation = .enabledIncludingConstraints
                     if self.expansionAnchor?.id == anchor.id { self.expansionAnchor = actual; self.stableAnchor = actual }
                     else { self.stableAnchor = self.expansionAnchor ?? self.captureAnchor() }
-                    self.recordVisibleHeights(); self.replayPendingResizes(); self.publishBottom()
+                    self.replayPendingResizes(); self.publishBottom()
                     let next = self.pendingUpdate; self.pendingUpdate = nil; next?()
                 }
             }
@@ -465,14 +491,17 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
                 tableView.layoutIfNeeded()
                 applying = false
                 replayPendingResizes()
-                settle(anchor: expansionAnchor ?? anchor)
+                settle(anchor: expansionAnchor ?? anchor, followingInsertion: completionAnchor)
+                completionAnchor = nil
                 let next = pendingUpdate; pendingUpdate = nil; next?()
             }
             // The completion can run on the next turn of the run loop. Finish
             // visible sizing and following before this update reaches the screen.
             tableView.layoutIfNeeded()
-            if following { followBottom() }
-            else if let expansionAnchor { settle(anchor: expansionAnchor) }
+            if searchTarget == nil {
+                settle(anchor: expansionAnchor ?? anchor, followingInsertion: completionAnchor)
+                completionAnchor = nil
+            }
         }
     }
 
@@ -494,23 +523,31 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         guard abs(tableView.contentOffset.y - y) > 0.25 else { return }
         tableView.setContentOffset(CGPoint(x: 0, y: y), animated: false)
     }
-    private func captureAnchor() -> Anchor? {
+    private func captureAnchor(where includes: (String) -> Bool = { _ in true }) -> Anchor? {
         let top = tableView.contentOffset.y + tableView.adjustedContentInset.top
         let bottom = tableView.contentOffset.y + tableView.bounds.height - tableView.adjustedContentInset.bottom
-        let visible = (tableView.indexPathsForVisibleRows ?? []).sorted()
-        let complete = visible.first { let r = tableView.rectForRow(at: $0); return r.minY >= top && r.maxY <= bottom }
-        guard let path = complete ?? visible.first, let id = source?.itemIdentifier(for: path) else { return nil }
-        return .init(id: id, offset: tableView.rectForRow(at: path).minY - top)
+        for path in (tableView.indexPathsForVisibleRows ?? []).sorted() {
+            guard let id = source?.itemIdentifier(for: path), includes(id) else { continue }
+            let frame = tableView.rectForRow(at: path)
+            if frame.maxY > top && frame.minY < bottom { return .init(id: id, offset: frame.minY - top) }
+        }
+        return nil
     }
-    private func settle(anchor: Anchor?) {
+    private func settle(anchor: Anchor?, followingInsertion: Anchor? = nil) {
         guard !adjusting, !animatingExpansion, source != nil else { return }
         adjusting = true
         UIView.performWithoutAnimation {
             if let id = searchTarget, let path = source.indexPath(for: id) {
                 tableView.scrollToRow(at: path, at: .middle, animated: false)
                 tableView.layoutIfNeeded(); searchTarget = nil
-            } else if following { followBottom() }
-            else if let anchor, let path = source.indexPath(for: anchor.id) {
+            } else if following {
+                // Restore the same visible prose once after an insertion above it.
+                // Trailing growth and the final bottom gap still use the stream clock.
+                if let followingInsertion, let path = source.indexPath(for: followingInsertion.id) {
+                    move(to: tableView.rectForRow(at: path).minY - tableView.adjustedContentInset.top - followingInsertion.offset)
+                }
+                followBottom()
+            } else if let anchor, let path = source.indexPath(for: anchor.id) {
                 move(to: tableView.rectForRow(at: path).minY - tableView.adjustedContentInset.top - anchor.offset)
             }
         }
@@ -520,7 +557,6 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             let actual = Anchor(id: anchor.id, offset: tableView.rectForRow(at: path).minY - tableView.adjustedContentInset.top - tableView.contentOffset.y)
             expansionAnchor = actual; stableAnchor = actual
         } else { stableAnchor = captureAnchor() }
-        recordVisibleHeights()
         adjusting = false
         publishBottom()
     }
@@ -555,6 +591,13 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     private func heightKey(_ row: AIMessageRow) -> AIMessageHeightKey {
         .init(id: row.id, version: row.version, width: tableView.bounds.width.rounded(), typeSize: String(describing: appearance?.typeSize))
     }
+    private func storeMeasuredHeight(_ height: CGFloat, for key: AIMessageHeightKey) {
+        guard let conversation else { return }
+        for old in conversation.messageHeights.keys where old.id == key.id && old != key {
+            conversation.messageHeights.removeValue(forKey: old)
+        }
+        conversation.messageHeights[key] = height
+    }
     override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         if let id = source.itemIdentifier(for: indexPath), let height = expansionHeights[id] { return height }
         if let id = source.itemIdentifier(for: indexPath), let row = rows[id], row.nativeText == nil { return hostedHeight(row) }
@@ -565,10 +608,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         let height = conversation.nativeMarkdown.height(id: id, text: text.text, streaming: text.streaming,
                                                        theme: appearance.markdownTheme(traits: traitCollection),
                                                        width: tableView.bounds.width - 2 * LayoutTokens.content) + 2 * LayoutTokens.compact
-        for old in conversation.messageHeights.keys where old.id == id && old != key {
-            conversation.messageHeights.removeValue(forKey: old)
-        }
-        conversation.messageHeights[key] = height
+        storeMeasuredHeight(height, for: key)
         return height
     }
     override func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
@@ -585,21 +625,6 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         case .confirmation, .result: return 160
         case .header: return 100
         default: return 48
-        }
-    }
-    override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) { recordHeight(cell, at: indexPath) }
-    private func recordHeight(_ cell: UITableViewCell, at indexPath: IndexPath) {
-        guard !animatingExpansion else { return }
-        guard let id = source.itemIdentifier(for: indexPath), let row = rows[id], cell.bounds.height > 0 else { return }
-        guard row.nativeText == nil else { return }
-        let key = heightKey(row)
-        if conversation?.messageHeights[key] == cell.bounds.height { return }
-        conversation?.messageHeights = conversation?.messageHeights.filter { $0.key.id != id || $0.key == key } ?? [:]
-        conversation?.messageHeights[key] = cell.bounds.height
-    }
-    private func recordVisibleHeights() {
-        for path in tableView.indexPathsForVisibleRows ?? [] {
-            if let cell = tableView.cellForRow(at: path) { recordHeight(cell, at: path) }
         }
     }
 }

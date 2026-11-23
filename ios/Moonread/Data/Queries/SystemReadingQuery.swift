@@ -105,7 +105,7 @@ enum SystemReadingRead {
                 guard let offset = UInt64(value) else { throw ReaderError.InvalidRange }; return offset
             }
             let percentage = if let offset, bytes > 0, (row["position_updated_ms"] as Int64? ?? 0) > 0 {
-                ReaderOpeningRead.percentage(offset, of: bytes)
+                ReadingProgress.percentage(offset, of: bytes)
             } else { nil as Double? }
             let cover: Card.Cover?
             if let id: String = row["legacy_cover_id"], let sha: String = row["sha256"],

@@ -62,7 +62,7 @@
 
 输入：`bookRef?:string, fileRef?:string`，必须恰好一个；`prepare?:bool=false`。未知 SHA 的文件可用 fileRef 加 prepare=true，在应用确认后准备并取得正文身份；默认只读已有资料。
 
-结果 `data={bookRef?,title,author?,synopsis?,tags,readingStatus?,wordCount?,chapterCount?,progress?:{offsetUtf8,percent,chapterTitle?,lastReadAt?},cover?:{assetRef,width,height},availability,availableUtf8?,totalUtf8?,files:[{fileRef,name,parentRef,availability}],filesTruncated}`。返回完整简介及所有来源。cover 仅元信息，不自动读取图片/上传。正式位置与估算覆盖分别命名。
+结果 `data={bookRef?,title,author?,synopsis?,tags,readingStatus?,wordCount?,chapterCount?,progress?:{offsetUtf8,percent,chapterTitle?,lastReadAt?},cover?:{assetRef,width,height},availability,availableUtf8?,totalUtf8?,files:[{fileRef,name,parentRef,availability}],filesTruncated}`。返回完整简介及所有来源。cover 仅元信息，不自动读取图片/上传。`progress.percent` 是同一正文 SHA 的规范化 UTF-8 进度百分数，与界面共用比例计算。正式位置与估算覆盖分别命名。
 
 依据：`AppDataService.details(bookID:sha:)`、`snapshot`、库来源投影。正文不可用时仍返回可取得的 SHA 用户资料；文件改动须重新验证映射，不能复用旧 SHA 的资料当成新正文。
 
@@ -169,6 +169,10 @@
 | `propose_bookmark` | bookRef, offsetUtf8:integer | 预览已存在/新增，确认是“确保存在”，不调用 toggle 导致已有书签被删 |
 | `propose_cover` | bookRef, attachmentRef | 确认替换预览；必须是此任务可访问的有效图片附件，应用后转为用户封面资源 |
 | `propose_library_organization` | scopeRef, folders:[{temporaryRef,parentRef,name}], placements:[{fileRef,parentRef,name?}] | 虚拟目录树、变更、冲突、previewRef；应用捕获源原始 SHA 与父目录状态快照，不接受模型提供的 baseRevision。parentRef 只能是本方案 scopeRef 范围内目录或本方案 temporaryRef；名称校验，禁止循环/重复归属/删除/覆盖；未提到对象保持原样 |
+| `list_filter_options` | field:`tag/author/shelf`, query?:string, cursor?:string | `data.names` 与分页信息。复用筛选器的标签、作者和可用真实书架；候选仅包含名称，沿用当前聊天接收方的 reading 许可。 |
+| `propose_book_filter` | nodes:[{kind,parent?,relation?,excluded?,values?}], sorts:[{field,descending}] | 返回可重放的筛选建议。节点以先父后子的顺序提交，第一项为组，后续 `parent` 是父组的零起始下标。组用 `all/any`，标签用 `all/any/none`，`untagged` 是独立条件。排序键按优先级使用 `recent/name/author`，可只排序。 |
+
+建议按实际支持的筛选条件生成。无法表达或找不到精确名称时，模型应解释并向用户确认如何改写。标签与作者按原始 UTF-8 核对，唯一书架以不透明引用保留原身份，名称歧义由用户在本机选择。工具运行仅生成建议，点击成功提交到对话历史的卡片才使用现有搜索查询。筛选修改只作用于当次结果，另存虚拟书架仍由用户明确命名。
 
 整理 temporaryRef 必须唯一，并与 scopeRef、所有 placement fileRef 及真实引用保留命名空间（prefix: 形式）分离，校验发生在目录准备和预览变更前。普通 f/source 等名称仍有效；有效临时目录引用继续支持嵌套父子与文件 placement。
 
@@ -200,6 +204,8 @@ find_cover 在执行期间暂存本次候选／图片，不提前发布结果；
 确认项绑定对象身份、输入摘要与应用读取的现值/文件快照，不虚构统一基线修订。整理确认固定该方案的可执行节点集合，执行只能删减不安全项，不能加入自身移动新解锁的项；新解锁项须另行“执行剩余”确认。封面按 owner/book 计一项未解决决策，业务保存成功只解决 Apply 开始时捕获的候选 ID，保存期间的新资产仍待处理；重复提案／来源细化不重开，保存后的可选读取失败不撤销已保存状态。资料变化更新当前值让用户再次确认；整理变化项排除并标注，按真实状态重验剩余项。用户拒绝、关闭、停止与转入语义见[技术设计](architecture.md)。工具建议不构成写入授权；小说文本里的“请删除文件”不改变权限。
 
 ## 业务接口边界
+
+包内 `AIReadingToolActions` 定义读取操作和工具注册，App 的 `AIReadingTools` 实现授权查询、业务结果投影与准备。运行器接收结构化工具错误，正文错误映射留在访问正文的宿主。封面来源的网页解析使用独立 `moonread-ai-cover` crate。
 
 已实现稳定引用解析、组合查询与结果分页、按 SHA 取正文/批注、无正式阅读副作用的共享准备租约、批注冲突摘要和结构化来源输出。页面校验工具结果中的来源引用并打开只读原文预览，不改变正式阅读位置。准备完成前不能伪造完整书籍身份。Swift 工具经 AppDataService 调用 Rust 最终投影，不直接重新读取数据库。
 

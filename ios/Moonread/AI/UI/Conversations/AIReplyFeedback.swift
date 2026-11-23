@@ -1,3 +1,4 @@
+import MoonreadAI
 import Foundation
 import MessageUI
 import SwiftUI

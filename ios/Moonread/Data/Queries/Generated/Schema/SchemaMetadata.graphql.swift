@@ -53,6 +53,7 @@ extension MoonreadQueries {
       "RecentReadingMetadata": MoonreadQueries.Objects.RecentReadingMetadata,
       "SearchFile": MoonreadQueries.Objects.SearchFile,
       "SearchOptions": MoonreadQueries.Objects.SearchOptions,
+      "SearchTagOption": MoonreadQueries.Objects.SearchTagOption,
       "ShelfBookCard": MoonreadQueries.Objects.ShelfBookCard,
       "ShelfTagGroup": MoonreadQueries.Objects.ShelfTagGroup,
       "SystemCatalogueBook": MoonreadQueries.Objects.SystemCatalogueBook

@@ -97,6 +97,51 @@ enum ReadingSegmentRows {
         try origin.recordIsolation(db, partition: partition, inheriting: origin.source == "relational" ? original : nil)
     }
 
+    private enum IntakeDecision {
+        case same(Raw), keepLocal, write, isolate
+    }
+
+    private static func decision(_ db: Database, input: Raw, intake: Intake) throws -> IntakeDecision {
+        let h = input.value.header
+        let old = try load(db, partition: input.partition, id: h.id)
+        if try ReadingHistoryTransport.deletionPending(db, type: .segment, id: h.id) { return .keepLocal }
+        if let old {
+            let previous = old.value.header
+            guard old.book == input.book, previous.author == h.author else { return .keepLocal }
+            if previous == h, old.value.exposuresText == input.value.exposuresText { return .same(old) }
+            guard !previous.sealed, h.revision > previous.revision else { return .keepLocal }
+            switch intake {
+            case .local(let owner):
+                guard old.localOwner == owner else { throw CancellationError() }
+            case .transfer(let owner):
+                guard old.localOwner == nil || old.localOwner == owner else { return .keepLocal }
+            case .backup, .fetched:
+                // An imported checkpoint never replaces a locally owned checkpoint.
+                guard old.localOwner == nil else { return .keepLocal }
+            }
+        } else if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM usr.reading_segment WHERE partition=? AND segment_id=?)",
+                                   arguments: [input.partition,h.id]) == true {
+            return .isolate
+        }
+        return .write
+    }
+
+    static func assessBackup(_ db: Database, value: ReadingSegment, book: String, payload: String) throws -> BackupDisposition {
+        let input = Raw(partition: 0, book: book, value: value, localOwner: nil)
+        switch try decision(db, input: input, intake: .backup) {
+        case .same: return .same
+        case .keepLocal: return .keepLocal
+        case .write: return .restore
+        case .isolate:
+            return try assessBackupIsolation(db, id: value.header.id, payload: payload, reason: "unreadable-segment-slot")
+        }
+    }
+
+    static func assessBackupIsolation(_ db: Database, id: String, payload: String, reason: String) throws -> BackupDisposition {
+        try BackupIsolationKey(source: "backup", sourceID: id, type: "reading_segment", id: id,
+                               digest: DataIdentity.sha(Data(payload.utf8)), reason: reason).exists(db) ? .same : .restore
+    }
+
     @discardableResult
     static func ingest(_ db: Database, value: ReadingSegment, book: String, partition: Int,
                        intake: Intake, origin: ReadingFactSettlement.Origin, originalPayload: String? = nil) throws -> Bool {
@@ -115,37 +160,26 @@ enum ReadingSegmentRows {
             guard partition == 0, h.sealed, case .formal = try parseReadingKey(value: key) else { throw ReadingDataError.invalid }
         }
         let input = Raw(partition: partition, book: key, value: value, localOwner: localOwner)
-        let old = try load(db, partition: partition, id: h.id)
-        if try ReadingHistoryTransport.deletionPending(db, type: .segment, id: h.id) { return false }
-        if let old {
-            let previous = old.value.header
-            guard old.book == key, previous.author == h.author else { return false }
-            if previous == h, old.value.exposuresText == value.exposuresText {
-                if case .transfer = intake, let carried = origin.carried {
-                    try UpgradeOrigins.carry(db, carried, to: .init(partition: partition, domain: .segment, id: h.id), equivalent: true)
-                }
-                if case .transfer(let moved?) = intake, !h.sealed, old.localOwner == nil {
-                    try db.execute(sql: "UPDATE usr.reading_segment SET local_unsealed_owner=? WHERE partition=? AND segment_id=?",
-                                   arguments: [moved,partition,h.id])
-                    return true
-                }
+        switch try decision(db, input: input, intake: intake) {
+        case .keepLocal: return false
+        case .same(let old):
+            if case .transfer = intake, let carried = origin.carried {
+                try UpgradeOrigins.carry(db, carried, to: .init(partition: partition, domain: .segment, id: h.id), equivalent: true)
+            }
+            if case .transfer(let moved?) = intake, !h.sealed, old.localOwner == nil {
+                try db.execute(sql: "UPDATE usr.reading_segment SET local_unsealed_owner=? WHERE partition=? AND segment_id=?",
+                               arguments: [moved,partition,h.id])
+                return true
+            }
+            return false
+        case .isolate:
+            if case .backup = intake, let originalPayload,
+               try assessBackupIsolation(db, id: h.id, payload: originalPayload, reason: "unreadable-segment-slot") == .same {
                 return false
             }
-            guard !previous.sealed, h.revision > previous.revision else { return false }
-            switch intake {
-            case .local(let owner):
-                guard old.localOwner == owner else { throw CancellationError() }
-            case .transfer(let owner):
-                guard old.localOwner == nil || old.localOwner == owner else { return false }
-            case .backup, .fetched:
-                // A restored active segment is a static snapshot, never an
-                // active writer. It never replaces a locally owned checkpoint.
-                guard old.localOwner == nil else { return false }
-            }
-        } else if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM usr.reading_segment WHERE partition=? AND segment_id=?)",
-                                   arguments: [partition,h.id]) == true {
             try archive(db, input, origin: origin, reason: "unreadable-segment-slot", originalPayload: originalPayload)
             return true
+        case .write: break
         }
         try db.execute(sql: """
             INSERT INTO usr.reading_segment VALUES(?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)

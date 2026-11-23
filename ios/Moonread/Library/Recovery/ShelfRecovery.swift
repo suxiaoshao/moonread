@@ -95,6 +95,7 @@ extension AppDataService {
         guard revision == userCloudConfigurationRevision, scope == (try shelfReferenceScope) else { throw CancellationError() }
         let index = try relationalUserIndex()
         let shelves = try shelves()
+        try bindMatchingShelfReferences(shelves, index: index)
         var changed = false
         for shelf in shelves where !shelf.builtin {
             var bindings = try shelfBindings()
@@ -104,7 +105,7 @@ extension AppDataService {
                 bindings.bindings[id] = shelf.id; bindings.ignored.remove(id); try saveShelfBindings(bindings)
                 ids = [id]
             }
-            let value = ShelfReferenceValue(name: shelf.name, locationDescription: shelf.location == "icloud" ? "icloud-drive" : "file-provider")
+            let value = shelfReferenceValue(for: shelf)
             for id in ids {
                 // Publish local description changes, not a fresh LWW fact on every
                 // remote import. Devices with different display names must not ping-pong.
@@ -150,6 +151,31 @@ extension AppDataService {
             return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
         }, guidance: candidates)
     }
+    private func shelfReferenceValue(for shelf: LibraryShelf) -> ShelfReferenceValue {
+        ShelfReferenceValue(name: shelf.name, locationDescription: shelf.location == "icloud" ? "icloud-drive" : "file-provider")
+    }
+
+    private func bindMatchingShelfReferences(_ shelves: [LibraryShelf], index: ReaderIndex) throws {
+        let references = try index.session.readUsers(index.lease) { try UserValueRows.shelfReferences($0) }
+        var local = try shelfBindings()
+        let pending = references.filter { local.bindings[$0.id] == nil && !local.ignored.contains($0.id) }
+        guard !pending.isEmpty else { return }
+
+        let attached = try shelves.filter { shelf in
+            guard !shelf.builtin, shelf.error == nil else { return false }
+            if case .external(.usable) = try shelfSource(shelf) { return true }
+            return false
+        }
+        var bound = false
+        for reference in pending {
+            if let shelf = attached.first(where: { shelfReferenceValue(for: $0) == reference.value }) {
+                local.bindings[reference.id] = shelf.id
+                bound = true
+            }
+        }
+        if bound { try saveShelfBindings(local) }
+    }
+
     func bindShelfReference(_ reference: String, shelf: String, scope: String) throws {
         guard scope == (try shelfReferenceScope) else { throw CancellationError() }
         guard UUID(uuidString: reference) != nil, try !libraryShelf(shelf).builtin else { throw LibraryFileError.invalidDestination }

@@ -1,16 +1,6 @@
+import MoonreadAI
 import SwiftUI
 
-struct AIProviderIcon: View {
-    @Environment(\.theme) private var theme
-    var providerID: String? = nil
-    private var asset: String? { providerID.flatMap { AIProviderBrand.asset(providerID: $0) } }
-    var body: some View {
-        Group {
-            if let asset { Image(asset).resizable().scaledToFit() }
-            else { Image(systemName: "sparkles").resizable().scaledToFit() }
-        }.foregroundStyle(Color(uiColor: theme.accent)).frame(width: 22, height: 22).accessibilityHidden(true)
-    }
-}
 /// Where a picker reads and writes: a stored target, or a form's local draft
 /// (a quick task before Start has no session to write to).
 enum AIModelPickerDestination {
@@ -137,7 +127,7 @@ struct AIModelPickerButton: View {
                         AIThinkingSlider(levels: model.thinking, selection: Binding(get: { destination.selection(ai)?.thinking ?? AIModelSelection.defaultThinking(model) ?? "" }, set: { effort in
                             var selection = value; selection.thinking = effort
                             Task { saveFailed = !(await destination.apply(selection, ai)) }
-                        }))
+                        }), accent: theme.accent)
                     }
                 }
             } footer: {
@@ -161,7 +151,7 @@ struct AIModelPickerButton: View {
     private func modelLabel(showsThinking: Bool) -> some View {
         HStack(spacing: 6) {
             if let value = destination.selection(ai), let connection = ai.providers.connections.first(where: { $0.id == value.connectionID }), let model = ai.providers.model(value.modelID, in: connection) {
-                AIProviderIcon(providerID: connection.catalogID)
+                AIProviderIcon(providerID: connection.catalogID, accent: theme.accent)
                 Text(verbatim: model.name).font(.subheadline.weight(.semibold))
                 if showsThinking, let effort = value.thinking { Text(AIThinkingLabel.label(effort)).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)) }
             } else { Image(systemName: "sparkles"); Text("选择模型") }
@@ -334,7 +324,7 @@ struct AIConnectionHeader: View {
     var body: some View {
         let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 8))
         layout {
-            HStack(spacing: 8) { AIProviderIcon(providerID: connection.catalogID); Text(connection.name) }
+            HStack(spacing: 8) { AIProviderIcon(providerID: connection.catalogID, accent: theme.accent); Text(connection.name) }
             if !typeSize.isAccessibilitySize { Spacer() }
             Text(Self.billing(connection.billing)).font(.caption)
         }.foregroundStyle(Color(uiColor: theme.secondary))

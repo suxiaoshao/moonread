@@ -1,3 +1,4 @@
+import MoonreadAI
 #if DEBUG
 import Foundation
 import UIKit

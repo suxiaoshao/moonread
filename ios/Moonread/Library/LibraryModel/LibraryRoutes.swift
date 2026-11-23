@@ -11,6 +11,7 @@ enum ReaderRoute: Hashable, Sendable {
 
 enum LibraryRoute: Hashable {
     case folder(LibraryLocation), allBooks(String), reader(OpeningRequest), recent, manage
+    case savedFilters, savedFilter(UUID)
     case statistics(StatisticsRoute)
     case settingsPalette(ThemeAppearance)
     #if DEBUG

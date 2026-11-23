@@ -30,7 +30,6 @@ struct AboutView: View {
                 NavigationLink("第三方许可") { ThirdPartyLicensesView() }
                     .accessibilityIdentifier("thirdPartyLicenses")
                 Link("UniFFI", destination: URL(string: "https://github.com/mozilla/uniffi-rs")!)
-                Link("SQLite / rusqlite", destination: URL(string: "https://github.com/rusqlite/rusqlite")!)
                 Link("Serde", destination: URL(string: "https://github.com/serde-rs/serde")!)
                 Link("encoding_rs", destination: URL(string: "https://github.com/hsivonen/encoding_rs")!)
                 Link("regex", destination: URL(string: "https://github.com/rust-lang/regex")!)

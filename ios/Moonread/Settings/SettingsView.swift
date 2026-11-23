@@ -2,6 +2,9 @@ import SwiftUI
 
 enum SettingsTask: Hashable {
     case reading, statistics, system, library, data, cloud, ai, appearance, guide, about, support
+    #if MOONREAD_INTERNAL_TOOLS
+    case metadataCleanup
+    #endif
 }
 
 /// One scene-owned settings session; layout only changes its presentation.
@@ -34,7 +37,7 @@ struct SettingsView: View {
     @Environment(ReaderSettingsStore.self) private var readerSettings
     @Environment(ThemeStore.self) private var themes
     @Environment(CloudStore.self) private var cloud
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.theme) private var theme
     let library: LibraryModel
@@ -194,6 +197,18 @@ struct SettingsView: View {
                     }.accessibilityIdentifier("tipJarSettings")
                 }.listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
+            #if MOONREAD_INTERNAL_TOOLS
+            Section {
+                settingsLink(.metadataCleanup) {
+                    SettingsEntry(title: .init("清理小说资料", table: "DeveloperTools"),
+                                  symbol: "wrench.and.screwdriver",
+                                  summary: String(localized: "导入测试", table: "DeveloperTools"),
+                                  selected: sizeClass == .regular && navigation.selectedTask == .metadataCleanup)
+                }.accessibilityIdentifier("moonreadInternalMetadataCleanup")
+            } header: { Text("开发者", tableName: "DeveloperTools") }
+                .listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface))
+                .listRowSeparatorTint(Color(uiColor: theme.separator))
+            #endif
         }
         .scrollContentBackground(.hidden)
         .background(Color(uiColor: theme.canvas))
@@ -207,7 +222,7 @@ struct SettingsView: View {
         }
     }
     private var aiSummary: String {
-        let count = ai.providers.connections.count
+        let count = ai.connectionCount
         return count == 0 ? String(localized: "未添加") : String(localized: "\(count) 个连接")
     }
     private var languageSummary: String {
@@ -268,7 +283,7 @@ struct SettingsTaskContent: View {
     let library: LibraryModel
     @Bindable var navigation: SettingsNavigation
     @Environment(ReaderSettingsStore.self) private var readerSettings
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
     @Environment(\.theme) private var theme
     @ViewBuilder var body: some View {
         switch task {
@@ -278,11 +293,15 @@ struct SettingsTaskContent: View {
         case .library: LibraryManagementView(model: library)
         case .data: DataManagementView(model: library.shell.dataManagement).navigationBarTitleDisplayMode(.large)
         case .cloud: CloudSettingsView()
-        case .ai: if ai.availability.isAvailable { AISettingsView() }
+        case .ai: if ai.availability.isAvailable { AIEntry { AISettingsView() } }
         case .appearance: AppThemePreferencesView()
         case .guide: UsageGuideView()
         case .about: AboutView()
         case .support: TipJarView()
+        #if MOONREAD_INTERNAL_TOOLS
+        case .metadataCleanup:
+            DeveloperMetadataCleanupView(task: .shared, openDataManagement: { navigation.select(.data) })
+        #endif
         }
     }
 

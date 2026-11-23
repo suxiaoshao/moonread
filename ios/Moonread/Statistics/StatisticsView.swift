@@ -1,8 +1,10 @@
+import MoonreadAI
 import SwiftUI
 import Charts
 
 struct StatisticsView: View {
     let library: LibraryModel
+    let host: LibraryBrowsingHost
     private enum Destination { case all, book(StatisticsRoute) }
     private let destination: Destination
     private var target: StatisticsRoute? { if case .book(let route) = destination { return route }; return nil }
@@ -20,10 +22,11 @@ struct StatisticsView: View {
     @State private var positionedAtReading = false
     @State private var aiRequest: AIQuickTaskRequest?
     @State private var removingTask: AISessionSummary?
-    @Environment(AIService.self) private var ai
+    @Environment(AIHost.self) private var ai
 
-    init(library: LibraryModel, target: StatisticsRoute? = nil) {
+    init(library: LibraryModel, target: StatisticsRoute? = nil, host: LibraryBrowsingHost = .main) {
         self.library = library
+        self.host = host
         _information = State(initialValue: BookInformationModel(service: library.service))
         destination = target.map(Destination.book) ?? .all
         let initial = target?.window ?? StatisticsWindow()
@@ -168,17 +171,15 @@ struct StatisticsView: View {
                 optionsMenu
             }
         }
-        .sheet(item: $aiRequest) {
-            if ai.availability.isAvailable {
-                AIQuickTaskSheet(request: $0).themeScope(theme).readerToolPresentation()
-            }
+        .sheet(item: $aiRequest) { request in
+            AIEntry { AIQuickTaskSheet(request: request).themeScope(theme).readerToolPresentation() }
         }
         .onChange(of: ai.availability.isAvailable) { _, available in if !available { aiRequest = nil; removingTask = nil } }
         .alert("移除这个任务？", isPresented: Binding(get: { removingTask != nil }, set: { if !$0 { removingTask = nil } }),
                             presenting: removingTask) { task in
             Button("移除任务", role: .destructive) {
                 Task {
-                    do { try await ai.removeTask(task.id) }
+                    do { try await ai.runtime?.removeTask(task.id) }
                     catch { information.error = AIRequestError.message(error) }
                 }
             }
@@ -194,7 +195,7 @@ struct StatisticsView: View {
 
     @ViewBuilder private var contextSections: some View {
         if let target {
-            BookInformationSections(model: information, target: target, library: library)
+            BookInformationSections(model: information, target: target, library: library, host: host)
         } else {
             VStack(alignment: .leading, spacing: 16) {
                 Picker("统计范围", selection: periodSelection) {
@@ -207,7 +208,7 @@ struct StatisticsView: View {
                     if showingPreviousRange { previousRangeCaption }
                     if let overview = statisticsState.overview {
                         Text(StatisticsDates.duration(total)).font(.title.weight(.semibold)).monospacedDigit()
-                        Text("\(activeDays(overview)) 个阅读日 · \(overview.books.count) 本书")
+                        Text("\(overview.activeDayCount) 个阅读日 · \(overview.books.count) 本书")
                             .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                     } else if statisticsState.loading {
                         ProgressView("正在读取统计").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)).frame(maxWidth: .infinity)
@@ -307,7 +308,7 @@ struct StatisticsView: View {
                     ForEach([AIQuickTaskRequest.Family.metadata, .cover], id: \.self) { family in
                         if let request = bookRequest(family) {
                             Button(family == .metadata ? "完善资料" : "封面…", systemImage: family == .metadata ? "sparkles" : "photo") { aiRequest = request }
-                            if let task = request.task(ai) {
+                            if let runtime = ai.runtime, let task = request.task(runtime) {
                                 Button(family == .metadata ? "移除资料任务" : "移除封面任务", systemImage: "trash", role: .destructive) {
                                     removingTask = task
                                 }.disabled(task.deleting)
@@ -416,7 +417,7 @@ struct StatisticsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("所选范围阅读").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                     durationSummary
-                    Text("\(activeDays(overview)) 个阅读日").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                    Text("\(overview.activeDayCount) 个阅读日").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                 }.accessibilityElement(children: .combine).accessibilityIdentifier("statisticsSummary")
             }
             if rhythm.hasContent { rhythm }
@@ -432,7 +433,6 @@ struct StatisticsView: View {
         }
         return Text(text).monospacedDigit()
     }
-    private func activeDays(_ overview: StatisticsOverview) -> Int { overview.days.filter { $0.durationMs > 0 }.count }
     private var periodMenu: some View {
         Picker("统计范围", selection: periodSelection) {
             ForEach(StatisticsPeriod.allCases) { Text($0.label).tag($0) }

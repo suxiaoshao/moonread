@@ -8,6 +8,10 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use zip::{ZipWriter, write::SimpleFileOptions};
 
@@ -117,10 +121,38 @@ fn manifest(text: &str) -> Result<Manifest> {
     }
     Ok(value)
 }
+/// One signal shared by the app task and the synchronous archive reader.
+#[derive(uniffi::Object)]
+pub struct BackupCancellation(AtomicBool);
+
+#[uniffi::export]
+impl BackupCancellation {
+    #[uniffi::constructor]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self(AtomicBool::new(false)))
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
+fn check_cancellation(cancellation: Option<&BackupCancellation>) -> Result<()> {
+    if cancellation.is_some_and(BackupCancellation::is_cancelled) {
+        return Err(invalid("备份检查已停止"));
+    }
+    Ok(())
+}
+
 fn copy_hash<R: Read, W: Write>(
     reader: &mut R,
     writer: &mut W,
     name: &str,
+    cancellation: Option<&BackupCancellation>,
 ) -> Result<BackupMember> {
     let mut hash = Sha256::new();
     let mut bytes = 0u64;
@@ -128,6 +160,7 @@ fn copy_hash<R: Read, W: Write>(
     let mut line = 0u64;
     let mut buffer = [0; 65536];
     loop {
+        check_cancellation(cancellation)?;
         let n = reader.read(&mut buffer)?;
         if n == 0 {
             break;
@@ -187,11 +220,30 @@ pub struct BackupArchiveInfo {
 
 #[uniffi::export]
 pub fn backup_member(path: String, file_path: String) -> Result<BackupMember> {
-    safe_name(&path)?;
-    copy_hash(&mut File::open(file_path)?, &mut std::io::sink(), &path)
+    check_backup_member(path, file_path, None)
 }
 #[uniffi::export]
-pub fn inspect_backup(archive_path: String, staging_root: String) -> Result<BackupArchiveInfo> {
+pub fn check_backup_member(
+    path: String,
+    file_path: String,
+    cancellation: Option<Arc<BackupCancellation>>,
+) -> Result<BackupMember> {
+    safe_name(&path)?;
+    copy_hash(
+        &mut File::open(file_path)?,
+        &mut std::io::sink(),
+        &path,
+        cancellation.as_deref(),
+    )
+}
+#[uniffi::export]
+pub fn inspect_backup(
+    archive_path: String,
+    staging_root: String,
+    cancellation: Option<Arc<BackupCancellation>>,
+) -> Result<BackupArchiveInfo> {
+    let cancellation = cancellation.as_deref();
+    check_cancellation(cancellation)?;
     let mut zip = open_archive(Path::new(&archive_path), false, limit)?;
     let text = {
         let mut entry = zipped(zip.by_name("manifest.json"))?;
@@ -199,7 +251,7 @@ pub fn inspect_backup(archive_path: String, staging_root: String) -> Result<Back
             return Err(invalid("备份清单超过大小上限"));
         }
         let mut data = Vec::new();
-        copy_hash(&mut entry, &mut data, "manifest.json")?;
+        copy_hash(&mut entry, &mut data, "manifest.json", cancellation)?;
         String::from_utf8(data).map_err(|_| invalid("备份清单不是 UTF-8"))?
     };
     let value = manifest(&text)?;
@@ -213,6 +265,7 @@ pub fn inspect_backup(archive_path: String, staging_root: String) -> Result<Back
         .map(|m| (m.path.as_str(), m.size))
         .collect();
     for i in 0..zip.len() {
+        check_cancellation(cancellation)?;
         let entry = zipped(zip.by_index(i))?;
         let name = zipped(entry.name())?;
         safe_name(&name)?;
@@ -229,6 +282,7 @@ pub fn inspect_backup(archive_path: String, staging_root: String) -> Result<Back
     let result = (|| {
         fs::write(directory.join("manifest.json"), &text)?;
         for member in &value.members {
+            check_cancellation(cancellation)?;
             let path = directory.join(&member.path);
             fs::create_dir_all(path.parent().ok_or_else(|| invalid("备份路径无效"))?)?;
             let mut output = OpenOptions::new().write(true).create_new(true).open(path)?;
@@ -236,6 +290,7 @@ pub fn inspect_backup(archive_path: String, staging_root: String) -> Result<Back
                 &mut zipped(zip.by_name(&member.path))?,
                 &mut output,
                 &member.path,
+                cancellation,
             )?;
             matches(member, &actual)?;
         }
@@ -278,7 +333,7 @@ pub fn write_backup(staging_directory: String, destination: String) -> Result<()
             zipped(zip.start_file(&member.path, options))?;
             matches(
                 &member,
-                &copy_hash(&mut File::open(path)?, &mut zip, &member.path)?,
+                &copy_hash(&mut File::open(path)?, &mut zip, &member.path, None)?,
             )?;
         }
         let file = zipped(zip.finish())?;
@@ -335,6 +390,37 @@ mod tests {
         zip.finish().unwrap();
     }
     #[test]
+    fn cancellation_interrupts_copy_between_blocks_of_one_member() {
+        struct CancelAfterRead<'a> {
+            inner: std::io::Take<std::io::Repeat>,
+            cancellation: &'a BackupCancellation,
+        }
+
+        impl Read for CancelAfterRead<'_> {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                let read = self.inner.read(buffer)?;
+                self.cancellation.cancel();
+                Ok(read)
+            }
+        }
+
+        let cancellation = BackupCancellation::new();
+        let mut source = CancelAfterRead {
+            inner: std::io::repeat(b'x').take(262_144),
+            cancellation: &cancellation,
+        };
+        let mut copied = Vec::new();
+        let result = copy_hash(
+            &mut source,
+            &mut copied,
+            "extensions/test.bin",
+            Some(&cancellation),
+        );
+        assert!(result.is_err());
+        assert_eq!(copied.len(), 65_536);
+    }
+
+    #[test]
     fn version_two_round_trips_both_history_streams_and_rejects_inconsistent_manifests() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("input");
@@ -361,6 +447,7 @@ mod tests {
         let restored = inspect_backup(
             archive.to_string_lossy().into(),
             dir.path().to_string_lossy().into(),
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -418,6 +505,7 @@ mod tests {
         let restored = inspect_backup(
             archive.to_string_lossy().into(),
             dir.path().join("stage").to_string_lossy().into(),
+            None,
         )
         .unwrap();
         assert_eq!(restored.manifest_json, manifest.to_string());
@@ -507,7 +595,8 @@ mod tests {
             assert!(
                 inspect_backup(
                     archive.to_string_lossy().into(),
-                    stage.to_string_lossy().into()
+                    stage.to_string_lossy().into(),
+                    None,
                 )
                 .is_err(),
                 "{case}"
@@ -518,6 +607,6 @@ mod tests {
             }
         }
         let mut line = std::io::Cursor::new(vec![b'x'; MAX_RECORD as usize + 1]);
-        assert!(copy_hash(&mut line, &mut std::io::sink(), RECORDS[0]).is_err());
+        assert!(copy_hash(&mut line, &mut std::io::sink(), RECORDS[0], None).is_err());
     }
 }

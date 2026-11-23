@@ -27,6 +27,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     private var displayedOpening: UUID?
     var statisticsInteraction: () -> Void = {}
     var statisticsPresentationChanged: () -> Void = {}
+    var annotationsTapped: ([String]) -> Void = { _ in }
     var annotationChooserChanged: (Bool) -> Void = { _ in }
     var annotationChooser: UIAlertController?
     var annotationChooserDelegate: AnnotationChooserDelegate?
@@ -118,9 +119,6 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     var edgeChanged: ((Bool) -> Void)?
     var reportedEdge = false
     var annotations: [ReaderMark] = []
-    var preparingAnnotationMenu = false
-    weak var annotationMenuText: UITextView?
-    var tappedAnnotation: (context: AnnotationSelection, range: NSRange)?
     var bookmarkPositions: [UInt64] = []
     var focusRange: TextRange?
     var selectionStart: UInt64?

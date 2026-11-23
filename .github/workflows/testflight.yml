@@ -3,12 +3,8 @@ name: TestFlight
 on:
   workflow_dispatch:
     inputs:
-      source_branch:
-        description: 'Approved source branch: release/x.y or hotfix/x.y.z'
-        required: true
-        type: string
       expected_sha:
-        description: 'Full SHA at the branch HEAD, with successful push CI'
+        description: 'Full SHA at the selected release or hotfix branch HEAD, with successful push CI'
         required: true
         type: string
       mode:
@@ -43,28 +39,30 @@ jobs:
       branch: ${{ steps.source.outputs.branch }}
       ci_run: ${{ steps.source.outputs.ci_run }}
     steps:
-      - name: Require main dispatch and successful exact-SHA push CI
+      - name: Require protected branch dispatch and successful exact-SHA push CI
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_BRANCH: ${{ inputs.source_branch }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
-          WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           python3 - <<'PY'
           import json, os, re, subprocess
           def api(path):
               return json.loads(subprocess.check_output(['gh', 'api', path]))
           repo = os.environ['GITHUB_REPOSITORY']
-          branch, sha = os.environ['SOURCE_BRANCH'], os.environ['EXPECTED_SHA']
-          if (os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch' or
-              os.environ['GITHUB_REF'] != 'refs/heads/main' or
-              os.environ['WORKFLOW_REF'] != repo + '/.github/workflows/testflight.yml@refs/heads/main'):
-              raise SystemExit('Only the reviewed workflow dispatched from main may sign.')
-          if not re.fullmatch(r'(release/\d+\.\d+|hotfix/\d+\.\d+\.\d+)', branch):
-              raise SystemExit('Invalid release/hotfix branch.')
+          ref = os.environ['GITHUB_REF']
+          target = re.fullmatch(r'refs/heads/(release/[0-9]+\.[0-9]+|hotfix/[0-9]+\.[0-9]+\.[0-9]+)', ref)
+          if os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch' or not target:
+              raise SystemExit('Dispatch TestFlight from the release or hotfix branch being packaged.')
+          if os.environ['GITHUB_REF_PROTECTED'] != 'true':
+              raise SystemExit('The selected branch must be protected.')
+          if os.environ['GITHUB_WORKFLOW_REF'] != f'{repo}/.github/workflows/testflight.yml@{ref}':
+              raise SystemExit('The workflow must come from the selected branch.')
+          branch, sha = target[1], os.environ['EXPECTED_SHA']
           if not re.fullmatch(r'[0-9a-f]{40}', sha):
               raise SystemExit('A full lowercase commit SHA is required.')
+          if sha != os.environ['GITHUB_SHA'] or sha != os.environ['GITHUB_WORKFLOW_SHA']:
+              raise SystemExit('The dispatch and workflow commits must both match expected_sha.')
           if api(f'repos/{repo}/git/ref/heads/{branch}')['object']['sha'] != sha:
               raise SystemExit('Branch HEAD differs from expected_sha.')
           workflow = api(f'repos/{repo}/actions/workflows/ci.yml')
@@ -108,7 +106,7 @@ jobs:
     permissions:
       contents: read
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       # Each source project's Rust build phase owns its output path (legacy
       # build/cargo or current target); do not override it from the workflow.
       SOURCE_BRANCH: ${{ needs.prepare.outputs.branch }}
@@ -122,16 +120,18 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
-      - name: Recheck branch after Environment approval and require exact Xcode
+      - name: Recheck branch after entering the signing Environment and require exact Xcode
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           test "$RUNNER_ENVIRONMENT" = github-hosted
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$SOURCE_BRANCH" --jq .object.sha)" = "$EXPECTED_SHA"
-          test "$(xcodebuild -version | head -n 1)" = 'Xcode 27.1'
+          xcode_version=$(xcodebuild -version)
+          test "$(head -n 1 <<< "$xcode_version")" = 'Xcode 27.2'
+          test "$(sed -n '2p' <<< "$xcode_version")" = 'Build version 27B52'
           xcrun --sdk iphoneos --show-sdk-version
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
       - name: Prepare isolated signing context and read-only ASC client
         env:
           ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
@@ -460,7 +460,7 @@ jobs:
           common=(-project ios/Moonread.xcodeproj -scheme Moonread -destination 'generic/platform=iOS'
                   -derivedDataPath build/DeviceDerivedData -disableAutomaticPackageResolution
                   -onlyUsePackageVersionsFromResolvedFile CODE_SIGN_STYLE=Automatic "DEVELOPMENT_TEAM=$APPLE_TEAM_ID"
-                  "MOONREAD_NIX=$(command -v nix)")
+                  "MOONREAD_NIX=$(command -v nix)" MOONREAD_TOOLS_CONDITION=)
           # Full Xcode/signing output stays private. Publish only stage + error category.
           run_xcode() {
             local stage="$1"; shift
@@ -494,12 +494,12 @@ jobs:
             for target in $targets; do
               run_xcode "settings-$config-$target" -project ios/Moonread.xcodeproj -target "$target" \
                 -sdk iphoneos -configuration "$config" -disableAutomaticPackageResolution \
-                -onlyUsePackageVersionsFromResolvedFile -showBuildSettings -json
+                -onlyUsePackageVersionsFromResolvedFile MOONREAD_TOOLS_CONDITION= -showBuildSettings -json
             done
           done
           set_stage versions
           python3 - > "$private/versions.log" 2> "$private/versions.stderr.log" <<'PY'
-          import json, os, pathlib, re, subprocess
+          import json, os, pathlib, re, shlex, subprocess
           root = pathlib.Path(os.environ['TF_PRIVATE'])
           versions = set()
           expected = json.loads((root / 'expected-targets.json').read_text())
@@ -513,6 +513,10 @@ jobs:
                   versions.add((s['MARKETING_VERSION'], s['CURRENT_PROJECT_VERSION']))
                   if config == 'Release' and 'DEBUG' in s.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS', '').split():
                       raise SystemExit('DEBUG is enabled in Release.')
+                  conditions = s.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS', '').split()
+                  flags = ' '.join(shlex.split(s.get('OTHER_SWIFT_FLAGS', '')))
+                  if 'MOONREAD_INTERNAL_TOOLS' in conditions or re.search(r'(^|\s)-D\s*MOONREAD_INTERNAL_TOOLS(\s|$)', flags):
+                      raise SystemExit('Internal tools are enabled in distribution settings.')
           if len(versions) != 1: raise SystemExit('Debug/Release and application/extension versions differ.')
           version, build = versions.pop()
           if version != os.environ['SOURCE_BRANCH'].split('/')[1]: raise SystemExit('Marketing version differs from branch version.')
@@ -624,9 +628,11 @@ jobs:
           for path in privacy: require(isinstance(plistlib.loads((app / path).read_bytes()), dict), 'invalid privacy plist')
           require(not any(p.suffix in ('.storekit', '.xctest') or p.name.endswith('.debug.dylib') or p.name == '__preview.dylib'
                           for p in app.rglob('*')), 'test/DEBUG resource in IPA')
+          require(not any(p.stem == 'DeveloperTools' for p in app.rglob('*')), 'internal tool resource in IPA')
           # Audit the App and every declared extension, including Widget fixtures.
           markers = [b'--ui-test', b'--disable-tips', b'--initialize-cloudkit-development-schema', b'--reader-open-benchmark']
           markers += [b'--reader-open-session', b'--store-shot', b'StoreScreenshots.language', b'STORE_SCREENSHOT_SCENE', b'PAGE_SHOT_SCENE']
+          markers.append(b'moonreadInternalMetadataCleanup')
           for bundle in bundles:
               info = plistlib.loads((bundle / 'Info.plist').read_bytes())
               strings = command('strings', '-a', str(bundle / info['CFBundleExecutable']))
