@@ -148,20 +148,24 @@ final class BookCoverUserDataTests: UserDataFixture {
     XCTAssertNil(display.image(book: "synthetic", scope: scope, asset: nil, ready: nil))
     display.accept(book: "synthetic", scope: scope, asset: nil, ready: nil)
     XCTAssertNil(display.image(book: "synthetic", scope: scope, asset: new, ready: nil))
-    // A completed attachment save wakes the current subscriber without a hosted view.
+    // A saved cover loads through the real attachment service.
     do {
-
-      let (root, service, book, _) = try await editorFixture()
-      defer { try? FileManager.default.removeItem(at: root) }
+      let (root, service, book, rows) = try await editorFixture()
+      defer {
+        XCTAssertNoThrow(try rows.index.session.close())
+        try? FileManager.default.removeItem(at: root)
+      }
       let png = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 120)).pngData { context in
         UIColor.systemTeal.setFill()
         context.fill(CGRect(x: 0, y: 0, width: 80, height: 120))
       }
-      let cover = try await service.makeCover(png)
+      let draft = try await service.makeCover(png)
       let base = try await service.details(bookID: book.id).metadata
       var edited = base
-      edited.cover = cover
+      edited.cover = draft
       try await service.saveMetadata(base: base, edited: edited)
+      let persisted = try await service.details(bookID: book.id).metadata
+      let cover = try XCTUnwrap(persisted.cover)
       let loader = CoverImageLoader { asset, pixels in
         try await service.coverImage(asset, pixels: pixels)
       }
@@ -169,7 +173,6 @@ final class BookCoverUserDataTests: UserDataFixture {
       await awaitState { first.presentation.phase == .ready }
       XCTAssertNotNil(first.presentation.image)
       XCTAssertTrue(loader.subscribe(cover, pixels: 600).presentation === first.presentation)
-
     }
   }
 }
