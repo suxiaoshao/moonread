@@ -523,7 +523,7 @@ private actor SyncLifecycleBackend {
             await events.add("unknown"); return .init(scope: a.scope, maySync: false)
         case .signedOut:
             await events.add("signout"); return .init(scope: .local, maySync: false)
-        case let .confirmed(scope, enabled):
+        case let .confirmed(scope, enabled, _):
             await events.add("bind-" + scope.key + (enabled ? "-on" : "-off"))
             return .init(scope: scope, maySync: enabled)
         }

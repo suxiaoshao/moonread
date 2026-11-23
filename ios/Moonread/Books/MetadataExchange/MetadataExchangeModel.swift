@@ -151,11 +151,7 @@ import GRDB
 
     func restoreTask(_ store: DataSession) throws {
         guard directory != nil, taskStore == nil else { return }
-        let data = try store.readDeviceTask {
-            try Data.fetchOne($0, sql: "SELECT record FROM main.metadata_import_task WHERE singleton=1")
-        }
-        if let data {
-            let saved = try JSONDecoder().decode(Record.self, from: data)
+        if let saved = try Self.savedRecord(in: store) {
             guard Self.inputExtensions.contains(saved.sourceExtension) else { throw ReaderError.InvalidSettings }
             record = saved
             // The final filename is published by an atomic move, never by partial copy.
@@ -164,6 +160,12 @@ import GRDB
             phase = saved.finished == true ? .completed : .interrupted
         }
         taskStore = store
+    }
+    private static func savedRecord(in store: DataSession) throws -> Record? {
+        let data = try store.readDeviceTask {
+            try Data.fetchOne($0, sql: "SELECT record FROM main.metadata_import_task WHERE singleton=1")
+        }
+        return try data.map { try JSONDecoder().decode(Record.self, from: $0) }
     }
     private static let inputExtensions: Set<String> = ["moonread-metadata", "zip", "json", "jsonl"]
 
@@ -413,8 +415,15 @@ import GRDB
         await exportTask.waitForStop()
     }
     func invalidateUserScope() {
-        // Keep the imported package and its old scope on disk; a draft
-        // needs a fresh preview under the same authority before resuming.
+        // Keep the imported package. A layout upgrade may have translated the
+        // stored scope while the task was stopped for the account handoff.
+        if let taskStore, let id = record?.id {
+            do {
+                if let saved = try Self.savedRecord(in: taskStore), saved.id == id {
+                    record?.scope = saved.scope
+                }
+            } catch { showError(ReaderMessages.error(error)) }
+        }
         preview = nil; checkpoint = nil; result = nil
         if record != nil, phase != .completed { phase = .interrupted; requiresNewPreview = true }
         exportTask.clear()

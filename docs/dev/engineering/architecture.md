@@ -11,7 +11,7 @@
 | Rust 文本核心 | `crates/moonread-core`：`encoding_rs` 解码、规范化、字素分块、SHA-256、章节扫描、`regex` 单书搜索 |
 | Swift 索引与任务 | `DataSession` 的 GRDB 池保存正文、自动章节、来源索引与导入任务；Rust 接收有界值并计算，不打开正文索引库 |
 | Swift 用户数据 | 当前账户 user.sqlite 保存事实、批注候选、小说信息、配色及正式位置，通过 CKSyncEngine 同步。设备偏好独立 |
-| Swift 关系库迁入 | `Data/Database/DataSession.swift`：`Data/v2` 的版本化正文索引与独立本机/账户用户文件，由一个 GRDB 池挂载；完成正文和用户迁入后才挂载正常 App 根界面；页面与备份使用同一权威；Development 使用独立子目录，两个环境分别只读迁入同一旧源 |
+| Swift 关系库迁入 | `Data/Database/DataSession.swift` 管理按环境分开的 `Data/v3`，用一个 GRDB 池挂载正文索引及本机或账户用户库。完成迁入后才挂载正常 App 根界面。页面与备份使用同一权威。`Data/Database/ReadingDataLayoutUpgrade.swift` 负责原子接管已发布的关系库和经核实的账户键换算 |
 | Swift 平台适配 | `Data/AppDataService.swift`、`Library/Sources/LibraryService.swift`：目录授权、bookmark、协调扫描与真实文件操作、目录变动通知、生命周期和异步工作调度 |
 | 页面状态 | `Library/LibraryModel/LibraryModel.swift` 与领域扩展保存书架和文件任务；`App/AppShellModel.swift` 保存各标签导航栈、搜索和唯一设置会话（任务路径、配色草稿与预览）；`Reader/Session/ReaderSession/ReaderSession.swift` 与同类型领域扩展保存现有阅读会话状态与任务 |
 | SwiftUI 页面 | `Library/Browsing/LibraryView.swift`、`Reader/UI/ReaderScreen/ReaderScreen.swift`、`Reader/UI/Presentation/ReaderLibrarySheet.swift` / `ReaderSearchContent.swift` / `NoteEditor.swift`：书架、阅读、工具面板与编辑器呈现 |
@@ -231,7 +231,7 @@ Swift 关系库是本机用户数据权威；旧阅读 SwiftData 库仅以只读
 
 从 1.0.0 发布基线开始，SQLite、SwiftData/CloudKit、UserDefaults、Keychain、同步 payload 与缓存的格式变更必须保持已有数据可读。持久化枚举只增加、不删除或更改已有 raw value；退役功能可停止展示，不能用未知值使整个集合读取失败。新增字段使用可选值或明确默认值；结构调整须带版本、升级路径与迁移测试（旧数据、重复打开、失败回滚、降级拒绝），不能以删除重装代替升级。内部非持久化接口仍可直接整理，不要求保留无用的重复实现。
 
-`Data/v2` 的 `index.sqlite` 和 `user.sqlite` 独立版本化，当前分别为 v2 和 v9，遇到不支持的版本不覆盖。1.7.1 的用户库为 v7，升级时先经 v8 新增本机虚拟书架表，再经 v9 新增已获删除回执、尚待拉取的历史记录表。
+`Data/v3` 是目录布局的版本。`index.sqlite` 和 `user.sqlite` 独立版本化，当前分别为 v2 和 v9，遇到不支持的版本不覆盖。1.7.1 的用户库为 v7，升级时先经 v8 新增本机虚拟书架表，再经 v9 新增已获删除回执、尚待拉取的历史记录表。
 
 1.6 旧库继续沿用 1.7 发布时的迁入规则。旧索引采用 SQLite user_version 20–23。v21 增加导入任务目的，v22 增加全量索引，v23 登记手选编码迁移输入。索引迁入器只读接入这些文件、保留旧源，复用发布 SQL 形状并在目标事务内核对行键、关系及字节；只迁入升级时已确认 raw SHA 的旧编码映射。用户数据迁入通过 SwiftData 发布模型读取，结构迁入完成标记不等于已满足云附件和切换门槛。位置 token／批注操作仍在后继 SAVE 精确回执后放行前驱 DELETE；撤回压缩删除时不额外保留前驱归属。账户 local 并入先提交目标用户文件，续做需要的索引任务归属更新，再清冻结源；三个文件写入各自提交，不依赖 ATTACH/WAL 跨库原子性。
 
@@ -256,7 +256,7 @@ AI 连接、共享授权、用途默认值逐条解码，失败条目跳过并�
 
 ## 正文接口与业务查询归属
 
-2b 已移除 Rust `ReaderCore`、`ReaderQuery` 及正文库的 SQL/迁移。Swift `DataSession` 按当前作用域独占 `Data/v2/index.sqlite`，挂载对应 `usr`；来源扫描、解码策略、导入、章节暂存、搜索和缓存驱逐共用这一池。慢速文件协调和 Rust 计算在数据库闭包外。资料包的私有暂存 `inspection.sqlite` 与归档文件 I/O 由 Swift 管理；Rust 保留交换格式和预算。
+2b 已移除 Rust `ReaderCore`、`ReaderQuery` 及正文库的 SQL/迁移。Swift `DataSession` 独占当前环境的 `Data/v3/<environment>/index.sqlite`，按作用域挂载对应的 `usr`。来源扫描、解码策略、导入、章节暂存、搜索和缓存驱逐共用这一池。慢速文件协调和 Rust 计算在数据库闭包外。资料包的私有暂存 `inspection.sqlite` 与归档文件 I/O 由 Swift 管理；Rust 保留交换格式和预算。
 
 导入从实际 EOF 或 64 KiB 加一字节识别编码，每步最多读 8192 个新字节。中止后新建 Rust 状态，从头读并按连续窗口验证至多 16 个既有块。允许有界合并多步输出；只有提交才推进已发布进度，提交失败丢弃整批未提交输出和工作状态。2b 仍在每个产出步骤后提交。若连失败或暂停状态也写不进去，Swift 在当前 lease、书 ID 与代次内保留终态；下一代任务或切换会话不继承旧终态。章节暂存到最终 apply 才替换正式内容。
 

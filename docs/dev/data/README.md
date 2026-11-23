@@ -109,7 +109,7 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 
 ## 当前实际存储
 
-1.7 由同一个 GRDB 会话访问环境级 `Data/v2/index.sqlite` 和当前账户挂载的 `user.sqlite`。发布版 1.6 的 `reader.sqlite3` 与正式／pending SwiftData 只在启动升级期间读取。
+同一个 GRDB 会话访问当前环境 `Data/v3/<environment>/index.sqlite` 与挂载的 `user.sqlite`。1.7–1.8 关系库由 [阅读数据环境升级](sync.md) 一次性接管；从 1.6 直接升级仍只在启动迁入时读取 `reader.sqlite3` 与正式／pending SwiftData。
 
 | 数据 | 权威存储与生命周期 |
 | --- | --- |
