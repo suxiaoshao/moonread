@@ -51,6 +51,8 @@ struct ThemedGroupedList: UIViewControllerRepresentable {
     final class Controller: UICollectionViewController {
         private var value: ThemedGroupedList?
         private var rows: [String: Row] = [:]
+        private var sections: [String: Section] = [:]
+        private var layoutNeedsUpdate = false
         private var source: UICollectionViewDiffableDataSource<String, String>!
         init() { super.init(collectionViewLayout: UICollectionViewFlowLayout()) }
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -75,24 +77,29 @@ struct ThemedGroupedList: UIViewControllerRepresentable {
         }
         private func supplementary(footer: Bool) -> UICollectionView.SupplementaryRegistration<UICollectionViewListCell> {
             .init(elementKind: footer ? UICollectionView.elementKindSectionFooter : UICollectionView.elementKindSectionHeader) { [weak self] cell, _, path in
-                guard let value = self?.value, value.sections.indices.contains(path.section) else { return }
+                guard let self, let value = self.value else { return }
+                let section = self.section(at: path.section)
                 var content = footer ? UIListContentConfiguration.footer() : .header()
-                content.text = footer ? value.sections[path.section].footer : value.sections[path.section].title
+                content.text = footer ? section?.footer : section?.title
                 content.textProperties.color = value.theme.secondary
                 cell.contentConfiguration = content
                 cell.backgroundConfiguration = .clear()
                 cell.accessibilityTraits = footer ? .staticText : .header
             }
         }
+        private func section(at index: Int) -> Section? {
+            source.sectionIdentifier(for: index).flatMap { sections[$0] }
+        }
         private func layout() -> UICollectionViewLayout {
             UICollectionViewCompositionalLayout { [weak self] index, environment in
-                guard let self, let value = self.value, value.sections.indices.contains(index) else { return nil }
-                let section = value.sections[index]
+                guard let self, let value = self.value else { return nil }
+                // UIKit can query an outgoing section while the diffable snapshot is changing.
+                let section = self.section(at: index)
                 var config = UICollectionLayoutListConfiguration(appearance: .insetGrouped)
                 config.backgroundColor = value.theme.canvas
                 config.separatorConfiguration.color = value.theme.separator
-                config.headerMode = section.title == nil ? .none : .supplementary
-                config.footerMode = section.footer == nil ? .none : .supplementary
+                config.headerMode = section?.title == nil ? .none : .supplementary
+                config.footerMode = section?.footer == nil ? .none : .supplementary
                 config.trailingSwipeActionsConfigurationProvider = { [weak self] path in self?.swipes(at: path) }
                 let result = NSCollectionLayoutSection.list(using: config, layoutEnvironment: environment)
                 if index == 0 { result.contentInsets.top = value.topInset }
@@ -120,7 +127,9 @@ struct ThemedGroupedList: UIViewControllerRepresentable {
             loadViewIfNeeded()
             let layoutChanged = self.value?.theme != value.theme || self.value?.topInset != value.topInset
                 || self.value?.sections.map { [$0.id, $0.title ?? "", $0.footer ?? ""] } != value.sections.map { [$0.id, $0.title ?? "", $0.footer ?? ""] }
+            layoutNeedsUpdate = layoutNeedsUpdate || layoutChanged
             self.value = value
+            sections = Dictionary(uniqueKeysWithValues: value.sections.map { ($0.id, $0) })
             rows = Dictionary(uniqueKeysWithValues: value.sections.flatMap(\.rows).map { ($0.id, $0) })
             collectionView.backgroundColor = value.theme.canvas
             collectionView.tintColor = value.theme.accent
@@ -130,7 +139,6 @@ struct ThemedGroupedList: UIViewControllerRepresentable {
             collectionView.allowsMultipleSelection = value.selecting
             collectionView.allowsMultipleSelectionDuringEditing = value.selecting
             collectionView.isEditing = value.selecting || value.reordered != nil
-            if layoutChanged { collectionView.setCollectionViewLayout(layout(), animated: false) }
             if value.refresh != nil, collectionView.refreshControl == nil {
                 let control = UIRefreshControl(); control.addTarget(self, action: #selector(refreshRequested), for: .valueChanged)
                 collectionView.refreshControl = control
@@ -141,7 +149,14 @@ struct ThemedGroupedList: UIViewControllerRepresentable {
             }
             let previous = Set(source.snapshot().itemIdentifiers)
             snapshot.reconfigureItems(snapshot.itemIdentifiers.filter { previous.contains($0) })
-            source.apply(snapshot, animatingDifferences: false) { [weak self] in self?.restoreSelection() }
+            source.apply(snapshot, animatingDifferences: false) { [weak self] in
+                guard let self else { return }
+                if self.layoutNeedsUpdate {
+                    self.layoutNeedsUpdate = false
+                    self.collectionView.setCollectionViewLayout(self.layout(), animated: false)
+                }
+                self.restoreSelection()
+            }
         }
         private func restoreSelection() {
             guard let value else { return }

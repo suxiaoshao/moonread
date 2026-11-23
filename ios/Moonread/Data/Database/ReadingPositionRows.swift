@@ -199,25 +199,26 @@ enum ReadingPositionRows {
             try UpgradeOrigins.baseline(db, of: .init(partition: part, domain: .position,
                                                        id: recordID(book: book, token: position.token)))
         } ?? []
-        let predecessors = part == 0 && scope != .local ? try String.fetchAll(db, sql: """
-            SELECT record_id FROM usr.position_candidate WHERE partition=0 AND book_key=?
-            """, arguments: [book]) : []
-        try replacePosition(db, with: saved, book: book, partition: part)
+        try replacePosition(db, with: saved, book: book, partition: part, queueForSync: part == 0 && scope != .local)
         try recordUpgradePosition(db, saved, book: book, partition: part, bases: bases)
-        if part == 0 && scope != .local {
-            let id = recordID(book: book, token: saved.token)
-            try CausalCloudRows.enqueueReplacement(db, .position, id: id, predecessors: predecessors)
-        }
         try recordLocalOpen(db, book: book, file: file)
         if part == 0 { try LocalReadingRows.setResume(db, book: book, offset: offset, token: token) }
         try settleCurrent(db, book: book)
         return saved
     }
 
-    private static func replacePosition(_ db: Database, with position: Position, book: String, partition: Int) throws {
+    private static func replacePosition(_ db: Database, with position: Position, book: String, partition: Int,
+                                        queueForSync: Bool, restoringBackup: Bool = false) throws {
+        let predecessors = queueForSync ? try String.fetchAll(db, sql: """
+            SELECT record_id FROM usr.position_candidate WHERE partition=0 AND book_key=?
+            """, arguments: [book]) : []
+        let id = recordID(book: book, token: position.token)
         try insertPosition(db, position, book: book, partition: partition)
         try db.execute(sql: "DELETE FROM usr.position_candidate WHERE partition=? AND book_key=? AND record_id<>?",
-                       arguments: [partition,DataIdentity.canonical(book),recordID(book: book, token: position.token)])
+                       arguments: [partition,DataIdentity.canonical(book),id])
+        if queueForSync {
+            try CausalCloudRows.enqueueReplacement(db, .position, id: id, predecessors: predecessors, restoringBackup: restoringBackup)
+        }
     }
 
     static func recordID(book: String, token: String) -> String { DataIdentity.id("position", [book,token]) }
@@ -254,7 +255,7 @@ enum ReadingPositionRows {
         try settleCurrent(db, book: book)
     }
 
-    static func assessBackup(_ db: Database, book: String, incoming: Position) throws -> Bool {
+    static func assessBackup(_ db: Database, book: String, incoming: Position) throws -> BackupDisposition {
         let old = try position(db, book: book, partition: 0)
         let sameToken = try Row.fetchAll(db, sql: """
             SELECT \(positionColumns) FROM usr.position_candidate WHERE partition=0 AND book_key=? AND token=?
@@ -264,13 +265,14 @@ enum ReadingPositionRows {
             guard existing.updated == incoming.updated, existing.value.offset == incoming.value.offset,
                   existing.value.source_hint == incoming.value.source_hint else { throw ReadingDataError.invalid }
         }
-        return old.map { ($0.updated,$0.token) > (incoming.updated,incoming.token) } ?? false
+        if old?.token == incoming.token { return .same }
+        if let old, (old.updated,old.token) > (incoming.updated,incoming.token) { return .keepLocal }
+        return .restore
     }
 
-    static func mergeBackup(_ db: Database, book: String, incoming: Position) throws {
-        guard try !assessBackup(db, book: book, incoming: incoming) else { return }
-        if try position(db, book: book, partition: 0)?.token == incoming.token { return }
-        try replacePosition(db, with: incoming, book: book, partition: 0)
+    static func mergeBackup(_ db: Database, book: String, incoming: Position, queueForSync: Bool = false) throws {
+        guard try assessBackup(db, book: book, incoming: incoming) == .restore else { return }
+        try replacePosition(db, with: incoming, book: book, partition: 0, queueForSync: queueForSync, restoringBackup: true)
         try recordUpgradePosition(db, incoming, book: book, partition: 0, bases: [])
         try settleCurrent(db, book: book)
     }
@@ -358,7 +360,7 @@ enum ReadingPositionRows {
             let sourceKey = UpgradeOrigins.Key(partition: 1, domain: .position, id: recordID(book: pending, token: candidate.token))
             let targetKey = UpgradeOrigins.Key(partition: 0, domain: .position, id: recordID(book: formal, token: candidate.token))
             if present.map({ older($0,candidate) }) ?? true {
-                try replacePosition(db, with: candidate, book: formal, partition: 0)
+                try replacePosition(db, with: candidate, book: formal, partition: 0, queueForSync: false)
                 try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, sourceKey), to: targetKey)
                 if scope != .local {
                     try CausalCloudRows.enqueueReplacement(db, .position, id: targetKey.id,

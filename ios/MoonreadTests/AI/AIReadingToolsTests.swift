@@ -1,3 +1,4 @@
+@testable import MoonreadAI
 import AISDKProvider
 import SwiftData
 import XCTest
@@ -5,6 +6,78 @@ import XCTest
 @testable import Moonread
 
 final class AIReadingToolsTests: AIReadingToolsFixture {
+  func testFilterToolsKeepExactNamesAndReplayOnlySuccessfulCommittedSuggestions() async throws {
+    let (root, reader, book, store, tools) = try await fixture()
+    defer { try? store.index.session.close(); try? FileManager.default.removeItem(at: root) }
+    let base = try await reader.details(sha: book.fixtureSHA256).metadata
+    var edited = base
+    edited.author = "Fixture Author"
+    edited.tags = ["推理", "e\u{301}"]
+    try await reader.saveMetadata(base: base, edited: edited)
+
+    let options = try await invoke(tools, "list_filter_options", ["field": .string("tag"), "query": .string("推理")])
+    XCTAssertEqual(options.object["data"], .object(["names": .array([.string("推理")])]))
+    let authors = try await invoke(tools, "list_filter_options", ["field": .string("author")])
+    XCTAssertEqual(authors.object["data"], .object(["names": .array([.string("Fixture Author")])]))
+    let sorts: [JSONValue] = [
+      .object(["field": .string("recent"), "descending": .bool(true)]),
+      .object(["field": .string("name"), "descending": .bool(false)]),
+    ]
+    let nodes: [JSONValue] = [
+      .object(["kind": .string("group"), "relation": .string("all")]),
+      .object(["kind": .string("group"), "parent": .number(0), "relation": .string("any"), "excluded": .bool(true)]),
+      .object(["kind": .string("author"), "parent": .number(1), "values": .array([.string("Fixture Author")])]),
+      .object(["kind": .string("untagged"), "parent": .number(1)]),
+      .object(["kind": .string("tag"), "parent": .number(0), "relation": .string("any"), "values": .array([.string("推理")])]),
+      .object(["kind": .string("status"), "parent": .number(0), "values": .array([.string("unread")])]),
+    ]
+    let result = try await invoke(tools, "propose_book_filter", ["nodes": .array(nodes), "sorts": .array(sorts)])
+    func history(_ value: JSONValue, role: String = "tool") -> AIAgentEntry {
+      .init(sequence: 2, turn: "fixture", provider: "fixture", model: "fixture",
+            message: .object(["role": .string(role), "content": .array([.object([
+              "type": .string("tool-result"), "toolName": .string("propose_book_filter"), "toolCallId": .string("call"),
+              "output": .object(["type": .string("json"), "value": value]),
+            ])])]))
+    }
+    let persisted = try JSONDecoder().decode(AIAgentEntry.self, from: JSONEncoder().encode(history(result)))
+    let card = try XCTUnwrap(AICommittedResultDecoder.results(persisted, sessionID: "session").first)
+    guard case .bookFilter(let suggestion, _) = card.body else { return XCTFail("Expected a filter card") }
+    let configuration = try suggestion.resolveShelves([]).configuration(suggestion)
+    XCTAssertEqual(configuration.sorts, [.init(field: .recent, descending: true), .init(field: .name)])
+    XCTAssertEqual(configuration.root.children.first?.group, .any)
+    XCTAssertEqual(configuration.root.children.first?.excluded, true)
+    XCTAssertEqual(configuration.root.children.first?.children.last?.values, [.untagged])
+    let matches = try await reader.searchLibrary(query: "", configuration: configuration)
+    XCTAssertTrue(matches.entries.isEmpty, "An excluded author must not be dropped during replay")
+    XCTAssertTrue(AICommittedResultDecoder.results(history(result, role: "assistant"), sessionID: "session").isEmpty)
+
+    let sortOnly = try await invoke(tools, "propose_book_filter", ["nodes": .array([]), "sorts": .array(sorts)])
+    XCTAssertEqual(sortOnly.object["status"], .string("ok"))
+    var invalid = nodes
+    invalid[4] = .object(["kind": .string("tag"), "parent": .number(0), "relation": .string("any"), "values": .array([.string("é")])])
+    let failed = try await invoke(tools, "propose_book_filter", ["nodes": .array(invalid), "sorts": .array([])])
+    XCTAssertEqual(failed.object["error"]?.object["field"], .string("tag"), "Canonically equivalent names must still match the stored UTF-8")
+    XCTAssertTrue(AICommittedResultDecoder.results(history(failed), sessionID: "session").isEmpty)
+  }
+
+  func testFilterShelfResolutionKeepsAmbiguityAndResolvesOnlyLocalIDs() throws {
+    let input = try JSONDecoder().decode(AIBookFilterInput.self, from: Data("""
+      {"nodes":[{"kind":"group","relation":"all"},{"kind":"shelf","parent":0,"values":["Fixture"]}],"sorts":[]}
+      """.utf8))
+    let first = LibraryShelf(id: "first", name: "Fixture", bookmark: Data(), location: "external", builtin: false, error: nil, bookCount: 0)
+    let second = LibraryShelf(id: "second", name: "Fixture", bookmark: Data(), location: "icloud", builtin: false, error: nil, bookCount: 0)
+    let unresolved = AIBookFilterSuggestion(filter: input, shelves: [])
+    let choices = unresolved.resolveShelves([first, second])
+    XCTAssertFalse(choices.complete)
+    XCTAssertEqual(choices.choices.first?.candidates.map(\.id), [first.id, second.id])
+    let selection = unresolved.resolveShelves([first, second], selected: [Data("Fixture".utf8): second.id])
+    XCTAssertEqual(try selection.configuration(unresolved).root.children.first?.values, [.text(second.id)])
+    let saved = AIBookFilterSuggestion(filter: input, shelves: [.init(name: first.name, reference: AIBookFilterSuggestion.shelfReference(first))])
+    XCTAssertEqual(try saved.resolveShelves([first, second]).configuration(saved).root.children.first?.values, [.text(first.id)])
+    XCTAssertFalse(saved.resolveShelves([second]).complete, "A same-name replacement needs a new local choice")
+    XCTAssertEqual(saved.resolveShelves([]).unavailable, [first.name])
+  }
+
   func testSearchContinuesAfterSkippedLongRegexLine() async throws {
     let text = String(repeating: "a", count: 1024 * 1024 + 8192) + "\n"
       + String(repeating: "b", count: 512 * 1024) + "\n后续命中🌙\n"
@@ -149,6 +222,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let (root, reader, book, _, tools) = try await fixture(paragraphs: 1)
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
+    try await reader.savePosition(bookID: book.id, offset: 3)
     let before = try await reader.book(book.id)
     do {
       _ = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .string("")])
@@ -156,6 +230,12 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     } catch {}
     let value = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .null])
     XCTAssertEqual(value.object["status"], .string("ok"))
+    let progress = value.object["data"]?.object["progress"]?.object
+    XCTAssertEqual(progress?["offsetUtf8"], .number(3))
+    guard case let .number(percent)? = progress?["percent"] else {
+      return XCTFail("Expected a numeric percentage")
+    }
+    XCTAssertEqual(percent, 300 / Double(book.byteCount), accuracy: 1e-12)
     let after = try await reader.book(book.id)
     XCTAssertEqual(
       after.positionUtf8, before.positionUtf8,

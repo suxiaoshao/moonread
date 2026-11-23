@@ -292,10 +292,10 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
       XCTAssertTrue(state.revealsNavigation)
       state.begin(hasPresentation: true)
       state.endUnstartedInteractivePop()
-      XCTAssertTrue(state.revealsNavigation, "Gesture ending does not clear a tracked transition")
+      XCTAssertTrue(state.revealsNavigation, "The outgoing bar stays visible until the native transition completes")
       if dismissFirst { XCTAssertTrue(state.presentationDismissed()) }
       state.finish(cancelled: true)
-      XCTAssertFalse(state.revealsNavigation, "Cancelled pop clears the temporary navigation reveal")
+      XCTAssertFalse(state.revealsNavigation, "Cancellation clears the temporary reader bar")
       XCTAssertEqual(state.isSuspended, !dismissFirst)
       if !dismissFirst { XCTAssertTrue(state.presentationDismissed()) }
       XCTAssertFalse(state.isSuspended)
@@ -304,7 +304,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     let state = NavigationPresentationState()
     state.prepareInteractivePop()
     state.endUnstartedInteractivePop()
-    XCTAssertFalse(state.revealsNavigation, "Preparation without a transition must not leave a bar")
+    XCTAssertFalse(state.revealsNavigation, "An unstarted gesture clears the temporary reader bar")
     state.begin(hasPresentation: false)
     state.finish(cancelled: true)
     XCTAssertFalse(state.isSuspended)

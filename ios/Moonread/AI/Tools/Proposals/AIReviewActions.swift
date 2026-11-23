@@ -1,3 +1,4 @@
+import MoonreadAI
 import Foundation
 
 struct AINoteEditorRequest: Identifiable, Sendable { let id: String; let sessionID: String; var edit: AnnotationEdit }

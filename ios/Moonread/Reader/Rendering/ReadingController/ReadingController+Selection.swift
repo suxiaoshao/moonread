@@ -7,9 +7,12 @@ extension ReadingController {
         pausedAutomaticTouch = false
         statisticsInteraction()
         if let text = visibleTextViews.first(where: { $0.bounds.contains(gesture.location(in: $0)) }) {
-            activateLeaf(text, userInitiated: true)
             let ids = annotationIDs(at: gesture.location(in: text), in: text)
-            if !ids.isEmpty { showAnnotations(ids, in: text); return }
+            if !ids.isEmpty {
+                annotationsTapped(ids)
+                return
+            }
+            activateLeaf(text, userInitiated: true)
         }
         if automaticBodyTap(pausedAutomatically) { return }
         if controlsVisible || settings?.mode != .pages { toggleControls?(); return }
@@ -35,23 +38,31 @@ extension ReadingController {
         let mapping = textCoordinates(text)
         let base = textBase(text)
         guard let envelope = mapping.sourceRange(chars) else { return [] }
-        let start = base+UInt64(envelope.lowerBound), end = base+UInt64(envelope.upperBound)
-        return annotations.filter { $0.startUtf8 < end && $0.endUtf8 > start }.map(\.id)
+        return annotationIDs(overlapping: envelope, base: base)
     }
 
-    private func showAnnotations(_ ids: [String], in text: UITextView, choosing: Bool = false) {
-        guard let first = annotations.first(where: { ids.contains($0.id) }) else { return }
+    private func annotationIDs(overlapping range: Range<Int>, base: UInt64) -> [String] {
+        let start = base + UInt64(range.lowerBound), end = base + UInt64(range.upperBound)
+        var seen = Set<String>()
+        return annotations.compactMap { mark in
+            guard mark.startUtf8 < end, mark.endUtf8 > start, seen.insert(mark.id).inserted else { return nil }
+            return mark.id
+        }
+    }
+
+    private func chooseAnnotation(_ ids: [String], in text: UITextView) {
         autoReading?.end()
-        if !choosing || ids.count == 1 { showAnnotationMenu(first, in: text); return }
+        if ids.count == 1 { annotationsTapped(ids); return }
         guard annotationChooser == nil, presentedViewController == nil, viewIfLoaded?.window != nil else { return }
         let menu = UIAlertController(title: String(localized: "选择标注"), message: nil, preferredStyle: .actionSheet)
-        for mark in annotations where ids.contains(mark.id) {
+        for id in ids {
+            guard let mark = annotations.first(where: { $0.id == id }) else { continue }
             let summary = (mark.note.isEmpty ? mark.excerpt : mark.note)
-            menu.addAction(UIAlertAction(title: String(summary.prefix(80)), style: .default) { [weak self, weak text, weak menu] _ in
-                menu?.dismiss(animated: true) { [weak self, weak text, weak menu] in
+            menu.addAction(UIAlertAction(title: String(summary.prefix(80)), style: .default) { [weak self, weak menu] _ in
+                menu?.dismiss(animated: true) { [weak self, weak menu] in
                     guard let self, let menu else { return }
                     self.finishAnnotationChooser(menu)
-                    if let text { self.showAnnotationMenu(mark, in: text) }
+                    self.annotationsTapped([id])
                 }
             })
         }
@@ -78,67 +89,19 @@ extension ReadingController {
         annotationChooserChanged(false)
     }
 
-    func showAnnotationMenu(_ mark: ReaderMark, in text: UITextView) {
-        autoReading?.end()
-        guard let text = text as? ReadingTextView else { return }
-        let context = AnnotationSelection(start: mark.startUtf8, end: mark.endUtf8, annotations: annotations)
-        guard !context.marks.isEmpty else { return }
-        let mapping = textCoordinates(text), base = textBase(text)
-        guard let range = Self.annotationRange(context, mapping: mapping, base: base) else { return }
-        let from = range.location, to = NSMaxRange(range)
-        let offset = text.contentOffset
-        preparingAnnotationMenu = true
-        defer { preparingAnnotationMenu = false }
-        text.becomeFirstResponder()
-        annotationMenuText = text
-        tappedAnnotation = (context, NSRange(location: from, length: to - from))
-        // Enter through UITextView's native selection command so it supplies
-        // the same deferred lookup/translation actions as a long press.
-        text.presentSelectionMenu(for: NSRange(location: from, length: to - from))
-        setSelectionDisplay(text, active: false)
-        text.setContentOffset(offset, animated: false)
-    }
-
-    static func annotationRange(_ context: AnnotationSelection, mapping: TextCoordinates, base: UInt64) -> NSRange? {
-        guard context.end > base, context.start < base + UInt64(mapping.byteCount),
-              let range = mapping.displayRange(Int(max(base, context.start) - base)..<Int(min(base + UInt64(mapping.byteCount), context.end) - base)), range.length > 0 else { return nil }
+    static func selectionDisplayRange(start: UInt64, end: UInt64, mapping: TextCoordinates, base: UInt64) -> NSRange? {
+        let start = max(base, start), end = min(base + UInt64(mapping.byteCount), end)
+        guard start < end, let range = mapping.displayRange(Int(start - base)..<Int(end - base)),
+              range.length > 0 else { return nil }
         return range
     }
 
-    private func setSelectionDisplay(_ text: UITextView, active: Bool) {
-        for interaction in text.interactions.compactMap({ $0 as? UITextSelectionDisplayInteraction }) {
-            // Keep native interaction active so its edit menu and text services
-            // still work. Hide only its public display views for a tap.
-            interaction.highlightView.alpha = active ? 1 : 0
-            interaction.cursorView.alpha = active ? 1 : 0
-            interaction.handleViews.forEach { $0.alpha = active ? 1 : 0 }
-        }
-    }
-
-    func endAnnotationMenu(clearSelection: Bool) {
-        guard let text = annotationMenuText else { return }
-        tappedAnnotation = nil; annotationMenuText = nil
-        if clearSelection {
-            text.selectedRange = NSRange(location: text.selectedRange.location, length: 0)
-            text.resignFirstResponder()
-        }
-        setSelectionDisplay(text, active: true)
-    }
-
     func textView(_ textView: UITextView, willPresentEditMenuWith animator: any UIEditMenuInteractionAnimating) {
-        // The edit menu itself is not a blocker. Completion merely asks the
-        // recorder to reread the public modal chain, without adding idle credit.
         animator.addCompletion { [weak self] in self?.statisticsPresentationChanged() }
-        guard textView === annotationMenuText else { return }
-        setSelectionDisplay(textView, active: false)
-        animator.addCompletion { [weak self, weak textView] in
-            if let self, let textView, textView === self.annotationMenuText { self.setSelectionDisplay(textView, active: false) }
-        }
     }
 
     func textView(_ textView: UITextView, willDismissEditMenuWith animator: any UIEditMenuInteractionAnimating) {
         animator.addCompletion { [weak self] in self?.statisticsPresentationChanged() }
-        if !preparingAnnotationMenu, textView === annotationMenuText { endAnnotationMenu(clearSelection: true) }
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
@@ -228,10 +191,9 @@ extension ReadingController {
                 let base = self.textBase(text)
                 let clipped = NSIntersectionRange(chars,(text as! ReadingTextView).readingText.selectableRange)
                 guard let envelope = mapping.sourceRange(clipped) else { return false }
-                let start = base+UInt64(envelope.lowerBound), end = base+UInt64(envelope.upperBound)
-                let ids = self.annotations.filter { $0.startUtf8 < end && $0.endUtf8 > start }.map(\.id)
+                let ids = self.annotationIDs(overlapping: envelope, base: base)
                 guard !ids.isEmpty else { return false }
-                self.showAnnotations(ids, in: text, choosing: true)
+                self.chooseAnnotation(ids, in: text)
                 return true
             })
         }
@@ -254,39 +216,28 @@ extension ReadingController {
 
     func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
         guard range.length > 0 else { return UIMenu(children: suggestedActions) }
-        let context: AnnotationSelection
-        if textView === annotationMenuText, let tappedAnnotation { context = tappedAnnotation.context }
-        else {
-            let mapping = textCoordinates(textView), base = textBase(textView)
-            guard let envelope = mapping.sourceRange(range) else { return UIMenu(children: suggestedActions) }
-            let from = base + UInt64(envelope.lowerBound)
-            let to = base + UInt64(envelope.upperBound)
-            let full = retainedSelection ?? (min(selectionStart ?? from, from), max(selectionStart ?? to, to))
-            context = AnnotationSelection(start: full.0, end: full.1, annotations: annotations)
-        }
-        return selectionMenu(for: context, suggestedActions: suggestedActions) { [weak self, weak textView] kind in
-            self?.endAnnotationMenu(clearSelection: true)
+        let mapping = textCoordinates(textView), base = textBase(textView)
+        guard let envelope = mapping.sourceRange(range) else { return UIMenu(children: suggestedActions) }
+        let from = base + UInt64(envelope.lowerBound)
+        let to = base + UInt64(envelope.upperBound)
+        let full = retainedSelection ?? (min(selectionStart ?? from, from), max(selectionStart ?? to, to))
+        return selectionMenu(suggestedActions: suggestedActions) { [weak self, weak textView] kind in
             textView?.selectedRange = NSRange(location: range.location, length: 0)
             textView?.resignFirstResponder()
-            self?.selection?(context.start, context.end, kind)
+            self?.selection?(full.0, full.1, kind)
         }
     }
 
-    /// One menu policy for both native long-press selection and annotation taps.
-    func selectionMenu(for context: AnnotationSelection, suggestedActions: [UIMenuElement], perform: @escaping (ReaderSelectionAction) -> Void) -> UIMenu {
-        func action(_ title: String, _ symbol: String, _ kind: ReaderSelectionAction, destructive: Bool = false) -> UIAction {
-            UIAction(title: title, image: UIImage(systemName: symbol), attributes: destructive ? .destructive : []) { _ in perform(kind) }
+    func selectionMenu(suggestedActions: [UIMenuElement], perform: @escaping (ReaderSelectionAction) -> Void) -> UIMenu {
+        func action(_ title: String, _ symbol: String, _ kind: ReaderSelectionAction) -> UIAction {
+            UIAction(title: title, image: UIImage(systemName: symbol)) { _ in perform(kind) }
         }
-        let overlaps = !context.marks.isEmpty
-        var primary: [UIMenuElement] = overlaps
-            ? [action(String(localized: "编辑批注"), "square.and.pencil", .comment),
-               action(String(localized: "移除批注"), "trash", .removeAnnotations, destructive: true)]
-            : [action(String(localized: "标注"), "highlighter", .highlight)]
-        primary += [action(String(localized: "拷贝"), "doc.on.doc", .copy),
-                    action(String(localized: "全文搜索"), "magnifyingglass", .search),
-                    action(String(localized: "分享摘录"), "square.and.arrow.up", .shareExcerpt)]
+        let primary = [action(String(localized: "标注"), "highlighter", .highlight),
+                       action(String(localized: "拷贝"), "doc.on.doc", .copy),
+                       action(String(localized: "全文搜索"), "magnifyingglass", .search),
+                       action(String(localized: "分享摘录"), "square.and.arrow.up", .shareExcerpt)]
         // Preserve the native lookup group, including deferred system commands
-        // such as Search Web. Both entry points reach UITextView's responder chain.
+        // such as Search Web, in UITextView’s responder chain.
         var lookup: [UIMenuElement] = [], secondary: [UIMenuElement] = []
         for element in mergingLearnAndShare(suggestedActions) {
             if let menu = element as? UIMenu, menu.identifier == .standardEdit {
@@ -297,9 +248,9 @@ extension ReadingController {
             } else if let menu = element as? UIMenu, menu.identifier == .lookup { lookup.append(menu) }
             else { secondary.append(element) }
         }
-        var notes: [UIMenuElement] = []
-        if !overlaps { notes.append(action(selectionStart != nil ? String(localized: "批注到这里") : String(localized: "写批注"), "square.and.pencil", .comment)) }
-        notes.append(action(String(localized: "批注整段"), "paragraphsign", .paragraph))
+        let comment = selectionStart != nil ? String(localized: "批注到这里") : String(localized: "写批注")
+        let notes = [action(comment, "square.and.pencil", .comment),
+                     action(String(localized: "批注整段"), "paragraphsign", .paragraph)]
         var tools: [UIMenuElement] = [action(String(localized: "从这里跨页选取"), "text.cursor", .beginRange)]
         if allowsChapterEditing { tools.append(action(String(localized: "设为章节"), "list.bullet", .chapter)) }
         // Notes and tools share one inline group: one separator fewer before the last reader actions.

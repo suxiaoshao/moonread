@@ -8,15 +8,44 @@ import UIKit
     let original: BookSearchConfiguration
     var value: BookSearchConfiguration
     var pendingRuleChanged = false
+
+    private struct PendingGroup {
+        let parent: UUID
+        var node: BookSearchNode
+    }
+    private var pendingGroups: [UUID: PendingGroup] = [:]
     init(_ value: BookSearchConfiguration) { original = value; self.value = value }
     var changed: Bool { value != original || pendingRuleChanged }
-    func node(_ id: UUID) -> BookSearchNode? { find(value.root, id) }
+    func node(_ id: UUID) -> BookSearchNode? {
+        pendingGroups[id]?.node ?? find(value.root, id)
+    }
+
+    func beginGroup(parent: UUID) -> UUID {
+        let node = BookSearchNode()
+        pendingGroups[node.id] = PendingGroup(parent: parent, node: node)
+        return node.id
+    }
+
+    func keepPendingGroups(_ ids: Set<UUID>) {
+        pendingGroups = pendingGroups.filter { ids.contains($0.key) }
+    }
     private func find(_ node: BookSearchNode, _ id: UUID) -> BookSearchNode? {
         if node.id == id { return node }
         for child in node.children { if let found = find(child, id) { return found } }
         return nil
     }
-    func edit(_ id: UUID, _ mutation: (inout BookSearchNode) -> Void) { edit(&value.root, id: id, mutation) }
+    func edit(_ id: UUID, _ mutation: (inout BookSearchNode) -> Void) {
+        if var pending = pendingGroups[id] {
+            mutation(&pending.node)
+            pendingGroups[id] = pending
+        } else {
+            edit(&value.root, id: id, mutation)
+        }
+    }
+    func exclusion(of node: BookSearchNode) -> Binding<Bool> {
+        Binding(get: { self.node(node.id)?.excluded ?? node.excluded },
+                set: { excluded in self.edit(node.id) { $0.excluded = excluded } })
+    }
     private func edit(_ node: inout BookSearchNode, id: UUID, _ mutation: (inout BookSearchNode) -> Void) {
         if node.id == id { mutation(&node); return }
         for index in node.children.indices { edit(&node.children[index], id: id, mutation) }
@@ -26,138 +55,389 @@ import UIKit
             if let i = group.children.firstIndex(where: { $0.id == node.id }) { group.children[i] = node }
             else { group.children.append(node) }
         }
+        // A first valid condition also completes any pending ancestor groups.
+        if let pending = pendingGroups[parent], pending.node.validation() == nil {
+            save(pending.node, parent: pending.parent)
+            pendingGroups.removeValue(forKey: parent)
+        }
     }
 }
 private enum BookSearchEditorRoute: Hashable {
-    case group(UUID), fields(UUID), rule(parent: UUID, node: BookSearchNode), preview, sortFields
+    case group(UUID), rule(parent: UUID, node: BookSearchNode)
 }
 struct BookSearchEditor: View {
     let search: AppSearch
     let model: LibraryModel
     @Bindable var draft: BookSearchDraft
+    let savedConfiguration: BookSearchConfiguration?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
-    @State private var segment = 0
     @State private var discard = false
-    @State private var error: String?
     @State private var path: [BookSearchEditorRoute] = []
     var body: some View {
-        NavigationStack(path: $path) {
-            VStack(spacing: 0) {
-                Picker("编辑内容", selection: $segment) { Text("条件").tag(0); Text("排序").tag(1) }
-                    .pickerStyle(.segmented).padding()
-                if segment == 0 { BookSearchGroupPage(draft: draft, id: draft.value.root.id, model: model, navigate: { path.append($0) }) }
-                else { sortPage }
-                if let error { Text(error).foregroundStyle(Color(uiColor: theme.destructive)).padding() }
-            }
-            .frame(idealWidth: 620).themedPage().navigationTitle("筛选与排序").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if path.isEmpty {
-                    ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { cancel() } }
-                    ToolbarItem(placement: .confirmationAction) {
-                        SystemToolbarButton("应用", role: .confirm) {
-                            if let validation = draft.value.validation { error = validation; segment = 0; return }
-                            var value = draft.value
-                            if value.root.children.isEmpty { value.root = BookSearchNode(id: value.root.id) }
-                            search.configuration = value
-                            dismiss()
-                        }.fontWeight(.semibold).accessibilityIdentifier("applySearchFilters")
-                    }
-                    ToolbarItemGroup(placement: .bottomBar) {
-                        Button("重置筛选与排序") {
-                            draft.value = BookSearchConfiguration(root: BookSearchNode(id: draft.original.root.id))
-                            error = nil
-                        }
-                        Spacer()
-                        NavigationLink("预览完整条件", value: BookSearchEditorRoute.preview)
-                    }
+        NavigationStack(path: $path) { mainPage }
+            .onChange(of: path) { _, routes in
+                let groupIDs = routes.compactMap { route in
+                    if case .group(let id) = route { return id }
+                    return nil
                 }
+                draft.keepPendingGroups(Set(groupIDs))
             }
-            .navigationDestination(for: BookSearchEditorRoute.self) { route in
-                switch route {
-                case .group(let id): BookSearchGroupPage(draft: draft, id: id, model: model, navigate: { path.append($0) }).navigationTitle("条件组")
-                case .fields(let parent):
-                    List(BookSearchField.allCases) { field in
-                        Button(field.title) { path.append(.rule(parent: parent, node: BookSearchNode(field: field))) }
-                            .frame(minHeight: 44).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                    }.scrollContentBackground(.hidden).themedPage().navigationTitle("添加条件").navigationBarTitleDisplayMode(.inline)
-                case .rule(let parent, let node): BookSearchRulePage(draft: draft, parent: parent, initial: node, model: model, path: $path)
-                case .sortFields:
-                    List {
-                        ForEach(BookSearchSortField.allCases.filter { field in !draft.value.sorts.contains { $0.field == field } }) { field in
-                            Button(field.title) {
-                                draft.value.sorts.append(.init(field: field, descending: field == .recent))
-                                path.removeLast()
-                            }.frame(minHeight: 44).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                        }
-                    }.scrollContentBackground(.hidden).themedPage().navigationTitle("添加排序").navigationBarTitleDisplayMode(.inline)
-                case .preview:
-                    fullPreview
-                }
+            .tint(Color(uiColor: theme.accent))
+            .presentationSizing(.form)
+            .presentationDetents([.large])
+            .background(BookSearchDismissalGuard(changed: draft.changed) { discard = true })
+            .alert("放弃筛选更改？", isPresented: $discard) {
+                Button("放弃更改", role: .destructive) { dismiss() }
+                Button("取消", role: .cancel) {}
             }
-        }
-        .tint(Color(uiColor: theme.accent))
-        .onChange(of: draft.value) { _, _ in error = nil }
-        .presentationSizing(.form)
-        .presentationDetents([.large])
-        .background(BookSearchDismissalGuard(changed: draft.changed) { discard = true })
-        .alert("放弃筛选更改？", isPresented: $discard) {
-            Button("放弃更改", role: .destructive) { dismiss() }
-            Button("取消", role: .cancel) {}
+    }
+
+    private var mainPage: some View {
+        ThemedGroupedList(sections: sections, theme: theme, reordered: reorder)
+            .themedPage()
+            .navigationTitle("筛选与排序")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { rootActions }
+            .navigationDestination(for: BookSearchEditorRoute.self) { route in destination(route) }
+    }
+
+    @ToolbarContentBuilder private var rootActions: some ToolbarContent {
+        if path.isEmpty {
+            ToolbarItem(placement: .cancellationAction) {
+                SystemToolbarButton("取消", role: .cancel) { cancel() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                SystemToolbarButton("应用", role: .confirm) {
+                    var value = draft.value
+                    if value.root.children.isEmpty { value.root = BookSearchNode(id: value.root.id) }
+                    search.configuration = value
+                    dismiss()
+                }.disabled(draft.value.validation != nil).accessibilityIdentifier("applySearchFilters")
+            }
         }
     }
+
+    @ViewBuilder private func destination(_ route: BookSearchEditorRoute) -> some View {
+        switch route {
+        case .group(let id):
+            BookSearchGroupPage(draft: draft, id: id, model: model, navigate: { path.append($0) })
+                .navigationTitle(id == draft.value.root.id ? Text("组合条件") : Text("条件组"))
+        case .rule(let parent, let node):
+            if node.field == .tag {
+                BookSearchTagRulePage(initial: node, onChange: { draft.pendingRuleChanged = $0 },
+                                      complete: { value in
+                    if let value {
+                        draft.save(value, parent: parent)
+                    } else if draft.node(node.id) != nil {
+                        draft.edit(parent) { $0.children.removeAll { $0.id == node.id } }
+                    }
+                    path.removeLast()
+                })
+            } else {
+                BookSearchRulePage(draft: draft, parent: parent, initial: node, model: model, path: $path)
+            }
+        }
+    }
+
     private func cancel() { if draft.changed { discard = true } else { dismiss() } }
-    private var fullPreview: some View {
-        ScrollView {
-            BookSearchSummary(configuration: draft.value, term: search.term, shelfTitle: model.shelfTitle, expanded: true)
-                .padding()
-        }.themedPage().navigationTitle("预览完整条件").navigationBarTitleDisplayMode(.inline)
-    }
-    private var sortPage: some View {
-        ThemedGroupedList(sections: sortSections, theme: theme, reordered: { ids in
-            let current = Dictionary(uniqueKeysWithValues: draft.value.sorts.map { ($0.field.rawValue, $0) })
-            draft.value.sorts = ids.compactMap { current[$0] }
-        })
-    }
-    private var sortSections: [ThemedGroupedList.Section] {
-        var rows: [ThemedGroupedList.Row] = draft.value.sorts.map { item in
-            .init(item.field.rawValue, actions: [
-                .init(title: String(localized: "删除"), destructive: true, perform: { draft.value.sorts.removeAll { $0.field == item.field } })
-            ], reorderable: true) {
-                VStack(alignment: .leading) {
-                    HStack {
-                        Text("\((draft.value.sorts.firstIndex(where: { $0.field == item.field }) ?? 0) + 1). " + item.field.title)
-                        Spacer()
-                        Picker("方向", selection: Binding(get: {
-                            draft.value.sorts.first(where: { $0.field == item.field })?.descending ?? item.descending
-                        }, set: { direction in
-                            if let i = draft.value.sorts.firstIndex(where: { $0.field == item.field }) { draft.value.sorts[i].descending = direction }
-                        })) { Text("升序").tag(false); Text("降序").tag(true) }.pickerStyle(.menu)
-                    }
-                    if item.field == .rank && search.term.isEmpty { Text("无文字时跳过").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
+    private var root: BookSearchNode { draft.value.root }
+    private var sections: [ThemedGroupedList.Section] {
+        let quick = root.supportsQuickEditing(includingExcluded: true)
+        // Keep the section slots stable while UIKit updates the list's layout and snapshot.
+        let conditionRows = quick ? BookSearchField.allCases.map(quickConditionRow) : []
+        let showsReset = savedConfiguration.map { draft.value != $0 } ?? draft.value.booksOnly
+        let resetRows: [ThemedGroupedList.Row] = showsReset ? [
+            .init("resetSearchFilters", action: {
+                draft.value = savedConfiguration ?? BookSearchConfiguration(root: BookSearchNode(id: draft.original.root.id))
+            }) {
+                BookSearchActionLabel(
+                    title: savedConfiguration == nil ? "重置筛选与排序" : "恢复为已保存的条件",
+                    systemImage: "arrow.counterclockwise"
+                )
+            }
+        ] : []
+        let result: [ThemedGroupedList.Section] = [
+            .init(id: "conditions", title: quick ? String(localized: "筛选条件") : nil, rows: conditionRows),
+            .init(id: "combination", footer: quick ? nil : root.expression(shelfTitle: model.shelfTitle), rows: [
+                .init("openSearchCombination", action: { path.append(.group(root.id)) }, disclosure: true) {
+                    Text(quick ? "组合条件" : "编辑组合条件")
                 }
-                .accessibilityAction(named: Text("上移")) { move(item.field, by: -1) }
-                .accessibilityAction(named: Text("下移")) { move(item.field, by: 1) }
+            ]),
+            sortSection,
+            .init(id: "reset", footer: draft.value.validation, rows: resetRows)
+        ]
+        return result
+    }
+
+    private func quickConditionRow(_ field: BookSearchField) -> ThemedGroupedList.Row {
+        let existing = root.children.first { $0.field == field }
+        if field == .status {
+            return .init("quickSearchStatusRow") {
+                BookSearchConditionActions(field: field, excluded: existing.map(draft.exclusion)) {
+                    BookSearchStatusMenu(values: Binding(get: { statusValues }, set: setStatusValues))
+                }
             }
         }
-        if rows.isEmpty {
-            rows.append(.init("default") { Text("默认：匹配程度 → 最近阅读 → 自然名称").foregroundStyle(Color(uiColor: theme.secondary)) })
+
+        let rowID = "quickSearch-\(field.rawValue)"
+        guard let existing else {
+            return .init(rowID, action: {
+                path.append(.rule(parent: root.id, node: BookSearchNode(field: field)))
+            }, disclosure: true) {
+                BookSearchConditionSummary(title: field.title) { Text("不限") }
+            }
         }
-        return [
-            .init(id: "sorts", footer: String(localized: "自定义顺序会替代默认匹配优先级；前一项相同时才比较下一项。缺少作者或阅读时间的小说始终排在最后。"), rows: rows),
-            .init(id: "actions", rows: [
-                .init("reset", action: { draft.value.sorts = [] }) { Text("恢复默认排序").foregroundStyle(Color(uiColor: theme.accent)) },
-                .init("add", action: draft.value.sorts.count < BookSearchSortField.allCases.count ? { path.append(.sortFields) } : nil, disclosure: true) {
-                    Text("添加排序").foregroundStyle(Color(uiColor: draft.value.sorts.count == BookSearchSortField.allCases.count ? theme.secondary : theme.ink))
+        let detail = conditionDetail(existing)
+        return .init(rowID) {
+            BookSearchConditionActions(field: field, excluded: draft.exclusion(of: existing)) {
+                BookSearchConditionButton(action: { path.append(.rule(parent: root.id, node: existing)) }) {
+                    BookSearchConditionSummary(title: field.title) { Text(detail) }
                 }
-            ])
-        ]
+                .accessibilityIdentifier(rowID)
+            }
+        }
     }
+
+    private func conditionDetail(_ node: BookSearchNode) -> String {
+        if node.field == .tag && (node.match == .none || node.values.count > 1) {
+            return node.expression(includingExclusion: false, shelfTitle: model.shelfTitle)
+        }
+        return node.values.map { node.valueTitle($0, shelfTitle: model.shelfTitle) }.joined(separator: "、")
+    }
+
+    private var sortSection: ThemedGroupedList.Section {
+        let sorts = draft.value.sorts
+        var rows = sorts.enumerated().map { index, item in sortRow(item, index: index) }
+        let available = BookSearchSortField.allCases.filter { field in
+            (savedConfiguration == nil || !field.requiresSearchText) && !sorts.contains { $0.field == field }
+        }
+        let defaultOrder = savedConfiguration != nil
+            ? String(localized: "默认：最近阅读 → 自然名称")
+            : String(localized: "默认：匹配程度 → 最近阅读 → 自然名称")
+        if !available.isEmpty {
+            rows.append(.init("addSearchSortRow") {
+                Menu {
+                    ForEach(available) { field in
+                        Button(field.title) { draft.value.sorts.append(.init(field: field, descending: field == .recent)) }
+                    }
+                } label: {
+                    BookSearchActionLabel(title: "添加排序", systemImage: "plus")
+                }.accessibilityIdentifier("addSearchSort")
+            })
+        }
+        return .init(id: "sorts", title: String(localized: "排序"),
+                     footer: sorts.isEmpty ? defaultOrder : nil,
+                     rows: rows)
+    }
+
+    private func sortRow(_ item: BookSearchSort, index: Int) -> ThemedGroupedList.Row {
+        .init(item.field.rawValue, actions: [
+            .init(title: String(localized: "删除"), destructive: true,
+                  perform: { draft.value.sorts.removeAll { $0.field == item.field } })
+        ], reorderable: true) {
+            VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+                HStack {
+                    Text(item.field.title)
+                        .accessibilityLabel(Text("排序 \(index + 1)，\(item.field.title)"))
+                    Spacer()
+                    Picker("排序方向", selection: Binding(get: {
+                        draft.value.sorts.first(where: { $0.field == item.field })?.descending ?? item.descending
+                    }, set: { direction in
+                        if let i = draft.value.sorts.firstIndex(where: { $0.field == item.field }) {
+                            draft.value.sorts[i].descending = direction
+                        }
+                    })) {
+                        Text("升序").tag(false)
+                        Text("降序").tag(true)
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                }
+                if item.field == .rank && search.term.isEmpty {
+                    Text("无文字时跳过").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityAction(named: Text("上移")) { move(item.field, by: -1) }
+            .accessibilityAction(named: Text("下移")) { move(item.field, by: 1) }
+        }
+    }
+
+    private var statusValues: [BookSearchValue] {
+        root.children.first { $0.field == .status }?.values ?? []
+    }
+
+    private func setStatusValues(_ values: [BookSearchValue]) {
+        var node = root.children.first { $0.field == .status } ?? BookSearchNode(field: .status)
+        if values.isEmpty {
+            let removing = node.id
+            draft.edit(root.id) { $0.children.removeAll { $0.id == removing } }
+        } else {
+            node.values = values
+            draft.save(node, parent: root.id)
+        }
+    }
+
+    private func reorder(_ ids: [String]) {
+        let keys = Dictionary(uniqueKeysWithValues: draft.value.sorts.map { ($0.field.rawValue, $0) })
+        draft.value.sorts = ids.compactMap { keys[$0] }
+    }
+
     private func move(_ field: BookSearchSortField, by offset: Int) {
         guard let i = draft.value.sorts.firstIndex(where: { $0.field == field }), draft.value.sorts.indices.contains(i + offset) else { return }
         draft.value.sorts.swapAt(i, i + offset)
     }
 }
+private struct BookSearchActionLabel: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .foregroundStyle(Color(uiColor: theme.accent))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+    }
+}
+
+private struct BookSearchConditionActions<Editor: View>: View {
+    let field: BookSearchField
+    let excluded: Binding<Bool>?
+    @ViewBuilder let editor: Editor
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: LayoutTokens.compact))
+            : AnyLayout(HStackLayout(spacing: LayoutTokens.control))
+        layout {
+            if let excluded {
+                exclusionMenu(excluded)
+            }
+            editor
+        }
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+    }
+
+    private func exclusionMenu(_ excluded: Binding<Bool>) -> some View {
+        let isExcluded = excluded.wrappedValue
+        return Menu {
+            Picker("条件作用：\(field.title)", selection: excluded) {
+                Text("包含").tag(false)
+                Text("排除").tag(true)
+            }
+            .pickerStyle(.inline)
+        } label: {
+            ZStack(alignment: .leading) {
+                // Reserve the wider label in every language and at every Dynamic Type size.
+                exclusionLabel(!isExcluded).hidden()
+                exclusionLabel(isExcluded)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .contentShape(.rect)
+        }
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("条件作用：\(field.title)"))
+        .accessibilityValue(Text(isExcluded ? "排除" : "包含"))
+        .accessibilityIdentifier("searchRuleExclusion-\(field.rawValue)")
+    }
+
+    private func exclusionLabel(_ excluded: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text(excluded ? "排除" : "包含")
+                .fontWeight(excluded ? .semibold : .regular)
+            Image(systemName: "chevron.up.chevron.down")
+                .imageScale(.small)
+                .accessibilityHidden(true)
+        }
+        .font(.subheadline)
+        .foregroundStyle(Color(uiColor: excluded ? theme.accent : theme.secondary))
+    }
+}
+
+private struct BookSearchConditionButton<Label: View>: View {
+    let action: () -> Void
+    @ViewBuilder let label: Label
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: LayoutTokens.compact) {
+                label.frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: theme.secondary))
+                    .accessibilityHidden(true)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct BookSearchConditionSummary<Detail: View>: View {
+    let title: String
+    @ViewBuilder let detail: Detail
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).foregroundStyle(Color(uiColor: theme.ink))
+            detail.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+        }
+    }
+}
+
+private struct BookSearchStatusMenu: View {
+    @Binding var values: [BookSearchValue]
+
+    private let displayOrder: [BookSearchStatus] = [.unread, .reading, .finished, .paused]
+
+    var body: some View {
+        let selected = displayOrder.filter { values.contains(.text($0.rawValue)) }
+        let summary = selected.isEmpty ? String(localized: "不限") : ListFormatter.localizedString(byJoining: selected.map(\.title))
+        Menu {
+            Button("不限") { values = [] }
+            ForEach(displayOrder, id: \.self) { status in
+                Toggle(status.title, isOn: selection(for: status))
+                    .menuActionDismissBehavior(.disabled)
+                    .accessibilityIdentifier("quickSearchStatus-\(status.rawValue)")
+            }
+        } label: {
+            BookSearchConditionSummary(title: BookSearchField.status.title) {
+                HStack(spacing: LayoutTokens.compact) {
+                    Text(summary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .imageScale(.small)
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(.rect)
+        }
+        .accessibilityLabel(Text("阅读状态"))
+        .accessibilityValue(Text(summary))
+        .accessibilityIdentifier("quickSearchStatusMenu")
+    }
+
+    private func selection(for status: BookSearchStatus) -> Binding<Bool> {
+        let value = BookSearchValue.text(status.rawValue)
+        return Binding {
+            values.contains(value)
+        } set: { isSelected in
+            if isSelected {
+                if !values.contains(value) { values.append(value) }
+            } else {
+                values.removeAll { $0 == value }
+            }
+        }
+    }
+}
+
 private struct BookSearchGroupPage: View {
     @Bindable var draft: BookSearchDraft
     let id: UUID
@@ -189,25 +469,54 @@ private struct BookSearchGroupPage: View {
                 Toggle("排除本组", isOn: Binding(get: { node.excluded }, set: { value in draft.edit(id) { $0.excluded = value } }))
             }
         ])
-        var rows: [ThemedGroupedList.Row] = node.children.map { child in
-            .init(child.id.uuidString, action: {
-                navigate(child.field == nil ? .group(child.id) : .rule(parent: id, node: child))
-            }, disclosure: true, actions: [
-                .init(title: String(localized: "删除"), destructive: true, perform: { deleting = [child.id] })
-            ]) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(child.summary(shelfTitle: model.shelfTitle))
-                    if let error = child.validation() { Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.destructive)) }
-                }.padding(.vertical, 4)
-            }
+        let rows = node.children.map(conditionRow)
+        var additions: [ThemedGroupedList.Row] = BookSearchField.allCases.map { field in
+            .init("addSearchCondition-\(field.rawValue)", action: { navigate(.rule(parent: id, node: BookSearchNode(field: field))) },
+                  disclosure: true) { Text(field.title) }
         }
-        rows.append(.init("addSearchCondition", action: { navigate(.fields(id)) }, disclosure: true) { Text("添加条件") })
-        rows.append(.init("addGroup", action: {
-            draft.edit(id) { $0.children.append(BookSearchNode()) }
-        }) { Label("添加条件组", systemImage: "rectangle.stack.badge.plus").foregroundStyle(Color(uiColor: theme.accent)) })
-        return [options, .init(id: "children", footer: node.children.isEmpty ? String(localized: "添加条件，或保留空的根组以取消筛选。") : nil, rows: rows)]
+        additions.append(.init("addGroup", action: {
+            navigate(.group(draft.beginGroup(parent: id)))
+        }) { BookSearchActionLabel(title: "添加子组", systemImage: "plus") })
+        var sections = [options]
+        if !rows.isEmpty {
+            sections.append(.init(id: "children", title: String(localized: "本组条件"), rows: rows))
+        }
+        sections.append(.init(id: "additions", title: String(localized: "添加条件"),
+                              footer: node.children.isEmpty ? node.validation(isRoot: id == draft.value.root.id) : nil,
+                              rows: additions))
+        return sections
     }
 
+    private func conditionRow(_ child: BookSearchNode) -> ThemedGroupedList.Row {
+        let actions: [ThemedGroupedList.Action] = [
+            .init(title: String(localized: "删除"), destructive: true, perform: {
+                if child.field == nil { deleting = [child.id] }
+                else { draft.edit(id) { $0.children.removeAll { $0.id == child.id } } }
+            })
+        ]
+        if let field = child.field {
+            return .init(child.id.uuidString, actions: actions) {
+                BookSearchConditionActions(field: field, excluded: draft.exclusion(of: child)) {
+                    BookSearchConditionButton(action: { navigate(.rule(parent: id, node: child)) }) {
+                        conditionLabel(child, includingExclusion: false)
+                    }
+                    .accessibilityIdentifier(child.id.uuidString)
+                }
+            }
+        }
+        return .init(child.id.uuidString, action: { navigate(.group(child.id)) }, disclosure: true, actions: actions) {
+            conditionLabel(child, includingExclusion: true).padding(.vertical, 4)
+        }
+    }
+
+    private func conditionLabel(_ child: BookSearchNode, includingExclusion: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(child.expression(includingExclusion: includingExclusion, shelfTitle: model.shelfTitle))
+            if let error = child.validation() {
+                Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.destructive))
+            }
+        }
+    }
 }
 private struct BookSearchRulePage: View {
     let draft: BookSearchDraft
@@ -218,7 +527,7 @@ private struct BookSearchRulePage: View {
     @State private var node: BookSearchNode
     @State private var query = ""
     @State private var selectedOnly = false
-    @State private var options: BookFilterOptions?
+    @State private var options: LibraryMetadataOptions?
     @State private var error: String?
     @State private var loading = false
     @State private var retry = 0
@@ -230,65 +539,56 @@ private struct BookSearchRulePage: View {
     private var available: [BookSearchValue] {
         switch field {
         case .status: BookSearchStatus.allCases.map { .text($0.rawValue) }
-        case .tag: [.untagged] + (options?.tags ?? []).map(BookSearchValue.text)
+        case .tag: []
         case .author: (options?.authors ?? []).map(BookSearchValue.text)
-        case .shelf: model.shelves.filter { $0.error == nil }.map { .text($0.id) }
+        case .shelf: LibraryQueryRules.filterShelves(model.shelves).map { .text($0.id) }
         }
+    }
+    private var concreteValues: [BookSearchValue] {
+        available + node.values.filter { !available.contains($0) }
     }
     private var choices: [BookSearchValue] {
-        let values = available + node.values.filter { !available.contains($0) }
-        return values.filter { value in
-            (!selectedOnly || node.values.contains(value)) && (value == .untagged || LibraryQueryRules.selectionMatches(node.valueTitle(value, shelfTitle: model.shelfTitle), query: query))
+        concreteValues.filter { value in
+            (!selectedOnly || node.values.contains(value))
+                && LibraryQueryRules.selectionMatches(node.valueTitle(value, shelfTitle: model.shelfTitle), query: query)
         }
     }
-    var body: some View {
-        List {
-            Section {
-                Toggle("只看已选", isOn: $selectedOnly)
-                Text("已选 \(node.values.count) 项").foregroundStyle(Color(uiColor: theme.secondary))
-                if field == .tag {
-                    Picker("标签关系", selection: $node.match) {
-                        ForEach(BookSearchMatch.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }.pickerStyle(.segmented)
-                }
-            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            if let error {
-                Section { Text(error).foregroundStyle(Color(uiColor: theme.destructive)); Button("重试") { retry += 1 } }
-                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            } else if loading { ProgressView().listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
-            Section {
-                ForEach(choices, id: \.self) { value in
-                    Button {
-                        if node.values.contains(value) { node.values.removeAll { $0 == value } } else { node.values.append(value) }
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(node.valueTitle(value, shelfTitle: model.shelfTitle)).foregroundStyle(Color(uiColor: theme.ink))
-                                if !loading && error == nil && !available.contains(value) { Text("当前不可用，保留已选值").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
-                            }
-                            Spacer()
-                            if node.values.contains(value) { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
-                        }.frame(minHeight: 44)
-                    }.accessibilityAddTraits(node.values.contains(value) ? .isSelected : [])
-                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                }
-            }
-            if choices.isEmpty && !loading && error == nil {
-                Section { Text(query.isEmpty ? "暂无可选项" : "没有匹配的选项").foregroundStyle(Color(uiColor: theme.secondary)) }
-                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            }
-            if let validation = node.validation() { Text(validation).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
+    private var canLimitChoices: Bool {
+        concreteValues.count > 1 && !node.values.isEmpty
+    }
+    private var removalTitle: LocalizedStringKey? {
+        switch field {
+        case .author: "移除作者条件"
+        case .shelf: "移除书架条件"
+        case .status, .tag: nil
         }
-        .scrollContentBackground(.hidden).themedPage()
+    }
+    private var isExisting: Bool { draft.node(initial.id) != nil }
+
+    var body: some View {
+        Group {
+            if let error {
+                ContentUnavailableView {
+                    Label("无法加载选项", systemImage: "exclamationmark.circle")
+                } description: {
+                    Text(error)
+                } actions: {
+                    Button("重试") { retry += 1 }
+                }
+            } else if loading || (options == nil && field == .author) {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                optionList
+            }
+        }
+        .themedPage()
         .navigationTitle(field.title).navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "搜索选项")
         .onChange(of: node) { _, value in draft.pendingRuleChanged = value != initial }
         .onDisappear { draft.pendingRuleChanged = false }
         .toolbar { ToolbarItem(placement: .confirmationAction) {
             SystemToolbarButton("完成", role: .confirm) {
                 draft.save(node, parent: parent)
                 if !path.isEmpty { path.removeLast() }
-                if case .fields = path.last { path.removeLast() }
             }.disabled(node.validation() != nil)
                 .accessibilityIdentifier("saveSearchCondition")
         } }
@@ -297,7 +597,7 @@ private struct BookSearchRulePage: View {
             options = nil; retry += 1
         }
         .task(id: retry) {
-            guard field == .tag || field == .author else { return }
+            guard field == .author else { return }
             let request = retry
             loading = true; error = nil
             defer { if request == retry { loading = false } }
@@ -312,40 +612,116 @@ private struct BookSearchRulePage: View {
             catch { if request == retry, !Task.isCancelled { self.error = ReaderMessages.error(error) } }
         }
     }
+
+    private var optionList: some View {
+        List {
+            if !concreteValues.isEmpty {
+                Section {
+                    ForEach(choices, id: \.self) { choiceRow($0) }
+                } header: {
+                    if !node.values.isEmpty {
+                        HStack {
+                            Text("已选 \(node.values.count) 项")
+                            Spacer()
+                            if canLimitChoices {
+                                Button(selectedOnly ? "显示全部" : "只看已选") { selectedOnly.toggle() }
+                            }
+                        }
+                    }
+                } footer: {
+                    if choices.isEmpty && !query.isEmpty {
+                        ContentUnavailableView.search(text: query)
+                    }
+                }
+            }
+            if isExisting, let removalTitle {
+                Section {
+                    Button(removalTitle, role: .destructive) {
+                        draft.edit(parent) { $0.children.removeAll { $0.id == initial.id } }
+                        path.removeLast()
+                    }
+                    .listRowBackground(Color(uiColor: theme.surface))
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .overlay {
+            if concreteValues.isEmpty && !isExisting {
+                ContentUnavailableView("暂无可选项", systemImage: "line.3.horizontal.decrease")
+            }
+        }
+        .onChange(of: canLimitChoices) { _, canLimit in
+            if !canLimit { selectedOnly = false }
+        }
+        .modifier(BookSearchOptionSearch(enabled: !concreteValues.isEmpty && field != .status, query: $query))
+    }
+
+    private func choiceRow(_ value: BookSearchValue) -> some View {
+        let selected = node.values.contains(value)
+        return Button {
+            if selected { node.values.removeAll { $0 == value } } else { node.values.append(value) }
+        } label: {
+            HStack {
+                VStack(alignment: .leading) {
+                    if field == .shelf, case .text(let id) = value, let shelf = model.shelves.first(where: { $0.id == id }) {
+                        BookSearchShelfOptionLabel(shelf: shelf, service: model.service)
+                    } else {
+                        Text(node.valueTitle(value, shelfTitle: model.shelfTitle))
+                            .foregroundStyle(Color(uiColor: theme.ink))
+                    }
+                    if !available.contains(value) {
+                        Text("当前不可用，保留已选值").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                }
+                Spacer()
+                if selected { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
+            }
+            .contentShape(.rect)
+        }
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .listRowBackground(Color(uiColor: theme.surface))
+        .listRowSeparatorTint(Color(uiColor: theme.separator))
+    }
 }
 
-struct BookSearchSummary: View {
-    let configuration: BookSearchConfiguration
-    let term: String
-    let shelfTitle: (String) -> String
-    var expanded: Bool = false
+struct BookSearchShelfOptionLabel: View {
+    let shelf: LibraryShelf
+    let service: AppDataService
+    var showsLocation = false
     @Environment(\.theme) private var theme
+    @State private var parentLocation: String?
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("仅小说").font(.caption.weight(.semibold)).foregroundStyle(Color(uiColor: theme.secondary))
-            if !configuration.root.children.isEmpty {
-                Text(configuration.root.summary(shelfTitle: shelfTitle)).fontWeight(.semibold)
-                ForEach(Array(configuration.root.children.prefix(expanded ? configuration.root.children.count : 3))) { node in
-                    summary(node)
-                }
-                if !expanded && configuration.root.children.count > 3 { Text("另有 \(configuration.root.children.count - 3) 条条件").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
-                if !expanded && configuration.root.hasExclusion { Text("含排除组").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
+        VStack(alignment: .leading) {
+            Text(verbatim: LibraryQueryRules.filterShelfName(shelf)).foregroundStyle(Color(uiColor: theme.ink))
+            if showsLocation {
+                Text(parentLocation ?? locationKind).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
             }
-            if configuration.sorts.isEmpty { Text("默认：匹配程度 → 最近阅读 → 自然名称").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
-            else {
-                Text(configuration.sorts.enumerated().map { i, key in
-                    "\(i + 1). " + key.field.title + (key.field == .rank && term.isEmpty ? String(localized: "（无文字时跳过）") : key.descending ? " ↓" : " ↑")
-                }.joined(separator: " → ")).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
+        }
+        .task(id: shelf.id) {
+            guard showsLocation, !shelf.builtin,
+                  case .external(.usable(let url, _))? = try? await service.shelfSource(shelf) else { return }
+            parentLocation = url.deletingLastPathComponent().path(percentEncoded: false)
+        }
     }
-    private func summary(_ node: BookSearchNode) -> AnyView {
-        AnyView(VStack(alignment: .leading, spacing: 6) {
-            Text(node.summary(shelfTitle: shelfTitle)).fixedSize(horizontal: false, vertical: true)
-            if node.field == nil && expanded {
-                ForEach(node.children) { summary($0) }.padding(.leading, 12)
-            }
-        })
+
+    private var locationKind: String {
+        if shelf.location == "icloud" { return "iCloud Drive" }
+        return shelf.builtin ? String(localized: "本机") : String(localized: "文件夹")
+    }
+}
+
+struct BookSearchOptionSearch: ViewModifier {
+    let enabled: Bool
+    @Binding var query: String
+    var prompt: LocalizedStringKey = "搜索选项"
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.searchable(text: $query, prompt: prompt)
+        } else {
+            content
+        }
     }
 }
 

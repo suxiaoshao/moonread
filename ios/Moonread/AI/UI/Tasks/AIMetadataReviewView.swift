@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 
 enum AIProposalSources {

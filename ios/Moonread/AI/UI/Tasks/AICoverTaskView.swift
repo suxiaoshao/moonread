@@ -1,12 +1,6 @@
+import MoonreadAI
 import SwiftUI
 
-extension AICoverMode: Identifiable {
-    static let all: [AICoverMode] = [.find, .generate]
-    var id: Self { self }
-    var title: LocalizedStringKey { self == .find ? "查找" : "生成" }
-    var purpose: AIModelPurpose { self == .find ? .search : .image }
-    var unavailable: LocalizedStringKey { self == .find ? "未设置联网搜索" : "未设置图片生成" }
-}
 
 /// The only choice made before Start, because it decides which service is billed.
 struct AICoverModePicker: View {

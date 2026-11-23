@@ -10,13 +10,10 @@ extension ReadingController {
 
     func textViewDidChangeSelection(_ textView: UITextView) {
         guard textView === scrollText || currentLeaves.contains(where: { $0.viewIfLoaded === textView }) else { return }
-        if !preparingAnnotationMenu, textView === annotationMenuText, let tappedAnnotation, textView.selectedRange != tappedAnnotation.range {
-            endAnnotationMenu(clearSelection: false)
-        }
         if !rebuilding {
             readingSelectionChanged(textView.selectedRange.length > 0)
             if let selected = retainedSelection {
-                let expected = Self.annotationRange(AnnotationSelection(start: selected.0, end: selected.1, annotations: []),
+                let expected = Self.selectionDisplayRange(start: selected.0, end: selected.1,
                     mapping: textCoordinates(textView), base: textBase(textView))
                 if textView === activeTextView {
                     if textView.selectedRange != expected { retainedSelection = nil }
@@ -39,7 +36,7 @@ extension ReadingController {
         DispatchQueue.main.async { [weak self] in self?.applyPendingWindow(); self?.reevaluateWindowRequests() }
     }
 
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { endAnnotationMenu(clearSelection: true); statisticsInteraction(); readingBegan?() }
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { statisticsInteraction(); readingBegan?() }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if scrollView.isDragging { statisticsInteraction() }

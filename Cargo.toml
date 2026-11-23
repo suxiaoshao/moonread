@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/moonread-core"]
+members = ["crates/moonread-core", "crates/moonread-ai-cover"]
 resolver = "3"
 
 [workspace.package]

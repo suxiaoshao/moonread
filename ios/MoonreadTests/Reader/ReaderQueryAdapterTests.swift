@@ -30,6 +30,8 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
     XCTAssertEqual(recent.map(\.readingKey), [identity.contentSha256])
     let entry = try XCTUnwrap(recent.first)
     XCTAssertNil(entry.bookId)
+    let fraction = Double(identity.utf8Bytes / 2) / Double(identity.utf8Bytes)
+    XCTAssertEqual(entry.libraryProgress, fraction.formatted(.percent.precision(.fractionLength(1))))
     let model = BookInformationModel(service: f.service)
     await model.load(
       StatisticsRoute(
@@ -47,6 +49,12 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
 
 final class LibraryFixedQueryAdapterTests: XCTestCase {
   private static let location = LibraryLocation(shelfID: "builtin")
+
+  func testReadingProgressAtZeroAndEnd() {
+    XCTAssertEqual(ReadingProgress.fraction(0, of: 0), 0)
+    XCTAssertEqual(ReadingProgress.fraction(0, of: 9), 0)
+    XCTAssertEqual(ReadingProgress.percentage(9, of: 9), 100)
+  }
 
   private func prepareFolder(at root: URL) throws -> ReaderIndex {
     let fixtureBundle = Bundle(for: Self.self)
@@ -468,6 +476,7 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
         try Self.metadata(db, book: a, field: "tag-1", value: "\"Group 2\"")
         try Self.metadata(db, book: a, field: "tag-2", value: "\"Group 10\"")
         try Self.metadata(db, book: b, field: "synopsis", value: "\"Unique synopsis token\"")
+        try Self.metadata(db, book: b, field: "tag-1", value: "\"Group 2\"")
         _ = try ReadingPositionRows.recordPosition(db, book: a, offset: 3, hint: nil,
           file: nil, device: "fixture", now: 10, token: "read")
         // A restored legacy position can have a nonzero offset and a zero clock.
@@ -508,7 +517,8 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
         try LibrarySearchRead.options(db, scope: index.lease.scope, shelfID: "builtin").bookFilterOptions
       }
       XCTAssertEqual(options.authors, ["Synthetic Writer"])
-      XCTAssertEqual(options.tags, ["Group 10", "Group 2"])
+      XCTAssertEqual(options.tags.map(\.name), ["Group 10", "Group 2"])
+      XCTAssertEqual(options.tags.map(\.bookCount), [1, 2])
 
       try index.session.writeUsers(index.lease) { db in
         try db.execute(sql: """
@@ -525,6 +535,34 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
           catalogue: .shelf(shelfId: "builtin", parentPath: "", recursive: false))
       }
     }
+  }
+
+  @MainActor func testUntaggedBookCountMatchesTheUnscopedFilter() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "UntaggedTests-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let index = try prepareFolder(at: root)
+    defer { try? index.session.close() }
+    let tagged = String(repeating: "a", count: 64)
+    let untagged = String(repeating: "b", count: 64)
+    try index.session.writeUsers(index.lease) { db in
+      try Self.addFile(db, id: "tagged", path: "tagged.txt", key: tagged)
+      try Self.addFile(db, id: "untagged", path: "untagged.txt", key: untagged)
+      try Self.addFile(db, id: "copy", path: "copy.txt")
+      try Self.addFile(db, id: "unknown", path: "unknown.txt")
+      try db.execute(sql: """
+        UPDATE main.library_files SET directory=0,book_id='body-untagged' WHERE id='copy';
+        UPDATE main.library_files SET directory=0 WHERE id='unknown'
+        """)
+      try Self.metadata(db, book: tagged, field: "tag-example", value: UserSyncJSON.encode("Example"))
+    }
+    let service = AppDataService(core: index)
+    let rule = BookSearchNode(kind: .rule(.untagged))
+    let configuration = BookSearchConfiguration(root: .init(kind: .group(.all, [rule])))
+    let outcome = try await service.searchLibrary(query: "", configuration: configuration)
+    let count = try await service.untaggedBookCount()
+    XCTAssertEqual(Set(outcome.entries.map(\.id)), ["untagged", "copy"])
+    XCTAssertEqual(outcome.unknownCount, 1)
+    XCTAssertEqual(count, outcome.entries.count)
   }
 
   @MainActor func testSearchAndOptionsObserveAnAttachedMetadataCommit() async throws {
@@ -597,12 +635,53 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
       XCTAssertEqual(first.sourceCount, "2")
       XCTAssertEqual(first.recentRank, 0)
       XCTAssertEqual(first.chapterTitle, "Changed chapter")
-      XCTAssertNotNil(first.percentage)
+      XCTAssertEqual(try XCTUnwrap(first.percentage), 3.0 / 13 * 100, accuracy: 0.0001)
       XCTAssertFalse(first.reconnectRequired, "At least one copy is connected")
       XCTAssertTrue(first.needsDownload, "The representative copy keeps its own state")
       let sources = try index.session.readUsers(index.lease) { try SystemReadingRead.sources($0, scope: scope, sha: sha) }
       XCTAssertEqual(sources.map { $0.entry.id }, ["z","a"])
       XCTAssertEqual(sources.map(\.reconnect), [true,false])
+    }
+  }
+
+  func testManualChapterAndCoverageShareStoredScalarCoordinates() throws {
+    try withFolder { index in
+      let sha = String(repeating: "a", count: 64)
+      let texts = ["1234567\n", "甲 \n \u{00a0}e", "\u{0301}🦉\u{3000}\n尾"]
+      let titleOffset = UInt64(texts[0].utf8.count + "甲 \n".utf8.count)
+      let textLength = UInt64(texts.joined().utf8.count)
+      let tailOffset = textLength - UInt64("尾".utf8.count)
+      try index.session.writeUsers(index.lease) { db in
+        try Self.addFile(db, id: "scalars", path: "scalars.txt", key: sha)
+        try db.execute(sql: "DELETE FROM main.chunks WHERE book_id='body-scalars'")
+        try db.execute(sql: """
+          UPDATE main.books SET byte_count=?,chunk_count=?,projection_end=? WHERE id='body-scalars'
+          """, arguments: [textLength, texts.count, textLength])
+        let counts = [0, 7, 9, 12]
+        var start = 0
+        for (i, text) in texts.enumerated() {
+          let end = start + text.utf8.count
+          try db.execute(sql: "INSERT INTO main.chunks VALUES('body-scalars',?,?,?,?,?,?)",
+                         arguments: [i, start, end, text, counts[i], counts[i + 1]])
+          start = end
+        }
+      }
+      try index.session.readUsers(index.lease) { db in
+        let body = try ReaderIndex.body(db, id: "body-scalars", scope: index.lease.scope.key)
+        let counts = try ReaderIndex.chapterCorrectionCounts(db, body: body, offset: titleOffset)
+        XCTAssertEqual(counts.start, 8)
+        XCTAssertEqual(counts.body, 11)
+        let chapter = SourceSpan(startUtf8: counts.body, endUtf8: 12)
+        let partial = try ChapterCoverageRead.chunks(db, body: body,
+            ranges: [.init(startUtf8: titleOffset, endUtf8: tailOffset + 1)])
+        XCTAssertEqual(try chapterCoverageCounts(chunks: partial, chapters: [chapter]), [0])
+        let complete = try ChapterCoverageRead.chunks(db, body: body,
+            ranges: [.init(startUtf8: titleOffset, endUtf8: textLength)])
+        XCTAssertEqual(try chapterCoverageCounts(chunks: complete, chapters: [chapter]), [1])
+      }
+      let location = try index.readerLocation("body-scalars",
+        percentage: Double(tailOffset + 1) / Double(textLength) * 100)
+      XCTAssertEqual(location.offsetUtf8, tailOffset, "Jump aligns to the start of a UTF-8 scalar")
     }
   }
 

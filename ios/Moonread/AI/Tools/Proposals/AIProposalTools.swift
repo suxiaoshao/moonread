@@ -1,3 +1,4 @@
+import MoonreadAI
 import Foundation
 import Observation
 import AISDKProvider
@@ -34,12 +35,6 @@ struct AIBookmarkProposalInput: AIReadingInput { var bookRef: String; var offset
 struct AICoverProposalInput: AIReadingInput { var bookRef: String; var attachmentRef: String }
 
 struct AIFindCoverInput: AIReadingInput { var bookRef: String; var query: String? }
-struct AIFindCoverResult: Codable, Sendable {
-    var bookRef: String
-    var candidates: [AICoverProposal]
-    var answer: String?
-    var sources: [AIWebSource] = []
-}
 /// A source verified against this session's committed tool results.
 enum AIResolvedSource: Sendable, Identifiable {
     case text(bookRef: String, startUtf8: UInt64, endUtf8: UInt64, title: String)
@@ -104,7 +99,7 @@ enum AIResolvedSource: Sendable, Identifiable {
         case .note(let p): ref = p.bookRef
         case .cover(let p): ref = p.bookRef
         case .findCover(let p): ref = p.bookRef
-        case .organization: return
+        case .organization, .bookFilter: return
         }
         do { let sha = try await AIReadingReferences(reader: reader).sha(ref); liveMetadata[id] = try await reader.details(sha: sha).metadata }
         catch { /* Optional refresh does not turn an actual business save into failure. */ }
@@ -163,6 +158,8 @@ enum AIResolvedSource: Sendable, Identifiable {
             let plan = AIOrganizationPlan(proposal: p, scope: location, reader: reader)
             try await plan.prepare()
             body = .organization(plan)
+        case .bookFilter:
+            throw AIToolError("invalid_argument")
         }
         return .init(id: result.id, sessionID: result.sessionID, result: result, body: body)
     }
@@ -261,7 +258,7 @@ enum AIResolvedSource: Sendable, Identifiable {
                     let details = try await self.reader.details(sha: sha)
                     let title = details.book?.title ?? input.bookRef
                     let native = try await AINativeTools(providers: providers, owner: owner, makeTransport: makeTransport).search(.init(query: input.query ?? (title + " " + details.metadata.author + " 小说")))
-                    let fetcher = await AICoverImageFetcher(availability: providers.availability)
+                    let fetcher = await AICoverImageFetcher(availability: providers.availability, parsePage: AICoverPageParser.extract)
                     let request = try await providers.trackNativeRequest(connectionID: native.data.connectionID, cancel: { fetcher.cancel() })
                     do {
                         let report = try await fetcher.candidates(sources: native.sources, title: title, bookRef: input.bookRef,

@@ -1,12 +1,19 @@
+import MoonreadAI
 import SwiftUI
 import AISDKProvider
 import AISDKProviderUtils
+
+struct AIReadingSearchContext {
+    let isOpenBook: (LibraryEntry) -> Bool
+    let returnToBook: () -> Void
+}
 
 struct AIChatView: View {
     /// The tab page sits on the App canvas; the reading sheet keeps the panel
     /// surface shared by the other reading sheets. Both are the scope's roles.
     enum Placement { case page, sheet }
     @Environment(AIService.self) private var ai
+    @Environment(LibraryModel.self) private var library
     @Environment(\.theme) private var theme
     @Environment(\.systemReadingRouter) private var systemReadingRouter
     let conversationID: String
@@ -14,6 +21,10 @@ struct AIChatView: View {
     var taskObject: AITaskObject?
     /// A search match to open at, instead of the newest message.
     var anchor: AIConversationAnchor? = nil
+    var readingSearch: AIReadingSearchContext?
+    @State private var filterSearch: BookSearchConfiguration?
+    @State private var shelfChoice: FilterShelfRequest?
+    @State private var resolvedShelfSearch: BookSearchConfiguration?
     @State private var anchored = false
     @State private var highlightedTurn: String?
     @State private var attachmentPreview: AIReadingAttachment?
@@ -43,6 +54,12 @@ struct AIChatView: View {
         .modifier(AIDataSharingPresentation(owner: conversationID))
         .sheet(item: $attachmentPreview) { AIReadingAttachmentPreview(attachment: $0, owner: conversationID) }
         .sheet(item: $pickingKind) { AIReadingObjectPicker(kind: $0, conversationID: conversationID) }
+        .sheet(item: $shelfChoice, onDismiss: showResolvedShelfSearch) { request in
+            AIFilterShelfChoiceSheet(suggestion: request.suggestion) { resolvedShelfSearch = $0 }.themeScope(theme)
+        }
+        .navigationDestination(item: $filterSearch) { configuration in
+            AIChatSearchPage(model: library, destination: .suggestion(configuration), reading: readingSearch)
+        }
         .onAppear { visible = true; ai.selectedID = conversationID; ai.conversation(conversationID)?.beginMessagePresentation() }
         .onDisappear { visible = false; notice = nil; restoreInputFocus = false; ai.proposals.closeSession(conversationID) }
     }
@@ -59,9 +76,10 @@ struct AIChatView: View {
                                          preview: { attachmentPreview = $0 }, loadEarlier: {
                             listRequest = .init(target: .preserve)
                             ai.loadEarlier(conversationID)
-                        }, toggleProcessItem: toggle)
+                        }, openFilter: openFilter, toggleProcessItem: toggle)
                         .background(row.turnID == highlightedTurn && highlightedTurn != nil ? Color(uiColor: theme.search) : .clear)
                         .environment(ai).environment(\.theme, theme).environment(\.dynamicTypeSize, typeSize)
+                        .environment(library)
                         .environment(\.systemReadingRouter, systemReadingRouter)
                         .environment(\.colorScheme, theme.scheme)
                     }
@@ -129,6 +147,58 @@ struct AIChatView: View {
             Button("知道了", role: .cancel) { notice = nil }
         } message: { Text(notice?.message ?? "") }
         .task { await ai.providers.refreshCatalogsIfNeeded() }
+    }
+
+    private struct FilterShelfRequest: Identifiable {
+        let id = UUID()
+        let suggestion: AIBookFilterSuggestion
+    }
+
+    private func openFilter(_ suggestion: AIBookFilterSuggestion) {
+        guard visible, filterSearch == nil, shelfChoice == nil else { return }
+        let resolution = suggestion.resolveShelves(library.shelves)
+        guard resolution.unavailable.isEmpty else { return }
+        inputFocused = false
+        if resolution.complete {
+            filterSearch = try? resolution.configuration(suggestion)
+        } else {
+            shelfChoice = .init(suggestion: suggestion)
+        }
+    }
+
+    private func showResolvedShelfSearch() {
+        defer { resolvedShelfSearch = nil }
+        if let resolvedShelfSearch { filterSearch = resolvedShelfSearch }
+    }
+}
+
+/// Search and a newly saved shelf stay in the stack that already owns this chat.
+private struct AIChatSearchPage: View {
+    enum Destination { case suggestion(BookSearchConfiguration), savedShelf(UUID) }
+    let model: LibraryModel
+    let destination: Destination
+    let reading: AIReadingSearchContext?
+    @State private var pushed: LibraryRoute?
+    @State private var visible = false
+
+    var body: some View {
+        let host = LibraryBrowsingHost(push: { pushed = $0 }, isCurrent: { visible }, allowsFileBrowsing: reading == nil,
+                                       isOpenBook: { reading?.isOpenBook($0) ?? false }, returnToOpenBook: { reading?.returnToBook() })
+        Group {
+            switch destination {
+            case .suggestion(let configuration): AppSearchPage(model: model, configuration: configuration, host: host)
+            case .savedShelf(let id): SavedFilterDestination(model: model, id: id, host: host)
+            }
+        }
+        .toolbar(.hidden, for: .tabBar)
+        .navigationDestination(item: $pushed) { route in
+            if case .savedFilter(let id) = route {
+                AIChatSearchPage(model: model, destination: .savedShelf(id), reading: reading)
+            } else {
+                HostedLibraryDestination(route: route, host: host)
+            }
+        }
+        .onAppear { visible = true }.onDisappear { visible = false }
     }
 }
 

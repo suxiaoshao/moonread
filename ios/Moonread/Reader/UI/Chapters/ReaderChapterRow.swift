@@ -6,7 +6,6 @@ struct ReaderChapterRow<Actions: View>: View {
     let chapter: ChapterEntry
     let current: Bool
     var showsCoverage = true
-    let indented: Bool
     let select: () -> Void
     @ViewBuilder let actions: () -> Actions
 
@@ -22,12 +21,10 @@ struct ReaderChapterRow<Actions: View>: View {
                 current: current,
                 metadata: meta
             )
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
-                .padding(.leading, LayoutTokens.content + (indented ? LayoutTokens.compact : 0))
-                .padding(.trailing, LayoutTokens.content)
-                .padding(.vertical, 4)
-                .contentShape(.rect)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: LayoutTokens.hit)
+            .padding(.vertical, 4)
+            .modifier(ReaderChapterRowSurface(current: current))
         }
         .buttonStyle(.plain)
         .contextMenu { actions() }
@@ -46,23 +43,36 @@ struct ReaderChapterLabel: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: LayoutTokens.compact) {
-            if current {
-                Image(systemName: "book.fill").font(.footnote)
-                    .foregroundStyle(Color(uiColor: theme.accent))
-                    .accessibilityHidden(true)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                title.font(titleFont)
-                    .fontWeight(current ? .semibold : nil)
-                    .foregroundStyle(Color(uiColor: theme.ink))
-                    .lineLimit(metadata == nil ? nil : 2)
-                if let metadata {
-                    Text(verbatim: metadata).font(.caption).monospacedDigit()
-                        .foregroundStyle(Color(uiColor: theme.secondary))
-                }
+        VStack(alignment: .leading, spacing: 3) {
+            title.font(titleFont)
+                .fontWeight(current ? .semibold : nil)
+                .foregroundStyle(Color(uiColor: current ? theme.accent : theme.ink))
+                .lineLimit(metadata == nil ? nil : 2)
+            if let metadata {
+                Text(verbatim: metadata).font(.caption).monospacedDigit()
+                    .foregroundStyle(Color(uiColor: current ? theme.accent : theme.secondary))
             }
         }
+    }
+}
+
+struct ReaderChapterRowSurface: ViewModifier {
+    let current: Bool
+    @Environment(\.theme) private var theme
+    private let selectionInset: CGFloat = 6
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, selectionInset)
+            .background {
+                if current {
+                    RoundedRectangle(cornerRadius: LayoutTokens.compact)
+                        .fill(Color(uiColor: theme.selected))
+                }
+            }
+            .padding(.horizontal, LayoutTokens.page - selectionInset)
+            .contentShape(.rect)
     }
 }
 

@@ -2,10 +2,10 @@ import Foundation
 
 /// The import owns disposable package contents and cover drafts, never the source file.
 final class MetadataImportSession: @unchecked Sendable {
-    let document: MetadataDocument
+    let document: MetadataImportDocument
     let configuration: UUID
     private var drafts: Set<URL> = []
-    init(document: MetadataDocument, configuration: UUID) { self.document = document; self.configuration = configuration }
+    init(document: MetadataImportDocument, configuration: UUID) { self.document = document; self.configuration = configuration }
     func retainDrafts(_ urls: [URL]) { drafts.formUnion(urls) }
     deinit { for url in drafts { try? FileManager.default.removeItem(at: url) } }
 }

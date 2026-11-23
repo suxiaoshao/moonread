@@ -22,7 +22,7 @@ The eleven intermediate Gupi copies could not be confirmed as exact upstream geo
 
 Thirteen monochrome marks come from `@lobehub/icons-static-svg` **1.95.1**: `bailian.svg`, `minimax.svg`, `xiaomimimo.svg`, `cerebras.svg`, `fireworks.svg`, `deepinfra.svg`, `huggingface.svg`, `opencode.svg`, `meta.svg`, `nvidia.svg`, `baseten.svg`, `vercel.svg`, `antgroup.svg` (Ant Ling uses the parent Ant Group mark).
 
-Source: https://www.npmjs.com/package/@lobehub/icons-static-svg/v/1.95.1 ; upstream https://github.com/lobehub/lobe-icons . MIT license is retained in [LOBE-ICONS-LICENSE.txt](LOBE-ICONS-LICENSE.txt). Brand trademarks remain their owners' property.
+Source: https://www.npmjs.com/package/@lobehub/icons-static-svg/v/1.95.1 ; upstream https://github.com/lobehub/lobe-icons . MIT license is retained in [LOBE-ICONS-LICENSE.txt](../../Packages/MoonreadAI/Sources/MoonreadAI/Resources/LOBE-ICONS-LICENSE.txt). Brand trademarks remain their owners' property.
 
 The paths/viewBox are retained. SVG `currentColor` becomes black and `1em` becomes 24 for asset-catalog compatibility; web-only style attributes are removed. Xcode template rendering applies the current theme. Assets are bundled and never fetched while displaying a screen. Region and plan variants share their brand mapping in `Providers/AIConnection.swift`.
 

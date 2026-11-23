@@ -45,7 +45,7 @@ struct ReaderChapterList: View {
                             }
                             if editingOutline, let volume = group.volume { chapterRow(volume) }
                             ForEach(group.chapters, id: \.startUtf8) { chapter in
-                                chapterRow(chapter, indented: group.volume != nil && !editingOutline)
+                                chapterRow(chapter, occludingParent: editingOutline ? nil : group.volume?.startUtf8)
                             }
                         } header: {
                             if !editingOutline, let volume = group.volume {
@@ -129,20 +129,19 @@ struct ReaderChapterList: View {
             chapterFilterFocused = false
             navigate(0, nil, .cover)
         } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: current ? "book.closed.fill" : "book.closed")
-                    .font(.footnote)
-                    .foregroundStyle(Color(uiColor: current ? theme.accent : theme.secondary))
-                    .accessibilityHidden(true)
+            HStack(spacing: LayoutTokens.compact) {
                 Text("封面")
                     .font(.body)
                     .fontWeight(current ? .semibold : nil)
                     .foregroundStyle(Color(uiColor: theme.ink))
+                Spacer(minLength: LayoutTokens.compact)
+                Image(systemName: "book.closed")
+                    .font(.footnote)
+                    .foregroundStyle(Color(uiColor: theme.secondary))
+                    .accessibilityHidden(true)
             }
-            .padding(.bottom, 3)
-            .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .bottomLeading)
-            .padding(.horizontal, LayoutTokens.content)
-            .contentShape(.rect)
+            .frame(minHeight: LayoutTokens.hit)
+            .modifier(ReaderChapterRowSurface(current: current))
         }
         .buttonStyle(.plain)
         .id("reader-cover")
@@ -193,17 +192,17 @@ struct ReaderChapterList: View {
             Button("从目录移除", systemImage: "trash", role: .destructive) { removeChapter(chapter) }
         }
     }
-    private func chapterRow(_ chapter: ChapterEntry, indented: Bool = false) -> some View {
+    private func chapterRow(_ chapter: ChapterEntry, occludingParent: UInt64? = nil) -> some View {
         let current = isCurrent(chapter)
         return ReaderChapterRow(chapter: model.chapterWithCoverage(chapter), current: current,
-                                showsCoverage: model.chapterCoverageReady, indented: indented) {
+                                showsCoverage: model.chapterCoverageReady) {
             chapterFilterFocused = false
             if editingOutline { editChapter(ChapterEditDraft(start: chapter.startUtf8, title: chapter.title, level: chapter.level)) }
             else if chapter.level == 0 { model.toggleVolume(chapter.startUtf8) }
             else { navigate(chapter.startUtf8, nil, .start) }
         } actions: { chapterActions(chapter) }
         .modifier(ReaderChapterFrame(tracked: current) { frame in
-            reportChapterFrame(frame, for: chapter, occludingParent: indented ? chapter.parentUtf8 : nil)
+            reportChapterFrame(frame, for: chapter, occludingParent: occludingParent)
         })
         .listRowInsets(EdgeInsets())
         .listRowBackground(Color(uiColor: theme.surface))
@@ -228,8 +227,8 @@ struct ReaderChapterList: View {
                     .foregroundStyle(Color(uiColor: theme.secondary))
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, LayoutTokens.content)
-            .frame(minHeight: LayoutTokens.hit).contentShape(.rect)
+            .frame(minHeight: LayoutTokens.hit)
+            .modifier(ReaderChapterRowSurface(current: current))
         }
         .buttonStyle(.plain)
         .textCase(nil)

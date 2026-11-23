@@ -1,8 +1,12 @@
+import MoonreadAI
 import Combine
 import Foundation
 import Observation
 import AISDKProvider
 import AISDKProviderUtils
+
+// Apollo also exports a JSONValue alias. AI messages use the provider wire value.
+typealias JSONValue = AISDKProvider.JSONValue
 
 @MainActor @Observable final class AIConversation {
     nonisolated let id: String
@@ -176,17 +180,11 @@ struct AISessionSummary: Identifiable {
     @ObservationIgnored var fixtureSeeding = false
     @ObservationIgnored var fixtureSeeded = false
     #endif
-    init(repository: AIRepository? = nil, defaults suppliedDefaults: UserDefaults? = nil, storefront: AIStorefrontSource = .live, auth: AIAuthentication = AIAuthentication(), reader: AppDataService = .shared, makeTransport: @escaping @Sendable () -> AITransport = { AITransport() }) {
-        #if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        let session = arguments.firstIndex(of: "--ui-test-session").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
-        let defaults = suppliedDefaults ?? session.flatMap { UserDefaults(suiteName: "Moonread.AI.UITest-\($0)") } ?? .standard
-        #else
-        let defaults = suppliedDefaults ?? .standard
-        #endif
+    init(repository: AIRepository? = nil, defaults suppliedDefaults: UserDefaults? = nil, storefront: AIStorefrontSource = .live, auth: AIAuthentication = AIAuthentication(), reader: AppDataService = .shared, makeTransport: @escaping @Sendable () -> AITransport = { AITransport() }, availability suppliedAvailability: AIAvailability? = nil) {
+        let defaults = suppliedDefaults ?? AIAvailability.applicationDefaults
         self.repository = repository; self.makeTransport = makeTransport; self.reader = reader
         proposals = AIProposalRegistry(reader: reader)
-        availability = AIAvailability(defaults: defaults, storefront: storefront)
+        availability = suppliedAvailability ?? AIAvailability(defaults: defaults, storefront: storefront)
         sharing = AIDataSharingConsent(defaults: defaults)
         usage = AIConnectionUsageService(availability: availability, now: auth.now)
         providers = AIConnectionService(defaults: defaults, auth: auth, sharing: sharing, availability: availability, usage: usage)
@@ -204,20 +202,36 @@ struct AISessionSummary: Identifiable {
         }
     }
     func load() async {
-        if loaded { return }
+        guard availability.isAvailable, !loaded else { return }
         if let loading { await loading.value; return }
         let work = Task { @MainActor in
             do {
                 if self.repository == nil { self.repository = try await AIRepository.open() }
-                guard let repository = self.repository else { return }
+                guard self.availability.isAvailable, let repository = self.repository else { return }
                 self.proposals.canEdit = { [weak self] id in self?.admissionOpen(id) == true }
                 self.proposals.beginApplication = { [weak self] id in guard let self else { throw AIError.storage }; return try self.beginApplication(id) }
                 self.proposals.endApplication = { [weak self] id, token in self?.endApplication(id, token: token) }
                 self.proposals.attach = { [weak self] id, attachment, staged in try await self?.addReadingAttachment(id, attachment: attachment, staged: staged) }
-                self.coordinator = AIAgentCoordinator(repository: repository, providers: self.providers, reader: self.reader, proposals: self.proposals, isOpen: { [weak self] id in self?.ownsSession(id) == true }, entriesCommitted: { [weak self] id, entries, head in
-                    guard let value = self?.conversation(id) else { return }
-                    value.head = head; value.mergeEntries(entries, insertingNew: !value.hasLater)
-                }, makeTransport: self.makeTransport)
+                let coordinator = AIAgentCoordinator(
+                    repository: repository, providers: self.providers,
+                    appTools: { [reader = self.reader, proposals = self.proposals, providers = self.providers, makeTransport = self.makeTransport] id in
+                        AIReadingTools(reader: reader).definitions() + proposals.definitions(owner: id, providers: providers, makeTransport: makeTransport)
+                    },
+                    classifyToolError: { error in
+                        guard let issue = error as? ReaderError else { return nil }
+                        switch issue {
+                        case .NotFound: return AIToolError("not_found")
+                        case .InvalidRange: return AIToolError("invalid_argument", field: "startUtf8/endUtf8", message: "Use UTF-8 boundaries from tool results.")
+                        default: return AIToolError("storage")
+                        }
+                    },
+                    isOpen: { [weak self] id in self?.ownsSession(id) == true },
+                    entriesCommitted: { [weak self] id, entries, head in
+                        guard let value = self?.conversation(id) else { return }
+                        value.head = head; value.mergeEntries(entries, insertingNew: !value.hasLater)
+                    }, makeTransport: self.makeTransport)
+                self.coordinator = coordinator
+                self.proposals.history = { id in try await coordinator.store(for: id).all(id) }
                 self.sessions = try await repository.sessions().map(AIConversation.init)
                 for value in self.sessions {
                     await AIImageStore.shared.bind(value.id, repository: repository)
@@ -454,10 +468,10 @@ struct AISessionSummary: Identifiable {
     /// Listed conversations whose title or visible messages contain the text, newest first;
     /// each carries its newest matching message. Drafts and unlisted tasks are not searched.
     func searchConversations(_ text: String) async throws -> [AIConversationSearchHit] {
-        guard availability.isAvailable else { return [] }
-        await load()
         let term = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !term.isEmpty else { return [] }
+        guard availability.isAvailable, !term.isEmpty else { return [] }
+        await load()
+        guard availability.isAvailable else { return [] }
         guard let repository else { throw AIError.storage }
         let listed = conversations
         let matches = try await repository.newestMatches(term, in: Set(listed.map(\.id)))
@@ -577,27 +591,3 @@ struct AISessionSummary: Identifiable {
 }
 
 /// Provider failures may contain private bodies/headers. Only expose known safe causes.
-enum AIRequestError {
-    static func message(_ error: Error) -> String {
-        if let value = AIChatGPTResponses.failure(error) { return value.localizedDescription }
-        if let value = error as? AIError { return value.localizedDescription }
-        if let value = error as? URLError {
-            switch value.code {
-            case .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost:
-                return String(localized: "网络连接中断")
-            case .timedOut: return String(localized: "等待回复超时")
-            default: break
-            }
-        }
-        if let value = error as? APICallError {
-            switch value.statusCode ?? 0 {
-            case 401: return String(localized: "当前连接认证失效")
-            case 429: return String(localized: "请求受到限制或额度不足")
-            case 500...599: return String(localized: "服务暂时不可用")
-            case 400, 403, 404, 422: return String(localized: "此次请求未被接受")
-            default: break
-            }
-        }
-        return String(localized: "请求未完成")
-    }
-}

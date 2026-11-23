@@ -18,20 +18,26 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
     @ViewBuilder let compact: () -> Compact
     @ViewBuilder let footer: () -> Footer
     @ViewBuilder let details: (_ readyForInput: Bool) -> Details
-    @ViewBuilder let taskContent: () -> TaskContent
+    @ViewBuilder let taskContent: (_ measureAnnotations: @escaping (ReaderAnnotationPanelSize) -> Void) -> TaskContent
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @Environment(\.theme) private var theme
     @State private var nativeSheet = ReaderSheetReference()
     @State private var phase = PanelLayoutPhase.compact(.init())
+    @State private var annotationHeight: CGFloat?
 
     private var wantsExpanded: Bool { canExpand && expanded && taskID == nil }
     private var compactVisible: Bool { taskID == nil && !wantsExpanded }
+    private var showsAnnotations: Bool { taskID == "annotationDetails" }
+    private var detentHeight: CGFloat { showsAnnotations ? annotationHeight ?? compactHeight : compactHeight }
 
     var body: some View {
         GeometryReader { geometry in
+            let sheetHeight = geometry.size.height
             ZStack(alignment: .bottom) {
                 if let taskID {
-                    taskContent()
+                    taskContent { measurement in
+                        updateAnnotationHeight(measurement, sheetHeight: sheetHeight)
+                    }
                         .id(taskID)
                         .allowsHitTesting(input.enabled)
                         .accessibilityHidden(!input.enabled)
@@ -45,7 +51,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottom)
         }
-        .overlay(ReaderSheetConfiguration(reference: nativeSheet, height: compactHeight, canExpand: canExpand,
+        .overlay(ReaderSheetConfiguration(reference: nativeSheet, height: detentHeight, canExpand: canExpand,
             dismissing: dismissing, expanded: wantsExpanded, taskID: taskID, scope: scope, token: token, confirm: confirm) { large in
                 guard input.enabled else { return }
                 if taskID != nil { if !large { closeTask() }; return }
@@ -54,8 +60,17 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
         .presentationBackground(Color(uiColor: theme.surface))
         .onPreferenceChange(ReaderPanelSize.self, perform: updateMeasurement)
         .onChange(of: wantsExpanded, initial: true) { _, expanded in setExpanded(expanded) }
+        .onChange(of: showsAnnotations) { _, showing in if !showing { annotationHeight = nil } }
         .animation(MotionTokens.accessoryResize(reduced: reduceMotion), value: taskID)
         .accessibilityElement(children: .contain).accessibilityIdentifier("readerBottomPanel")
+    }
+
+    private func updateAnnotationHeight(_ measurement: ReaderAnnotationPanelSize, sheetHeight: CGFloat) {
+        guard showsAnnotations, !dismissing, measurement.content > 0, measurement.viewport > 0 else { return }
+        // The scroll viewport excludes the native toolbar and the undo row.
+        let chrome = max(0, sheetHeight - measurement.viewport)
+        let height = ceil(measurement.content + chrome)
+        if annotationHeight != height { annotationHeight = height }
     }
 
     private func accessoryContent(in geometry: GeometryProxy) -> some View {
@@ -211,6 +226,7 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
 
     final class Controller: UIViewController, UISheetPresentationControllerDelegate {
         private static let compactID = UISheetPresentationController.Detent.Identifier("readerCompact")
+        private static let annotationID = UISheetPresentationController.Detent.Identifier("readerAnnotation")
         var configuration: ReaderSheetConfiguration?
         private weak var sheet: UISheetPresentationController?
         private weak var forwardedDelegate: (any UISheetPresentationControllerDelegate)?
@@ -223,7 +239,10 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
         private lazy var compact = UISheetPresentationController.Detent.custom(identifier: Self.compactID) { [weak self] context in
             min(self?.resolverHeight ?? 220, context.maximumDetentValue)
         }
-        private enum Mode: Equatable { case compact, expandable, task, conversation }
+        private lazy var annotation = UISheetPresentationController.Detent.custom(identifier: Self.annotationID) { [weak self] context in
+            min(self?.resolverHeight ?? 220, context.maximumDetentValue * 0.82)
+        }
+        private enum Mode: Equatable { case compact, expandable, task, resizableTask, annotationDetails }
 
         override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
         override func didMove(toParent parent: UIViewController?) { super.didMove(toParent: parent); configure() }
@@ -254,27 +273,39 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
             if self.sheet !== sheet { detach(); self.sheet = sheet; mode = nil }
             if sheet.delegate !== self { forwardedDelegate = sheet.delegate; sheet.delegate = self }
             if appeared { confirmInstallation() }
-            let next: Mode = configuration.taskID == "ai" ? .conversation
-                : configuration.taskID != nil ? .task : configuration.canExpand ? .expandable : .compact
+            let next: Mode = switch configuration.taskID {
+            case "ai": .resizableTask
+            case "annotationDetails": .annotationDetails
+            case .some: .task
+            case nil: configuration.canExpand ? .expandable : .compact
+            }
             let large = next == .task || (next == .expandable && configuration.expanded)
             let changedMode = mode != next
             let changedHeight = abs(resolverHeight - configuration.height) > 1
-            let changedSelection = next != .conversation && requestedLarge != large
+            let changedSelection = next != .resizableTask && requestedLarge != large
             guard changedMode || changedHeight || changedSelection else { return }
             let first = mode == nil
             mode = next; requestedLarge = large
             let changes = {
                 self.resolverHeight = configuration.height
                 if changedMode {
-                    sheet.detents = next == .conversation ? [.medium(), .large()]
-                        : next == .compact ? [self.compact] : [self.compact, .large()]
+                    sheet.detents = switch next {
+                    case .resizableTask: [.medium(), .large()]
+                    case .annotationDetails: [self.annotation]
+                    case .compact: [self.compact]
+                    case .expandable, .task: [self.compact, .large()]
+                    }
                     sheet.largestUndimmedDetentIdentifier = next == .compact || next == .expandable ? Self.compactID : nil
                     sheet.prefersScrollingExpandsWhenScrolledToEdge = false
                     sheet.prefersGrabberVisible = true
                     sheet.preferredCornerRadius = 32
                 }
                 if changedMode || changedSelection {
-                    sheet.selectedDetentIdentifier = next == .conversation ? .medium : large ? .large : Self.compactID
+                    sheet.selectedDetentIdentifier = switch next {
+                    case .resizableTask: .medium
+                    case .annotationDetails: Self.annotationID
+                    default: large ? .large : Self.compactID
+                    }
                 }
                 sheet.invalidateDetents()
             }
@@ -301,7 +332,7 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
             sheet = nil; forwardedDelegate = nil
         }
         func sheetPresentationControllerDidChangeSelectedDetentIdentifier(_ sheetPresentationController: UISheetPresentationController) {
-            if !applying, mode != .conversation {
+            if !applying, mode != .resizableTask, mode != .annotationDetails {
                 let large = sheetPresentationController.selectedDetentIdentifier == .large
                 requestedLarge = large
                 configuration?.selectionChanged(large)

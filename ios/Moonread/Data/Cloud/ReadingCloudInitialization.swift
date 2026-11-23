@@ -217,9 +217,7 @@ extension ReadingCloudInitialization {
         }
         guard control.phase == .preparing, scope != .local else { throw Failure.inconsistentDecision }
         // No predecessor in a proven new zone. Do not send pre-election deletes.
-        let zone = ReadingHistoryTransport.zone
-        try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE zone=?", arguments: [zone])
-        try db.execute(sql: "DELETE FROM usr.cloud_record_state WHERE zone=?", arguments: [zone])
+        try CloudTransportRows.resetZoneRecords(db, zone: ReadingHistoryTransport.zone)
         try save(db, Upload(initialization: control.id, sealed: false))
     }
 

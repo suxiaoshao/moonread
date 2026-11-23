@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 
 struct AIReadingConversation: View {
@@ -6,12 +7,13 @@ struct AIReadingConversation: View {
     let close: () -> Void
     @Binding var selected: String?
     let openingIsActive: () -> Bool
+    let readingSearch: AIReadingSearchContext
     @State private var visible = false
     @State private var notice: AIActionNotice?
     var body: some View {
         NavigationStack {
             Group {
-                if let id = selected { AIChatView(conversationID: id, placement: .sheet) }
+                if let id = selected { AIChatView(conversationID: id, placement: .sheet, readingSearch: readingSearch) }
                 else { ContentUnavailableView("新对话", systemImage: "bubble.left.and.bubble.right") }
             }.toolbar {
                 ToolbarItem(placement: .principal) {

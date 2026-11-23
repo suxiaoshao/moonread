@@ -65,7 +65,23 @@ import GRDB
     var loading: Bool { phase == .receiving || phase == .preparing }
     var saving: Bool { phase == .saving || phase == .renaming }
     var hasTask: Bool { phase != .idle }
-    var canStartNew: Bool { phase == .idle || phase == .completed }
+    var canStartNew: Bool {
+        #if MOONREAD_INTERNAL_TOOLS
+        if cleaningMetadata { return false }
+        #endif
+        return phase == .idle || phase == .completed
+    }
+    #if MOONREAD_INTERNAL_TOOLS
+    private(set) var cleaningMetadata = false
+    var canCleanMetadata: Bool { canStartNew && work == nil }
+
+    func cleanMetadata(_ confirmation: MetadataCleanupConfirmation) async throws -> Int {
+        guard canCleanMetadata else { throw MetadataCleanupError.busy }
+        cleaningMetadata = true
+        defer { cleaningMetadata = false }
+        return try await service.cleanMetadata(confirmation)
+    }
+    #endif
     var canContinue: Bool { !requiresNewPreview && (phase == .stopped || phase == .paused) && (checkpoint != nil || hasCompleteInput) }
     var continuingPreparation: Bool { checkpoint == nil }
     var hasCompleteInput: Bool { record?.inputComplete == true }
@@ -183,12 +199,13 @@ import GRDB
     var invalidSelection: Bool { books.contains { $0.selectionError != nil } }
     var pending: [MetadataPreviewBook] { books.filter { $0.disposition == .changes } }
     var unchangedCount: Int { books.filter { $0.disposition == .unchanged }.count }
-    enum ReviewCompletion: Equatable { case unchanged, unselected }
+    enum ReviewCompletion: Equatable { case unchanged, unselected(changedBooks: Int) }
     var reviewCompletion: ReviewCompletion? {
         guard phase == .review, !books.isEmpty, error == nil,
               preview?.diagnostics.isEmpty == true, !invalidSelection,
               books.allSatisfy({ $0.disposition == .unchanged }) else { return nil }
-        return books.contains(where: \.hasSuggestedChanges) ? .unselected : .unchanged
+        let changedBooks = books.count(where: \.hasSuggestedChanges)
+        return changedBooks == 0 ? .unchanged : .unselected(changedBooks: changedBooks)
     }
     var unmatchedCount: Int { books.filter { $0.disposition == .unmatched }.count }
     var skippedCount: Int { books.filter { $0.disposition == .skipped }.count }
@@ -536,11 +553,7 @@ import GRDB
             let handle = try FileHandle(forWritingTo: url); defer { try? handle.close() }
             let encoder = JSONEncoder(); encoder.keyEncodingStrategy = .convertToSnakeCase
             for item in diagnostics {
-                struct Diagnostic: Encodable {
-                    let sourceLine: UInt64?, recordIndex: UInt64?
-                    let code: String, field: String?, contentSha256: String?, message: String
-                }
-                try handle.write(contentsOf: encoder.encode(Diagnostic(sourceLine: item.sourceLine, recordIndex: item.recordIndex, code: item.code, field: item.field, contentSha256: item.contentSha256, message: item.message)))
+                try handle.write(contentsOf: encoder.encode(MetadataDiagnosticPayload(item)))
                 try handle.write(contentsOf: Data([10]))
             }
             return [url]
@@ -550,7 +563,7 @@ import GRDB
 
 /// Shared platform execution for user-initiated import and export. Each task
 /// keeps its own run and system claim.
-@MainActor private final class MetadataSystemExecution {
+@MainActor final class MetadataSystemExecution {
     private final class Run {
         let id = UUID()
         let canAttach: @MainActor () -> Bool
@@ -636,7 +649,7 @@ import GRDB
     }
 }
 
-@MainActor @Observable final class ExportTask<Request: Sendable, Output: Sendable> {
+@MainActor @Observable final class DataExchangeTask<Request: Sendable, Output: Sendable> {
     enum Phase {
         case idle, running, completed, failed
 
@@ -797,9 +810,9 @@ struct MetadataExportRequest: Sendable {
     let format: MetadataFormat
 }
 
-typealias MetadataExportTask = ExportTask<MetadataExportRequest, MetadataExportResult>
+typealias MetadataExportTask = DataExchangeTask<MetadataExportRequest, MetadataExportResult>
 
-extension ExportTask where Request == MetadataExportRequest, Output == MetadataExportResult {
+extension DataExchangeTask where Request == MetadataExportRequest, Output == MetadataExportResult {
     convenience init(service: AppDataService, usesSystemExecution: Bool) {
         self.init(service: service, usesSystemExecution: usesSystemExecution,
                   kind: "metadata-export", title: String(localized: "导出小说信息", table: "MetadataExchange"),

@@ -2,6 +2,16 @@ import Foundation
 import GRDB
 import Synchronization
 
+extension Sequence where Element == StatisticsDay {
+    var activeDayCount: Int {
+        Set(lazy.filter { $0.durationMs > 0 }.map(\.day)).count
+    }
+}
+
+extension StatisticsOverview {
+    var activeDayCount: Int { days.activeDayCount }
+}
+
 enum HistoryCompatibility {
     static func incomplete(_ db: Database, encodedKeys: String?) throws -> Bool {
         // Quarantine has trusted book/session routing but no trusted day.

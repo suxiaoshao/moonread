@@ -48,7 +48,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让常规依赖版本更新 PR 指向当前版本分支。
 - Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 PR 的 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 `hotfix/x.y.z` 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。
-- 当前常规依赖更新目标为 `release/1.8`，以 `.github/dependabot.yml` 为准；新版本分支切换后需核对实际配置。
+- 当前开发分支为 `release/1.9`（`main` 对应已发布的 1.8）。常规依赖更新目标同为 `release/1.9`，以 `.github/dependabot.yml` 为准；新版本分支切换后需核对实际配置。
 
 签名配置、小说原件、构建产物与凭据不随代码推送。CI、仓库保护、模板及依赖更新见[仓库与持续集成](repository.md)，测试范围与推送前要求见[测试原则](verification.md#测试原则)。
 
@@ -63,6 +63,8 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - 主 App 的 `Prune unused math fonts` 阶段依赖 SwiftPM 已复制的资源 bundle，在 Release 签名前只保留 Latin Modern Math 的 OTF、metrics plist 与三份许可证；上游依赖不变。该阶段每次构建执行，防止增量复制恢复未用字体，缺少必需资源时构建失败。Debug 的 SwiftPM 资源 bundle 有独立临时签名，不做裁剪。
 - UniFFI 从 [uniffi.toml](../../../crates/moonread-core/uniffi.toml) 读取输出名称；使用 `--no-format` 写入临时目录；三个预期输出全部成功生成后逐文件 `cmp`，缺失或内容变化才替换正式文件，内容相同保留原 mtime。失败不能回退旧绑定，生成目录与 CI DerivedData 成套缓存；不跳过当前 Rust 构建。
 - 链接明确指定 `libmoonread_core.a`，避免同目录动态库被优先选中或把 Mac 路径带进 iPhone。
+- 主 App 另外链接 `libmoonread_ai_cover.a`，由同一个 Nix 构建阶段编译。封面 crate 含网页解析，C 接口不参与正文 UniFFI 生成。Swift 包通过 App 注入的封面适配调用该接口。
+- `ios/Packages/MoonreadAI` 是 iOS 18 / Swift 6 本地包。Swift AI SDK、Litext、MarkdownView 版本在其清单声明，由 Xcode workspace 同一 `Package.resolved` 锁定。模型快照和品牌资源随包资源复制，测试继续由 Moonread scheme 运行。
 - Rust 输出位于仓库默认的 `target/`，绑定位于 `build/ios/Generated/<Configuration>/`，均不提交。模拟器使用 `aarch64-apple-ios-sim`（arm64）。`ios/Rust.xcconfig` 对模拟器 SDK 排除 x86_64，使 Xcode 在选择通用 iOS Simulator 目的地时也只链接 arm64。
 - Xcode 构建缓存只用两份：模拟器构建和测试统一 `-derivedDataPath build/DerivedData`，真机构建统一 `build/DeviceDerivedData`。不按任务另建缓存目录；任务的日志、截图等验证记录可以放在 `build/<任务名>/`，任务合并后删除。
 - 不使用 git worktree；在主目录切分支，共用 `target`、`build/DerivedData` 和 `build/DeviceDerivedData`。
@@ -89,7 +91,15 @@ App 的营销版本（`MARKETING_VERSION`，用户可见）和构建号（`CURRE
 
 ### TestFlight 打包与上传
 
-统一见[发布手册](release.md)：main 手动触发、branch+SHA、verify 后授权 upload，或本机同归档导出核验。
+统一见[发布手册](release.md)。从待打包的受保护版本分支手动触发，填写完整 SHA，verify 后经授权执行 upload，也可在本机核验同一归档的导出产物。
+
+### 内部开发工具
+
+需要反复验证小说信息导入时，在现有 Moonread scheme 的本机构建命令中增加 `MOONREAD_TOOLS_CONDITION=MOONREAD_INTERNAL_TOOLS`。真机试用仍使用 `-configuration Release` 保留 Swift 与 Rust 优化，并核对 Development 的签名与资料环境。需要运行开发工具的资料回归测试时，可对 Debug 测试传入同一设置。
+
+工具从设置末尾的「开发者 → 清理小说资料」进入。在表单选择已识别的小说及字段，按正文 SHA 去重，再点导航栏的「清理」确认。默认清理作者、简介、标签与封面引用，手动阅读状态需单独选中。清理保留小说文件、文件名、正文缓存、封面附件及阅读记录，之后可从原数据管理页重试导入。
+
+内测标记只决定是否编入工具。清理前按当前实际资料库提示范围。本机库只写入本机，账户库沿用原有同步，暂停同步的变更会在恢复后上传。普通 Debug、Release 及提审候选默认关闭工具。
 
 ### 官网与商店原图（独立 DEBUG 测试）
 
@@ -154,11 +164,13 @@ R15 原图写到 `build/Release/1.4-screenshots/raw/1.6/<语言>/<设备组>/<li
 
 ### TestFlight 手动 CI
 
-[`TestFlight`](../../../.github/workflows/testflight.yml) 只接受在默认分支 `main` 上的 `workflow_dispatch`，不由 tag、PR 或 push 上传。工作流本身须先通过 PR 合入 main；维护者再同步到当前 release 分支。Actions 中选择 `main`，填写 `source_branch`（仅 `release/x.y` 或 `hotfix/x.y.z`）、`expected_sha`（完整 40 位、等于该分支 HEAD）、`mode`（默认 `verify`）。`upload` 必须另获用户明确授权后才选择；verify 从不上传。
+[`TestFlight`](../../../.github/workflows/testflight.yml) 由维护者在 Actions 选择本次打包的受保护 `release/x.y` 或 `hotfix/x.y.z` 分支手动触发。填写 `expected_sha`（40 位小写十六进制，等于所选分支 HEAD）和 `mode`（默认 `verify`）。工作流与触发提交必须都匹配此 SHA。verify 只归档、导出和核验，upload 需经用户明确授权。
 
 不接触签名凭据的 prepare job 检查同一个可信 `ci.yml` 中该来源分支与 SHA 的最新 push run。该运行必须成功，且 `Secret scan` 和 `Workflow syntax` 必须成功；如果该运行包含 `Rust and iOS tests`，也必须要求它成功；只有不存在该作业时才要求旧版的 `Linux checks` 和 `iOS unit tests` 都成功。每项必需作业必须恰好出现一次，且结果为 `success`；skipped、pending 等状态均不放行。签名 job 进入 `testflight` Environment 后再次检查分支 HEAD，检出固定 SHA；上传前再检查一次。所有版本共用 `moonread-testflight` 串行组，不取消正在运行的任务；不要连续排多个发版请求。
 
-用户在 GitHub **Environment `testflight`** 中自行配置 Secrets：`ASC_API_KEY_BASE64`（ASC Team API Key 的 p8 原字节 Base64）、`ASC_KEY_ID`、`ASC_ISSUER_ID`，以及固定 Apple Development 证书 `IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64` / `IOS_DEVELOPMENT_CERTIFICATE_PASSWORD`（导入临时钥匙串，供自动签名复用，避免每次运行新建开发证书占满额度）；配置非敏感 Variable `APPLE_TEAM_ID`。导入后仅接受临时钥匙串中通过 codesigning 有效性检查、含匹配私钥且 Subject `OU` 等于配置团队的唯一 Apple Development 身份；证书名称括号内是成员标识，不能拿来匹配 Team ID。证书类型、团队或信任链不满足时停止，不自动新建证书，也不修改信任设置。API Key 按已确认自动签名方案使用 Admin 角色。Environment 限制只允许 main 部署，不设审批；不要把签名 Secrets 配到 PR 可访问的仓库环境。代理不在仓库、日志或报告中保存密钥与 p12。未配置或自动签名权限、协议、证书额度不足时停止报告，不自动改走手动签名、不撤销证书或循环申请。GitHub-hosted `xcode-27` 必须提供 Xcode 27.1 / iPhoneOS SDK，否则停止，不自行换工具链。
+启用分支触发前，维护者先为 `main`、`release/*`、`hotfix/*` 核对 PR 合入和对应 CI 必需检查，确保只有受信任的维护者能创建匹配分支。再将 GitHub **Environment `testflight`** 的选定部署分支设为上述三项，类型均为 Branch。签名凭据只放在该 Environment。
+
+用户配置 Secrets `ASC_API_KEY_BASE64`（ASC Team API Key 的 p8 原字节 Base64）、`ASC_KEY_ID`、`ASC_ISSUER_ID`，以及固定 Apple Development 证书 `IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64` / `IOS_DEVELOPMENT_CERTIFICATE_PASSWORD`（导入临时钥匙串，供自动签名复用，避免每次运行新建开发证书占满额度）；配置非敏感 Variable `APPLE_TEAM_ID`。导入后仅接受临时钥匙串中通过 codesigning 有效性检查、含匹配私钥且 Subject `OU` 等于配置团队的唯一 Apple Development 身份；证书名称括号内是成员标识，不能拿来匹配 Team ID。证书类型、团队或信任链不满足时停止，不自动新建证书，也不修改信任设置。API Key 按已确认自动签名方案使用 Admin 角色。代理不在仓库、日志或报告中保存密钥与 p12。未配置或自动签名权限、协议、证书额度不足时停止报告，不自动改走手动签名、不撤销证书或循环申请。GitHub-hosted `xcode-27` 必须提供 Xcode 27.2（27B52） / iPhoneOS SDK，否则停止，不自行换工具链。
 
 先在工程 PR 中分配全局递增构建号，App/Share、Debug/Release 一致，营销版本与源分支版本一致。CI 只读取，绝不修改版本号。ASC 对 App `6823849812` 的所有营销版本分页取数字最大构建号；upload 的候选号必须更大，verify 可以核验已用号但不消耗新号。上传命令非零退出时立即保存网络、权限、协议、签名或导出失败的脱敏类别并停止，不空等处理结果或自动重传；上传是否发生可能不明，列表也可能延迟，需用户先核对 ASC 后决定重试或新号。
 

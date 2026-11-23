@@ -39,8 +39,8 @@ extension ReaderIndex {
         try scanLibraryShelfPartial(shelfId: shelfId, items: items, failedPaths: [])
     }
 
-    /// Failed paths retain their old rows, including descendants. Admission,
-    /// row replacement and removal of stale identity keys commit together.
+    /// Keep file rows for matching paths and kinds so their import drafts
+    /// remain attached. Failed paths retain their old rows and descendants.
     func scanLibraryShelfPartial(shelfId: String, items: [ScannedLibraryItem], failedPaths: [String]) throws {
         for path in failedPaths { try Self.validate(path, allowRoot: true) }
         var seen = Set<Data>()
@@ -51,29 +51,41 @@ extension ReaderIndex {
         }
         try write { db in
             let rows = try Row.fetchAll(db, sql: """
-                SELECT id,relative_path,directory,book_id,decoding,size,modified,needs_download
+                SELECT id,relative_path,directory,size,modified,needs_download
                 FROM main.library_files WHERE shelf_id=?
                 """, arguments: [shelfId])
-            let old = Dictionary(uniqueKeysWithValues: rows.map { (Data(($0["relative_path"] as String).utf8), $0) })
+            var remaining = Dictionary(uniqueKeysWithValues: rows.map { (Data(($0["relative_path"] as String).utf8), $0) })
             var merged = items
-            for (bytes, row) in old where !seen.contains(bytes) {
+            for (bytes, row) in remaining where !seen.contains(bytes) {
                 let path: String = row["relative_path"]
                 if failedPaths.contains(where: { $0.isEmpty || Self.within(path, $0) }) {
                     merged.append(.init(relativePath: path, directory: row["directory"], size: row["size"],
                                         modified: row["modified"], needsDownload: row["needs_download"]))
                 }
             }
-            try db.execute(sql: "DELETE FROM main.library_files WHERE shelf_id=?", arguments: [shelfId])
+            let delete = try db.makeStatement(sql: "DELETE FROM main.library_files WHERE id=?")
             for item in merged {
-                let previous = old[Data(item.relativePath.utf8)].flatMap { ($0["directory"] as Bool) == item.directory ? $0 : nil }
-                let id = (previous?["id"] as String?) ?? UUID().uuidString.lowercased()
-                let priorCanonical = item.directory ? nil : previous?["book_id"] as String?
                 let (parent, name) = Self.split(item.relativePath)
+                if let previous = remaining.removeValue(forKey: Data(item.relativePath.utf8)) {
+                    let id: String = previous["id"]
+                    if (previous["directory"] as Bool) == item.directory {
+                        try db.execute(sql: """
+                            UPDATE main.library_files SET parent_path=?,name=?,size=?,modified=?,needs_download=?
+                            WHERE id=?
+                            """, arguments: [parent,name,item.size,item.modified,item.needsDownload,id])
+                        continue
+                    }
+                    // The path now holds a different kind of entry.
+                    try delete.execute(arguments: [id])
+                }
                 try db.execute(sql: """
-                    INSERT INTO main.library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,book_id,decoding)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?)
-                    """, arguments: [id,shelfId,item.relativePath,parent,name,item.directory,item.size,
-                                     item.modified,item.needsDownload,priorCanonical,(previous?["decoding"] as String?) ?? "auto"])
+                    INSERT INTO main.library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download)
+                    VALUES(?,?,?,?,?,?,?,?,?)
+                    """, arguments: [UUID().uuidString.lowercased(),shelfId,item.relativePath,parent,name,item.directory,
+                                     item.size,item.modified,item.needsDownload])
+            }
+            for row in remaining.values {
+                try delete.execute(arguments: [row["id"] as String])
             }
             try db.execute(sql: "UPDATE main.library_shelves SET error=NULL WHERE id=?", arguments: [shelfId])
             try db.execute(sql: "DELETE FROM main.library_identities WHERE file_id NOT IN (SELECT id FROM main.library_files)")
@@ -119,14 +131,18 @@ extension ReaderIndex {
         }
     }
 
+    private static let sourceSnapshotColumns = "f.id,f.shelf_id,f.relative_path,f.size,f.modified,f.needs_download,f.book_id,f.decoding"
+
+    private static func sourceSnapshot(_ row: Row) -> SourceFileSnapshot {
+        .init(id: row["id"], shelfId: row["shelf_id"], relativePath: row["relative_path"], size: row["size"],
+              modified: row["modified"], needsDownload: row["needs_download"], bookId: row["book_id"], decoding: row["decoding"])
+    }
+
     private static func sourceRows(_ db: Database, where condition: String, args: StatementArguments) throws -> [SourceFileSnapshot] {
         try Row.fetchAll(db, sql: """
-            SELECT f.id,f.shelf_id,f.relative_path,f.size,f.modified,f.needs_download,f.book_id,f.decoding
+            SELECT \(Self.sourceSnapshotColumns)
             FROM main.library_files f WHERE f.directory=0 AND \(condition) ORDER BY f.id
-            """, arguments: args).map { row in
-                .init(id: row["id"], shelfId: row["shelf_id"], relativePath: row["relative_path"], size: row["size"],
-                      modified: row["modified"], needsDownload: row["needs_download"], bookId: row["book_id"], decoding: row["decoding"])
-            }
+            """, arguments: args).map(Self.sourceSnapshot)
     }
 
     func sourceFileSnapshots(fileId: String?) throws -> [SourceFileSnapshot] {
@@ -146,6 +162,25 @@ extension ReaderIndex {
         _ = try parseSha256(value: sha)
         return try read { db in
             try Self.sourceRows(db, where: Self.indexedSourceSHA + "=?", args: [sha])
+        }
+    }
+
+    func firstSources(forSHAs shas: Set<String>) throws -> [String: SourceFileSnapshot] {
+        guard !shas.isEmpty else { return [:] }
+        let keys = try UserSyncJSON.encode(shas.sorted().map { try parseSha256(value: $0) })
+        return try read { db in
+            let rows = try Row.fetchCursor(db, sql: """
+                SELECT * FROM (
+                    SELECT \(Self.indexedSourceSHA) AS sha,\(Self.sourceSnapshotColumns)
+                    FROM main.library_files f WHERE f.directory=0
+                ) WHERE sha IN (SELECT value FROM json_each(?)) ORDER BY id
+                """, arguments: [keys])
+            var first: [String: SourceFileSnapshot] = [:]
+            while let row = try rows.next() {
+                let sha: String = row["sha"]
+                if first[sha] == nil { first[sha] = Self.sourceSnapshot(row) }
+            }
+            return first
         }
     }
 

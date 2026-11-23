@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 import AuthenticationServices
 
@@ -39,7 +40,10 @@ struct AIConnectionView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     identity(connection)
                     accountCard(connection)
-                    AIConnectionUsageSection(presentation: ai.usage.presentation(for: connection)) {
+                    AIConnectionUsageSection(
+                        presentation: ai.usage.presentation(for: connection),
+                        accent: theme.accent, surface: theme.surface, ink: theme.ink, secondary: theme.secondary
+                    ) {
                         ai.usage.refresh(connectionID)
                     }
                     VStack(alignment: .leading, spacing: LayoutTokens.control) {
@@ -141,7 +145,7 @@ struct AIConnectionView: View {
     }
     private func identity(_ connection: AIConnection) -> some View {
         HStack(spacing: 16) {
-            AIProviderIcon(providerID: connection.catalogID).frame(width: 50, height: 50)
+            AIProviderIcon(providerID: connection.catalogID, accent: theme.accent).frame(width: 50, height: 50)
                 .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 17))
             VStack(alignment: .leading, spacing: 8) {
                 HStack {

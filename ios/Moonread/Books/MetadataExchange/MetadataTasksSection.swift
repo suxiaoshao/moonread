@@ -119,7 +119,7 @@ struct MetadataTasksSection: View {
     }
 
     private var exportTaskSummary: some View {
-        ExportTaskSummary(task: task.exportTask, open: { exporting = true }) { output in
+        DataExchangeExportSummary(task: task.exportTask, open: { exporting = true }) { output in
             if output.count > 0 {
                 Text("已导出 \(output.count) 条小说信息", tableName: "MetadataExchange")
             } else {
@@ -198,7 +198,7 @@ struct MetadataExportView: View {
     }
 
     var body: some View {
-        ExportTaskSheet(title: Text(task.phase == .idle || task.phase == .running ? "导出小说信息" : "导出结果", tableName: "MetadataExchange"),
+        DataExchangeTaskSheet(title: Text(task.phase == .idle || task.phase == .running ? "导出小说信息" : "导出结果", tableName: "MetadataExchange"),
                         sharing: $sharing, onShared: { [file = task.output?.file] in
                             guard let file, task.output?.file === file else { return }
                             finish()
@@ -221,7 +221,7 @@ struct MetadataExportView: View {
         case .idle:
             configuration.task(id: shelvesReload) { await loadShelves() }
         case .running:
-            ExportRunningView(title: Text("正在导出", tableName: "MetadataExchange"), stopping: task.stopping) {
+            DataExchangeRunningView(title: Text("正在导出", tableName: "MetadataExchange"), stopping: task.stopping) {
                 if let total = task.total, task.completed < total {
                     ProgressView(value: Double(task.completed), total: Double(total)) {
                         Text(task.progressText, tableName: "MetadataExchange").monospacedDigit()
@@ -381,30 +381,22 @@ struct MetadataActionButtonStyle: PrimitiveButtonStyle {
         .foregroundStyle(Color(uiColor: prominent ? theme.onAccent : destructive ? theme.destructive : theme.accent))
     }
 }
-/// One native scroll-edge registration for this feature's task actions.
-struct ExportTaskSummary<Request: Sendable, Output: Sendable, ResultTitle: View>: View {
+struct DataExchangeExportSummary<Request: Sendable, Output: Sendable, ResultTitle: View>: View {
     @Environment(\.theme) private var theme
-    let task: ExportTask<Request, Output>
+    let task: DataExchangeTask<Request, Output>
     var runningDetail: Text?
     let open: () -> Void
     @ViewBuilder let resultTitle: (Output) -> ResultTitle
 
     var body: some View {
         if task.phase != .idle {
-            ThemedDivider()
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Label {
-                        if let output = task.output { resultTitle(output) }
-                        else { Text(task.phase.title, tableName: "MetadataExchange") }
-                    } icon: {
-                        Image(systemName: task.phase.symbol)
-                            .foregroundStyle(Color(uiColor: task.phase == .completed ? theme.success : task.phase == .failed ? theme.warning : theme.secondary))
-                    }.font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading)
-                    Button(action: open) {
-                        Text(task.phase == .running ? "查看" : "查看结果", tableName: "MetadataExchange").font(.subheadline)
-                    }.buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.accent))
-                }
+            DataExchangeTaskSummary(symbol: task.phase.symbol,
+                                    iconColor: task.phase == .completed ? theme.success : task.phase == .failed ? theme.warning : theme.secondary,
+                                    link: Text(task.phase == .running ? "查看" : "查看结果", tableName: "MetadataExchange"),
+                                    open: open) {
+                if let output = task.output { resultTitle(output) }
+                else { Text(task.phase.title, tableName: "MetadataExchange") }
+            } detail: {
                 if task.phase == .running {
                     if let total = task.total, task.completed < total {
                         ProgressView(value: Double(task.completed), total: Double(total))
@@ -418,11 +410,35 @@ struct ExportTaskSummary<Request: Sendable, Output: Sendable, ResultTitle: View>
     }
 }
 
-struct ExportTaskSheet<Content: View, Footer: View>: View {
+struct DataExchangeTaskSummary<Title: View, Detail: View>: View {
+    @Environment(\.theme) private var theme
+    let symbol: String
+    let iconColor: UIColor
+    let link: Text
+    let open: () -> Void
+    @ViewBuilder let title: Title
+    @ViewBuilder let detail: Detail
+
+    var body: some View {
+        ThemedDivider()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Label { title } icon: { Image(systemName: symbol).foregroundStyle(Color(uiColor: iconColor)) }
+                    .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading)
+                Button(action: open) { link.font(.subheadline) }
+                    .buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.accent))
+            }
+            detail
+        }
+    }
+}
+
+struct DataExchangeTaskSheet<Content: View, Footer: View>: View {
     @Environment(\.dismiss) private var dismiss
     let title: Text
     @Binding var sharing: LibraryExport?
     let onShared: @MainActor @Sendable () -> Void
+    var closeIdentifier = "closeExportTask"
     @ViewBuilder let content: Content
     @ViewBuilder let footer: Footer
 
@@ -433,7 +449,7 @@ struct ExportTaskSheet<Content: View, Footer: View>: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         SystemToolbarButton("关闭", role: .close) { dismiss() }.toolbarGlyph()
-                            .accessibilityIdentifier("closeExportTask")
+                            .accessibilityIdentifier(closeIdentifier)
                     }
                 }
                 .modifier(MetadataTaskBar { footer })
@@ -444,17 +460,18 @@ struct ExportTaskSheet<Content: View, Footer: View>: View {
     }
 }
 
-struct ExportRunningView<Progress: View>: View {
+struct DataExchangeRunningView<Progress: View>: View {
     @Environment(\.theme) private var theme
     let title: Text
     let stopping: Bool
+    var symbol = "square.and.arrow.up"
     @ViewBuilder let progress: Progress
 
     var body: some View {
         GeometryReader { viewport in
             ScrollView {
                 VStack(spacing: 16) {
-                    Image(systemName: "square.and.arrow.up").font(.largeTitle)
+                    Image(systemName: symbol).font(.largeTitle)
                         .foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
                     title.font(.title.weight(.semibold)).accessibilityAddTraits(.isHeader)
                     progress
@@ -465,6 +482,20 @@ struct ExportRunningView<Progress: View>: View {
                 }.multilineTextAlignment(.center).padding(24).frame(maxWidth: 430)
                     .frame(maxWidth: .infinity, minHeight: viewport.size.height)
             }
+        }
+    }
+}
+
+struct MetadataTaskActions<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ThemedDivider()
+            VStack(spacing: 8) { content }
+                .frame(maxWidth: 460)
+                .padding(.horizontal, 20).padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
         }
     }
 }

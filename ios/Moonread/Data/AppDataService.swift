@@ -870,7 +870,9 @@ actor AppDataService {
         let values = try await userMarks(id, kind: kind, snapshot: snapshot), start = min(Int(offset), values.count), end = min(start + 60, values.count)
         return MarkPage(items: Array(values[start..<end]), hasMore: end < values.count)
     }
-    func annotations(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] { try await userAnnotationRanges(id, start: start, end: end) }
+    func annotations(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] {
+        try await annotationWindow(id, start: start, end: end).marks
+    }
     func bookmarkPositions(_ id: String, start: UInt64, end: UInt64) async throws -> [UInt64] { try await userMarks(id, kind: .bookmark).filter { $0.startUtf8 >= start && $0.startUtf8 < end }.map(\.startUtf8) }
     func toggleBookmark(_ id: String, at offset: UInt64, admission: DataSessionLease? = nil) async throws -> Bool {
         try await changeBookmark(id, offset: offset, ensure: false, admission: admission) != nil
@@ -899,9 +901,6 @@ actor AppDataService {
         try await prepareUserAnnotation(id, start: start, end: end, admission: admission)
     }
     func saveNote(_ edit: AnnotationEdit, text: String) async throws -> ReaderMark { try await saveUserNote(edit, text: text) }
-    func removeAnnotations(_ id: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async throws -> [String] {
-        try await removeAnnotationRange(id, start: start, end: end, offered: admission)
-    }
     func deleteMarks(_ ids: [String], deleted: Bool, expected: NoteCandidates? = nil) async throws {
         try await userDeleteMarks(ids, deleted: deleted, expected: expected)
     }

@@ -1,3 +1,4 @@
+import MoonreadAI
 import SwiftUI
 import ImageIO
 import AISDKProvider
@@ -418,6 +419,7 @@ struct AIMessageRowView: View {
     let taskObject: AITaskObject?
     let preview: (AIReadingAttachment) -> Void
     let loadEarlier: () -> Void
+    let openFilter: (AIBookFilterSuggestion) -> Void
     let toggleProcessItem: AIProcessExpansionHandler
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
@@ -467,7 +469,13 @@ struct AIMessageRowView: View {
                 }.padding(LayoutTokens.content)
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: LayoutTokens.inputRadius))
             case .image(let image): AIGeneratedImageView(owner: conversationID, attachment: image)
-            case .result(let result, _): AIResultCard(result: result)
+            case .result(let result, _):
+                if case .bookFilter(let suggestion, let summary) = result.body {
+                    AIBookFilterCard(suggestion: suggestion, configuration: summary) { openFilter(suggestion) }
+                        .accessibilityIdentifier("aiResult-\(result.id)")
+                } else {
+                    AIResultCard(result: result)
+                }
             case .error(let text): Label(text, systemImage: "exclamationmark.circle").font(.subheadline).foregroundStyle(Color(uiColor: theme.destructive))
             case .actions(let answer, let outcome):
                 HStack(spacing: LayoutTokens.compact) {
@@ -504,13 +512,13 @@ private extension View {
 // The transparent marker exposes the actual header bounds to local frame diagnostics.
 private struct AIProcessHeaderGeometry: UIViewRepresentable {
     let id: String
-    func makeUIView(context: Context) -> UIView {
+    func makeUIView(context: UIViewRepresentableContext<Self>) -> UIView {
         let view = UIView()
         view.isUserInteractionEnabled = false
         view.accessibilityIdentifier = "aiHeaderGeometry-" + id
         return view
     }
-    func updateUIView(_ view: UIView, context: Context) {}
+    func updateUIView(_ view: UIView, context: UIViewRepresentableContext<Self>) {}
 }
 
 #endif
