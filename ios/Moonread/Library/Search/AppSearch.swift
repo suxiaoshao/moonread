@@ -303,6 +303,8 @@ struct AppSearchView: View {
     var body: some View {
         LibraryCollection(model: model, host: host, sections: resultSections, matches: results.matches,
                           accessibilityID: "appSearchResults", isSearch: true, beforeOpen: dismissKeyboard)
+        // UIKit insets the scroll content while allowing it to pass behind the search drawer.
+        .ignoresSafeArea(.container, edges: savedFilter == nil ? .top : [])
         .frame(maxWidth: model.layout == .list ? 680 : .infinity)
         .frame(maxWidth: .infinity)
         .themedPage()
