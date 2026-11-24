@@ -99,7 +99,16 @@ extension LibraryQueryRules {
     static func filterAndRank(_ candidates: [LibrarySearchCandidate], spec: SearchSpec) -> [LibraryEntry] {
         searchOutcome(candidates, spec: spec).entries
     }
-    struct SearchOutcome: Sendable { var entries: [LibraryEntry]; var unknownCount: Int }
+    enum SearchMatch: Equatable, Sendable {
+        case title(Range<String.Index>?)
+        case author(String, Range<String.Index>?)
+    }
+
+    struct SearchOutcome: Sendable {
+        var entries: [LibraryEntry]
+        var unknownCount: Int
+        var matches: [String: SearchMatch] = [:]
+    }
     static func searchOutcome(_ candidates: [LibrarySearchCandidate], spec: SearchSpec) -> SearchOutcome {
         let literal = spec.profile == .library
         let query = literal ? literalQuery(spec.query) : spec.query
@@ -121,7 +130,7 @@ extension LibraryQueryRules {
             return spellings.contains(where: { literalContains($0, query) }) ? 1 : nil
         }
         var unknownCount = 0
-        let ranked = candidates.compactMap { candidate -> (LibrarySearchCandidate, LibraryEntry, Int)? in
+        let ranked = candidates.compactMap { candidate -> (LibrarySearchCandidate, LibraryEntry, Int, SearchMatch?)? in
             var row = candidate.entry
             if !literal { row = row.withMetadata(candidate.resolvedMetadata) }
             let metadata = literal ? candidate.storedSearchMetadata : candidate.resolvedSearchMetadata
@@ -132,12 +141,24 @@ extension LibraryQueryRules {
                           spec.tags.allSatisfy({ tag in metadata?.tags.contains(where: { $0.utf8.elementsEqual(tag.utf8) }) == true }) else { return nil }
                 }
                 let title = literalTitle(row)
+                let titlePrefix = title.utf8.starts(with: query.utf8)
                 let rank: Int
-                if query.isEmpty || title.utf8.starts(with: query.utf8) { rank = 0 }
-                else if literalContains(title, query) { rank = 1 }
-                else if !row.directory, let spellingRank = pinyinRank(title) { rank = spellingRank }
-                else if !row.directory, metadata.map({ literalContains($0.author.lowercased(), query) || pinyinRank($0.author) != nil }) == true { rank = 2 }
-                else { return nil }
+                let match: SearchMatch?
+                if query.isEmpty {
+                    rank = 0
+                    match = nil
+                } else if titlePrefix || literalContains(title, query) {
+                    rank = titlePrefix ? 0 : 1
+                    match = .title(row.title.range(of: query, options: .caseInsensitive))
+                } else if !row.directory, let spellingRank = pinyinRank(title) {
+                    rank = spellingRank
+                    match = .title(nil)
+                } else if !row.directory, let author = metadata?.author {
+                    let authorLiteral = literalContains(author.lowercased(), query)
+                    guard authorLiteral || pinyinRank(author) != nil else { return nil }
+                    rank = 2
+                    match = .author(author, authorLiteral ? author.range(of: query, options: .caseInsensitive) : nil)
+                } else { return nil }
                 if let status = spec.status {
                     guard let metadata = candidate.resolvedSearchMetadata, statusName(metadata.status) != "other" else { unknownCount += 1; return nil }
                     guard statusName(metadata.status) == status else { return nil }
@@ -148,14 +169,14 @@ extension LibraryQueryRules {
                     guard truth == .yes else { return nil }
                 }
                 row = row.withMetadata(candidate.resolvedMetadata)
-                return (candidate, row, rank)
+                return (candidate, row, rank, match)
             }
             guard !row.directory,
                   query.isEmpty || [row.title, metadata?.author ?? "", metadata?.synopsis ?? ""].contains(where: { $0.localizedCaseInsensitiveContains(query) }),
                   spec.author.map({ $0.isEmpty || metadata?.author.localizedCaseInsensitiveContains($0) == true }) ?? true,
                   spec.tags.allSatisfy({ metadata?.tags.contains($0) == true }),
                   spec.status.map({ status in metadata.map { statusName($0.status) == status } ?? false }) ?? true else { return nil }
-            return (candidate, row, 0)
+            return (candidate, row, 0, nil)
         }
         let entries = ranked.sorted { a, b in
             if literal && !spec.configuration.sorts.isEmpty {
@@ -189,8 +210,11 @@ extension LibraryQueryRules {
             }
             if spec.nameOrder { return (a.1.name, a.1.id) < (b.1.name, b.1.id) }
             return a.1.lastRead == b.1.lastRead ? a.1.id < b.1.id : a.1.lastRead > b.1.lastRead
-        }.map { $0.1 }
-        return .init(entries: entries, unknownCount: unknownCount)
+        }
+        let matches = entries.reduce(into: [String: SearchMatch]()) { result, hit in
+            result[hit.1.id] = hit.3
+        }
+        return .init(entries: entries.map { $0.1 }, unknownCount: unknownCount, matches: matches)
     }
 }
 

@@ -119,14 +119,14 @@ struct LibraryView: View {
                     ScrollView(.horizontal) {
                         LazyHStack(alignment: .top, spacing: LayoutTokens.content) {
                             ForEach(following, id: \.id) { entry in
-                                RecentCoverTile(model: model, entry: entry) { recentMenu(entry) }
+                                RecentBookItem(model: model, entry: entry, layout: .grid)
                             }
                         }.scrollTargetLayout()
                     }.scrollIndicators(.hidden).scrollTargetBehavior(.viewAligned)
                         .accessibilityIdentifier("recentCoverRow")
                 } else {
                     ForEach(following, id: \.id) { entry in
-                        RecentBookRow(model: model, entry: entry).contextMenu { recentMenu(entry) }
+                        RecentBookItem(model: model, entry: entry, layout: .list)
                     }
                 }
             }
@@ -232,74 +232,5 @@ private struct ContinueReadingButtonStyle: ButtonStyle {
                 Color(uiColor: configuration.isPressed ? theme.ui(\.pressed, system: .tertiarySystemFill) : theme.surface),
                 in: .rect(cornerRadius: 20)
             )
-    }
-}
-
-struct RecentBookRow: View {
-    let model: LibraryModel
-    let entry: LibraryEntry
-    var inFullList = false
-    @Environment(\.theme) private var theme
-    var body: some View {
-        Button { model.open(entry) } label: {
-            HStack(spacing: inFullList ? 12 : 15) {
-                BookCoverView(title: entry.title, compact: true, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).frame(width: 44, height: 62)
-                VStack(alignment: .leading, spacing: inFullList ? 4 : 7) {
-                    Text(verbatim: entry.title).font(.body.weight(.medium)).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(1)
-                    HStack(spacing: inFullList ? 8 : nil) {
-                        if inFullList {
-                            chapter.frame(maxWidth: .infinity, alignment: .leading)
-                            progress.fixedSize()
-                        } else {
-                            chapter
-                            Spacer(minLength: 8)
-                            progress
-                        }
-                    }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                }
-            }.padding(.vertical, inFullList ? 0 : 6)
-                .frame(maxWidth: inFullList ? .infinity : nil, alignment: .leading)
-                .contentShape(.rect)
-        }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
-            .overlay(alignment: .leading) {
-                LibraryFileAvailability(entry: entry, compact: true).frame(width: 44, height: 62)
-            }
-    }
-    private var chapter: some View {
-        Text(entry.chapterTitle ?? String(localized: "继续阅读")).lineLimit(1)
-    }
-    private var progress: Text {
-        Text(ReadingProgress.fraction(entry.positionUtf8, of: entry.byteCount), format: .percent.precision(.fractionLength(1))).monospacedDigit()
-    }
-}
-
-/// A recent book's cover, title and reading progress.
-/// A List lifts a row's context menu to the whole row, which would highlight every
-/// cover at once; a menu button with a primary action highlights only this book.
-struct RecentCoverTile<Actions: View>: View {
-    let model: LibraryModel
-    let entry: LibraryEntry
-    var fillsColumn = false
-    @ViewBuilder let actions: Actions
-    @Environment(\.theme) private var theme
-    @ScaledMetric(relativeTo: .body) private var width = 96.0
-    var body: some View {
-        Menu { actions } label: {
-            VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-                BookCoverView(title: entry.title, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).aspectRatio(0.7, contentMode: .fit)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: entry.title).font(.subheadline.weight(.medium))
-                        .foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2, reservesSpace: true)
-                    Text(ReadingProgress.fraction(entry.positionUtf8, of: entry.byteCount), format: .percent.precision(.fractionLength(1)))
-                        .font(.caption).monospacedDigit().foregroundStyle(Color(uiColor: theme.secondary))
-                }
-            }
-            .frame(width: fillsColumn ? nil : width)
-            .frame(maxWidth: fillsColumn ? .infinity : nil, alignment: .leading)
-            .contentShape(.rect)
-        } primaryAction: { model.open(entry) }
-            .buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
-            // The cancel control sits beside the button, never inside its label.
-            .overlay(alignment: .top) { LibraryFileAvailability(entry: entry).aspectRatio(0.7, contentMode: .fit) }
     }
 }

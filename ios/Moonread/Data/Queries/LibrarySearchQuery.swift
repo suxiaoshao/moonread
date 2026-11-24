@@ -210,7 +210,7 @@ enum LibrarySearchRead {
             guard let result = indexed[hit.id] else { throw ReaderError.SourceChanged }
             return ai ? withAIFields(result, metadata: hit.metadata) : result
         }
-        return .init(entries: ordered, unknownCount: found.unknownCount)
+        return .init(entries: ordered, unknownCount: found.unknownCount, matches: found.matches)
     }
 
     static func withAIFields(_ entry: LibraryEntry, metadata: BookMetadata?) -> LibraryEntry {

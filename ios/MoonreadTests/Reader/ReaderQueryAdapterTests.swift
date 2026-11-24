@@ -492,6 +492,12 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
       XCTAssertEqual(results.entries.map(\.id), ["a", "a-copy"])
       XCTAssertEqual(results.unknownCount, 1)
       XCTAssertTrue(results.entries.allSatisfy { $0.metadata == nil && $0.displayMetadata?.author == "Synthetic Writer" })
+      let authorHits = try index.searchCatalogue(.all, spec: .init(profile: .library, query: "writer"))
+      XCTAssertEqual(authorHits.entries.map(\.id), ["a", "a-copy"])
+      let author = "Synthetic Writer"
+      XCTAssertEqual(authorHits.matches, [
+        "a": .author(author, author.range(of: "Writer")), "a-copy": .author(author, author.range(of: "Writer")),
+      ])
       let folders = try index.searchCatalogue(.all, spec: .init(profile: .library, query: "fixture")).entries.filter(\.directory)
       XCTAssertEqual(folders.map(\.id), ["root", "nested"])
       XCTAssertEqual(folders.compactMap { $0.folderRow?.childBookCount }, [2, 2])
