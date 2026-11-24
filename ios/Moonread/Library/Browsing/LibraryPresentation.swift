@@ -116,45 +116,57 @@ struct LibraryBookTile: View {
 
     var body: some View {
         VStack(alignment: .leading) {
-            Button { interaction.activate(entry, in: model) } label: {
-                VStack(alignment: .leading) {
-                    label.cover(compact: false).aspectRatio(0.7, contentMode: .fit)
-                        .overlay {
-                            if interaction.isSelected {
-                                RoundedRectangle(cornerRadius: entry.directory ? 7 : 6)
-                                    .fill(Color(uiColor: theme.accent).opacity(0.12)).allowsHitTesting(false)
-                            }
-                        }
-                        .overlay(alignment: .bottomTrailing) {
-                            if interaction.isEditing {
-                                Image(systemName: interaction.isSelected ? "checkmark.circle.fill" : "circle")
-                                    .font(.title3).foregroundStyle(Color(uiColor: theme.accent))
-                                    .padding(LayoutTokens.compact)
-                            }
-                        }
-                    label.title().font(.subheadline.weight(.medium)).lineLimit(2)
-                }.contentShape(.rect)
-            }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
-                .accessibilityLabel(Text(verbatim: entry.title))
-                .accessibilityValue(label.gridStatus)
-                .accessibilityAddTraits(interaction.isSelected ? .isSelected : [])
-                .overlay(alignment: .top) {
-                    if !interaction.isEditing && !entry.directory {
-                        LibraryFileAvailability(entry: entry).aspectRatio(0.7, contentMode: .fit)
-                    }
-                }
-                .fixedSize(horizontal: false, vertical: true)
-            LibraryGridStatus(entry: entry, status: label.gridStatus, showsMenu: interaction.menuHost != nil) {
-                if let host = interaction.menuHost {
-                    LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
+            VStack(alignment: .leading) {
+                Color.clear.aspectRatio(0.7, contentMode: .fit)
+                label.title().font(.subheadline.weight(.medium)).lineLimit(2)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            LibraryGridStatus(status: label.gridStatus, showsMenu: interaction.menuHost != nil)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .background {
+            LibraryCoverButton(entry: entry, detail: label.gridStatus) {
+                interaction.activate(entry, in: model)
+            } cover: {
+                cover
+            } actions: {
+                actions
+            }
+            .accessibilityAddTraits(interaction.isSelected ? .isSelected : [])
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if interaction.menuHost != nil {
+                LibraryItemMore(entry: entry) { actions }
+                    .padding(.bottom, LibraryCollectionSection.gridFooterSpacing)
+            }
+        }
+    }
+
+    private var cover: some View {
+        label.cover(compact: false).aspectRatio(0.7, contentMode: .fit)
+            .overlay {
+                if interaction.isSelected {
+                    RoundedRectangle(cornerRadius: entry.directory ? 7 : 6)
+                        .fill(Color(uiColor: theme.accent).opacity(0.12)).allowsHitTesting(false)
+                } else if !interaction.isEditing && !entry.directory {
+                    LibraryFileAvailability(entry: entry)
                 }
             }
-        }.frame(maxWidth: .infinity, alignment: .topLeading)
-            .contextMenu {
-                if let host = interaction.menuHost {
-                    LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
+            .overlay(alignment: .bottomTrailing) {
+                if interaction.isEditing {
+                    Image(systemName: interaction.isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3).foregroundStyle(Color(uiColor: theme.accent))
+                        .padding(LayoutTokens.compact)
                 }
             }
+    }
+
+    @ViewBuilder private var actions: some View {
+        if let host = interaction.menuHost {
+            LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
+        }
     }
 }
 

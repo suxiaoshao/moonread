@@ -26,6 +26,7 @@ struct AuthorLibraryView: View {
     @Bindable var model: LibraryModel
     let credit: AuthorCredit
     let host: LibraryBrowsingHost
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.theme) private var theme
     @Environment(\.scenePhase) private var scenePhase
     @State private var search: AppSearch
@@ -138,23 +139,7 @@ struct AuthorLibraryView: View {
     private func summary(_ state: StatisticsModel.State) -> some View {
         VStack(alignment: .leading) {
             if let overview = state.overview, !overview.books.isEmpty {
-                Text("读过 \(overview.books.count) 本 · \(StatisticsDates.duration(overview.totalDurationMs))")
-                    .foregroundStyle(Color(uiColor: theme.secondary))
-                    .accessibilityIdentifier("authorReadingSummary")
-                if let mostRecent = overview.books.first(where: { $0.lastFormalMs > 0 }),
-                   let entry = works.first(where: { $0.readingKey == mostRecent.contentKey.storageKey }) {
-                    Button { host.open(entry, in: model) } label: {
-                        HStack {
-                            Text("最近阅读").foregroundStyle(Color(uiColor: theme.secondary))
-                            Spacer(minLength: 0)
-                            Text(verbatim: entry.title).multilineTextAlignment(.trailing)
-                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).accessibilityHidden(true)
-                        }.contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color(uiColor: theme.accent))
-                    .accessibilityIdentifier("authorRecentBook")
-                }
+                readingCard(overview)
             }
             if let notice = state.compatibilityNotice { Text(notice).font(.footnote) }
             if let error = state.error {
@@ -162,7 +147,36 @@ struct AuthorLibraryView: View {
                 Button("重试") { statistics.restartObservation() }
             }
         }
-        .font(.subheadline)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func readingCard(_ overview: StatisticsOverview) -> some View {
+        VStack(alignment: .leading) {
+            Text("读过 \(overview.books.count) 本 · \(StatisticsDates.duration(overview.totalDurationMs))")
+                .foregroundStyle(Color(uiColor: theme.secondary))
+                .accessibilityIdentifier("authorReadingSummary")
+            if let mostRecent = overview.books.first(where: { $0.lastFormalMs > 0 }),
+               let entry = works.first(where: { $0.readingKey == mostRecent.contentKey.storageKey }) {
+                Button { host.open(entry, in: model) } label: {
+                    let layout = dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading))
+                        : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
+                    let arrow = Text(Image(systemName: "chevron.right")).font(.caption.weight(.semibold))
+                    layout {
+                        Text("最近阅读").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                        Text("\(Text(verbatim: entry.title)) \(arrow)")
+                            .accessibilityLabel(Text(verbatim: entry.title))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color(uiColor: theme.accent))
+                .accessibilityIdentifier("authorRecentBook")
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
     }
 }
