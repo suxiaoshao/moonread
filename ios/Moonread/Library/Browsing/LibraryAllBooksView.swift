@@ -51,6 +51,7 @@ struct LibraryAllBooksView: View {
             catalogue.retryIfFailed()
             await model.refresh(showIndicator: false, userInitiated: true)
         })
+        .themedPage()
         .navigationTitle("全部小说").navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

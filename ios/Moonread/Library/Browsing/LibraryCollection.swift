@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct LibraryCollectionSection {
     enum ID: Hashable {
         case folderOverview, folderEntries, catalogueSummary, name(String), tag(String)
-        case recent, searchSummary, searchBooks, searchFolders, searchConversations
+        case recent, searchSummary, searchResultHeader, searchBooks, searchFolders, searchConversations
     }
     enum Format: Equatable {
         case directory, results, folderHits, recent
@@ -30,6 +30,7 @@ struct LibraryCollectionSection {
     let id: ID
     let content: Content
     var header: AnyView?
+    var bottomSpacing = LayoutTokens.control
 
     var letter: String? {
         if case .name(let letter) = id { return letter }
@@ -275,10 +276,13 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
             switch item {
             case .row:
                 guard let view = rowsByID[item] else { return }
-                cell.contentConfiguration = UIHostingConfiguration {
+                let hosting = UIHostingConfiguration {
                     view.environment(\.theme, config.theme).environment(config.ai)
                         .foregroundStyle(Color(uiColor: config.theme.ink)).tint(Color(uiColor: config.theme.accent))
                 }.margins(.all, 0)
+                // The header supplies its own button hit target. A count alone
+                // should measure as text rather than inherit a list-cell minimum.
+                cell.contentConfiguration = section.id == .searchResultHeader ? hosting.minSize(height: 0) : hosting
                 (cell as? FileCell)?.alignSeparator(to: nil)
             case .file(_, let id):
                 guard case .files(_, let format) = section.content, let entry = entriesByID[id] else { return }
@@ -376,7 +380,7 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
                 trailing = 0
                 section = listSection(environment, theme: config.theme)
             }
-            section.contentInsets = .init(top: 0, leading: horizontal, bottom: LayoutTokens.control, trailing: trailing)
+            section.contentInsets = .init(top: 0, leading: horizontal, bottom: content.bottomSpacing, trailing: trailing)
             if content.header != nil {
                 section.boundarySupplementaryItems = [
                     .init(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .estimated(32)),

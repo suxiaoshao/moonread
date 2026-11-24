@@ -259,6 +259,8 @@ struct SavedFilterNameSheet: View {
 
     private func rulesSection(_ configuration: BookSearchConfiguration, term: String, searchCount: Int) -> some View {
         let count = term.isEmpty ? searchCount : shelfCount
+        let root = configuration.root
+        let displayedRule = !root.excluded && root.children.count == 1 ? root.children[0] : root
         return VStack(alignment: .leading, spacing: LayoutTokens.compact) {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: LayoutTokens.control) {
@@ -273,7 +275,7 @@ struct SavedFilterNameSheet: View {
             }
             card {
                 VStack(alignment: .leading, spacing: LayoutTokens.control) {
-                    SavedFilterRuleTree(node: configuration.root, shelfTitle: model.shelfTitle)
+                    SavedFilterRuleTree(node: displayedRule, shelfTitle: model.shelfTitle)
                     if !term.isEmpty {
                         Text("本次搜索匹配 \(searchCount) 本。搜索文字不会保存到书架。")
                             .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))

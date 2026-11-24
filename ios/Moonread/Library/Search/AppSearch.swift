@@ -231,29 +231,43 @@ struct AppSearchView: View {
     }
 
     @ViewBuilder private var matchingBookCount: some View {
-        if let currentCount {
-            if virtualShelf {
-                Text("\(currentCount) 本")
-                    .font(.footnote)
-                    .foregroundStyle(Color(uiColor: theme.secondary))
-                    .accessibilityIdentifier("structuredSearchCount")
-            } else {
-                Text("小说 · \(currentCount) 本")
-                    .font(.subheadline.weight(.semibold))
-                    .accessibilityIdentifier("structuredSearchCount")
+        if booksOnly, let currentCount {
+            (virtualShelf ? Text("\(currentCount) 本") : Text("小说 · \(currentCount) 本"))
+                .font(.subheadline)
+                .foregroundStyle(Color(uiColor: theme.secondary))
+                .accessibilityIdentifier("structuredSearchCount")
+        }
+    }
+
+    @ViewBuilder private var resultHeader: some View {
+        if showsSaveActions {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: LayoutTokens.compact) {
+                    matchingBookCount.fixedSize()
+                    Spacer(minLength: 0)
+                    saveActions.fixedSize(horizontal: true, vertical: false)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    matchingBookCount.padding(.top, LayoutTokens.compact)
+                    saveActions.frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
+        } else {
+            matchingBookCount
+                .padding(.vertical, LayoutTokens.compact)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private var resultSections: [LibraryCollectionSection] {
         guard hasCriteria else { return [] }
         var sections: [LibraryCollectionSection] = []
-        var headerRows: [LibraryCollectionSection.Row] = []
-        if virtualShelf && currentCount != nil { headerRows.append(.init("count") { matchingBookCount }) }
-        if showsSaveActions { headerRows.append(.init("save") { saveActions }) }
-        headerRows.append(contentsOf: resultNotices)
-        if !virtualShelf && booksOnly && currentCount != nil { headerRows.append(.init("count") { matchingBookCount }) }
-        if !headerRows.isEmpty { sections.append(.init(id: .searchSummary, content: .rows(headerRows))) }
+        let notices = resultNotices
+        if !notices.isEmpty { sections.append(.init(id: .searchSummary, content: .rows(notices))) }
+        if (booksOnly && currentCount != nil) || showsSaveActions {
+            sections.insert(.init(id: .searchResultHeader, content: .rows([.init("header") { resultHeader }]),
+                                  bottomSpacing: 0), at: books.isEmpty ? 0 : sections.count)
+        }
 
         if !books.isEmpty {
             sections.append(.init(id: .searchBooks, content: .files(books, .results),
@@ -339,28 +353,45 @@ struct AppSearchView: View {
         .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
     }
     private var saveActions: some View {
-        VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-            Button {
-                guard let currentCount else { return }
-                search.keyboardDismissals += 1
-                sheet = .name(.save(search.configuration.forVirtualShelf, term: search.term, searchCount: currentCount))
-            } label: {
-                Label { virtualShelf ? Text("另存为虚拟书架") : Text("保存为虚拟书架") } icon: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(.rect)
-            }
-            .accessibilityIdentifier("saveVirtualShelf")
+        Group {
             if let savedFilter {
-                Button("更新此虚拟书架") {
-                    let configuration = search.configuration
-                    Task { await model.savedFilters.change(.update(savedFilter.id, configuration)) }
+                Menu {
+                    Button("更新此虚拟书架") {
+                        let configuration = search.configuration
+                        Task { await model.savedFilters.change(.update(savedFilter.id, configuration)) }
+                    }
+                    .accessibilityIdentifier("updateVirtualShelf")
+                    Button("另存为虚拟书架", action: saveNewShelf)
+                        .accessibilityIdentifier("saveVirtualShelf")
+                } label: {
+                    saveLabel("保存选项", symbol: "chevron.up.chevron.down")
                 }
-                .accessibilityIdentifier("updateVirtualShelf")
+                .accessibilityIdentifier("savedFilterSaveOptions")
+            } else {
+                Button(action: saveNewShelf) {
+                    saveLabel("保存为虚拟书架", symbol: "line.3.horizontal.decrease.circle")
+                }
+                .accessibilityIdentifier("saveVirtualShelf")
             }
-        }.buttonStyle(.borderless)
-            .disabled(currentCount == nil || model.savedFilters.snapshot == nil || model.savedFilters.saving)
+        }
+        .buttonStyle(.borderless)
+        .font(.subheadline)
+        .tint(Color(uiColor: theme.accent))
+        .disabled(currentCount == nil || model.savedFilters.snapshot == nil || model.savedFilters.saving)
+    }
+
+    private func saveLabel(_ title: LocalizedStringKey, symbol: String) -> some View {
+        Label(title, systemImage: symbol)
+            .foregroundStyle(Color(uiColor: theme.accent))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: LayoutTokens.hit)
+            .contentShape(.rect)
+    }
+
+    private func saveNewShelf() {
+        guard let currentCount else { return }
+        dismissKeyboard()
+        sheet = .name(.save(search.configuration.forVirtualShelf, term: search.term, searchCount: currentCount))
     }
 
     private func openCreatedFilter() {

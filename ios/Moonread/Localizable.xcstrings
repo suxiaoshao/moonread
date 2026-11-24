@@ -95,6 +95,7 @@
     "暂无虚拟书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No Virtual Shelves"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"尚無虛擬書架"}}}},
     "保存为虚拟书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Save as Virtual Shelf"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"儲存為虛擬書架"}}}},
     "另存为虚拟书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Save as a New Virtual Shelf"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"另存為虛擬書架"}}}},
+    "保存选项": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Save Options"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"儲存選項"}}}},
     "更新此虚拟书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Update This Virtual Shelf"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"更新此虛擬書架"}}}},
     "重命名虚拟书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Rename Virtual Shelf"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"重新命名虛擬書架"}}}},
     "移除虚拟书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Remove Virtual Shelf"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"移除虛擬書架"}}}},
