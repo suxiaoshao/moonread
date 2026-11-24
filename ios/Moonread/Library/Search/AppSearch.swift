@@ -158,7 +158,7 @@ struct AppSearchView: View {
     private var virtualShelf: Bool { savedFilter != nil }
     private var booksOnly: Bool { virtualShelf || search.configuration.booksOnly }
     private var hasCriteria: Bool { virtualShelf || search.hasCriteria }
-    private var currentCount: Int? { completedKey == key && error == nil && !results.refreshing ? books.count : nil }
+    private var savableBookCount: Int? { completedKey == key && error == nil && !results.refreshing ? books.count : nil }
     private var entries: [LibraryEntry] { results.entries }
     private var conversations: [AIConversationSearchHit] { results.conversations }
     private var completedKey: SearchKey? { results.completedKey }
@@ -230,32 +230,31 @@ struct AppSearchView: View {
         return rows
     }
 
-    @ViewBuilder private var matchingBookCount: some View {
-        if booksOnly, let currentCount {
-            (virtualShelf ? Text("\(currentCount) 本") : Text("小说 · \(currentCount) 本"))
-                .font(.subheadline)
-                .foregroundStyle(Color(uiColor: theme.secondary))
+    private var matchingBookCount: String? {
+        guard booksOnly, let completedKey, completedKey == key || !books.isEmpty else { return nil }
+        let count = books.count
+        return virtualShelf ? String(localized: "\(count) 本") : String(localized: "小说 · \(count) 本")
+    }
+
+    @ViewBuilder private var resultCountLabel: some View {
+        if let matchingBookCount {
+            Text(verbatim: matchingBookCount)
+                .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                 .accessibilityIdentifier("structuredSearchCount")
         }
     }
 
-    @ViewBuilder private var resultHeader: some View {
-        if showsSaveActions {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: LayoutTokens.compact) {
-                    matchingBookCount.fixedSize()
-                    Spacer(minLength: 0)
-                    saveActions.fixedSize(horizontal: true, vertical: false)
-                }
-                VStack(alignment: .leading, spacing: 0) {
-                    matchingBookCount.padding(.top, LayoutTokens.compact)
-                    saveActions.frame(maxWidth: .infinity, alignment: .trailing)
-                }
+    private var resultHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                resultCountLabel.fixedSize()
+                Spacer(minLength: 0)
+                saveActions.fixedSize(horizontal: true, vertical: false)
             }
-        } else {
-            matchingBookCount
-                .padding(.vertical, LayoutTokens.compact)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading) {
+                resultCountLabel
+                saveActions.frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
     }
 
@@ -263,15 +262,21 @@ struct AppSearchView: View {
         guard hasCriteria else { return [] }
         var sections: [LibraryCollectionSection] = []
         let notices = resultNotices
-        if !notices.isEmpty { sections.append(.init(id: .searchSummary, content: .rows(notices))) }
-        if (booksOnly && currentCount != nil) || showsSaveActions {
-            sections.insert(.init(id: .searchResultHeader, content: .rows([.init("header") { resultHeader }]),
-                                  bottomSpacing: 0), at: books.isEmpty ? 0 : sections.count)
+        let countHeader = showsSaveActions ? nil : matchingBookCount.map {
+            LibraryCollectionSection.Header.title($0, accessibilityID: "structuredSearchCount")
+        }
+        let emptyCount = books.isEmpty ? countHeader : nil
+        if !notices.isEmpty || emptyCount != nil {
+            sections.append(.init(id: .searchSummary, content: .rows(notices), header: emptyCount))
+        }
+        if showsSaveActions {
+            sections.insert(.init(id: .searchResultHeader, content: .rows([.init("header") { resultHeader }])),
+                            at: books.isEmpty ? 0 : sections.count)
         }
 
         if !books.isEmpty {
             sections.append(.init(id: .searchBooks, content: .files(books, .results),
-                                  header: booksOnly ? nil : sectionHeading("书籍", count: books.count)))
+                                  header: booksOnly ? countHeader : sectionHeading("书籍", count: books.count)))
         }
         if !folders.isEmpty {
             sections.append(.init(id: .searchFolders, content: .files(folders, .folderHits),
@@ -305,8 +310,6 @@ struct AppSearchView: View {
                           accessibilityID: "appSearchResults", isSearch: true, beforeOpen: dismissKeyboard)
         // UIKit insets the scroll content while allowing it to pass behind the search drawer.
         .ignoresSafeArea(.container, edges: savedFilter == nil ? .top : [])
-        .frame(maxWidth: model.layout == .list ? 680 : .infinity)
-        .frame(maxWidth: .infinity)
         .themedPage()
         .navigationTitle(savedFilter.map { Text($0.name) } ?? Text("搜索")).navigationBarTitleDisplayMode(.inline)
         .modifier(LibraryFileActivity(model: model))
@@ -379,7 +382,7 @@ struct AppSearchView: View {
         .buttonStyle(.borderless)
         .font(.subheadline)
         .tint(Color(uiColor: theme.accent))
-        .disabled(currentCount == nil || model.savedFilters.snapshot == nil || model.savedFilters.saving)
+        .disabled(savableBookCount == nil || model.savedFilters.snapshot == nil || model.savedFilters.saving)
     }
 
     private func saveLabel(_ title: LocalizedStringKey, symbol: String) -> some View {
@@ -391,9 +394,9 @@ struct AppSearchView: View {
     }
 
     private func saveNewShelf() {
-        guard let currentCount else { return }
+        guard let savableBookCount else { return }
         dismissKeyboard()
-        sheet = .name(.save(search.configuration.forVirtualShelf, term: search.term, searchCount: currentCount))
+        sheet = .name(.save(search.configuration.forVirtualShelf, term: search.term, searchCount: savableBookCount))
     }
 
     private func openCreatedFilter() {
@@ -421,12 +424,9 @@ struct AppSearchView: View {
         }
     }
 
-    private func sectionHeading(_ title: LocalizedStringKey, count: Int) -> AnyView? {
+    private func sectionHeading(_ title: LocalizedStringResource, count: Int) -> LibraryCollectionSection.Header? {
         guard groupCount > 1 else { return nil }
-        return AnyView(HStack(spacing: LayoutTokens.compact) {
-            Text(title).foregroundStyle(Color(uiColor: theme.ink))
-            Text(count, format: .number).foregroundStyle(Color(uiColor: theme.secondary))
-        }.font(.subheadline.weight(.semibold)).accessibilityAddTraits(.isHeader))
+        return .title(String(localized: title), detail: count.formatted())
     }
 
     private func dismissKeyboard() { search.keyboardDismissals += 1 }

@@ -31,16 +31,14 @@ struct LibraryAllBooksView: View {
         let overview = LibraryCollectionSection(id: .catalogueSummary, content: .rows([.init("summary") { summary }]))
         if shownGrouping == .tags {
             return [overview] + tagGroups.map { group in
-                .init(id: .tag(group.id), content: .files(group.fileIDs.compactMap(card), .results),
-                      header: AnyView(tagHeading(group)))
+                let header: LibraryCollectionSection.Header = group.kind == .tag
+                    ? .action(AnyView(tagHeading(group)))
+                    : .title(group.title, detail: String(localized: "\(UInt64(group.fileIDs.count)) 本小说"))
+                return .init(id: .tag(group.id), content: .files(group.fileIDs.compactMap(card), .results), header: header)
             }
         }
         return [overview] + groups.map { group in
-            .init(id: .name(group.id), content: .files(group.entries, .results), header: AnyView(
-                Text(verbatim: group.id).font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(uiColor: theme.secondary))
-                    .accessibilityAddTraits(.isHeader)
-            ))
+            .init(id: .name(group.id), content: .files(group.entries, .results), header: .title(group.id))
         }
     }
 
@@ -78,25 +76,19 @@ struct LibraryAllBooksView: View {
         }
     }
 
-    @ViewBuilder private func tagHeading(_ group: CatalogueTagSection) -> some View {
-        if group.kind == .tag {
-            Button {
-                host.navigate(.search(AppSearchScope(seeds: [.shelf(shownShelfID), .tag(group.tag)])), in: model)
-            } label: {
-                tagHeadingLabel(group)
-            }.buttonStyle(.plain).accessibilityIdentifier("library-tag-\(group.tag)")
-        } else {
-            tagHeadingLabel(group)
-        }
-    }
-
-    private func tagHeadingLabel(_ group: CatalogueTagSection) -> some View {
-        HStack {
-            Text(verbatim: group.title).font(.subheadline.weight(.semibold))
-            Text("\(UInt64(group.fileIDs.count)) 本小说").font(.caption)
-            if group.kind == .tag { Image(systemName: "chevron.right").font(.caption2) }
-        }.foregroundStyle(Color(uiColor: group.kind == .tag ? theme.accent : theme.secondary))
-            .textCase(nil).accessibilityElement(children: .combine)
+    private func tagHeading(_ group: CatalogueTagSection) -> some View {
+        Button {
+            host.navigate(.search(AppSearchScope(seeds: [.shelf(shownShelfID), .tag(group.tag)])), in: model)
+        } label: {
+            HStack {
+                Text(verbatim: group.title).font(.subheadline.weight(.semibold))
+                Text("\(UInt64(group.fileIDs.count)) 本小说").font(.caption)
+                Image(systemName: "chevron.right").font(.caption2)
+            }
+            .foregroundStyle(Color(uiColor: theme.accent))
+            .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
+            .contentShape(.rect)
+        }.buttonStyle(.plain).accessibilityIdentifier("library-tag-\(group.tag)")
     }
 
     private var summary: some View {

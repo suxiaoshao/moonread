@@ -94,27 +94,26 @@ enum LibraryItemInteraction {
         return false
     }
 
-    func detail(showsChapter: Bool = false) -> Text {
-        if case .author(let name, let range) = match {
-            let author = Text(Self.highlight(name, range: range, theme: theme))
-            return Text("作者 \(author)")
+    func author() -> Text? {
+        if case .author(let author, let range) = match {
+            return Text(Self.highlight(author, range: range, theme: theme))
         }
-        return Text(verbatim: showsChapter || entry.directory ? entry.libraryDetail : entry.libraryProgress)
+        guard let author = entry.displayMetadata?.author.trimmingCharacters(in: .whitespacesAndNewlines),
+              !author.isEmpty else { return nil }
+        return Text(verbatim: author)
+    }
+
+    var status: Text {
+        Text(verbatim: entry.directory ? entry.libraryDetail : entry.libraryProgress)
+    }
+
+    var gridStatus: Text {
+        if authorMatched, let author = author() { return Text("作者 \(author)") }
+        return status
     }
 
     func pathText(in model: LibraryModel) -> Text {
         Text(verbatim: model.shelfTitle(entry.shelfId) + (entry.parentPath.isEmpty ? "" : " / " + entry.parentPath))
-    }
-
-    func path(in model: LibraryModel) -> some View {
-        let full = pathText(in: model)
-        return Label {
-            full.lineLimit(1).truncationMode(.middle)
-        } icon: {
-            Image(systemName: "folder").accessibilityHidden(true)
-        }
-        .labelStyle(CompactLibraryPathLabel())
-        .accessibilityLabel(full)
     }
 
     @ViewBuilder func cover(compact: Bool) -> some View {
@@ -138,74 +137,143 @@ enum LibraryItemInteraction {
 
 }
 
-private struct CompactLibraryPathLabel: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 4) { configuration.icon; configuration.title }
-    }
-}
-
+/// The glyph stays on the status line. The transparent part of its Menu label
+/// can use the space above and below that line without contributing to layout.
 struct LibraryItemMore<Actions: View>: View {
     let entry: LibraryEntry
+    var height: CGFloat = LayoutTokens.hit
+    var bottomInset: CGFloat = 0
     @ViewBuilder let actions: Actions
     @Environment(\.theme) private var theme
 
     var body: some View {
         Menu { actions } label: {
-            Image(systemName: "ellipsis")
-                .foregroundStyle(Color(uiColor: theme.secondary))
-                .frame(width: LayoutTokens.hit, height: LayoutTokens.hit)
+            Color.clear
+                .frame(width: LayoutTokens.hit, height: height)
+                .overlay(alignment: .bottom) {
+                    Text(Image(systemName: "ellipsis"))
+                        .font(.caption)
+                        .foregroundStyle(Color(uiColor: theme.secondary))
+                        .padding(.bottom, bottomInset)
+                }
+                .contentShape(.interaction, Rectangle())
         }
         .accessibilityLabel(String(localized: "\(entry.name)的操作"))
     }
+}
+
+struct LibraryGridStatus<Actions: View>: View {
+    let entry: LibraryEntry
+    let status: Text
+    let showsMenu: Bool
+    @ViewBuilder let actions: Actions
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            status.font(.caption)
+                .lineLimit(1)
+                .foregroundStyle(Color(uiColor: theme.secondary))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, showsMenu ? LayoutTokens.hit : 0)
+                .padding(.bottom, LibraryCollectionSection.gridFooterSpacing)
+                .accessibilityHidden(true)
+        }
+        .overlay {
+            if showsMenu {
+                GeometryReader { geometry in
+                    LibraryItemMore(entry: entry, height: min(LayoutTokens.hit, geometry.size.height),
+                                    bottomInset: LibraryCollectionSection.gridFooterSpacing) { actions }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
+            }
+        }
+    }
+}
+
+private extension VerticalAlignment {
+    private enum LibraryStatus: AlignmentID {
+        static func defaultValue(in context: ViewDimensions) -> CGFloat { context[.bottom] }
+    }
+    static let libraryStatus = VerticalAlignment(LibraryStatus.self)
 }
 
 struct LibraryFileRow: View {
     let model: LibraryModel
     let entry: LibraryEntry
     var showPath = false
+    var recent = false
     var match: LibraryQueryRules.SearchMatch?
     let interaction: LibraryItemInteraction
-    static let coverSize = CGSize(width: 32, height: 44)
-    private var coverSize: CGSize { Self.coverSize }
-    static let textLeading: CGFloat = 32 + LayoutTokens.control
-    @ScaledMetric(relativeTo: .body) private var rowHeight = 60.0
+    static let coverSize = CGSize(width: 56, height: 80)
+    static let textLeading = coverSize.width + LayoutTokens.control
     @Environment(\.theme) private var theme
+
     private var label: LibraryItemLabel { .init(entry: entry, theme: theme, match: match) }
+    private var showsMenu: Bool { recent || interaction.menuHost != nil }
+
     var body: some View {
-            HStack(spacing: 4) {
-                Button { interaction.activate(entry, in: model) } label: {
-                    HStack(spacing: LayoutTokens.control) {
-                        label.cover(compact: true).frame(width: coverSize.width, height: coverSize.height)
-                        VStack(alignment: .leading, spacing: 4) {
-                            label.title().font(.body.weight(.medium)).lineLimit(1)
-                            if showPath {
-                                HStack(spacing: 6) {
-                                    label.detail().fixedSize(horizontal: !label.authorMatched, vertical: false)
-                                    Text("·").accessibilityHidden(true)
-                                    label.path(in: model)
-                                }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                                    .lineLimit(1)
-                            } else {
-                                label.detail(showsChapter: true).font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
-                            }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }.padding(.vertical, LayoutTokens.compact).contentShape(.rect)
-                }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
-                    .overlay(alignment: .leading) {
-                        if !interaction.isEditing && !entry.directory {
-                            LibraryFileAvailability(entry: entry, compact: true).frame(width: coverSize.width, height: coverSize.height)
-                        }
+        Button {
+            if recent { model.open(entry) }
+            else { interaction.activate(entry, in: model) }
+        } label: {
+            HStack(spacing: LayoutTokens.control) {
+                cover
+                VStack(alignment: .leading) {
+                    label.title().font(.body.weight(.medium)).lineLimit(1)
+                    if let author = label.author() {
+                        author.font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
                     }
-                if let host = interaction.menuHost {
-                    LibraryItemMore(entry: entry) {
-                        LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
-                    }
+                    statusLine.alignmentGuide(.libraryStatus) { $0[.bottom] }
                 }
-            }.frame(height: rowHeight)
-                .contextMenu {
-                    if let host = interaction.menuHost {
-                        LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
-                    }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, showsMenu ? LayoutTokens.hit : 0)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("library-file-\(entry.name)")
+        .overlay(alignment: Alignment(horizontal: .trailing, vertical: .libraryStatus)) {
+            if showsMenu { LibraryItemMore(entry: entry) { actions } }
+        }
+        .contextMenu { actions }
+    }
+
+    private var cover: some View {
+        label.cover(compact: true)
+            .frame(width: Self.coverSize.width, height: Self.coverSize.height)
+            .overlay {
+                if !interaction.isEditing && !entry.directory {
+                    LibraryFileAvailability(entry: entry, compact: true)
                 }
+            }
+    }
+
+    private var statusLine: some View {
+        HStack {
+            if recent {
+                Text(entry.chapterTitle ?? String(localized: "继续阅读"))
+                Spacer(minLength: 0)
+                RecentBookItem.progress(entry).fixedSize()
+            } else {
+                label.status.layoutPriority(1)
+                if showPath {
+                    Text("·").accessibilityHidden(true)
+                    label.pathText(in: model).truncationMode(.middle)
+                }
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(Color(uiColor: theme.secondary))
+        .lineLimit(1)
+    }
+
+    @ViewBuilder private var actions: some View {
+        if recent {
+            RecentBookActions(model: model, entry: entry)
+        } else if let host = interaction.menuHost {
+            LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
+        }
     }
 }

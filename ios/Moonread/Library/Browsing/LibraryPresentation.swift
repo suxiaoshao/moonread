@@ -115,9 +115,9 @@ struct LibraryBookTile: View {
     private var label: LibraryItemLabel { .init(entry: entry, theme: theme, match: match) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading) {
             Button { interaction.activate(entry, in: model) } label: {
-                VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+                VStack(alignment: .leading) {
                     label.cover(compact: false).aspectRatio(0.7, contentMode: .fit)
                         .overlay {
                             if interaction.isSelected {
@@ -132,33 +132,22 @@ struct LibraryBookTile: View {
                                     .padding(LayoutTokens.compact)
                             }
                         }
-                    label.title().font(.subheadline.weight(.medium)).lineLimit(2, reservesSpace: true)
+                    label.title().font(.subheadline.weight(.medium)).lineLimit(2)
                 }.contentShape(.rect)
             }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
                 .accessibilityLabel(Text(verbatim: entry.title))
-                .accessibilityValue(showPath ? Text("\(label.detail()), \(label.pathText(in: model))") : label.detail())
+                .accessibilityValue(label.gridStatus)
                 .accessibilityAddTraits(interaction.isSelected ? .isSelected : [])
                 .overlay(alignment: .top) {
                     if !interaction.isEditing && !entry.directory {
                         LibraryFileAvailability(entry: entry).aspectRatio(0.7, contentMode: .fit)
                     }
                 }
-            HStack(spacing: 0) {
-                label.detail().font(.caption)
-                    .foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
-                    .minimumScaleFactor(label.authorMatched ? 0.85 : 1)
-                    .accessibilityHidden(true)
-                Spacer(minLength: 0)
+                .fixedSize(horizontal: false, vertical: true)
+            LibraryGridStatus(entry: entry, status: label.gridStatus, showsMenu: interaction.menuHost != nil) {
                 if let host = interaction.menuHost {
-                    LibraryItemMore(entry: entry) {
-                        LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
-                    }
+                    LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
                 }
-            }
-            .frame(minHeight: LayoutTokens.hit)
-            if showPath {
-                label.path(in: model)
-                    .font(.caption2).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1).accessibilityHidden(true)
             }
         }.frame(maxWidth: .infinity, alignment: .topLeading)
             .contextMenu {

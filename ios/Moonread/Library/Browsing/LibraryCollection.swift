@@ -3,6 +3,12 @@ import UIKit
 import UniformTypeIdentifiers
 
 struct LibraryCollectionSection {
+    static let gridSpacing = LayoutTokens.content
+    static var gridFooterSpacing: CGFloat {
+        let spacing = ViewSpacing()
+        return min(gridSpacing, spacing.distance(to: spacing, along: .vertical))
+    }
+
     enum ID: Hashable {
         case folderOverview, folderEntries, catalogueSummary, name(String), tag(String)
         case recent, searchSummary, searchResultHeader, searchBooks, searchFolders, searchConversations
@@ -26,14 +32,22 @@ struct LibraryCollectionSection {
         case files([LibraryEntry], Format)
         case rows([Row])
     }
+    enum Header {
+        case title(String, detail: String? = nil, accessibilityID: String? = nil)
+        case action(AnyView)
+    }
 
     let id: ID
     let content: Content
-    var header: AnyView?
-    var bottomSpacing = LayoutTokens.control
+    var header: Header?
 
     var letter: String? {
         if case .name(let letter) = id { return letter }
+        return nil
+    }
+
+    var firstFileID: String? {
+        if case .files(let entries, _) = content { return entries.first?.id }
         return nil
     }
 }
@@ -124,7 +138,7 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
             func alignSeparator(to leading: CGFloat?) {
                 separatorLeading?.isActive = false
                 separatorLeading = leading.map {
-                    separatorLayoutGuide.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: $0)
+                    separatorLayoutGuide.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor, constant: $0)
                 }
                 separatorLeading?.isActive = true
             }
@@ -151,7 +165,7 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
             collectionView.allowsMultipleSelectionDuringEditing = true
             collectionView.alwaysBounceVertical = true
             collectionView.register(FileCell.self, forCellWithReuseIdentifier: "file")
-            collectionView.register(UICollectionViewCell.self, forSupplementaryViewOfKind: Self.headerKind, withReuseIdentifier: "header")
+            collectionView.register(UICollectionViewListCell.self, forSupplementaryViewOfKind: Self.headerKind, withReuseIdentifier: "header")
             source = DataSource(collectionView: collectionView) { [weak self] collection, path, item in
                 let cell = collection.dequeueReusableCell(withReuseIdentifier: "file", for: path)
                 self?.configure(cell, item: item)
@@ -162,9 +176,11 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
                 self?.configureHeader(header, at: path)
                 return header
             }
-            collectionView.setCollectionViewLayout(UICollectionViewCompositionalLayout { [weak self] index, environment in
+            let layout = UICollectionViewCompositionalLayoutConfiguration()
+            layout.contentInsetsReference = .layoutMargins
+            collectionView.setCollectionViewLayout(UICollectionViewCompositionalLayout(sectionProvider: { [weak self] index, environment in
                 self?.makeSection(index, environment: environment)
-            }, animated: false)
+            }, configuration: layout), animated: false)
             refresh.addTarget(self, action: #selector(refreshFiles), for: .valueChanged)
         }
 
@@ -238,7 +254,12 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
             let indexChanged = source.letters != letters
             source.letters = letters
             if structureChanged { source.apply(snapshot, animatingDifferences: false) }
-            if layoutChanged || indexChanged || oldSections.keys != newSections.keys { collectionView.collectionViewLayout.invalidateLayout() }
+            let headersChanged = newSections.values.contains { section in
+                (oldSections[section.id]?.header == nil) != (section.header == nil)
+            }
+            if layoutChanged || indexChanged || headersChanged || oldSections.keys != newSections.keys {
+                collectionView.collectionViewLayout.invalidateLayout()
+            }
             sectionsByID = newSections
             entriesByID = newEntries
             rowsByID = newRows
@@ -249,8 +270,11 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
                 switch item {
                 case .row:
                     configure(cell, item: item)
-                case .file(_, let id):
+                case .file(let section, let id):
+                    let wasFirst = oldSections[section]?.firstFileID == id
+                    let isFirst = newSections[section]?.firstFileID == id
                     if layoutChanged || editabilityChanged || selectionChanges.contains(id)
+                        || wasFirst != isFirst
                         || oldEntries[id] != entriesByID[id] || old?.content.matches[id] != config.content.matches[id] {
                         configure(cell, item: item)
                     }
@@ -280,9 +304,12 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
                     view.environment(\.theme, config.theme).environment(config.ai)
                         .foregroundStyle(Color(uiColor: config.theme.ink)).tint(Color(uiColor: config.theme.accent))
                 }.margins(.all, 0)
-                // The header supplies its own button hit target. A count alone
-                // should measure as text rather than inherit a list-cell minimum.
-                cell.contentConfiguration = section.id == .searchResultHeader ? hosting.minSize(height: 0) : hosting
+                switch section.id {
+                case .catalogueSummary, .folderOverview, .searchResultHeader:
+                    cell.contentConfiguration = hosting.minSize(height: 0)
+                default:
+                    cell.contentConfiguration = hosting
+                }
                 (cell as? FileCell)?.alignSeparator(to: nil)
             case .file(_, let id):
                 guard case .files(_, let format) = section.content, let entry = entriesByID[id] else { return }
@@ -291,21 +318,19 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
                 let selected = config.content.folder?.selection.contains(id) == true
                 let interaction: LibraryItemInteraction = selecting ? .selecting(selected: selected)
                     : .browse(config.content.host, beforeOpen: config.content.beforeOpen)
-                let inset = grid ? 0 : format == .recent ? LayoutTokens.content : LayoutTokens.page
                 if config.content.folder != nil {
                     configureFolderCell(cell, id: id, grid: grid, theme: config.theme)
                 }
-                let textLeading = format == .recent ? RecentBookItem.listTextLeading : LibraryFileRow.textLeading
-                (cell as? FileCell)?.alignSeparator(to: grid || format == .directory ? nil : inset + textLeading)
-                cell.contentConfiguration = UIHostingConfiguration {
+                (cell as? FileCell)?.alignSeparator(to: grid || selecting ? nil : LibraryFileRow.textLeading)
+                let hosting = UIHostingConfiguration {
                     Group {
-                        if format == .recent {
+                        if format == .recent && grid {
                             RecentBookItem(model: config.content.model, entry: entry, layout: config.layout, fullPage: true)
                         } else if grid {
                             LibraryBookTile(model: config.content.model, entry: entry, showPath: format.showsPath,
                                             match: config.content.matches[id], interaction: interaction)
                         } else {
-                            LibraryFileRow(model: config.content.model, entry: entry, showPath: format.showsPath,
+                            LibraryFileRow(model: config.content.model, entry: entry, showPath: format.showsPath, recent: format == .recent,
                                            match: config.content.matches[id], interaction: interaction)
                         }
                     }
@@ -313,8 +338,16 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
                     .environment(config.ai)
                     .disabled(config.content.folder?.disabled == true)
                     .allowsHitTesting(!selecting)
-                }.margins(.vertical, format == .recent && !grid ? LayoutTokens.compact : 0)
-                    .margins(.horizontal, inset)
+                    .frame(maxHeight: grid ? .infinity : nil, alignment: .topLeading)
+                }
+                if grid {
+                    cell.contentConfiguration = hosting.margins(.all, 0).minSize(height: 0)
+                } else if section.firstFileID == id {
+                    // Let the section header or navigation inset set the first item's origin.
+                    cell.contentConfiguration = hosting.margins(.top, 0)
+                } else {
+                    cell.contentConfiguration = hosting
+                }
                 // Selected cells own accessibility activation during UIKit editing.
                 cell.isAccessibilityElement = selecting
                 cell.accessibilityIdentifier = selecting ? "library-file-\(entry.name)" : nil
@@ -345,42 +378,63 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
 
         private func configureHeader(_ view: UICollectionReusableView, at path: IndexPath) {
             guard let config = configuration, let cell = view as? UICollectionViewCell,
-                  let id = source.sectionIdentifier(for: path.section), let section = sectionsByID[id] else { return }
-            let horizontal: CGFloat
-            if case .files(_, let format) = section.content, !format.usesGrid(config.layout) { horizontal = LayoutTokens.page }
-            else { horizontal = 0 }
-            cell.contentConfiguration = UIHostingConfiguration {
-                section.header.environment(\.theme, config.theme).environment(config.ai)
-                    .tint(Color(uiColor: config.theme.accent))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, LayoutTokens.compact)
-                    .padding(.bottom, LayoutTokens.compact)
-            }.margins(.vertical, 0).margins(.horizontal, horizontal)
+                  let id = source.sectionIdentifier(for: path.section), let section = sectionsByID[id],
+                  let header = section.header else { return }
+            let usesList: Bool
+            if case .files(_, let format) = section.content { usesList = !format.usesGrid(config.layout) }
+            else { usesList = false }
+            let leading = usesList ? cell.directionalLayoutMargins.leading : 0
+            let trailing = usesList ? cell.directionalLayoutMargins.trailing : 0
+            switch header {
+            case .title(let title, let detail, let accessibilityID):
+                var content = UIListContentConfiguration.header()
+                content.text = title
+                content.secondaryText = detail
+                content.prefersSideBySideTextAndSecondaryText = true
+                content.textProperties.color = config.theme.secondary
+                content.secondaryTextProperties.color = config.theme.secondary
+                if !usesList {
+                    // The custom section already applies the container's horizontal margins.
+                    content.axesPreservingSuperviewLayoutMargins = .vertical
+                    content.directionalLayoutMargins.leading = 0
+                    content.directionalLayoutMargins.trailing = 0
+                }
+                cell.contentConfiguration = content
+                cell.isAccessibilityElement = true
+                cell.accessibilityLabel = title
+                cell.accessibilityValue = detail
+                cell.accessibilityIdentifier = accessibilityID
+                cell.accessibilityTraits = [.header, .staticText]
+            case .action(let action):
+                cell.contentConfiguration = UIHostingConfiguration {
+                    action.environment(\.theme, config.theme).environment(config.ai)
+                        .tint(Color(uiColor: config.theme.accent))
+                }.margins(.vertical, 0)
+                    .margins(.leading, leading).margins(.trailing, trailing).minSize(height: 0)
+                cell.isAccessibilityElement = false
+                cell.accessibilityLabel = nil
+                cell.accessibilityValue = nil
+                cell.accessibilityIdentifier = nil
+                cell.accessibilityTraits = []
+            }
         }
 
         private func makeSection(_ index: Int, environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? {
             guard let config = configuration, let id = source.sectionIdentifier(for: index),
                   let content = sectionsByID[id] else { return nil }
             let section: NSCollectionLayoutSection
-            let horizontal: CGFloat
-            let trailing: CGFloat
             switch content.content {
             case .rows:
                 let height: NSCollectionLayoutDimension = .estimated(LayoutTokens.hit)
                 let item = NSCollectionLayoutItem(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: height))
                 section = NSCollectionLayoutSection(group: .vertical(layoutSize: item.layoutSize, subitems: [item]))
-                horizontal = LayoutTokens.page
-                trailing = horizontal
             case .files(_, let format) where format.usesGrid(config.layout):
-                horizontal = LayoutTokens.page
-                trailing = config.letters.isEmpty ? horizontal : horizontal + 20
-                section = gridSection(environment, insets: horizontal + trailing, format: format)
+                let indexWidth: CGFloat = config.letters.isEmpty ? 0 : 20
+                section = gridSection(environment, indexWidth: indexWidth)
+                section.contentInsets.trailing = indexWidth
             case .files:
-                horizontal = 0
-                trailing = 0
-                section = listSection(environment, theme: config.theme)
+                return listSection(environment, theme: config.theme, hasHeader: content.header != nil)
             }
-            section.contentInsets = .init(top: 0, leading: horizontal, bottom: content.bottomSpacing, trailing: trailing)
             if content.header != nil {
                 section.boundarySupplementaryItems = [
                     .init(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .estimated(32)),
@@ -390,9 +444,12 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
             return section
         }
 
-        private func listSection(_ environment: NSCollectionLayoutEnvironment, theme: ThemeSurface) -> NSCollectionLayoutSection {
+        private func listSection(_ environment: NSCollectionLayoutEnvironment, theme: ThemeSurface,
+                                 hasHeader: Bool) -> NSCollectionLayoutSection {
             var list = UICollectionLayoutListConfiguration(appearance: .plain)
             list.backgroundColor = theme.canvas
+            list.headerTopPadding = 0
+            if hasHeader { list.headerMode = .supplementary }
             list.trailingSwipeActionsConfigurationProvider = { [weak self] path in
                 guard let self, let config = configuration, let folder = config.content.folder,
                       !folder.editing.isEditing, !folder.disabled, let entry = entry(at: path) else { return nil }
@@ -404,26 +461,31 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
                 let actions = UISwipeActionsConfiguration(actions: [delete]); actions.performsFirstActionWithFullSwipe = false
                 return actions
             }
-            return .list(using: list, layoutEnvironment: environment)
+            let section = NSCollectionLayoutSection.list(using: list, layoutEnvironment: environment)
+            section.contentInsetsReference = .safeArea
+            section.supplementaryContentInsetsReference = .safeArea
+            for header in section.boundarySupplementaryItems { header.pinToVisibleBounds = false }
+            return section
         }
 
-        private func gridSection(_ environment: NSCollectionLayoutEnvironment, insets: CGFloat,
-                                 format: LibraryCollectionSection.Format) -> NSCollectionLayoutSection {
-            let width = max(1, environment.container.effectiveContentSize.width - insets)
+        private func gridSection(_ environment: NSCollectionLayoutEnvironment, indexWidth: CGFloat) -> NSCollectionLayoutSection {
+            let width = max(1, environment.container.effectiveContentSize.width - indexWidth)
             let minimum = UIFontMetrics(forTextStyle: .body).scaledValue(for: 96, compatibleWith: environment.traitCollection)
-            let columns = max(1, Int((width + LayoutTokens.content) / (minimum + LayoutTokens.content)))
-            let tileWidth = (width - CGFloat(columns - 1) * LayoutTokens.content) / CGFloat(columns)
-            let title = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: environment.traitCollection)
-            let detail = UIFont.preferredFont(forTextStyle: .caption1, compatibleWith: environment.traitCollection)
-            let path = UIFont.preferredFont(forTextStyle: .caption2, compatibleWith: environment.traitCollection)
-            // Reusable cells keep the existing cover ratio and two title lines.
-            let height = ceil(tileWidth / 0.7 + LayoutTokens.compact + 2 * title.lineHeight
-                              + max(LayoutTokens.hit, detail.lineHeight) + (format.showsPath ? path.lineHeight : 0))
-            let item = NSCollectionLayoutItem(layoutSize: .init(widthDimension: .absolute(tileWidth), heightDimension: .fractionalHeight(1)))
-            let group = NSCollectionLayoutGroup.horizontal(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .absolute(height)), repeatingSubitem: item, count: columns)
-            group.interItemSpacing = .fixed(LayoutTokens.content)
+            let gap = LibraryCollectionSection.gridSpacing
+            let columns = max(1, Int((width + gap) / (minimum + gap)))
+            let tileWidth = (width - CGFloat(columns - 1) * gap) / CGFloat(columns)
+            let estimate = tileWidth / 0.7 + LayoutTokens.hit
+            let item = NSCollectionLayoutItem(layoutSize: .init(
+                widthDimension: .absolute(tileWidth), heightDimension: .uniformAcrossSiblings(estimate: estimate)
+            ))
+            let group = NSCollectionLayoutGroup.horizontal(
+                layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .estimated(estimate)),
+                repeatingSubitem: item, count: columns
+            )
+            group.interItemSpacing = .fixed(gap)
             let section = NSCollectionLayoutSection(group: group)
-            section.interGroupSpacing = LayoutTokens.section
+            // The footer already contributes part of the spacing below each row.
+            section.interGroupSpacing = gap - LibraryCollectionSection.gridFooterSpacing
             return section
         }
 

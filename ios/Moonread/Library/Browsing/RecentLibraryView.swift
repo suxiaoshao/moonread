@@ -70,31 +70,27 @@ struct RecentReadingRetry: View {
 private struct RecentBookRow: View {
     let model: LibraryModel
     let entry: LibraryEntry
-    let inFullList: Bool
+    private static let coverSize = CGSize(width: 44, height: 62)
     @Environment(\.theme) private var theme
     var body: some View {
         Button { model.open(entry) } label: {
-            HStack(spacing: inFullList ? 12 : 15) {
-                LibraryItemLabel(entry: entry, theme: theme).cover(compact: true).frame(width: 44, height: 62)
-                VStack(alignment: .leading, spacing: inFullList ? 4 : 7) {
+            HStack(spacing: 15) {
+                LibraryItemLabel(entry: entry, theme: theme).cover(compact: true)
+                    .frame(width: Self.coverSize.width, height: Self.coverSize.height)
+                VStack(alignment: .leading, spacing: 7) {
                     LibraryItemLabel(entry: entry, theme: theme).title().font(.body.weight(.medium)).lineLimit(1)
-                    HStack(spacing: inFullList ? 8 : nil) {
-                        if inFullList {
-                            chapter.frame(maxWidth: .infinity, alignment: .leading)
-                            progress.fixedSize()
-                        } else {
-                            chapter
-                            Spacer(minLength: 8)
-                            progress
-                        }
+                    HStack {
+                        chapter
+                        Spacer(minLength: 8)
+                        progress
                     }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                 }
-            }.padding(.vertical, inFullList ? 0 : 6)
-                .frame(maxWidth: inFullList ? .infinity : nil, alignment: .leading)
+            }.padding(.vertical, 6)
                 .contentShape(.rect)
         }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
             .overlay(alignment: .leading) {
-                LibraryFileAvailability(entry: entry, compact: true).frame(width: 44, height: 62)
+                LibraryFileAvailability(entry: entry, compact: true)
+                    .frame(width: Self.coverSize.width, height: Self.coverSize.height)
             }
     }
     private var chapter: some View {
@@ -108,7 +104,6 @@ private struct RecentBookRow: View {
 
 /// The home preview and full collection share recent-book actions and labels.
 struct RecentBookItem: View {
-    static let listTextLeading: CGFloat = 44 + LayoutTokens.control
     let model: LibraryModel
     let entry: LibraryEntry
     let layout: LibraryLayout
@@ -118,23 +113,17 @@ struct RecentBookItem: View {
 
     var body: some View {
         if layout == .list {
-            HStack(spacing: 0) {
-                RecentBookRow(model: model, entry: entry, inFullList: fullPage)
-                if fullPage { LibraryItemMore(entry: entry) { actions } }
-            }.contextMenu { actions }
+            RecentBookRow(model: model, entry: entry).contextMenu { actions }
         } else if fullPage {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading) {
                 Button { model.open(entry) } label: { coverAndTitle }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("library-file-\(entry.name)")
                     .accessibilityLabel(Text(verbatim: entry.title))
                     .accessibilityValue(Self.progress(entry))
                     .overlay(alignment: .top) { availability }
-                HStack(spacing: 0) {
-                    Self.progress(entry).font(.caption).lineLimit(1).accessibilityHidden(true)
-                    Spacer(minLength: 0)
-                    LibraryItemMore(entry: entry) { actions }
-                }.foregroundStyle(Color(uiColor: theme.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
+                LibraryGridStatus(entry: entry, status: Self.progress(entry), showsMenu: true) { actions }
             }.contextMenu { actions }
         } else {
             Menu { actions } label: {
@@ -151,9 +140,13 @@ struct RecentBookItem: View {
 
     private var coverAndTitle: some View {
         let label = LibraryItemLabel(entry: entry, theme: theme)
-        return VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+        return VStack(alignment: .leading, spacing: fullPage ? nil : LayoutTokens.compact) {
             label.cover(compact: false).aspectRatio(0.7, contentMode: .fit)
-            label.title().font(.subheadline.weight(.medium)).lineLimit(2, reservesSpace: true)
+            if fullPage {
+                label.title().font(.subheadline.weight(.medium)).lineLimit(2)
+            } else {
+                label.title().font(.subheadline.weight(.medium)).lineLimit(2, reservesSpace: true)
+            }
         }.frame(maxWidth: .infinity, alignment: .leading).contentShape(.rect)
     }
 
@@ -163,7 +156,7 @@ struct RecentBookItem: View {
 
     private var actions: some View { RecentBookActions(model: model, entry: entry) }
 
-    fileprivate static func progress(_ entry: LibraryEntry) -> Text {
+    static func progress(_ entry: LibraryEntry) -> Text {
         Text(ReadingProgress.fraction(entry.positionUtf8, of: entry.byteCount), format: .percent.precision(.fractionLength(1)))
             .monospacedDigit()
     }
