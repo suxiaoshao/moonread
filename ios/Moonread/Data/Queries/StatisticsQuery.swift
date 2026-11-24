@@ -77,9 +77,9 @@ enum StatisticsHistoryRead {
         // The empty optional means all books, never a missing selected file.
         let requestedKeys: String?
 
-        init(scope: DataScope, record: ResolvedBookRecord?) throws {
+        init(scope: DataScope, keys: [String]?) throws {
             self.scope = scope
-            requestedKeys = try record.map { try UserSyncJSON.encode([$0.key.storageKey] + $0.aliases.map(\.storageKey)) }
+            requestedKeys = try keys.map { try UserSyncJSON.encode($0) }
         }
 
         func rows(_ window: Window) -> StatementArguments {
@@ -103,6 +103,18 @@ enum StatisticsHistoryRead {
         let record: ResolvedBookRecord?
         switch target {
         case .all: record = nil
+        case .books(let keys):
+            guard !keys.isEmpty else {
+                return try .value(perform(Selection(scope: scope, keys: [])), key: nil, incomplete: false)
+            }
+            let requested = keys.sorted()
+            let aliases = try String.fetchAll(db, sql: """
+                SELECT alias FROM (\(ReaderIndex.verifiedReadingAliasPairs(scopeParameter: "?1")))
+                WHERE book_key IN (SELECT value FROM json_each(?2))
+                """, arguments: [scope.key, try UserSyncJSON.encode(requested)])
+            let selection = try Selection(scope: scope, keys: requested + aliases)
+            let incomplete = try selection.completeness(db)
+            return try .value(perform(selection), key: nil, incomplete: incomplete)
         case .book(let target):
             switch try BookInformationRead.resolveIdentity(db, scope: scope, target: target) {
             case .missing: throw ReaderError.NotFound
@@ -110,7 +122,7 @@ enum StatisticsHistoryRead {
             case .resolved(let value): record = value
             }
         }
-        let selection = try Selection(scope: scope, record: record)
+        let selection = try Selection(scope: scope, keys: record.map { [$0.key.storageKey] + $0.aliases.map(\.storageKey) })
         let incomplete = try selection.completeness(db)
         return try .value(perform(selection), key: record?.key, incomplete: incomplete)
     }
@@ -331,7 +343,7 @@ enum StatisticsHistoryRead {
 
     static func widget(_ db: Database, scope: DataScope, today: Int64, weekStart: Int64) throws -> WidgetInput? {
         guard today >= Int64.min + 7, weekStart <= today else { throw ReaderError.InvalidRange }
-        let selection = try Selection(scope: scope, record: nil)
+        let selection = try Selection(scope: scope, keys: nil)
         guard try !selection.completeness(db) else { return nil }
         let window = try Window(min(weekStart,today-6),today)
         let rows = try buckets(db, window: window, selection: selection)

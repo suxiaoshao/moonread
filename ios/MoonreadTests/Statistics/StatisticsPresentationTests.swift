@@ -334,6 +334,19 @@ final class StatisticsFixedReadTests: XCTestCase {
       XCTAssertEqual(overview.books.first?.title, "Historical", "Preview does not reorder formal reading")
       XCTAssertEqual(overview.books.first?.readingDays, "9", "Two contributions on a day are still one reading day")
 
+      for (keys, expected, duration) in [(Set([b]), [b], "11000"), (Set<String>(), [], "0")] {
+        let scoped = try index.session.readUsers(index.lease) {
+          try StatisticsHistoryRead.overview($0, scope: scope, window: .init(100,109), target: .books(keys))
+        }
+        guard case .value(let inputs, key: nil, incomplete: false) = scoped else {
+          return XCTFail("Expected complete scoped overview")
+        }
+        let result = try StatisticsHistoryRead.summarize(inputs)
+        XCTAssertEqual(result.books.map(\.readingKey), expected)
+        XCTAssertEqual(result.totalDurationMs, duration)
+        XCTAssertEqual(result.books.first?.lastFormalMs, expected.isEmpty ? nil : String(109 * base + 1000))
+      }
+
       let detail = try index.session.readUsers(index.lease) {
         try StatisticsHistoryRead.activities($0, scope: scope, window: .init(109,109), target: .book(.record(key: .formal(sha256: b))))
       }

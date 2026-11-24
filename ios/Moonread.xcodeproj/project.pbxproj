@@ -244,6 +244,7 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         B01000000000000000000001 = {isa = PBXBuildFile; fileRef = B02000000000000000000001; };
         B01000000000000000000002 = {isa = PBXBuildFile; fileRef = B02000000000000000000002; };
         AF1000000000000000000003 /* LibraryCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000003; };
+        BA332A1147C34AF4B0033201 /* AuthorLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA332A1147C34AF4B0033202; };
         AF1000000000000000000002 /* LibraryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000002; };
         AF1000000000000000000001 /* WelcomeStory.txt in Resources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000001; };
         AE1000000000000000000001 = {isa = PBXBuildFile; fileRef = AE2000000000000000000001; };
@@ -768,6 +769,7 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         270D0000000000000000001D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSyncEngineAdapter.swift"; sourceTree = "<group>";};
         B02000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudLibrary.swift"; sourceTree = "<group>"; };
         AF2000000000000000000003 /* LibraryCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryCollection.swift"; sourceTree = "<group>"; };
+        BA332A1147C34AF4B0033202 /* AuthorLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AuthorLibraryView.swift"; sourceTree = "<group>"; };
         AF2000000000000000000002 /* LibraryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryPresentation.swift"; sourceTree = "<group>"; };
         AF2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text; path = Resources/WelcomeStory.txt; sourceTree = "<group>"; };
         AE2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryService.swift"; sourceTree = "<group>"; };
@@ -1840,6 +1842,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				3B82F24C02769E4A4B06B3E9 /* LibraryRows.swift */,
 				AF2000000000000000000002 /* LibraryPresentation.swift */,
 				AF2000000000000000000003 /* LibraryCollection.swift */,
+				BA332A1147C34AF4B0033202 /* AuthorLibraryView.swift */,
 			);
 			path = "Browsing";
 			sourceTree = "<group>";
@@ -2586,6 +2589,7 @@ F01900000000000000000001,
 				A10000000000000000000003 /* LibraryView.swift in Sources */,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
+                BA332A1147C34AF4B0033201 /* AuthorLibraryView.swift in Sources */,
                 AF1000000000000000000004 /* LibraryDrop.swift in Sources */,
                 F14900000000000000000001,
                 B39A10000000000000000001 /* ShelfRecovery.swift in Sources */,

@@ -137,24 +137,20 @@ enum LibraryItemInteraction {
 
 }
 
-/// The glyph stays on the status line. The transparent part of its Menu label
-/// can use the space above and below that line without contributing to layout.
+/// The hit area extends above the aligned glyph without increasing the row height.
 struct LibraryItemMore<Actions: View>: View {
     let entry: LibraryEntry
-    var height: CGFloat = LayoutTokens.hit
-    var bottomInset: CGFloat = 0
     @ViewBuilder let actions: Actions
     @Environment(\.theme) private var theme
 
     var body: some View {
         Menu { actions } label: {
             Color.clear
-                .frame(width: LayoutTokens.hit, height: height)
+                .frame(width: LayoutTokens.hit, height: LayoutTokens.hit)
                 .overlay(alignment: .bottom) {
                     Text(Image(systemName: "ellipsis"))
                         .font(.caption)
                         .foregroundStyle(Color(uiColor: theme.secondary))
-                        .padding(.bottom, bottomInset)
                 }
                 .contentShape(.interaction, Rectangle())
         }
@@ -162,11 +158,46 @@ struct LibraryItemMore<Actions: View>: View {
     }
 }
 
-struct LibraryGridStatus<Actions: View>: View {
+/// Uses the mounted cover as the native context-menu lift, independently of the tap target.
+struct LibraryCoverPreviewShape: Shape {
+    var size: CGSize?
+    var isFolder = false
+
+    func path(in rect: CGRect) -> Path {
+        let cover = size.map {
+            CGRect(x: rect.minX, y: rect.midY - $0.height / 2, width: $0.width, height: $0.height)
+        } ?? CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.width / 0.7)
+        return RoundedRectangle(cornerRadius: isFolder ? 7 : size == nil ? 6 : 3).path(in: cover)
+    }
+}
+
+/// The book's text is laid out above this button, outside the system menu's source.
+struct LibraryCoverButton<Cover: View, Actions: View>: View {
     let entry: LibraryEntry
+    var size: CGSize?
+    let detail: Text
+    let open: () -> Void
+    @ViewBuilder let cover: Cover
+    @ViewBuilder let actions: Actions
+
+    var body: some View {
+        Button(action: open) {
+            cover
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: size == nil ? .topLeading : .leading)
+                .contentShape(.interaction, .rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("library-file-\(entry.name)")
+        .accessibilityLabel(Text(verbatim: entry.title))
+        .accessibilityValue(detail)
+        .contentShape(.contextMenuPreview, LibraryCoverPreviewShape(size: size, isFolder: entry.directory))
+        .contextMenu { actions }
+    }
+}
+
+struct LibraryGridStatus: View {
     let status: Text
     let showsMenu: Bool
-    @ViewBuilder let actions: Actions
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -178,16 +209,6 @@ struct LibraryGridStatus<Actions: View>: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, showsMenu ? LayoutTokens.hit : 0)
                 .padding(.bottom, LibraryCollectionSection.gridFooterSpacing)
-                .accessibilityHidden(true)
-        }
-        .overlay {
-            if showsMenu {
-                GeometryReader { geometry in
-                    LibraryItemMore(entry: entry, height: min(LayoutTokens.hit, geometry.size.height),
-                                    bottomInset: LibraryCollectionSection.gridFooterSpacing) { actions }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                }
-            }
         }
     }
 }
@@ -214,30 +235,42 @@ struct LibraryFileRow: View {
     private var showsMenu: Bool { recent || interaction.menuHost != nil }
 
     var body: some View {
-        Button {
-            if recent { model.open(entry) }
-            else { interaction.activate(entry, in: model) }
-        } label: {
-            HStack(spacing: LayoutTokens.control) {
-                cover
-                VStack(alignment: .leading) {
-                    label.title().font(.body.weight(.medium)).lineLimit(1)
-                    if let author = label.author() {
-                        author.font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
-                    }
-                    statusLine.alignmentGuide(.libraryStatus) { $0[.bottom] }
+        HStack(spacing: LayoutTokens.control) {
+            Color.clear.frame(width: Self.coverSize.width, height: Self.coverSize.height)
+            VStack(alignment: .leading) {
+                label.title().font(.body.weight(.medium)).lineLimit(1)
+                if let author = label.author() {
+                    author.font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, showsMenu ? LayoutTokens.hit : 0)
+                statusLine.alignmentGuide(.libraryStatus) { $0[.bottom] }
             }
-            .contentShape(.rect)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, showsMenu ? LayoutTokens.hit : 0)
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("library-file-\(entry.name)")
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .background {
+            LibraryCoverButton(entry: entry, size: Self.coverSize, detail: accessibilityDetail) {
+                if recent { model.open(entry) }
+                else { interaction.activate(entry, in: model) }
+            } cover: {
+                cover
+            } actions: {
+                actions
+            }
+        }
         .overlay(alignment: Alignment(horizontal: .trailing, vertical: .libraryStatus)) {
             if showsMenu { LibraryItemMore(entry: entry) { actions } }
         }
-        .contextMenu { actions }
+    }
+
+    private var accessibilityDetail: Text {
+        var detail = recent
+            ? Text("\(RecentBookItem.chapter(entry)), \(RecentBookItem.progress(entry))")
+            : label.status
+        if let author = label.author() { detail = Text("\(author), \(detail)") }
+        if showPath { detail = Text("\(detail), \(label.pathText(in: model))") }
+        return detail
     }
 
     private var cover: some View {
@@ -253,7 +286,7 @@ struct LibraryFileRow: View {
     private var statusLine: some View {
         HStack {
             if recent {
-                Text(entry.chapterTitle ?? String(localized: "继续阅读"))
+                RecentBookItem.chapter(entry)
                 Spacer(minLength: 0)
                 RecentBookItem.progress(entry).fixedSize()
             } else {
