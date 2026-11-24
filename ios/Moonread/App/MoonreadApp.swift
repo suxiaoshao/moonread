@@ -611,6 +611,7 @@ struct LibraryDestination: View {
         case .screenshotReaderSettings: PageShotReaderSettings()
         #endif
         case .search(let scope): AppSearchPage(model: library, scope: scope, host: host)
+        case .author(let credit): AuthorLibraryView(model: library, credit: credit, host: host)
         }
     }
 }

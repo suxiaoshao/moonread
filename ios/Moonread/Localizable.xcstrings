@@ -1,6 +1,10 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "书库中暂无作品": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No Works in the Library"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書庫中暫無作品"}}}},
+    "在搜索中筛选": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Filter in Search"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"在搜尋中篩選"}}}},
+    "匹配的作者 · %lld": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Matching Authors · %lld"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"符合的作者 · %lld"}}}},
+    "读过 %lld 本 · %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Books read: %lld · %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"讀過 %lld 本 · %@"}}}},
     "筛选建议": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Filter suggestion"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"篩選建議"}}}},
     "阅读状态 · %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading status · %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"閱讀狀態 · %@"}}}},
     "查看搜索结果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"View search results"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"查看搜尋結果"}}}},

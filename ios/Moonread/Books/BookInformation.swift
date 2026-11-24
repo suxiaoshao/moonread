@@ -443,8 +443,7 @@ struct BookInformationSections: View {
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
-    /// Search entered from an open book's details is pushed above the suspended reader.
-    @State private var readerSearch: AppSearchScope?
+    @State private var readerDestination: LibraryRoute?
     @Environment(\.returnToReading) private var returnToReading
     /// Reading is the page's main task: one full-width prominent action under the book identity.
     @ViewBuilder private var primaryAction: some View {
@@ -462,11 +461,10 @@ struct BookInformationSections: View {
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         }
     }
-    /// Author and tag start a contextual search on this stack; Back returns here.
-    private func search(_ token: AppSearchSeed) {
+    /// A push from the reader's details keeps the original reader on this stack.
+    private func navigate(_ route: LibraryRoute) {
         guard let library else { return }
-        let scope = AppSearchScope(seeds: [token])
-        if target.fromReader { readerSearch = scope } else { host.navigate(.search(scope), in: library) }
+        if target.fromReader { readerDestination = route } else { host.navigate(route, in: library) }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -486,7 +484,7 @@ struct BookInformationSections: View {
             if let tags = model.details?.metadata.tags, !tags.isEmpty {
                 AIFlowLayout(spacing: 8) {
                     ForEach(tags, id: \.self) { tag in
-                        Button(tag) { search(.tag(tag)) }
+                        Button(tag) { navigate(.search(.init(seeds: [.tag(tag)]))) }
                             .font(.subheadline).buttonStyle(.bordered)
                             .disabled(library == nil)
                     }
@@ -500,18 +498,19 @@ struct BookInformationSections: View {
                 readingCard
             }.id("myReading")
         }.frame(maxWidth: .infinity, alignment: .leading).id("bookInformation")
-        .navigationDestination(item: $readerSearch) { scope in
-            if let library {
-                ReaderContextSearch(model: library, scope: scope,
-                                    isOpenBook: { entry in entry.id == target.fileID || (model.contentSHA(for: target) != nil && entry.readingKey == model.contentSHA(for: target)) },
-                                    returnToBook: { if let returnToReading { returnToReading() } else { dismiss() } })
-            }
+        .navigationDestination(item: $readerDestination) { route in
+            HostedLibraryDestination(route: route, host: .init(allowsFileBrowsing: false, isOpenBook: { entry in
+                entry.id == target.fileID || model.contentSHA(for: target).map { entry.readingKey == $0 } == true
+            }, returnToOpenBook: {
+                if let returnToReading { returnToReading() } else { dismiss() }
+            }))
         }
     }
     @ViewBuilder private var author: some View {
         if let author = model.details?.metadata.author, !author.isEmpty {
             if library != nil {
-                Button(author) { search(.author(author)) }.buttonStyle(.plain)
+                Button { navigate(.author(.init(author))) } label: { Text(verbatim: author) }
+                    .buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.accent))
             } else { Text(verbatim: author) }
         }
     }

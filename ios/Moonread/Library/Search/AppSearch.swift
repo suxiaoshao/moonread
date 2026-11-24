@@ -112,25 +112,6 @@ extension EnvironmentValues {
     @Entry var readerTheme = ThemeSurface.initial
 }
 
-/// Search entered from an open book's details. Results open above the suspended reader,
-/// so Back returns through them to the original book at its position. Folders are not
-/// browsed from here; picking the open book itself returns to it.
-struct ReaderContextSearch: View {
-    let model: LibraryModel
-    let scope: AppSearchScope
-    let isOpenBook: (LibraryEntry) -> Bool
-    let returnToBook: () -> Void
-    @State private var pushed: LibraryRoute?
-    @State private var visible = false
-    var body: some View {
-        let host = LibraryBrowsingHost(push: { pushed = $0 }, isCurrent: { visible }, allowsFileBrowsing: false,
-                                       isOpenBook: isOpenBook, returnToOpenBook: returnToBook)
-        AppSearchPage(model: model, scope: scope, host: host)
-            .navigationDestination(item: $pushed) { HostedLibraryDestination(route: $0, host: host) }
-            .onAppear { visible = true }.onDisappear { visible = false }
-    }
-}
-
 private enum AppSearchSheet: Identifiable {
     case filters(BookSearchDraft)
     case name(SavedFilterNameRequest)
@@ -153,6 +134,7 @@ struct AppSearchView: View {
     @Environment(\.theme) private var theme
     @State private var results = AppSearchResults()
     @State private var retry = 0
+    @State private var authorsExpanded = false
     @State private var sheet: AppSearchSheet?
     @State private var createdFilter: UUID?
     private var virtualShelf: Bool { savedFilter != nil }
@@ -166,7 +148,31 @@ struct AppSearchView: View {
     private var loading: LoadingState { results.loading }
     private var books: [LibraryEntry] { entries.filter { !$0.directory } }
     private var folders: [LibraryEntry] { host.allowsFileBrowsing ? entries.filter(\.directory) : [] }
-    private var groupCount: Int { [!books.isEmpty, !folders.isEmpty, ai.availability.isAvailable && !conversations.isEmpty].filter { $0 }.count }
+    private var groupCount: Int {
+        [!books.isEmpty, !folders.isEmpty, ai.availability.isAvailable && !conversations.isEmpty].filter { $0 }.count
+    }
+
+    private var matchedAuthors: [AuthorCredit] {
+        guard let completedKey, !completedKey.term.isEmpty,
+              !completedKey.virtualShelf, !completedKey.configuration.booksOnly else { return [] }
+        return AuthorCredit.matches(in: entries, sources: results.matches)
+    }
+
+    private func authorLink(_ author: AuthorCredit) -> some View {
+        Button {
+            dismissKeyboard()
+            host.navigate(.author(author), in: model)
+        } label: {
+            HStack {
+                Text(verbatim: author.name)
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).accessibilityHidden(true)
+            }.frame(minHeight: LayoutTokens.hit).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color(uiColor: theme.accent))
+        .accessibilityIdentifier("searchAuthor")
+    }
     private var key: SearchKey {
         SearchKey(term: search.term, configuration: search.configuration, virtualShelf: virtualShelf, revision: results.authorityRevision,
                   retry: retry, aiAvailable: ai.availability.isAvailable)
@@ -274,9 +280,26 @@ struct AppSearchView: View {
                             at: books.isEmpty ? 0 : sections.count)
         }
 
+        let authors = matchedAuthors
+        if let first = authors.first {
+            sections.append(.init(id: .searchAuthors, content: .rows([.init("authors") {
+                if authors.count == 1 {
+                    authorLink(first)
+                } else {
+                    DisclosureGroup(isExpanded: $authorsExpanded) {
+                        ForEach(authors) { authorLink($0) }
+                    } label: {
+                        Text("匹配的作者 · \(authors.count)")
+                    }.accessibilityIdentifier("searchAuthorMatches")
+                }
+            }]), header: authors.count == 1 ? .title(String(localized: "作者")) : nil))
+        }
         if !books.isEmpty {
-            sections.append(.init(id: .searchBooks, content: .files(books, .results),
-                                  header: booksOnly ? countHeader : sectionHeading("书籍", count: books.count)))
+            let heading: LibraryCollectionSection.Header?
+            if booksOnly { heading = countHeader }
+            else if groupCount > 1 { heading = sectionHeading("书籍", count: books.count) }
+            else { heading = authors.isEmpty ? nil : .title(String(localized: "书籍")) }
+            sections.append(.init(id: .searchBooks, content: .files(books, .results), header: heading))
         }
         if !folders.isEmpty {
             sections.append(.init(id: .searchFolders, content: .files(folders, .folderHits),
@@ -412,13 +435,7 @@ struct AppSearchView: View {
     }
     private func run(_ key: SearchKey) async {
         let spec = LibraryQueryRules.SearchSpec(profile: .library, query: key.term, configuration: key.configuration, virtualShelf: key.virtualShelf)
-        await results.observe(key, hasCriteria: hasCriteria) {
-            try await Task.sleep(for: .milliseconds(120))
-            try await AppDataService.libraryTestLatency()
-            return try await model.service.searchInvalidations(spec)
-        } search: {
-            try await model.service.searchLibrary(query: key.term, configuration: key.configuration, virtualShelf: key.virtualShelf)
-        } conversations: {
+        await results.observeLibrary(key, service: model.service, hasCriteria: hasCriteria) {
             guard !spec.booksOnly, key.aiAvailable, !key.term.isEmpty, let runtime = ai.activate() else { return [] }
             return try await runtime.searchConversations(key.term)
         }
@@ -491,6 +508,21 @@ private struct AIConversationSearchRow: View {
     private func reset() {
         if let request = loading.request { loading.finish(request) }
         completedKey = nil; error = nil; entries = []; matches = [:]; conversations = []; unknownCount = 0; refreshing = false
+    }
+
+    func observeLibrary(_ key: SearchKey, service: AppDataService, hasCriteria: Bool = true,
+                        conversations: () async throws -> [AIConversationSearchHit] = { [] }) async {
+        let spec = LibraryQueryRules.SearchSpec(profile: .library, query: key.term,
+                                                configuration: key.configuration, virtualShelf: key.virtualShelf)
+        await observe(key, hasCriteria: hasCriteria) {
+            try await Task.sleep(for: .milliseconds(120))
+            try await AppDataService.libraryTestLatency()
+            return try await service.searchInvalidations(spec)
+        } search: {
+            try await service.searchLibrary(query: key.term, configuration: key.configuration, virtualShelf: key.virtualShelf)
+        } conversations: {
+            try await conversations()
+        }
     }
 
     func observe(_ key: SearchKey, hasCriteria: Bool,

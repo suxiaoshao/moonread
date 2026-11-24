@@ -11,7 +11,8 @@ struct LibraryCollectionSection {
 
     enum ID: Hashable {
         case folderOverview, folderEntries, catalogueSummary, name(String), tag(String)
-        case recent, searchSummary, searchResultHeader, searchBooks, searchFolders, searchConversations
+        case recent, searchSummary, searchResultHeader, searchAuthors, searchBooks, searchFolders, searchConversations
+        case authorSummary, authorWorks
     }
     enum Format: Equatable {
         case directory, results, folderHits, recent
@@ -305,7 +306,7 @@ private struct LibraryCollectionViewport: UIViewControllerRepresentable {
                         .foregroundStyle(Color(uiColor: config.theme.ink)).tint(Color(uiColor: config.theme.accent))
                 }.margins(.all, 0)
                 switch section.id {
-                case .catalogueSummary, .folderOverview, .searchResultHeader:
+                case .catalogueSummary, .folderOverview, .searchResultHeader, .authorSummary, .searchAuthors:
                     cell.contentConfiguration = hosting.minSize(height: 0)
                 default:
                     cell.contentConfiguration = hosting
