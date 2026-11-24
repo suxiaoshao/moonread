@@ -81,6 +81,7 @@ struct PalettePicker: View {
         ThemedGroupedList(sections: paletteSections, theme: theme,
                           topInset: embedded ? LayoutTokens.compact : LayoutTokens.content,
                           bottomInset: bottomContentInset)
+            .underNavigationBar(when: !embedded)
             .disabled(themes.saving).themedPage().accessibilityIdentifier("paletteOptions")
     }
     private var paletteSections: [ThemedGroupedList.Section] {

@@ -330,9 +330,8 @@ struct AppSearchView: View {
 
     var body: some View {
         LibraryCollection(model: model, host: host, sections: resultSections, matches: results.matches,
-                          accessibilityID: "appSearchResults", isSearch: true, beforeOpen: dismissKeyboard)
-        // UIKit insets the scroll content while allowing it to pass behind the search drawer.
-        .ignoresSafeArea(.container, edges: savedFilter == nil ? .top : [])
+                          accessibilityID: "appSearchResults", isSearch: true, hasSearchDrawer: savedFilter == nil,
+                          beforeOpen: dismissKeyboard)
         .themedPage()
         .navigationTitle(savedFilter.map { Text($0.name) } ?? Text("搜索")).navigationBarTitleDisplayMode(.inline)
         .modifier(LibraryFileActivity(model: model))

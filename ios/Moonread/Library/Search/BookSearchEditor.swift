@@ -94,6 +94,7 @@ struct BookSearchEditor: View {
 
     private var mainPage: some View {
         ThemedGroupedList(sections: sections, theme: theme, reordered: reorder)
+            .underNavigationBar()
             .themedPage()
             .navigationTitle("筛选与排序")
             .navigationBarTitleDisplayMode(.inline)

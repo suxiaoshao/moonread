@@ -14,7 +14,9 @@ struct BookSearchGroupPage: View {
         return node.children.filter { deleting.contains($0.id) }.reduce(0) { $0 + count($1) }
     }
     var body: some View {
-        ThemedGroupedList(sections: groupSections, theme: theme).themedPage()
+        ThemedGroupedList(sections: groupSections, theme: theme)
+        .underNavigationBar()
+        .themedPage()
         .navigationBarTitleDisplayMode(.inline)
         .alert("删除条件及其子条件？", isPresented: Binding(get: { !deleting.isEmpty }, set: { if !$0 { deleting = [] } })) {
             Button("删除条件", role: .destructive) { let ids = Set(deleting); draft.edit(id) { $0.children.removeAll { ids.contains($0.id) } }; deleting = [] }

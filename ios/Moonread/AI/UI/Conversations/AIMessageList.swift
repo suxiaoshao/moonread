@@ -229,7 +229,12 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         tableView.estimatedRowHeight = 80
         tableView.selfSizingInvalidation = .enabledIncludingConstraints
         tableView.keyboardDismissMode = .interactive
-        tableView.contentInsetAdjustmentBehavior = .never
+        if #available(iOS 26, *) {
+            // Only the viewport extends at the top. The composer and keyboard still own the bottom layout.
+            tableView.contentInsetAdjustmentBehavior = .automatic
+        } else {
+            tableView.contentInsetAdjustmentBehavior = .never
+        }
         tableView.accessibilityIdentifier = "aiMessages"
         tableView.alwaysBounceVertical = true
         tableView.register(AIHostedMessageCell.self, forCellReuseIdentifier: "message")
