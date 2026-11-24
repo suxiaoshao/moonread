@@ -8,7 +8,7 @@ struct RecentLibraryView: View {
     var body: some View {
         LibraryCollection(model: model, host: .main, sections: [
             .init(id: .recent, content: .files(entries.compactMap { try? $0.libraryEntry() }, .recent))
-        ], onRefresh: {
+        ], hasTopAccessory: model.recentReading.failure != nil, onRefresh: {
             await model.refresh(showIndicator: false, userInitiated: true)
         })
         .themedPage()

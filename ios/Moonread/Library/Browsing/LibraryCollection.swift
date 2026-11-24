@@ -70,6 +70,8 @@ struct LibraryCollection: View {
     var matches: [String: LibraryQueryRules.SearchMatch] = [:]
     var accessibilityID: String?
     var isSearch = false
+    var hasSearchDrawer = false
+    var hasTopAccessory = false
     var beforeOpen: (() -> Void)?
     var onRefresh: (() async -> Void)?
     @Environment(AIHost.self) private var ai
@@ -81,6 +83,7 @@ struct LibraryCollection: View {
         LibraryCollectionViewport(
             content: self, ai: ai, theme: theme, layout: model.layout, alphabet: alphabet, letters: letters
         )
+        .underNavigationBar(when: !hasTopAccessory, onEarlierSystems: hasSearchDrawer)
         .overlay(alignment: .trailing) {
             if model.layout == .grid && !letters.isEmpty {
                 LibraryAlphabetIndex(letters: letters, current: alphabet.current ?? letters.first) { letter in

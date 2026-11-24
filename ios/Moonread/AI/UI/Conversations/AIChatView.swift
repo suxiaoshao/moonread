@@ -40,16 +40,28 @@ struct AIChatView: View {
     @State private var restoreInputFocus = false
     @State private var notice: AIActionNotice?
     private var background: UIColor { placement == .page ? theme.canvas : theme.surface }
-    var body: some View {
+    private var chat: some View {
         Group {
             if let conversation = ai.conversation(conversationID) { content(conversation) }
             else { ContentUnavailableView("对话不可用", systemImage: "exclamationmark.bubble") }
         }
-        // Same roles as themedPage, with the placement's own background.
+        // Both placements keep their own canvas behind the system bar.
         .foregroundStyle(Color(uiColor: theme.ink)).tint(Color(uiColor: theme.accent))
-        .background(Color(uiColor: background))
-        .toolbarBackground(Color(uiColor: background), for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .background { Color(uiColor: background).underNavigationBar() }
+    }
+
+    @ViewBuilder private var chatWithNavigation: some View {
+        if #available(iOS 26, *) {
+            chat
+        } else {
+            chat
+                .toolbarBackground(Color(uiColor: background), for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+        }
+    }
+
+    var body: some View {
+        chatWithNavigation
         .toolbar(.hidden, for: .tabBar)
         .modifier(AIDataSharingPresentation(owner: conversationID))
         .sheet(item: $attachmentPreview) { AIReadingAttachmentPreview(attachment: $0, owner: conversationID) }
@@ -85,6 +97,7 @@ struct AIChatView: View {
                     }
                 })
             }.id(conversationID)
+                .underNavigationBar()
             if rows.isEmpty {
                 VStack(spacing: LayoutTokens.control) {
                     MoonView(size: 40)

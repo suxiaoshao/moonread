@@ -9,6 +9,7 @@ struct LibraryManagementView: View {
         ThemedGroupedList(sections: managementSections, theme: theme,
                           topInset: LayoutTokens.content,
                           refresh: { await model.refresh(showIndicator: false, userInitiated: true) })
+        .underNavigationBar()
         .themedPage()
         .navigationTitle("书架管理").navigationBarTitleDisplayMode(.inline)
         .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.loading.request ?? model.refreshing.request ?? model.shelfScans.values.first ?? model.summaries.request,
