@@ -354,6 +354,38 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
 }
 
 final class LibraryModelApplicationStateTests: ApplicationStateFixture {
+  func testHomeSectionsPersistTogetherOnlyWhenSaved() {
+    let suite = "home-sections-\(UUID())"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let key = "Moonread.homeSections.device"
+    let model = LibraryModel(defaults: defaults, cloudDiscoveryRequired: false)
+    XCTAssertEqual(model.homeSections.visible, [.resume, .shelves, .saved, .recent])
+    var draft = model.homeSections
+    draft.visible.move(fromOffsets: [2], toOffset: 0)
+    draft.hide(.shelves)
+    draft.hide(.resume)
+    XCTAssertEqual(draft.hidden, [.resume, .shelves])
+    draft.show(.resume)
+    XCTAssertEqual(draft.visible, [.saved, .recent, .resume])
+    XCTAssertNil(defaults.object(forKey: key))
+    XCTAssertEqual(model.homeSections.visible, [.resume, .shelves, .saved, .recent])
+
+    model.homeSections = draft
+    let reopened = LibraryModel(defaults: defaults, cloudDiscoveryRequired: false)
+    XCTAssertEqual(reopened.homeSections.visible, [.saved, .recent, .resume])
+    XCTAssertEqual(reopened.homeSections.hidden, [.shelves])
+    XCTAssertEqual(defaults.dictionary(forKey: key)?["visible"] as? [String], ["saved", "recent", "resume"])
+
+    defaults.set(["visible": [], "hidden": ["resume", "shelves", "saved", "recent"]], forKey: key)
+    let allHidden = LibraryModel(defaults: defaults, cloudDiscoveryRequired: false)
+    XCTAssertTrue(allHidden.homeSections.visible.isEmpty)
+
+    defaults.set(["visible": ["recent"], "hidden": ["shelves"]], forKey: key)
+    let withNewSections = LibraryModel(defaults: defaults, cloudDiscoveryRequired: false)
+    XCTAssertEqual(withNewSections.homeSections.visible, [.recent, .resume, .saved])
+  }
+
   // S439: 搜索只发布当前 query 代次结果，清空条件清结果，打开内容不丢搜索 scope。
   func testSearchPublishesOnlyLatestGenerationAndContentDismissalKeepsScope() async {
     let state = AppSearchResults()

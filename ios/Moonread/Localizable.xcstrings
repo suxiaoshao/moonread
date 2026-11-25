@@ -1,6 +1,12 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "隐藏": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Hidden"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"隱藏"}}}},
+    "隐藏%@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Hide %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"隱藏%@"}}}},
+    "显示%@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"顯示%@"}}}},
+    "编辑首页": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Edit Home"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"編輯首頁"}}}},
+    "首页区块已全部隐藏": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"All Home Sections Are Hidden"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"首頁區塊已全部隱藏"}}}},
+    "暂无可显示的区块": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No Sections to Show Yet"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫無可顯示的區塊"}}}},
     "书库中找不到书单的第 %lld 项。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Book list item %lld could not be found in the library."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書庫中找不到書單的第 %lld 項。"}}}},
     "书单的第 %lld 项不是有效的小说。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Book list item %lld is not a valid book."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書單的第 %lld 項不是有效的小說。"}}}},
     "书单须包含 1–5 个不同的书目引用。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"A book list requires 1–5 distinct book references."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書單須包含 1–5 個不同的書目引用。"}}}},

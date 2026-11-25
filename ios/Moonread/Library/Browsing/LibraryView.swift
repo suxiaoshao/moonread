@@ -5,16 +5,36 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @Bindable var model: LibraryModel
     @State private var recentUse: RecentReadingUse?
+    @State private var editingHome = false
+    @AccessibilityFocusState(for: .voiceOver) private var editFocused: Bool
     @Environment(AIHost.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
-    /// The most recently opened book resumes from its own row; the rest follow as recents:
-    /// two rows in the list layout, a scrollable cover row in the grid.
-    private var current: LibraryEntry? { model.recents.first }
-    private var following: [LibraryEntry] {
-        model.layout == .grid ? Array(model.recents.dropFirst()) : Array(model.recents.dropFirst().prefix(2))
+    private var enabledSections: [LibraryHomeSection] { model.homeSections.visible }
+    private var current: LibraryEntry? {
+        enabledSections.contains(.resume) ? model.recents.first : nil
     }
+    private var following: [LibraryEntry] {
+        guard enabledSections.contains(.recent) else { return [] }
+        let entries = model.recents.dropFirst(current == nil ? 0 : 1)
+        return model.layout == .grid ? Array(entries) : Array(entries.prefix(2))
+    }
+    private var retrySection: LibraryHomeSection? {
+        guard model.recentReading.failure != nil else { return nil }
+        return enabledSections.first { $0 == .resume || $0 == .recent }
+    }
+
+    private func showsSection(_ section: LibraryHomeSection) -> Bool {
+        if section == retrySection { return true }
+        switch section {
+        case .resume: return current != nil
+        case .shelves: return true
+        case .saved: return !model.savedFilters.entries.isEmpty
+        case .recent: return !following.isEmpty
+        }
+    }
+
     var body: some View {
         Group {
             if model.homeReady { homeList }
@@ -26,6 +46,11 @@ struct LibraryView: View {
         .background(Color(uiColor: theme.canvas).ignoresSafeArea(.container))
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if model.homeReady {
+                    Button("编辑") { editingHome = true }
+                        .accessibilityLabel("编辑首页")
+                        .accessibilityFocused($editFocused)
+                }
                 Menu {
                     Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(LibraryLocation(shelfID: "builtin"))) }
                     Button("添加书架", systemImage: "folder.badge.plus") { model.chooseFiles(.folder(nil)) }
@@ -41,9 +66,13 @@ struct LibraryView: View {
                 #endif
             }
         }
+        .sheet(isPresented: $editingHome, onDismiss: { editFocused = true }) {
+            LibraryHomeEditor(sections: model.homeSections) { model.homeSections = $0 }
+                .themeScope(theme)
+        }
         .modifier(LibraryFileActivity(model: model))
         .safeAreaInset(edge: .top, spacing: 0) {
-            if model.showsImportTip, themes.loaded, model.shell.libraryPath.isEmpty, model.shell.selectedTab == .library {
+            if !enabledSections.isEmpty, model.showsImportTip, themes.loaded, model.shell.libraryPath.isEmpty, model.shell.selectedTab == .library {
                 TipView(Onboarding.shared.imports).tipViewStyle(ThemedTipStyle()).padding(.horizontal)
                     .accessibilityIdentifier("libraryImportTip")
             }
@@ -58,41 +87,85 @@ struct LibraryView: View {
     private var homeList: some View {
         GeometryReader { geometry in
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    if let current {
-                        VStack(alignment: .leading, spacing: 12) {
-                            homeHeader("继续阅读", showsAll: following.isEmpty)
-                            ContinueReadingRow(model: model, entry: current)
-                                .contextMenu { recentMenu(current) }
-                                .accessibilityActions { recentMenu(current) }
+                if enabledSections.contains(where: showsSection) {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if sizeClass == .regular && geometry.size.width >= 720 {
+                            wideSections
+                        } else {
+                            sectionStack(enabledSections)
                         }
                     }
-                    if let error = model.recentReading.failure {
-                        RecentReadingRetry(message: error) { model.recentReading.retry() }
+                    .padding([.horizontal, .top], 20).padding(.bottom)
+                    .frame(maxWidth: 1040).frame(maxWidth: .infinity)
+                } else {
+                    ContentUnavailableView {
+                        Label(enabledSections.isEmpty ? "首页区块已全部隐藏" : "暂无可显示的区块",
+                              systemImage: "rectangle.3.group")
+                    } actions: {
+                        Button("编辑首页") { editingHome = true }.buttonStyle(.bordered)
                     }
-                    ShelfRecoverySummary(model: model)
-                    if sizeClass == .regular && geometry.size.width >= 720 {
-                        HStack(alignment: .top, spacing: 24) {
-                            VStack(alignment: .leading, spacing: 24) {
-                                shelves
-                                SavedFilterSection(model: model, onHome: true)
-                            }.frame(maxWidth: .infinity, alignment: .topLeading)
-                            recentBooks.frame(maxWidth: .infinity, alignment: .topLeading)
-                        }
-                    } else {
-                        shelves
-                        SavedFilterSection(model: model, onHome: true)
-                        recentBooks
-                    }
-                }.padding([.horizontal, .top], 20).padding(.bottom).frame(maxWidth: 1040).frame(maxWidth: .infinity)
+                    .frame(minHeight: geometry.size.height)
+                }
             }
             .refreshable { await model.refresh(showIndicator: false, userInitiated: true) }
         }.themedPage()
     }
 
+    @ViewBuilder private var wideSections: some View {
+        let enabled = enabledSections
+        let hasBanner = enabled.first == .resume
+        let columns = hasBanner ? Array(enabled.dropFirst()) : enabled
+        let leftCount = (columns.count + 1) / 2
+        let left = Array(columns.prefix(leftCount))
+        let right = Array(columns.dropFirst(leftCount))
+        if hasBanner, showsSection(.resume) { homeSection(.resume) }
+        if columns.contains(where: showsSection) {
+            HStack(alignment: .top, spacing: 24) {
+                if left.contains(where: showsSection) {
+                    sectionStack(left).frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                if right.contains(where: showsSection) {
+                    sectionStack(right).frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            }
+        }
+    }
+
+    private func sectionStack(_ sections: [LibraryHomeSection]) -> some View {
+        VStack(alignment: .leading, spacing: 24) {
+            ForEach(sections.filter(showsSection)) { section in
+                homeSection(section)
+            }
+        }
+    }
+
+    private func homeSection(_ section: LibraryHomeSection) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            switch section {
+            case .resume:
+                if let current {
+                    homeHeader(section.title, showsAll: following.isEmpty)
+                    ContinueReadingRow(model: model, entry: current)
+                        .contextMenu { recentMenu(current) }
+                        .accessibilityActions { recentMenu(current) }
+                }
+            case .shelves:
+                ShelfRecoverySummary(model: model)
+                shelves
+            case .saved:
+                SavedFilterSection(model: model, onHome: true)
+            case .recent:
+                recentBooks
+            }
+            if section == retrySection, let error = model.recentReading.failure {
+                RecentReadingRetry(message: error) { model.recentReading.retry() }
+            }
+        }
+    }
+
     private var shelves: some View {
         VStack(alignment: .leading, spacing: 12) {
-            homeHeader("我的书架", showsAll: false)
+            homeHeader(LibraryHomeSection.shelves.title, showsAll: false)
             ForEach(model.shelves, id: \.id) { shelf in
                 NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) {
                     HStack {
@@ -114,7 +187,7 @@ struct LibraryView: View {
     @ViewBuilder private var recentBooks: some View {
         if !following.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                homeHeader("最近阅读", showsAll: true)
+                homeHeader(LibraryHomeSection.recent.title, showsAll: true)
                 if model.layout == .grid {
                     ScrollView(.horizontal) {
                         LazyHStack(alignment: .top, spacing: LayoutTokens.content) {
@@ -148,6 +221,84 @@ struct LibraryView: View {
 
     private func recentMenu(_ entry: LibraryEntry) -> some View {
         RecentBookActions(model: model, entry: entry)
+    }
+}
+
+private struct LibraryHomeEditor: View {
+    @State private var sections: LibraryHomeSections
+    let save: (LibraryHomeSections) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var detent: PresentationDetent = .medium
+
+    init(sections: LibraryHomeSections, save: @escaping (LibraryHomeSections) -> Void) {
+        _sections = State(initialValue: sections)
+        self.save = save
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if !sections.visible.isEmpty {
+                    Section("显示") {
+                        ForEach(sections.visible) { section in
+                            sectionRow(section, visible: true)
+                        }
+                        .onMove { sections.visible.move(fromOffsets: $0, toOffset: $1) }
+                    }
+                }
+                if !sections.hidden.isEmpty {
+                    Section("隐藏") {
+                        ForEach(sections.hidden) { section in
+                            sectionRow(section, visible: false)
+                        }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .environment(\.editMode, .constant(.active))
+            .scrollContentBackground(.hidden)
+            .themedPage()
+            .navigationTitle("编辑首页").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    SystemToolbarButton("取消", role: .cancel) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    SystemToolbarButton("完成", role: .confirm) {
+                        save(sections)
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large], selection: $detent)
+        .presentationDragIndicator(.visible)
+        .onChange(of: typeSize, initial: true) { _, size in
+            if size.isAccessibilitySize { detent = .large }
+        }
+    }
+
+    private func sectionRow(_ section: LibraryHomeSection, visible: Bool) -> some View {
+        HStack(spacing: LayoutTokens.compact) {
+            Button {
+                withAnimation {
+                    if visible { sections.hide(section) }
+                    else { sections.show(section) }
+                }
+            } label: {
+                Image(systemName: visible ? "minus.circle.fill" : "plus.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(visible ? Color.red : Color.green)
+                    .frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(visible ? Text("隐藏\(Text(section.title))") : Text("显示\(Text(section.title))"))
+            Text(section.title)
+        }
+        .listRowBackground(Color(uiColor: theme.surface))
     }
 }
 
