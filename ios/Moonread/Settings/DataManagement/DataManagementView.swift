@@ -9,6 +9,7 @@ struct DataManagementView: View {
     @Bindable var model: DataManagementModel
     @State private var picker = false
     @State private var showingBackupExport = false
+    @State private var showingReadingDeletion = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
@@ -56,6 +57,7 @@ struct DataManagementView: View {
                             Image(systemName: "chevron.right").font(.footnote)
                         }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
                     }.accessibilityIdentifier("readingDataList")
+                    ReadingDeletionSummary(task: model.readingDeletion) { showingReadingDeletion = true }
                 }
             }.padding(20).frame(maxWidth: 690, alignment: .leading).frame(maxWidth: .infinity)
         }
@@ -74,6 +76,7 @@ struct DataManagementView: View {
                 if (error as NSError).code != NSUserCancelledError { model.showError(ReaderMessages.error(error)) }
             }
         }
+        .sheet(isPresented: $showingReadingDeletion) { ReadingDeletionTaskView(task: model.readingDeletion).presentationSizing(.page) }
         .sheet(isPresented: $showingBackupExport) { BackupExportView(model: model).presentationSizing(.page) }
         .sheet(isPresented: $model.showingBackupImport) { BackupImportTaskView(task: model.backupImport).presentationSizing(.page) }
     }
@@ -211,11 +214,10 @@ private struct BackupExportView: View {
 }
 struct ReadingDataWorking: ViewModifier {
     let model: DataManagementModel
-    var showsInBottomBar = false
 
     func body(content: Content) -> some View {
-        content.disabled(model.busy).toolbar {
-            if !showsInBottomBar, let working = model.working {
+        content.disabled(model.working != nil).toolbar {
+            if let working = model.working {
                 ToolbarItem(placement: .topBarTrailing) {
                     InlineTaskProgress(title: Text(verbatim: working))
                         .accessibilityIdentifier("readingDataWorking")
@@ -226,10 +228,13 @@ struct ReadingDataWorking: ViewModifier {
 }
 struct ReadingDataDeletionPrompt: ViewModifier {
     @Bindable var model: DataManagementModel
+    var startTask: ((DataManagementModel.DeletionRequest) -> Void)?
     func body(content: Content) -> some View {
         content.alert(Text("清除这 \(model.deleting?.keys.count ?? 0) 本小说的阅读数据？", tableName: "DataManagement"), isPresented: Binding(get: { model.deleting != nil }, set: { if !$0 { model.deleting = nil } })) {
             if let request = model.deleting {
-                Button(role: .destructive) { Task { await model.deleteConfirmed(request) } } label: { Text("确认清除阅读数据", tableName: "DataManagement") }.accessibilityIdentifier("confirmDeleteReadingData")
+                Button(role: .destructive) {
+                    if let startTask { startTask(request) } else { Task { await model.deleteConfirmed(request) } }
+                } label: { Text("确认清除阅读数据", tableName: "DataManagement") }.accessibilityIdentifier("confirmDeleteReadingData")
             }
             Button("取消", role: .cancel) { model.deleting = nil }
         } message: {
@@ -238,6 +243,73 @@ struct ReadingDataDeletionPrompt: ViewModifier {
         }
     }
 }
+struct ReadingDeletionSummary: View {
+    @Environment(\.theme) private var theme
+    let task: DataExchangeTask<DataManagementModel.DeletionRequest, Bool>
+    let open: () -> Void
+
+    var body: some View {
+        if task.phase != .idle {
+            DataExchangeTaskSummary(symbol: task.phase == .running ? "trash" : task.phase.symbol,
+                                    iconColor: task.phase == .completed ? theme.success : task.phase == .failed ? theme.warning : theme.secondary,
+                                    link: Text(task.phase == .running ? "查看" : "查看结果", tableName: "MetadataExchange"),
+                                    open: open) {
+                switch task.phase {
+                case .idle: EmptyView()
+                case .running: Text("正在清除…", tableName: "DataManagement")
+                case .completed: Text("阅读数据已清除", tableName: "DataManagement")
+                case .failed: Text("清除阅读数据失败", tableName: "DataManagement")
+                }
+            } detail: {
+                EmptyView()
+            }.accessibilityElement(children: .contain).accessibilityIdentifier("readingDeletionSummary")
+        }
+    }
+}
+
+struct ReadingDeletionTaskView: View {
+    @Environment(\.dismiss) private var dismiss
+    let task: DataExchangeTask<DataManagementModel.DeletionRequest, Bool>
+
+    var body: some View {
+        DataExchangeTaskSheet(title: Text("清除阅读数据", tableName: "DataManagement"),
+                              sharing: .constant(nil), onShared: {}, closeIdentifier: "closeReadingDeletionTask") {
+            switch task.phase {
+            case .idle: Color.clear
+            case .running:
+                DataExchangeRunningView(title: Text("正在清除…", tableName: "DataManagement"), stopping: false, symbol: "trash") {
+                    ProgressView()
+                }
+            case .completed:
+                MetadataStatusView(symbol: task.phase.symbol, title: String(localized: "阅读数据已清除", table: "DataManagement"),
+                                   message: task.output.map(DataManagementModel.deletionMessage(cacheCleaned:)))
+                    .accessibilityIdentifier("readingDataResult")
+            case .failed:
+                MetadataStatusView(symbol: task.phase.symbol, title: String(localized: "清除阅读数据失败", table: "DataManagement"),
+                                   message: task.error)
+            }
+        } footer: {
+            if task.phase == .completed || task.phase == .failed {
+                MetadataTaskActions {
+                    if task.phase == .failed {
+                        Button { task.retry() } label: { Text("重试").frame(maxWidth: .infinity) }
+                            .buttonStyle(MetadataActionButtonStyle(prominent: true))
+                    }
+                    Button {
+                        task.clear()
+                        dismiss()
+                    } label: {
+                        Group {
+                            if task.phase == .completed { Text("完成") } else { Text("关闭") }
+                        }.frame(maxWidth: .infinity)
+                    }.buttonStyle(MetadataActionButtonStyle(prominent: task.phase == .completed))
+                        .accessibilityIdentifier("finishReadingDeletionTask")
+                }
+            }
+        }
+    }
+}
+
 @MainActor private struct BackupImportStatus {
     let task: BackupImportTask
 

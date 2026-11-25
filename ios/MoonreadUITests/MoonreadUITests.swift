@@ -785,6 +785,11 @@ import XCTest
     XCTAssertEqual(rows.count, 1)
     XCTAssertTrue(rows.firstMatch.label.contains("上次来源："))
     XCTAssertTrue(rows.firstMatch.label.contains("读到 50%"))
+    let search = app.searchFields.firstMatch
+    if !search.isHittable { app.collectionViews.firstMatch.swipeDown() }
+    ready(search).tap()
+    search.typeText("星灯\n")
+    ready(rows.firstMatch)
     ready(app.buttons["selectReadingData"]).tap()
     XCTAssertEqual(app.buttons["selectReadingData"].label, "结束选择")
     XCTAssertTrue(app.buttons["readingDataSort"].exists)
@@ -803,17 +808,22 @@ import XCTest
     // Native List selection exposes row content as text, not a Button.
     ready(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-")).firstMatch).tap()
     ready(app.buttons["deleteSelectedReadingData"]).tap()
+    ready(app.alerts.buttons["取消"]).tap()
+    ready(app.buttons["deleteSelectedReadingData"]).tap()
     ready(app.buttons["confirmDeleteReadingData"].firstMatch).tap()
-    waitUntil { rows.count == 0 && !self.element("readingDataWorking").exists }
-    ready(element("readingDataResult"))
+    ready(app.buttons["closeReadingDeletionTask"]).tap()
     ready(element("readingDataEmpty"))
     XCTAssertFalse(element("readingDataError").exists)
-    app.buttons["selectReadingData"].tap()
+    app.navigationBars.buttons["BackButton"].tap()
+    let deletionSummary = app.otherElements.matching(identifier: "readingDeletionSummary")
+      .containing(.button, identifier: "查看结果").firstMatch
+    ready(deletionSummary.buttons["查看结果"]).tap()
+    ready(element("readingDataResult"))
+    ready(app.buttons["finishReadingDeletionTask"]).tap()
     app.buttons["书架"].tap()
     ready(app.buttons["shelf-builtin"]).tap()
     ready(file(sample), message: "Clearing reading data must leave the original novel")
     app.buttons["设置"].tap()
-    app.navigationBars.buttons.element(boundBy: 0).tap()
     ready(app.buttons["importReadingBackup"]).tap()
     ready(app.staticTexts["将更新 1 本"], timeout: 30)
     ready(app.buttons["confirmImportReadingBackup"].firstMatch, timeout: 30)

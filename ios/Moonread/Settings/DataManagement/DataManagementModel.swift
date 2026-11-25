@@ -5,6 +5,7 @@ import SwiftUI
     let service: AppDataService
     let backupExport: DataExchangeTask<Void, URL>
     let backupImport: BackupImportTask
+    @ObservationIgnored private(set) lazy var readingDeletion = makeReadingDeletionTask()
     var showingBackupImport = false
     private enum InventoryResult {
         case ready(ReadingDataInventory)
@@ -30,20 +31,13 @@ import SwiftUI
             }
         }
     }
-    private enum OperationResult {
-        case deleted(cacheCleaned: Bool)
-
-        var message: String? {
-            switch self {
-            case .deleted(let cleaned):
-                String(localized: cleaned ? "阅读数据已清除，小说文件未变" : "阅读数据已清除，部分本机缓存未清理", table: "DataManagement")
-            }
-        }
+    static func deletionMessage(cacheCleaned: Bool) -> String {
+        String(localized: cacheCleaned ? "阅读数据已清除，小说文件未变" : "阅读数据已清除，部分本机缓存未清理", table: "DataManagement")
     }
     private enum DataOperation {
         case idle, promoting, preparingPending
         case deleting(Set<String>)
-        case completed(OperationResult)
+        case completed(String)
         case failed(String)
 
         var working: String? {
@@ -59,7 +53,7 @@ import SwiftUI
     private var dataOperation = DataOperation.idle
     var inventory: ReadingDataInventory { dataLoad.result?.inventory ?? .init(items: [], pending: 0, unsupported: 0) }
     private(set) var issueCount: Int?
-    var busy: Bool { working != nil }
+    var busy: Bool { working != nil || readingDeletion.phase == .running }
     var loading: Bool { if case .loading = dataLoad { true } else { false } }
     var loaded: Bool { dataLoad.result != nil }
     private var inventoryLoad: Task<Void, Never>?
@@ -71,7 +65,7 @@ import SwiftUI
         return nil
     }
     var message: String? {
-        if case .completed(let result) = dataOperation { result.message } else { nil }
+        if case .completed(let message) = dataOperation { message } else { nil }
     }
     func showError(_ message: String) { dataOperation = .failed(message) }
     func clearError() {
@@ -187,11 +181,29 @@ import SwiftUI
     func sceneDidEnterBackground() {
         backupImport.sceneDidEnterBackground()
         backupExport.sceneDidEnterBackground()
+        readingDeletion.sceneDidEnterBackground()
     }
     func requestDelete(_ keys: Set<String>) {
         guard !busy, !keys.isEmpty else { return }
         guard let configuration = inventory.configuration else { showError(ReadingDataError.changed.localizedDescription); return }
         deleting = .init(keys: keys, configuration: configuration)
+    }
+    private func makeReadingDeletionTask() -> DataExchangeTask<DeletionRequest, Bool> {
+        DataExchangeTask(service: service, usesSystemExecution: service === AppDataService.shared,
+                         kind: "reading-delete", title: String(localized: "清除阅读数据", table: "DataManagement"),
+                         subtitle: String(localized: "正在清除…", table: "DataManagement"), commitsChanges: true) { [weak self, service] request, _ in
+            let cleaned = try await service.deleteReadingData(request.keys, configuration: request.configuration)
+            await self?.load()
+            return cleaned
+        }
+    }
+    func startReadingDeletion(_ request: DeletionRequest) {
+        guard !busy, readingDeletion.phase == .idle, !request.keys.isEmpty else { return }
+        deleting = nil
+        dataOperation = .idle
+        selecting = false
+        selected.removeAll()
+        readingDeletion.start(request)
     }
     func deleteConfirmed(_ request: DeletionRequest) async {
         let keys = request.keys
@@ -202,7 +214,7 @@ import SwiftUI
             let cleaned = try await service.deleteReadingData(keys, configuration: request.configuration)
             selected.subtract(keys)
             if loaded { await load() }
-            dataOperation = .completed(.deleted(cacheCleaned: cleaned))
+            dataOperation = .completed(Self.deletionMessage(cacheCleaned: cleaned))
         } catch { dataOperation = .failed(ReaderMessages.error(error)) }
     }
     func chooseBackup() -> URL? {

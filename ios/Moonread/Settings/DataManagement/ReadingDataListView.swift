@@ -4,65 +4,29 @@ struct ReadingDataListView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
+    @FocusState private var searchFocused: Bool
     @State private var detail: ReadingDataItem?
+    @State private var showingReadingDeletion = false
+    private var canDelete: Bool { !model.busy && model.readingDeletion.phase == .idle }
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                if dynamicTypeSize.isAccessibilitySize {
-                    readingDataFilter.pickerStyle(.menu)
-                } else {
-                    ViewThatFits(in: .horizontal) {
-                        readingDataFilter.pickerStyle(.segmented).fixedSize(horizontal: true, vertical: false)
-                        readingDataFilter.pickerStyle(.menu)
-                    }
+        ThemedGroupedList(sections: [
+            .init(id: "readingData", rows: model.visible.map { item in
+                .init(item.id, action: { detail = item }, actions: canDelete ? [
+                    .init(title: String(localized: "删除", table: "DataManagement"), destructive: true, perform: { model.requestDelete([item.id]) })
+                ] : [], accessibilityID: "reading-data-" + item.id) {
+                    DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
+                        .accessibilityIdentifier("reading-data-" + item.id)
                 }
-                Spacer(minLength: 0)
-                Menu {
-                    Picker(selection: $model.recent) {
-                        Text("最近阅读", tableName: "DataManagement").tag(true)
-                        Text("名称", tableName: "DataManagement").tag(false)
-                    } label: { Text("排序", tableName: "DataManagement") }
-                } label: { Label { Text("排序", tableName: "DataManagement") } icon: { Image(systemName: "arrow.up.arrow.down") } }
-                    .labelStyle(.iconOnly).accessibilityIdentifier("readingDataSort")
-            }.padding(.horizontal).padding(.vertical, 8)
-            if let error = model.error {
-                HStack(alignment: .top) {
-                    Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
-                    Spacer(minLength: 8)
-                    Button("重试") { Task { await model.load() } }
-                }.padding(.horizontal).padding(.vertical, 8).accessibilityIdentifier("readingDataError")
-            } else if let message = model.message {
-                Label(message, systemImage: "checkmark.circle").font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal).padding(.vertical, 8).accessibilityIdentifier("readingDataResult")
-            }
-            if !model.visible.isEmpty {
-                ThemedGroupedList(sections: [
-                    .init(id: "readingData", footer: String(localized: "按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。", table: "DataManagement"), rows: model.visible.map { item in
-                        .init(item.id, action: { detail = item }, actions: [
-                            .init(title: String(localized: "删除", table: "DataManagement"), destructive: true, perform: { model.requestDelete([item.id]) })
-                        ], accessibilityID: "reading-data-" + item.id) {
-                            DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
-                                .accessibilityIdentifier("reading-data-" + item.id)
-                        }
-                    })
-                ], theme: theme, topInset: 8, selecting: model.selecting, selected: model.selected,
-                   selectionChanged: { model.selected = $0 })
-            } else if model.loading || !model.loaded {
-                ProgressView { Text("正在读取阅读数据…", tableName: "DataManagement") }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if model.error != nil {
-                ContentUnavailableView { Label { Text("暂时无法读取阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "exclamationmark.circle") } }
-            } else if model.inventory.items.isEmpty {
-                ContentUnavailableView { Label { Text("暂无阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "books.vertical") } }
-                    .accessibilityIdentifier("readingDataEmpty")
-            } else {
-                ContentUnavailableView { Label { Text("没有匹配的阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "magnifyingglass") } } description: {
-                    Text("试试其他筛选条件或搜索词。", tableName: "DataManagement")
-                }.accessibilityIdentifier("readingDataNoMatches")
-            }
-        }.themedPage()
+            })
+        ], theme: theme, topInset: 8, selecting: model.selecting, selected: model.selected,
+           selectionChanged: { model.selected = $0 }, refresh: { await model.load() },
+           header: AnyView(listHeader))
+        .underNavigationBar().themedPage()
         .navigationTitle(model.selecting ? Text("已选 \(model.selected.count) 本", tableName: "DataManagement") : Text("阅读数据", tableName: "DataManagement"))
         .navigationBarTitleDisplayMode(model.selecting ? .inline : .large)
-        .searchable(text: $model.query, prompt: Text("搜索书名、作者或标签", tableName: "DataManagement"))
+        .searchable(text: $model.query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: Text("搜索书名、作者或标签", tableName: "DataManagement"))
+        .searchFocused($searchFocused)
+        .searchPresentationToolbarBehavior(.avoidHidingContent)
         .environment(\.editMode, .constant(model.selecting ? .active : .inactive))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -70,7 +34,7 @@ struct ReadingDataListView: View {
                     if model.selecting {
                         SystemToolbarButton("结束选择", role: .confirm) { model.selecting = false; model.selected.removeAll() }
                     } else {
-                        Button { model.selecting = true; model.selected.removeAll() } label: { Text("选择", tableName: "DataManagement") }
+                        Button { searchFocused = false; model.selecting = true; model.selected.removeAll() } label: { Text("选择", tableName: "DataManagement") }
                     }
                 }.accessibilityIdentifier("selectReadingData")
             }
@@ -79,19 +43,13 @@ struct ReadingDataListView: View {
                     Button { model.toggleVisibleSelection() } label: { Text(model.allVisibleSelected ? "取消全选" : "全选", tableName: "DataManagement") }
                         .accessibilityIdentifier("selectAllReadingData")
                     Spacer()
-                    if let working = model.working {
-                        InlineTaskProgress(title: Text(verbatim: working))
-                            .accessibilityIdentifier("readingDataWorking")
-                    } else {
-                        Button(role: .destructive) { model.requestDelete(model.selected) } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
-                            .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
-                    }
+                    Button(role: .destructive) { model.requestDelete(model.selected) } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
+                        .disabled(model.selected.isEmpty || !canDelete).accessibilityIdentifier("deleteSelectedReadingData")
                 }
             }
         }
         .toolbar(model.selecting ? .hidden : .automatic, for: .tabBar)
         .task { await model.load() }
-        .refreshable { await model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
             if !model.busy { Task { await model.load() } }
         }
@@ -102,8 +60,13 @@ struct ReadingDataListView: View {
             if !model.busy { Task { await model.load() } }
         }
         .onDisappear { model.selecting = false; model.selected.removeAll() }
-        .modifier(ReadingDataWorking(model: model, showsInBottomBar: model.selecting))
-        .modifier(ReadingDataDeletionPrompt(model: model))
+        .modifier(ReadingDataDeletionPrompt(model: model) { request in
+            model.startReadingDeletion(request)
+            showingReadingDeletion = model.readingDeletion.phase == .running
+        })
+        .sheet(isPresented: $showingReadingDeletion) {
+            ReadingDeletionTaskView(task: model.readingDeletion).presentationSizing(.page)
+        }
         .sheet(item: $detail) { item in
             NavigationStack {
                 VStack(alignment: .leading, spacing: 20) {
@@ -116,6 +79,59 @@ struct ReadingDataListView: View {
             }
         }
     }
+    private var listHeader: some View {
+        VStack(spacing: 0) {
+            if model.loaded {
+                HStack(spacing: 8) {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        readingDataFilter.pickerStyle(.menu)
+                    } else {
+                        ViewThatFits(in: .horizontal) {
+                            readingDataFilter.pickerStyle(.segmented).fixedSize(horizontal: true, vertical: false)
+                            readingDataFilter.pickerStyle(.menu)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Menu {
+                        Picker(selection: $model.recent) {
+                            Text("最近阅读", tableName: "DataManagement").tag(true)
+                            Text("名称", tableName: "DataManagement").tag(false)
+                        } label: { Text("排序", tableName: "DataManagement") }
+                    } label: { Label { Text("排序", tableName: "DataManagement") } icon: { Image(systemName: "arrow.up.arrow.down") } }
+                        .labelStyle(.iconOnly).accessibilityIdentifier("readingDataSort")
+                }.padding(.vertical, 8)
+            }
+            if let error = model.error {
+                HStack(alignment: .top) {
+                    Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
+                    Spacer(minLength: 8)
+                    Button("重试") { Task { await model.load() } }
+                }.padding(.vertical, 8).accessibilityIdentifier("readingDataError")
+            } else if let message = model.message {
+                Label(message, systemImage: "checkmark.circle").font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8).accessibilityIdentifier("readingDataResult")
+            }
+            ReadingDeletionSummary(task: model.readingDeletion) { showingReadingDeletion = true }
+            if model.visible.isEmpty && model.error == nil {
+                emptyState
+            }
+        }.padding(.bottom, 8)
+            .environment(\.dynamicTypeSize, dynamicTypeSize)
+    }
+
+    @ViewBuilder private var emptyState: some View {
+        if !model.loaded {
+            ProgressView { Text("正在读取阅读数据…", tableName: "DataManagement") }.frame(maxWidth: .infinity).padding(.vertical, 28)
+        } else if model.inventory.items.isEmpty {
+            ContentUnavailableView { Label { Text("暂无阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "books.vertical") } }
+                .accessibilityIdentifier("readingDataEmpty")
+        } else {
+            ContentUnavailableView { Label { Text("没有匹配的阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "magnifyingglass") } } description: {
+                Text("试试其他筛选条件或搜索词。", tableName: "DataManagement")
+            }.accessibilityIdentifier("readingDataNoMatches")
+        }
+    }
+
     private var readingDataFilter: some View {
         Picker(selection: $model.unlinkedOnly) {
             Text("全部 \(model.inventory.items.count)", tableName: "DataManagement")
