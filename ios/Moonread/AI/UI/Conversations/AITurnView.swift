@@ -208,8 +208,8 @@ struct AIToolDetailView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: LayoutTokens.section) {
-                    if !result.request.isEmpty {
-                        detailSection(.init(title: String(localized: "请求"), rows: result.request), showTitle: true, secondaryTitle: true)
+                    if let request = result.requestSection {
+                        detailSection(request, showTitle: true, secondaryTitle: true)
                     }
                     if result.state != .available {
                         if result.sections.isEmpty || result.state == .empty {
@@ -225,8 +225,10 @@ struct AIToolDetailView: View {
                             }.foregroundStyle(Color(uiColor: theme.secondary))
                         }
                     }
-                    ForEach(Array(result.sections.enumerated()), id: \.offset) { _, section in
-                        if result.state != .empty { detailSection(section, showTitle: result.sections.count > 1 || section.isEntity) }
+                    if result.state != .empty {
+                        ForEach(result.sections) { section in
+                            detailSection(section, showTitle: result.sections.count > 1 || section.isEntity)
+                        }
                     }
                     if let notice = result.notice {
                         Text(notice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
@@ -250,7 +252,7 @@ struct AIToolDetailView: View {
                     .foregroundStyle(Color(uiColor: secondaryTitle ? theme.secondary : theme.ink))
                     .accessibilityAddTraits(.isHeader)
             }
-            ForEach(Array(section.rows.enumerated()), id: \.offset) { _, row in
+            ForEach(section.rows) { row in
                 detailRow(row).padding(.leading, CGFloat(row.indent) * LayoutTokens.content)
             }
         }

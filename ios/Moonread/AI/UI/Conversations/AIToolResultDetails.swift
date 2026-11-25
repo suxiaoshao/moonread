@@ -31,23 +31,52 @@ struct AIToolResultDetails {
         }
     }
 
-    struct Row {
+    struct Row: Identifiable {
+        struct ID: Hashable {
+            let section: Section.ID
+            let key: [String?]
+            let occurrence: Int
+        }
+
+        let key: [String?]
         let text: String
         var label: String?
         var subtitle: String?
         var web: AIWebSource?
         var image: AIImageAttachment?
         var indent: Int = 0
+        fileprivate var sectionID: Section.ID = []
+        fileprivate var occurrence = 0
+        var id: ID { .init(section: sectionID, key: key, occurrence: occurrence) }
 
-        static func fact(_ label: String, _ value: String?) -> Self? {
+        static func fact(_ key: String, _ label: String, _ value: String?) -> Self? {
             guard let value, !value.isEmpty else { return nil }
-            return .init(text: value, label: label)
+            return .init(key: [key], text: value, label: label)
         }
     }
-    struct Section {
+
+    struct Section: Identifiable {
+        typealias ID = [String]
+        let id: ID
         let title: String
         let rows: [Row]
-        var isEntity = false
+        let isEntity: Bool
+
+        init(id: ID, title: String, rows: [Row], isEntity: Bool = false) {
+            self.id = id
+            self.title = title
+            self.isEntity = isEntity
+            var occurrences: [[String?]: Int] = [:]
+            self.rows = rows.map { row in
+                var row = row
+                let occurrence = occurrences[row.key, default: 0]
+                occurrences[row.key] = occurrence + 1
+                // Only indistinguishable keys need an occurrence number. Unrelated rows never shift it.
+                row.sectionID = id
+                row.occurrence = occurrence
+                return row
+            }
+        }
     }
 
     private let item: AIProcessItem
@@ -59,7 +88,8 @@ struct AIToolResultDetails {
     private let bytes: Data?
     private(set) var sections: [Section] = []
     private let names: AIToolRequestNames
-    private(set) var request: [Row] = []
+    private(set) var requestSection: Section?
+    var request: [Row] { requestSection?.rows ?? [] }
     private(set) var notice: String?
     private var resultRecorded = false
     private var fact: String?
@@ -82,7 +112,8 @@ struct AIToolResultDetails {
         input = item.input.object
         data = result.object["data"] ?? .null
         bytes = try? JSONEncoder().encode(data)
-        request = projectRequest()
+        let request = projectRequest()
+        if !request.isEmpty { requestSection = .init(id: ["request"], title: String(localized: "请求"), rows: request) }
         project()
     }
 
@@ -159,77 +190,77 @@ struct AIToolResultDetails {
         bytes.flatMap { try? JSONDecoder().decode(type, from: $0) }
     }
 
-    private mutating func add(_ title: String, _ rows: [Row?], isEntity: Bool = false) {
+    private mutating func add(_ id: Section.ID, _ title: String, _ rows: [Row?], isEntity: Bool = false) {
         let values = rows.compactMap { $0 }.filter { !$0.text.isEmpty || $0.image != nil }
-        if !values.isEmpty { sections.append(.init(title: title, rows: values, isEntity: isEntity)) }
+        if !values.isEmpty { sections.append(.init(id: id, title: title, rows: values, isEntity: isEntity)) }
     }
 
     private func projectRequest() -> [Row] {
         var rows: [Row] = []
-        func put(_ label: String, _ value: String?) {
-            if let row = Row.fact(label, value) { rows.append(row) }
+        func put(_ key: String, _ label: String, _ value: String?) {
+            if let row = Row.fact(key, label, value) { rows.append(row) }
         }
         func field(_ key: String) -> String? { input[key]?.string }
-        func target(_ label: String, _ key: String) { put(label, names[field(key)]) }
+        func target(_ label: String, _ key: String) { put(key, label, names[field(key)]) }
         func limit(_ key: String, label: String) {
-            if let count = input[key]?.int, count > 0 { put(label, count.formatted()) }
+            if let count = input[key]?.int, count > 0 { put(key, label, count.formatted()) }
         }
-        func query() { put(String(localized: "关键词"), field("query")) }
+        func query() { put("query", String(localized: "关键词"), field("query")) }
         func sort() {
             let value: String? = switch field("sort") {
             case "name": String(localized: "名称")
             case "recent": String(localized: "最近阅读")
             default: nil
             }
-            put(String(localized: "排序"), value)
+            put("sort", String(localized: "排序"), value)
         }
         let book = String(localized: "小说")
         let chapterName = names[field("chapterRef")] ?? names.chapterAtPosition
         let maximum = String(localized: "最多项数")
         switch item.name {
         case "ls":
-            put(String(localized: "目录"), field("parentRef") == nil ? String(localized: "书架根目录") : names[field("parentRef")])
-            if field("kind") == "folders" { put(String(localized: "类型"), String(localized: "文件夹")) }
-            if field("kind") == "books" { put(String(localized: "类型"), book) }
+            put("directory", String(localized: "目录"), field("parentRef") == nil ? String(localized: "书架根目录") : names[field("parentRef")])
+            if field("kind") == "folders" { put("kind", String(localized: "类型"), String(localized: "文件夹")) }
+            if field("kind") == "books" { put("kind", String(localized: "类型"), book) }
             sort()
             limit("limit", label: maximum)
         case "search_books":
             query()
             target(String(localized: "范围"), "scopeRef")
-            put(String(localized: "作者"), field("author"))
-            put(String(localized: "同时包含的标签"), list(strings(input["tags"])))
-            put(String(localized: "阅读状态"), readingStatus(field("readingStatus")))
+            put("author", String(localized: "作者"), field("author"))
+            put("tags", String(localized: "同时包含的标签"), list(strings(input["tags"])))
+            put("status", String(localized: "阅读状态"), readingStatus(field("readingStatus")))
             sort()
             limit("limit", label: String(localized: "最多本数"))
         case "list_filter_options":
-            put(String(localized: "类型"), filterField)
+            put("kind", String(localized: "类型"), filterField)
             query()
         case "get_book":
             target(book, "bookRef")
             target(String(localized: "文件"), "fileRef")
-            if input["prepare"] == .bool(true) { put(String(localized: "操作"), String(localized: "准备文件")) }
+            if input["prepare"] == .bool(true) { put("operation", String(localized: "操作"), String(localized: "准备文件")) }
         case "get_chapters":
             query()
             target(book, "bookRef")
             limit("limit", label: maximum)
         case "read":
             target(book, "bookRef")
-            put(String(localized: "章节"), chapterName)
+            put("chapter", String(localized: "章节"), chapterName)
             if input["contextOffsetUtf8"]?.int != nil {
                 let before = input["beforeParagraphs"]?.int ?? 3
                 let after = input["afterParagraphs"]?.int ?? 3
-                put(String(localized: "范围"), before == after ? String(localized: "前后各 \(before) 段") :
+                put("scope", String(localized: "范围"), before == after ? String(localized: "前后各 \(before) 段") :
                     String(localized: "前 \(before) 段、后 \(after) 段"))
             }
         case "rg":
             query()
             let refs = strings(input["bookRefs"])
             let known = refs.compactMap { names[$0] }
-            put(book, list(known) ?? (refs.count > 1 ? String(localized: "\(refs.count) 本小说") : nil))
-            put(String(localized: "章节"), chapterName)
-            put(String(localized: "匹配方式"), field("mode") == "literal" ? String(localized: "普通文本") : String(localized: "正则表达式"))
+            put("books", book, list(known) ?? (refs.count > 1 ? String(localized: "\(refs.count) 本小说") : nil))
+            put("chapter", String(localized: "章节"), chapterName)
+            put("mode", String(localized: "匹配方式"), field("mode") == "literal" ? String(localized: "普通文本") : String(localized: "正则表达式"))
             if field("query").map({ $0.lowercased() != $0.uppercased() }) == true {
-                put(String(localized: "大小写"), input["caseSensitive"] == .bool(false) ?
+                put("case", String(localized: "大小写"), input["caseSensitive"] == .bool(false) ?
                     String(localized: "不区分大小写") : String(localized: "区分大小写"))
             }
             limit("maxHits", label: String(localized: "最多命中数"))
@@ -241,34 +272,34 @@ struct AIToolResultDetails {
                 case "annotation": String(localized: "批注")
                 default: String(localized: "书签与批注")
                 }
-                put(String(localized: "类型"), type)
+                put("kind", String(localized: "类型"), type)
                 query()
-                    put(String(localized: "章节"), chapterName)
+                put("chapter", String(localized: "章节"), chapterName)
                 limit("limit", label: maximum)
             } else {
                 target(String(localized: "标注"), "markRef")
                 target(String(localized: "版本"), "variantRef")
             }
         case "get_reading_statistics":
-            put(statisticsView == "chapters" ? String(localized: "请求日期") : String(localized: "日期"), statisticsDates)
+            put("dates", statisticsView == "chapters" ? String(localized: "请求日期") : String(localized: "日期"), statisticsDates)
             let scope = field("bookRef") == nil ? String(localized: "全部小说") : names[field("bookRef")]
             if let scope {
-                put(String(localized: "范围"), joined([scope, statisticsHeading]))
+                put("scope", String(localized: "范围"), joined([scope, statisticsHeading]))
             } else {
-                put(String(localized: "视图"), statisticsHeading)
+                put("view", String(localized: "视图"), statisticsHeading)
             }
             limit("limit", label: maximum)
         case "get_environment":
             let fields = Set(strings(input["fields"]))
-            if fields == ["time"] { put(String(localized: "内容"), String(localized: "本地时间")) }
-            if fields == ["locale"] { put(String(localized: "内容"), String(localized: "语言与地区")) }
+            if fields == ["time"] { put("fields", String(localized: "内容"), String(localized: "本地时间")) }
+            if fields == ["locale"] { put("fields", String(localized: "内容"), String(localized: "语言与地区")) }
         case "web_search":
             query()
-            put(String(localized: "语言"), field("language").map { Locale.current.localizedString(forIdentifier: $0) ?? $0 })
+            put("language", String(localized: "语言"), field("language").map { Locale.current.localizedString(forIdentifier: $0) ?? $0 })
         case "generate_image":
-            put(String(localized: "提示词"), field("prompt"))
+            put("prompt", String(localized: "提示词"), field("prompt"))
             let count = strings(input["referenceAttachmentRefs"]).count
-            if count > 0 { put(String(localized: "参考图"), String(localized: "\(count) 张图")) }
+            if count > 0 { put("referenceImages", String(localized: "参考图"), String(localized: "\(count) 张图")) }
         case "find_cover":
             query()
             target(book, "bookRef")
@@ -281,27 +312,27 @@ struct AIToolResultDetails {
             if input["tags"] != nil, let index = fields.firstIndex(of: String(localized: "标签")) {
                 fields[index] = field("tagsMode") == "replace" ? String(localized: "替换标签") : String(localized: "合并标签")
             }
-            put(String(localized: "操作"), list(fields))
-            put(String(localized: "来源"), list(strings(input["sourceRefs"]).compactMap { names[$0] }))
+            put("operation", String(localized: "操作"), list(fields))
+            put("sources", String(localized: "来源"), list(strings(input["sourceRefs"]).compactMap { names[$0] }))
         case "propose_note", "propose_bookmark":
             target(book, "bookRef")
-            put(String(localized: "章节"), chapterName)
-            put(String(localized: "操作"), item.name == "propose_bookmark" ? String(localized: "添加书签") : noteAction)
+            put("chapter", String(localized: "章节"), chapterName)
+            put("operation", String(localized: "操作"), item.name == "propose_bookmark" ? String(localized: "添加书签") : noteAction)
             if item.name == "propose_note" {
                 if case .some(.notes) = decode(AIProposalSnapshot.self) {} else {
-                    put(String(localized: "批注草稿"), field("note"))
+                    put("draft", String(localized: "批注草稿"), field("note"))
                 }
             }
         case "propose_library_organization":
             target(String(localized: "范围"), "scopeRef")
             let placements = input["placements"]?.array ?? []
-            put(String(localized: "操作"), organizationSummary(folders: input["folders"]?.array?.count ?? 0,
+            put("operation", String(localized: "操作"), organizationSummary(folders: input["folders"]?.array?.count ?? 0,
                                                                 moves: placements.count,
                                                                 includesRename: placements.contains { $0.object["name"]?.string != nil }))
             if status != "ok" {
                 let folders = input["folders"]?.array ?? []
-                put(String(localized: "文件夹"), list(folders.compactMap { $0.object["name"]?.string }))
-                put(String(localized: "建议移动的项目"), list(placements.compactMap {
+                put("folders", String(localized: "文件夹"), list(folders.compactMap { $0.object["name"]?.string }))
+                put("placements", String(localized: "建议移动的项目"), list(placements.compactMap {
                     $0.object["name"]?.string ?? names[$0.object["fileRef"]?.string]
                 }))
             }
@@ -415,7 +446,7 @@ struct AIToolResultDetails {
         if sections.isEmpty {
             // Older outputs may lack the typed fields but still have an answer or an excerpt.
             let content = data.string ?? data.object["answer"]?.string ?? data.object["text"]?.string ?? data.object["excerpt"]?.string
-            if let content, !content.isEmpty { add(String(localized: "结果"), [.init(text: content)]) }
+            if let content, !content.isEmpty { add(["fallback"], String(localized: "结果"), [.init(key: ["fallback"], text: content)]) }
         }
     }
 
@@ -426,7 +457,7 @@ struct AIToolResultDetails {
         let files = value.items.filter { $0.kind == "file" }.count
         fact = folders > 0 && files > 0 ? String(localized: "\(folders) 个文件夹、\(files) 个文件") :
             list(Array(value.items.prefix(3).map(\.name)))
-        add(String(localized: "目录"), value.items.map(file))
+        add(["directory"], String(localized: "目录"), value.items.map(file))
     }
 
     private mutating func books() {
@@ -436,9 +467,12 @@ struct AIToolResultDetails {
         fact = if input["limit"]?.int != nil, count > 0 {
             joined([input["query"]?.string, String(localized: "列出 \(count) 本")])
         } else { list(Array(value.items.prefix(3).map(\.title))) }
-        add(String(localized: "匹配的小说"), value.items.map { book in
+        add(["matches"], String(localized: "匹配的小说"), value.items.map { book in
             let sources = book.files.map { file in joined([file.name, availability(file.availability)]) }.compactMap { $0 }
-            return .init(text: book.title, subtitle: joined([book.author, availability(book.availability), sources.isEmpty ? nil : sources.joined(separator: "\n")], separator: "\n"))
+            let fileRefs = book.files.compactMap { $0.fileRef ?? $0.ref }.sorted()
+            let key: [String?] = book.bookRef == nil && fileRefs.isEmpty ? ["name", book.title, book.author] :
+                ["book", book.bookRef] + fileRefs.map(Optional.some)
+            return .init(key: key, text: book.title, subtitle: joined([book.author, availability(book.availability), sources.isEmpty ? nil : sources.joined(separator: "\n")], separator: "\n"))
         })
     }
 
@@ -446,7 +480,7 @@ struct AIToolResultDetails {
         guard let value = decode(AIFilterOptionsResult.self) else { return }
         empty = value.names.isEmpty
         fact = list(Array(value.names.prefix(3)))
-        add(filterField ?? String(localized: "结果"), value.names.map { .init(text: $0) })
+        add(["filterOptions"], filterField ?? String(localized: "结果"), value.names.map { .init(key: ["option", $0], text: $0) })
     }
 
     private mutating func book() {
@@ -456,24 +490,24 @@ struct AIToolResultDetails {
         let words = value.wordCount.map { String(localized: "\($0) 字") }
         let chapters = value.chapterCount.map { String(localized: "\($0) 章") }
         let progress = value.progress.map { ($0.percent / 100).formatted(.percent.precision(.fractionLength(0...1))) }
-        add(String(localized: "书籍资料"), [
-            .init(text: value.title),
-            .fact(String(localized: "作者"), value.author),
-            .fact(String(localized: "标签"), value.tags?.joined(separator: String(localized: "、"))),
-            .fact(String(localized: "阅读状态"), status),
-            .fact(String(localized: "正文字数"), words),
-            .fact(String(localized: "章节"), chapters),
-            .fact(String(localized: "阅读进度"), progress),
-            .fact(String(localized: "当时所在章节"), value.progress?.chapterTitle),
-            .fact(String(localized: "当时的文件状态"), availability(value.availability)),
+        add(["book"], String(localized: "书籍资料"), [
+            .init(key: ["title"], text: value.title),
+            .fact("author", String(localized: "作者"), value.author),
+            .fact("tags", String(localized: "标签"), value.tags?.joined(separator: String(localized: "、"))),
+            .fact("status", String(localized: "阅读状态"), status),
+            .fact("words", String(localized: "正文字数"), words),
+            .fact("chapterCount", String(localized: "章节"), chapters),
+            .fact("progress", String(localized: "阅读进度"), progress),
+            .fact("chapter", String(localized: "当时所在章节"), value.progress?.chapterTitle),
+            .fact("availability", String(localized: "当时的文件状态"), availability(value.availability)),
         ])
         if let synopsis = value.synopsis ?? value.synopsisSnippet, !synopsis.isEmpty {
             let abbreviated = value.synopsisTruncated == true || value.synopsis == nil
             let heading = abbreviated ? String(localized: "简介摘录") : String(localized: "简介")
-            add(heading, [.init(text: abbreviated ? abbreviatedText(synopsis) : synopsis)])
+            add(["synopsis"], heading, [.init(key: ["synopsis"], text: abbreviated ? abbreviatedText(synopsis) : synopsis)])
         }
         let filesTitle = value.filesTruncated == true ? String(localized: "部分文件来源") : String(localized: "文件来源")
-        add(filesTitle, value.files.map(file))
+        add(["files"], filesTitle, value.files.map(file))
         if value.filesTruncated == true && value.files.isEmpty { notice = String(localized: "部分文件来源未列出") }
     }
 
@@ -485,19 +519,19 @@ struct AIToolResultDetails {
         if !value.outlineComplete { notice = String(localized: "目录尚未完整") }
         empty = value.items.isEmpty && value.outlineComplete
         if statistics {
-            add(String(localized: "累计章节覆盖（估算）"), [.init(text: String(localized: "累计章节覆盖（估算）"))]
+            add(["chapterStatistics"], String(localized: "累计章节覆盖（估算）"), [.init(key: ["estimate"], text: String(localized: "累计章节覆盖（估算）"))]
                 + chapterRows(value, statistics: true))
         } else {
-            add(String(localized: "章节"), chapterRows(value, statistics: false))
+            add(["chapters"], String(localized: "章节"), chapterRows(value, statistics: false))
         }
     }
 
     private func chapterRows(_ value: AIChaptersResult, statistics: Bool) -> [Row] {
         value.items.map { chapter in
-            if chapter.level == 0 { return .init(text: chapter.title) }
+            if chapter.level == 0 { return .init(key: ["chapter", chapter.chapterRef], text: chapter.title) }
             let words = chapter.countComplete ? String(localized: "\(chapter.wordCount) 字") : String(localized: "至少 \(chapter.wordCount) 字")
             let coverage = chapter.estimatedCoveragePercent.map { ($0 / 100).formatted(.percent.precision(.fractionLength(0...1))) }
-            return .init(text: chapter.title,
+            return .init(key: ["chapter", chapter.chapterRef], text: chapter.title,
                          subtitle: statistics ? joined([words, coverage.map { String(localized: "估算覆盖 \($0)") }]) : words,
                          indent: chapter.parentChapterRef == nil ? 0 : 1)
         }
@@ -510,7 +544,7 @@ struct AIToolResultDetails {
         let title = [data.object["title"]?.string, data.object["chapterTitle"]?.string, source?.object["title"]?.string,
                      names[input["chapterRef"]?.string], names.chapterAtPosition].compactMap { $0 }.first { !$0.isEmpty }
         fact = title ?? Self.snippet(value.text)
-        add(String(localized: "正文片段"), [.init(text: value.text)])
+        add(["passage"], String(localized: "正文片段"), [.init(key: ["passage"], text: value.text)])
     }
 
     private mutating func hits() {
@@ -538,12 +572,12 @@ struct AIToolResultDetails {
             let group = value.hits.filter { $0.bookRef == book }
             let coverage = value.coverage.first { $0.bookRef == book }
             let heading = names[book] ?? (books.count == 1 ? String(localized: "命中片段") : String(localized: "第 \(index + 1) 本"))
-            var rows = group.map { hit in Row(text: hit.excerpt, label: hit.chapterTitle) }
+            var rows = group.map { hit in Row(key: ["hit", hit.sourceRef], text: hit.excerpt, label: hit.chapterTitle) }
             if let coverage, !coverage.complete {
                 let message = coverage.status == "not_scanned" ? String(localized: "尚未搜索这本书") : String(localized: "仅搜索了部分范围")
-                rows.insert(.init(text: message), at: 0)
+                rows.insert(.init(key: ["coverage"], text: message), at: 0)
             }
-            add(heading, rows, isEntity: names[book] != nil || books.count > 1)
+            add(["hits", book], heading, rows, isEntity: names[book] != nil || books.count > 1)
         }
     }
 
@@ -558,26 +592,26 @@ struct AIToolResultDetails {
                 annotations > 0 ? String(localized: "\(annotations) 条批注") : nil,
             ], separator: String(localized: "、"))
             empty = value.items.isEmpty
-            add(String(localized: "书签与批注"), value.items.map(markRow))
+            add(["marks"], String(localized: "书签与批注"), value.items.map(markRow))
         } else if let mark = decode(AIMarkResult.self) {
             let variants = mark.variants ?? []
             let note = mark.noteText ?? mark.note
             fact = variants.isEmpty ? (Self.snippet(note) ?? Self.snippet(mark.excerpt) ?? markKind(mark)) :
                 String(localized: "\(variants.count) 个批注版本")
-            let type = Row.fact(String(localized: "类型"), markKind(mark))
+            let type = Row.fact("kind", String(localized: "类型"), markKind(mark))
             if let note, !note.isEmpty {
                 let excerpt = mark.noteTruncated == true || hasUnreturnedPage
-                add(excerpt ? String(localized: "批注摘录") : String(localized: "批注"),
-                    [type, .init(text: excerpt ? abbreviatedText(note) : note)])
+                add(["note"], excerpt ? String(localized: "批注摘录") : String(localized: "批注"),
+                    [type, .init(key: ["note"], text: excerpt ? abbreviatedText(note) : note)])
             }
             if let excerpt = mark.excerpt, !excerpt.isEmpty {
                 let kind = (note?.isEmpty ?? true) ? type : nil
-                add(String(localized: "摘录"), [kind, .init(text: mark.excerptTruncated == true ? abbreviatedText(excerpt) : excerpt)])
+                add(["excerpt"], String(localized: "摘录"), [kind, .init(key: ["excerpt"], text: mark.excerptTruncated == true ? abbreviatedText(excerpt) : excerpt)])
             } else if mark.range != nil && (note?.isEmpty ?? true) {
-                add(String(localized: "位置"), [markRow(mark)])
+                add(["location"], String(localized: "位置"), [markRow(mark)])
             }
-            add(String(localized: "批注版本"), variants.enumerated().map { index, variant in
-                Row(text: variant.noteSnippet, label: String(localized: "版本 \(index + 1)"))
+            add(["variants"], String(localized: "批注版本"), variants.enumerated().map { index, variant in
+                Row(key: ["variant", variant.variantRef], text: variant.noteSnippet, label: String(localized: "版本 \(index + 1)"))
             })
         }
     }
@@ -591,17 +625,17 @@ struct AIToolResultDetails {
         if let duration = value.durationMs {
             let time = StatisticsDates.duration(duration)
             fact = joined([dates, time])
-            add(heading, [
-                .fact(String(localized: "阅读时长"), time),
-                .fact(String(localized: "阅读日"), value.readingDays?.formatted()),
-                .fact(String(localized: "小说"), value.bookCount?.formatted()),
-                .fact(String(localized: "统计记录"), value.recordingEnabledOnDevice == false ? String(localized: "阅读统计已暂停") : nil),
+            add(["statisticsSummary"], heading, [
+                .fact("duration", String(localized: "阅读时长"), time),
+                .fact("dayCount", String(localized: "阅读日"), value.readingDays?.formatted()),
+                .fact("bookCount", String(localized: "小说"), value.bookCount?.formatted()),
+                .fact("recording", String(localized: "统计记录"), value.recordingEnabledOnDevice == false ? String(localized: "阅读统计已暂停") : nil),
             ])
         }
         if let rows = value.items {
             fact = joined([dates, heading])
             empty = rows.isEmpty && notice == nil
-            add(heading, rows.map { row in
+            add(["statisticsItems", statisticsView], heading, rows.map { row in
                 let date = row.date ?? row.recordedDate
                 let duration = StatisticsDates.duration(row.durationMs)
                 let zone = row.utcOffsetSeconds.flatMap { TimeZone(secondsFromGMT: Int($0)) }
@@ -610,7 +644,11 @@ struct AIToolResultDetails {
                 let days = row.readingDays.map { String(localized: "\($0) 个阅读日") }
                 let books = row.bookCount.map { String(localized: "\($0) 本小说") }
                 let status = row.preview == true ? String(localized: "查阅") : nil
-                return .init(text: joined([row.title, date, duration]) ?? duration,
+                let key: [String?] = if let ref = row.sessionRef { ["session", ref] }
+                else if let ref = row.bookRef { ["book", ref] }
+                else if let date { ["date", date, row.startedAt, row.endedAt] }
+                else { ["time", row.startedAt, row.endedAt, row.title] }
+                return .init(key: key, text: joined([row.title, date, duration]) ?? duration,
                              subtitle: joined([joined([started, ended], separator: " – "), days, books, status]))
             })
         }
@@ -622,24 +660,24 @@ struct AIToolResultDetails {
         let language = value.appLanguage.map { Locale.current.localizedString(forIdentifier: $0) ?? $0 }
         let region = value.region.map { Locale.current.localizedString(forRegionCode: $0) ?? $0 }
         fact = time ?? joined([language, region])
-        add(String(localized: "时间与语言"), [
-            .fact(String(localized: "本地时间"), time),
-            .fact(String(localized: "时区"), value.timeZone),
-            .fact(String(localized: "语言"), language),
-            .fact(String(localized: "地区"), region),
+        add(["environment"], String(localized: "时间与语言"), [
+            .fact("time", String(localized: "本地时间"), time),
+            .fact("zone", String(localized: "时区"), value.timeZone),
+            .fact("language", String(localized: "语言"), language),
+            .fact("region", String(localized: "地区"), region),
         ])
     }
 
     private mutating func web() {
         let sources = AIWebSource.committed(in: result, tool: item.name)
         let answer = data.object["answer"]?.string
-        if let answer, !answer.isEmpty { add(String(localized: "搜索回答"), [.init(text: answer)]) }
-        add(String(localized: "网页来源"), sources.map { .init(text: $0.title, subtitle: URL(string: $0.url)?.host, web: $0) })
+        if let answer, !answer.isEmpty { add(["answer"], String(localized: "搜索回答"), [.init(key: ["answer"], text: answer)]) }
+        add(["web"], String(localized: "网页来源"), sources.map { .init(key: ["url", $0.url], text: $0.title, subtitle: URL(string: $0.url)?.host, web: $0) })
         if item.name == "find_cover", let value = decode(AIFindCoverResult.self) {
             let candidates = value.candidates.count
             let count = sources.count
             fact = candidates > 0 ? String(localized: "\(candidates) 张候选封面") : String(localized: "\(count) 个网页来源")
-            add(String(localized: "封面候选"), value.candidates.map(cover))
+            add(["covers"], String(localized: "封面候选"), value.candidates.map(cover))
             empty = candidates == 0 && sources.isEmpty && (answer?.isEmpty ?? true)
         } else if item.name == "web_search" {
             if data.object["truncated"] == .bool(true) { notice = String(localized: "搜索结果有节略") }
@@ -660,7 +698,7 @@ struct AIToolResultDetails {
         let count = images.count
         fact = joined([Self.snippet(input["prompt"]?.string), String(localized: "\(count) 张图")])
         empty = attachments.isEmpty
-        add(String(localized: "图片"), images.map { .init(text: dimensions($0), image: $0) })
+        add(["images"], String(localized: "图片"), images.map { .init(key: ["attachment", $0.id], text: dimensions($0), image: $0) })
     }
 
     private mutating func filterProposal() {
@@ -674,20 +712,20 @@ struct AIToolResultDetails {
         } else { fact = rule ?? rows.first?.text }
         resultRecorded = true
         if request.map(\.text) != rows.map(\.text) || request.map(\.label) != rows.map(\.label) {
-            add(String(localized: "筛选建议"), rows)
+            add(["filter"], String(localized: "筛选建议"), rows)
         }
     }
 
     private func filterRows(_ value: BookSearchConfiguration) -> [Row] {
         let rule = value.root.children.isEmpty ? nil : value.root.expression { $0 }
-        return [.fact(String(localized: "筛选条件"), rule), sortRow(value.sorts)].compactMap { $0 }
+        return [.fact("rule", String(localized: "筛选条件"), rule), sortRow(value.sorts)].compactMap { $0 }
     }
 
     private func sortRow(_ sorts: [BookSearchSort]) -> Row? {
         let order = sorts.map { sort in
             [sort.field.title, sort.descending ? String(localized: "降序") : String(localized: "升序")].joined(separator: " · ")
         }
-        return .fact(String(localized: "排序"), order.joined(separator: "\n"))
+        return .fact("sort", String(localized: "排序"), order.joined(separator: "\n"))
     }
 
     private mutating func proposal() {
@@ -696,27 +734,27 @@ struct AIToolResultDetails {
         case ("propose_cover", .cover(let value)):
             if case .generated = value.origin { fact = String(localized: "建议使用生成的图片作封面") }
             else { fact = String(localized: "1 张候选封面") }
-            add(String(localized: "封面候选"), [cover(value)])
+            add(["covers"], String(localized: "封面候选"), [cover(value)])
         case ("propose_book_metadata", .metadata(let value)):
             let changes = [
-                proposalFact(String(localized: "作者"), value.author),
-                proposalFact(String(localized: "简介"), value.synopsis),
-                proposalFact(String(localized: "标签"), value.tags?.joined(separator: String(localized: "、"))),
-                .fact(String(localized: "阅读状态"), value.readingStatus.flatMap { BookSearchStatus(rawValue: $0.rawValue)?.title }),
+                proposalFact("author", String(localized: "作者"), value.author),
+                proposalFact("synopsis", String(localized: "简介"), value.synopsis),
+                proposalFact("tags", String(localized: "标签"), value.tags?.joined(separator: String(localized: "、"))),
+                .fact("status", String(localized: "阅读状态"), value.readingStatus.flatMap { BookSearchStatus(rawValue: $0.rawValue)?.title }),
             ]
             var fields = changes.compactMap { $0?.label }
             if value.rename != nil { fields.append(String(localized: "文件名")) }
             if let fields = list(fields) { fact = String(localized: "建议修改\(fields)") }
-            add(String(localized: "资料变更"), changes)
+            add(["metadata"], String(localized: "资料变更"), changes)
             if let rename = value.rename, let target = try? rename.filename(stem: rename.name) {
-                add(String(localized: "文件名变更"), [
-                    .fact(String(localized: "原文件名"), rename.originalName),
-                    .fact(String(localized: "建议文件名"), target),
+                add(["rename"], String(localized: "文件名变更"), [
+                    .fact("originalFilename", String(localized: "原文件名"), rename.originalName),
+                    .fact("proposedFilename", String(localized: "建议文件名"), target),
                 ])
             }
         case ("propose_note", .notes(let value)) where value.kind == .note:
             fact = Self.snippet(value.note) ?? noteAction
-            add(String(localized: "批注草稿"), [.init(text: value.note)])
+            add(["draft"], String(localized: "批注草稿"), [.init(key: ["draft"], text: value.note)])
         case ("propose_bookmark", .notes(let value)) where value.kind == .bookmark:
             fact = joined([String(localized: "建议添加书签"), names.chapterAtPosition])
             resultRecorded = true
@@ -724,9 +762,9 @@ struct AIToolResultDetails {
             let folders = value.input.folders.count
             let moves = value.input.placements.count
             fact = organizationSummary(folders: folders, moves: moves, includesRename: value.input.placements.contains { $0.name != nil })
-            add(String(localized: "建议新建的文件夹"), value.input.folders.map { .init(text: $0.name) })
-            add(String(localized: "建议移动的项目"), value.input.placements.enumerated().map { index, placement in
-                .init(text: placement.name ?? names[placement.fileRef] ?? String(localized: "第 \(index + 1) 项"),
+            add(["folders"], String(localized: "建议新建的文件夹"), value.input.folders.map { .init(key: ["folder", $0.temporaryRef], text: $0.name) })
+            add(["placements"], String(localized: "建议移动的项目"), value.input.placements.enumerated().map { index, placement in
+                .init(key: ["placement", placement.fileRef], text: placement.name ?? names[placement.fileRef] ?? String(localized: "第 \(index + 1) 项"),
                       subtitle: value.input.folders.first { $0.temporaryRef == placement.parentRef }?.name ?? names[placement.parentRef])
             })
         default: break
@@ -750,7 +788,9 @@ struct AIToolResultDetails {
         default: nil
         }
         let children = value.kind == "folder" || value.kind == "shelf" ? value.childBookCount.map { String(localized: "\($0) 本小说") } : nil
-        return .init(text: value.name, subtitle: joined([kind, children, availability(value.availability)]))
+        let key: [String?] = if let ref = value.ref ?? value.fileRef { ["file", ref] }
+        else { ["name", value.parentRef, value.kind, value.name] }
+        return .init(key: key, text: value.name, subtitle: joined([kind, children, availability(value.availability)]))
     }
 
     private func availability(_ raw: String) -> String? {
@@ -776,20 +816,20 @@ struct AIToolResultDetails {
         let title = markKind(value) ?? String(localized: "标注")
         let note = (value.noteText ?? value.note).map { value.noteTruncated == true && !$0.isEmpty ? abbreviatedText($0) : $0 }
         let excerpt = value.excerpt.map { value.excerptTruncated == true && !$0.isEmpty ? abbreviatedText($0) : $0 }
-        return .init(text: joined([note, excerpt], separator: "\n") ?? title,
+        return .init(key: ["mark", value.markRef], text: joined([note, excerpt], separator: "\n") ?? title,
                      label: title, subtitle: subtitle)
     }
 
     private func cover(_ value: AICoverProposal) -> Row {
-        .init(text: dimensions(value.attachment), subtitle: value.origin.caption, web: value.origin.webSource, image: value.attachment)
+        .init(key: ["attachment", value.attachment.id], text: dimensions(value.attachment), subtitle: value.origin.caption, web: value.origin.webSource, image: value.attachment)
     }
 
     private func dimensions(_ value: AIImageAttachment) -> String {
         String(localized: "\(value.width) × \(value.height) 像素")
     }
 
-    private func proposalFact(_ label: String, _ value: String?) -> Row? {
-        .fact(label, value.map { $0.isEmpty ? String(localized: "清空") : $0 })
+    private func proposalFact(_ key: String, _ label: String, _ value: String?) -> Row? {
+        .fact(key, label, value.map { $0.isEmpty ? String(localized: "清空") : $0 })
     }
 
     private func joined(_ values: [String?], separator: String = " · ") -> String? {

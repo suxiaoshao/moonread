@@ -198,7 +198,30 @@ final class AIToolHistoryPresentationTests: XCTestCase {
     let incomplete = try detail(completed + "," + notScanned)
     XCTAssertEqual(incomplete.sections.count, 2)
     XCTAssertEqual(incomplete.sections.first?.rows.first?.text, "Saved match")
+    XCTAssertEqual(paged.sections.first?.id, incomplete.sections.first?.id)
+    XCTAssertEqual(paged.sections.first?.rows.first?.id, incomplete.sections.first?.rows.first?.id)
+    XCTAssertEqual(Set(incomplete.sections.map { $0.id }).count, 2)
     XCTAssertNotEqual(paged.summary, incomplete.summary)
+  }
+
+  func testToolDetailIdentityFollowsAttachmentsAcrossReorderingAndDuplicates() throws {
+    func attachment(_ id: String, width: Int = 32) -> JSONValue {
+      .object(["attachmentRef": .string(id), "mimeType": .string("image/png"),
+               "width": .number(Double(width)), "height": .number(32)])
+    }
+    func section(_ attachments: [JSONValue]) throws -> AIToolResultDetails.Section {
+      let item = AIProcessItem(id: "image-call", kind: .tool, name: "generate_image",
+        output: .object(["status": .string("ok"), "data": .object(["attachments": .array(attachments)])]))
+      return try XCTUnwrap(AIToolResultDetails(item: item, outcome: .completed, hasReplyResult: false).sections.first)
+    }
+    let before = try section([attachment("a"), attachment("b"), attachment("a")])
+    let after = try section([attachment("b"), attachment("inserted"), attachment("a", width: 64), attachment("a")])
+    XCTAssertEqual(before.id, after.id)
+    XCTAssertEqual(Set(before.rows.map { $0.id }).count, 3)
+    XCTAssertEqual(Set(after.rows.map { $0.id }).count, 4)
+    XCTAssertEqual(before.rows[1].id, after.rows[0].id)
+    XCTAssertEqual(before.rows[0].id, after.rows[2].id)
+    XCTAssertEqual(before.rows[2].id, after.rows[3].id)
   }
 
   func testReadDetailKeepsTheEntireStoredExcerpt() {
