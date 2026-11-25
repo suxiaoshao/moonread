@@ -6,7 +6,7 @@ struct LibraryView: View {
     @Bindable var model: LibraryModel
     @State private var recentUse: RecentReadingUse?
     @State private var editingHome = false
-    @AccessibilityFocusState(for: .voiceOver) private var editFocused: Bool
+    @AccessibilityFocusState(for: .voiceOver) private var actionsFocused: Bool
     @Environment(AIHost.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
@@ -46,16 +46,21 @@ struct LibraryView: View {
         .background(Color(uiColor: theme.canvas).ignoresSafeArea(.container))
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if model.homeReady {
-                    Button("编辑") { editingHome = true }
-                        .accessibilityLabel("编辑首页")
-                        .accessibilityFocused($editFocused)
-                }
                 Menu {
                     Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(LibraryLocation(shelfID: "builtin"))) }
                     Button("添加书架", systemImage: "folder.badge.plus") { model.chooseFiles(.folder(nil)) }
                         .accessibilityIdentifier("chooseFolder")
-                } label: { Label("书架操作", systemImage: "plus") }.toolbarGlyph().accessibilityIdentifier("libraryActions")
+                    if model.homeReady {
+                        Divider()
+                        Button("编辑首页") { editingHome = true }
+                    }
+                } label: {
+                    Label("书架操作", systemImage: "ellipsis")
+                }
+                .menuOrder(.fixed)
+                .toolbarGlyph()
+                .accessibilityIdentifier("libraryActions")
+                .accessibilityFocused($actionsFocused)
                 #if DEBUG
                 if ReaderSmokeFixture.enabled {
                     Menu("测试接收") {
@@ -66,7 +71,7 @@ struct LibraryView: View {
                 #endif
             }
         }
-        .sheet(isPresented: $editingHome, onDismiss: { editFocused = true }) {
+        .sheet(isPresented: $editingHome, onDismiss: { actionsFocused = true }) {
             LibraryHomeEditor(sections: model.homeSections) { model.homeSections = $0 }
                 .themeScope(theme)
         }

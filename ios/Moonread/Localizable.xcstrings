@@ -7151,25 +7151,25 @@
       }
     }
   },
-    "点右上角“＋”导入 TXT，也可从“文件”App 拖进来": {
+    "从右上角“…”菜单导入 TXT，也可从“文件”App 拖进来": {
     "extractionState": "manual",
     "localizations": {
       "zh-Hans": {
         "stringUnit": {
           "state": "translated",
-          "value": "点右上角“＋”导入 TXT，也可从“文件”App 拖进来"
+          "value": "从右上角“…”菜单导入 TXT，也可从“文件”App 拖进来"
         }
       },
       "en": {
         "stringUnit": {
           "state": "translated",
-          "value": "Tap + at the top right to import TXT, or drag it in from Files"
+          "value": "Import TXT from the … menu at the top right, or drag it in from Files"
         }
       },
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "點右上角“＋”匯入 TXT，也可從“檔案”App 拖進來"
+          "value": "從右上角「…」選單匯入 TXT，也可從「檔案」App 拖進來"
         }
       }
     }
