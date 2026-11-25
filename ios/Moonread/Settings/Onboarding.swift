@@ -37,7 +37,7 @@ struct UsageGuideView: View {
 }
 
 struct ImportNovelTip: Tip {
-    var title: Text { Text("点右上角“＋”导入 TXT，也可从“文件”App 拖进来") }
+    var title: Text { Text("从右上角“…”菜单导入 TXT，也可从“文件”App 拖进来") }
     var options: [any TipOption] { Tips.MaxDisplayCount(1) }
 }
 struct ReaderControlsTip: Tip {
