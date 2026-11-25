@@ -77,3 +77,50 @@ extension AIMessageListAppearance {
         return value
     }
 }
+
+
+/// A separate render for the menu, sized to the current window above the system actions.
+final class AIReplyPreviewController: UIViewController {
+    private let markdown: MarkdownTextView
+    private let background: UIColor
+    private let viewport = UIView()
+    private let fade = CAGradientLayer()
+
+    init(text: String, theme: MarkdownTheme, background: UIColor, availableSize: CGSize) {
+        self.markdown = AINativeMarkdownCache.preview(text: text, theme: theme)
+        self.background = background
+        super.init(nibName: nil, bundle: nil)
+        let width = max(1, availableSize.width - 2 * LayoutTokens.content)
+        let height = measuredHeight(width: width - 2 * LayoutTokens.content)
+        preferredContentSize = .init(width: width, height: min(height + 2 * LayoutTokens.compact, availableSize.height * 0.55))
+        fade.colors = [UIColor.black.cgColor, UIColor.black.cgColor, UIColor.clear.cgColor]
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func loadView() {
+        view = UIView()
+        view.backgroundColor = background
+        viewport.clipsToBounds = true
+        view.addSubview(viewport)
+        viewport.addSubview(markdown)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        viewport.frame = view.bounds.insetBy(dx: LayoutTokens.content, dy: LayoutTokens.compact)
+        let height = measuredHeight(width: viewport.bounds.width)
+        markdown.frame = CGRect(origin: .zero, size: .init(width: viewport.bounds.width, height: height))
+        if height > viewport.bounds.height {
+            fade.frame = viewport.bounds
+            fade.locations = [0, NSNumber(value: Double(max(0, 1 - 32 / max(1, viewport.bounds.height)))), 1]
+            viewport.layer.mask = fade
+        } else {
+            viewport.layer.mask = nil
+        }
+    }
+
+    private func measuredHeight(width: CGFloat) -> CGFloat {
+        ceil(markdown.boundingSize(for: max(1, width)).height)
+    }
+}
