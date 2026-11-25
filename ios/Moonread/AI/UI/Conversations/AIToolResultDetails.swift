@@ -67,6 +67,12 @@ struct AIToolResultDetails {
     private var incomplete = false
     private var status: String? { result.object["status"]?.string }
     private var code: String? { result.object["error"]?.object["code"]?.string }
+    /// Search and image services save a reader-facing reason (sign-in, connection, provider failure).
+    private var serviceMessage: String? {
+        guard ["web_search", "find_cover", "generate_image"].contains(item.name),
+              let message = result.object["error"]?.object["message"]?.string, !message.isEmpty else { return nil }
+        return message
+    }
 
     init(item: AIProcessItem, outcome: AIAgentStatus, hasReplyResult: Bool) {
         self.item = item
@@ -135,7 +141,9 @@ struct AIToolResultDetails {
             case "invalid_argument": String(localized: "此次查询的条件无效。")
             case "invalid_response": String(localized: "服务返回的内容无法读取。")
             case "resource_limit": String(localized: "所需内容超出这次操作的范围。")
-            default: String(localized: "此次操作未能完成。")
+            case "login_required": String(localized: "登录已失效，请在 AI 设置中重新登录后再试。")
+            case "network": String(localized: "网络连接失败，请稍后再试。")
+            default: serviceMessage ?? String(localized: "此次操作未能完成。")
             }
         case .partial: String(localized: "以下为本次取得的内容，结果尚不完整。")
         case .empty:
