@@ -64,16 +64,4 @@ public enum AIToolPresentation {
         if let title = output?.object["data"]?.object["title"]?.string, !title.isEmpty, !parts.contains(title) { parts.insert(title, at: 0) }
         return parts.joined(separator: " · ")
     }
-    public static func status(_ output: JSONValue?, outcome: AIAgentStatus) -> String {
-        guard let output else {
-            return outcome == .waitingConfirmation ? String(localized: "等待确认") : [.stopped, .interrupted, .failed].contains(outcome) ? String(localized: "已停止") : String(localized: "执行中")
-        }
-        switch output.object["status"]?.string {
-        case "denied": return String(localized: "未准备")
-        case "error": return output.object["error"]?.object["code"]?.string == "cancelled" ? String(localized: "已停止") : String(localized: "未完成")
-        case "partial": return String(localized: "部分结果")
-        default: return String(localized: "已完成")
-        }
-    }
 }
-

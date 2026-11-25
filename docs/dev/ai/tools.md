@@ -122,7 +122,7 @@
 
 输入：`bookRef:string,markRef:string,variantRef?:string,maxBytes?:正整数=51200,cursor?:string`。
 
-普通批注返回 `data={markRef,bookRef,kind,range,excerpt,noteText,sourceRef}` 与分页。只对评论分页，UTF-8 边界连续；摘录完整返回。存在冲突且未选variantRef时返回 `data={markRef,hasConflict:true,variants:[{variantRef,deleted,range?,noteSnippet?}]}`；variantRef只用于读取这次候选，过期重新查询，不是模型可写的冲突解决指令。选择候选后按普通结果分页，不把某个候选当作最终已确认批注。
+普通批注返回 `data={markRef,bookRef,kind,range,excerpt,noteText,sourceRef}` 与分页。只对评论分页，UTF-8 边界连续；摘录完整返回。存在冲突且未选 `variantRef` 时返回 `data={markRef,hasConflict:true,variants:[{variantRef,range?,noteSnippet}]}`，只列仍有内容的候选。`markRef` 无可读标注时返回 `not_found`；指定已删除或已失效的 `variantRef` 时返回 `stale_reference`。候选引用只用于读取该版本，过期后重新查询。选择候选后按普通结果分页，不把某个候选当作最终已确认批注。
 
 依据：现有候选归并和批注编辑基线；工具已提供只读冲突投影。get_marks 摘录不能代替完整评论读取。
 

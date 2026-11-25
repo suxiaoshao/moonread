@@ -584,18 +584,15 @@ public struct AISearchResult: Codable, Sendable {
 }
 public struct AIMarkVariant: Codable, Sendable {
   public var variantRef: String
-  public var deleted: Bool
   public var range: AIToolRange?
   public var noteSnippet: String
 
     public init(
         variantRef: String,
-        deleted: Bool,
         range: AIToolRange? = nil,
         noteSnippet: String
     ) {
         self.variantRef = variantRef
-        self.deleted = deleted
         self.range = range
         self.noteSnippet = noteSnippet
     }
@@ -613,7 +610,6 @@ public struct AIMarkResult: Codable, Sendable {
   public var hasConflict: Bool?
   public var createdAt: String?
   public var sourceRef: String?
-  public var deleted: Bool?
   public var variants: [AIMarkVariant]?
 
     public init(
@@ -629,7 +625,6 @@ public struct AIMarkResult: Codable, Sendable {
         hasConflict: Bool? = nil,
         createdAt: String? = nil,
         sourceRef: String? = nil,
-        deleted: Bool? = nil,
         variants: [AIMarkVariant]? = nil
     ) {
         self.markRef = markRef
@@ -644,7 +639,6 @@ public struct AIMarkResult: Codable, Sendable {
         self.hasConflict = hasConflict
         self.createdAt = createdAt
         self.sourceRef = sourceRef
-        self.deleted = deleted
         self.variants = variants
     }
 }
