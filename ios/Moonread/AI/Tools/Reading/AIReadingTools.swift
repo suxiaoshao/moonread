@@ -482,23 +482,28 @@ actor AIReadingTools: AIReadingToolActions {
     let groups = try await reader.aiMarks(sha: sha(ref))
     guard let heads = groups.first(where: { Self.ref("mark", $0.key) == input.markRef })?.value
     else { throw AIToolError("not_found", field: "markRef") }
-    if AnnotationReduction.conflicts(heads), input.variantRef == nil {
+    let readable = heads.compactMap { candidate in
+      candidate.content.map { (candidate: candidate, content: $0) }
+    }
+    if input.variantRef == nil, !readable.isEmpty, AnnotationReduction.conflicts(heads) {
       return .init(
         data: .init(
           markRef: input.markRef, hasConflict: true,
-          variants: heads.map {
+          variants: readable.map { candidate, content in
             .init(
-              variantRef: Self.ref("v", $0.id), deleted: $0.content == nil,
-              range: $0.content.map { .init(startUtf8: $0.start, endUtf8: $0.end) },
-              noteSnippet: String(($0.content?.note ?? "").prefix(500)))
+              variantRef: Self.ref("v", candidate.id),
+              range: .init(startUtf8: content.start, endUtf8: content.end),
+              noteSnippet: String(content.note.prefix(500)))
           }))
     }
-    guard
-      let candidate = input.variantRef.flatMap({ v in heads.first { Self.ref("v", $0.id) == v } })
-        ?? (input.variantRef == nil ? heads.first : nil)
-    else { throw AIToolError("stale_reference", field: "variantRef") }
-    guard let content = candidate.content else {
-      return .init(data: .init(markRef: input.markRef, deleted: true))
+    let selected = if let variant = input.variantRef {
+      readable.first { Self.ref("v", $0.candidate.id) == variant }
+    } else {
+      readable.first
+    }
+    guard let (candidate, content) = selected else {
+      throw AIToolError(input.variantRef == nil ? "not_found" : "stale_reference",
+                        field: input.variantRef == nil ? "markRef" : "variantRef")
     }
     // Byte offsets keep continuation stable when maxBytes changes.
     let bytes = Array(content.note.utf8)

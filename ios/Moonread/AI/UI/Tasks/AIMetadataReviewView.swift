@@ -51,6 +51,46 @@ struct AIProposalSourcesSheet: View {
     }
 }
 
+struct AIResultSource: Identifiable {
+    init(id: String, book: ReadingToolTarget.BookReference, start: UInt64, end: UInt64, title: String) {
+        self.id = id; self.book = book; self.start = start; self.end = end; self.title = title
+    }
+    let id: String
+    let book: ReadingToolTarget.BookReference
+    let start: UInt64
+    let end: UInt64
+    let title: String
+}
+
+private struct AISourcePreview: View {
+    let source: AIResultSource
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String?
+    @State private var error: String?
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if let text { Text(text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
+                else if let error { Text(error).padding() }
+                else { ProgressView().padding() }
+            }.themedPage().navigationTitle(source.title.isEmpty ? String(localized: "原文") : source.title).navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() } } }
+        }.presentationDetents([.medium, .large]).task(id: source.id) {
+            do {
+                let reader = AppDataService.shared
+                let sha = source.book.sha
+                let id = try await reader.aiBookID(sha: sha)
+                let snapshot = try await reader.snapshot(id)
+                guard snapshot.book.readingKey.formalSHA256 == sha else { throw AIToolError("stale_reference") }
+                // Inspect the exact, bounded, SHA-keyed source; never write reading position/statistics.
+                guard source.end - source.start <= 65_536 else { throw AIToolError("resource_limit") }
+                let range = try await reader.textRange(id, start: source.start, end: source.end)
+                text = range.text
+            } catch { self.error = String(localized: "此处原文暂时不可用。") }
+        }
+    }
+}
+
 extension AIMetadataFieldKind {
     var label: LocalizedStringKey {
         switch self { case .author: "作者"; case .synopsis: "简介"; case .tags: "标签"; case .readingStatus: "阅读状态" }

@@ -9,6 +9,7 @@ struct AIProcessExpansionState: Equatable {
     var group = false
     var reasoning = Set<String>()
     var replyResultCalls = Set<String>()
+    var requestNames: [String: AIToolRequestNames] = [:]
 }
 
 /// Identity is independent of content and of the live/committed boundary.
@@ -63,6 +64,7 @@ struct AIMessageRow: Identifiable, Equatable {
             }
         }
         let collapsible = turn.outcome == .completed && turn.process.contains { $0.kind != .input && $0.id != turn.finalTextID }
+        let requestNames = !collapsible || expanded ? AIToolRequestNames.preceding(turn.process) : [:]
         var insertedProcessToggle = false
         for block in AIProcessBlock.project(turn.process) {
             if collapsible && !insertedProcessToggle && block.items[0].entry == nil {
@@ -73,7 +75,10 @@ struct AIMessageRow: Identifiable, Equatable {
             else {
                 let state = AIProcessExpansionState(group: itemExpansion.contains(.group(block.id)),
                     reasoning: Set(block.items.filter { itemExpansion.contains(.reasoning($0.id)) }.map(\.id)),
-                    replyResultCalls: resultCalls.intersection(block.items.map(\.id)))
+                    replyResultCalls: resultCalls.intersection(block.items.map(\.id)),
+                    requestNames: Dictionary(uniqueKeysWithValues: block.items.compactMap { item in
+                        requestNames[item.id].map { (item.id, $0) }
+                    }))
                 add(block.id, .block(block, turn.outcome, state))
             }
         }

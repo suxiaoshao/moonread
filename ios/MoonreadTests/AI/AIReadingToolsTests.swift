@@ -145,9 +145,44 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
       created: 2, bookmark: false)
     try store.seedAnnotation(key: book.fixtureSHA256, mark: "m", candidate: a)
     try store.seedAnnotation(key: book.fixtureSHA256, mark: "m", candidate: b)
-    let result = try await invoke(
-      tools, "get_mark", ["bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "m"))])
-    XCTAssertEqual(result.object["data"]?.object["hasConflict"], .bool(true))
+    let deletedVariant = AnnotationCandidate(
+      id: "removed-variant", ancestors: [], content: nil, created: 3, bookmark: false)
+    let deletedMark = AnnotationCandidate(
+      id: "removed-mark", ancestors: [], content: nil, created: 4, bookmark: false)
+    try store.seedAnnotation(key: book.fixtureSHA256, mark: "m", candidate: deletedVariant)
+    try store.seedAnnotation(key: book.fixtureSHA256, mark: "removed", candidate: deletedMark)
+
+    let args: [String: JSONValue] = [
+      "bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "m")),
+    ]
+    let result = try await invoke(tools, "get_mark", args)
+    let data = try XCTUnwrap(result.object["data"])
+    XCTAssertEqual(data.object["hasConflict"], .bool(true))
+    let variants = try XCTUnwrap(data.object["variants"]?.array)
+    XCTAssertEqual(variants.count, 2)
+    XCTAssertEqual(Set(variants.compactMap { $0.object["variantRef"]?.string }), [
+      AIReadingTools.ref("v", a.id), AIReadingTools.ref("v", b.id),
+    ])
+    XCTAssertTrue(variants.allSatisfy { $0.object["deleted"] == nil })
+
+    var selected = args
+    selected["variantRef"] = .string(AIReadingTools.ref("v", a.id))
+    let living = try await invoke(tools, "get_mark", selected)
+    XCTAssertEqual(living.object["data"]?.object["noteText"], .string("甲"))
+    XCTAssertNil(living.object["data"]?.object["deleted"])
+
+    selected["variantRef"] = .string(AIReadingTools.ref("v", deletedVariant.id))
+    let stale = try await invoke(tools, "get_mark", selected)
+    XCTAssertEqual(stale.object["error"]?.object["code"], .string("stale_reference"))
+    XCTAssertEqual(stale.object["error"]?.object["field"], .string("variantRef"))
+    XCTAssertNil(stale.object["data"])
+
+    let missing = try await invoke(tools, "get_mark", [
+      "bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "removed")),
+    ])
+    XCTAssertEqual(missing.object["error"]?.object["code"], .string("not_found"))
+    XCTAssertEqual(missing.object["error"]?.object["field"], .string("markRef"))
+    XCTAssertNil(missing.object["data"])
   }
 
   // S137: 工具续页范围拼接不截断 Unicode，重建工具实例后仍续接；正文/笔记各一页边界，不跑 2500 行。

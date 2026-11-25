@@ -2,7 +2,6 @@ import MoonreadAI
 import SwiftUI
 import ImageIO
 import AISDKProvider
-import AISDKProviderUtils
 
 /// The person's own words: trailing and content-hugging on the accent tint.
 /// The leading reserve shrinks at accessibility sizes so long text stays comfortable.
@@ -79,7 +78,7 @@ private struct AIProcessBlockView: View {
             }
         } else if block.items.count == 1 {
             AIProcessRow(item: block.items[0], outcome: outcome, conversationID: conversationID,
-                                     hasReplyResult: expansion.replyResultCalls.contains(block.items[0].id), expanded: expansion.reasoning.contains(block.items[0].id), toggle: toggle)
+                                     hasReplyResult: expansion.replyResultCalls.contains(block.items[0].id), requestNames: expansion.requestNames[block.items[0].id] ?? .init(), expanded: expansion.reasoning.contains(block.items[0].id), toggle: toggle)
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 Button { toggle(.group(block.id)) } label: {
@@ -105,7 +104,7 @@ private struct AIProcessBlockView: View {
                 if expansion.group {
                     ForEach(block.items) { item in
                         AIProcessRow(item: item, outcome: outcome, conversationID: conversationID,
-                                     hasReplyResult: expansion.replyResultCalls.contains(item.id), expanded: expansion.reasoning.contains(item.id), toggle: toggle)
+                                     hasReplyResult: expansion.replyResultCalls.contains(item.id), requestNames: expansion.requestNames[item.id] ?? .init(), expanded: expansion.reasoning.contains(item.id), toggle: toggle)
                     }
                 }
             }.accessibilityElement(children: .contain)
@@ -120,6 +119,7 @@ struct AIProcessRow: View {
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     var conversationID: String? = nil
     var hasReplyResult = false
+    var requestNames = AIToolRequestNames()
     var expanded = false
     let toggle: AIProcessExpansionHandler
     @State private var showingDetail = false
@@ -145,7 +145,7 @@ struct AIProcessRow: View {
                     }
                 }.accessibilityElement(children: .contain)
             } else if item.kind == .tool {
-                let result = AIToolResultDetails(item: item, outcome: outcome, hasReplyResult: hasReplyResult)
+                let result = AIToolResultDetails(item: item, outcome: outcome, hasReplyResult: hasReplyResult, names: requestNames)
                 if result.opensDetail {
                     Button { showingDetail = true } label: { toolLabel(result) }
                         .buttonStyle(.plain).accessibilityIdentifier("aiTool-\(item.name)")
@@ -169,8 +169,10 @@ struct AIProcessRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(AIToolPresentation.title(item.name, output: item.output))
                     .foregroundStyle(Color(uiColor: theme.ink))
-                Text(result.summary)
-                    .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                if !result.summary.isEmpty {
+                    Text(result.summary)
+                        .lineLimit(2).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                }
             }.frame(maxWidth: .infinity, alignment: .leading)
             if item.isRunning { AIProcessLoading() }
             if result.opensDetail {
@@ -199,41 +201,35 @@ struct AIToolDetailView: View {
     let item: AIProcessItem
     let result: AIToolResultDetails
     let conversationID: String?
-    @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
-    @State private var sourcePreview: AIResultSource?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: LayoutTokens.section) {
+                    if !result.request.isEmpty {
+                        detailSection(.init(title: String(localized: "请求"), rows: result.request), showTitle: true, secondaryTitle: true)
+                    }
                     if result.state != .available {
                         if result.sections.isEmpty || result.state == .empty {
                             ContentUnavailableView {
-                                Label(result.state.title, systemImage: result.state.symbol)
+                                Label(result.statusTitle, systemImage: result.state.symbol)
                             } description: {
                                 if let explanation = result.explanation { Text(explanation) }
                             }
                         } else {
                             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-                                Label(result.state.title, systemImage: result.state.symbol).font(.headline)
+                                Label(result.statusTitle, systemImage: result.state.symbol).font(.headline)
                                 if let explanation = result.explanation { Text(explanation).font(.subheadline) }
                             }.foregroundStyle(Color(uiColor: theme.secondary))
                         }
                     }
                     ForEach(Array(result.sections.enumerated()), id: \.offset) { _, section in
-                        if result.state != .empty { detailSection(section) }
+                        if result.state != .empty { detailSection(section, showTitle: result.sections.count > 1 || section.isEntity) }
                     }
-                    if let excerpt = proposedMarkExcerpt {
-                        detailSection(.init(title: String(localized: "建议位置"), rows: [excerpt]))
-                    }
-                    ForEach(Array(result.context.enumerated()), id: \.offset) { _, section in
-                        detailSection(section)
-                    }
-                    if result.paged {
-                        Text(result.hasMore ? String(localized: "仅显示本次返回的内容，还有后续结果。") : String(localized: "仅显示本次返回的内容。"))
-                            .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    if let notice = result.notice {
+                        Text(notice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading).padding()
@@ -243,43 +239,17 @@ struct AIToolDetailView: View {
                 .toolbar { ToolbarItem(placement: .confirmationAction) {
                     SystemToolbarButton("关闭", role: .close) { dismiss() }.labelStyle(.iconOnly)
                 } }
-                .sheet(item: $sourcePreview) { AISourcePreview(source: $0) }
         }.tint(Color(uiColor: theme.accent)).preferredColorScheme(theme.scheme)
             .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
     }
 
-    private var proposedMarkExcerpt: AIToolResultDetails.Row? {
-        guard let mark = result.proposedMark, let conversationID, let conversation = ai.conversation(conversationID),
-              let book = try? AIReadingReferences.parseBookReference(mark.bookRef) else { return nil }
-        // A proposal is read-only here. Use an already returned excerpt when it actually contains the proposed position.
-        let earlier = conversation.turns.flatMap(\.process).prefix { $0.id != item.id }
-        for previous in earlier.reversed() where previous.resultID != nil && previous.name == "read" {
-            guard let output = previous.output, let data = output.object["data"],
-                  let source = AIResultSource(data), source.book.sha == book.sha,
-                  mark.startUtf8 >= source.start, mark.startUtf8 < source.end, mark.endUtf8 <= source.end,
-                  let text = data.object["text"]?.string else { continue }
-            let bytes = text.utf8
-            let offset = Int(mark.startUtf8 - source.start)
-            guard offset < bytes.count else { continue }
-            let firstByte = bytes.index(bytes.startIndex, offsetBy: offset)
-            guard let first = String.Index(firstByte, within: text) else { continue }
-            let end: String.Index
-            if mark.kind == .note {
-                let endOffset = min(UInt64(bytes.count), mark.endUtf8 - source.start)
-                let endByte = bytes.index(bytes.startIndex, offsetBy: Int(endOffset))
-                end = String.Index(endByte, within: text) ?? text.endIndex
-            } else {
-                end = text.endIndex
-            }
-            let excerpt = String(text[first..<end].prefix(160))
-            return .init(text: excerpt, label: source.title.isEmpty ? nil : source.title, source: source)
-        }
-        return nil
-    }
-
-    private func detailSection(_ section: AIToolResultDetails.Section) -> some View {
+    private func detailSection(_ section: AIToolResultDetails.Section, showTitle: Bool, secondaryTitle: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: LayoutTokens.control) {
-            Text(section.title).font(.headline).accessibilityAddTraits(.isHeader)
+            if showTitle {
+                Text(section.title).font(secondaryTitle ? .footnote : .headline)
+                    .foregroundStyle(Color(uiColor: secondaryTitle ? theme.secondary : theme.ink))
+                    .accessibilityAddTraits(.isHeader)
+            }
             ForEach(Array(section.rows.enumerated()), id: \.offset) { _, row in
                 detailRow(row).padding(.leading, CGFloat(row.indent) * LayoutTokens.content)
             }
@@ -297,13 +267,6 @@ struct AIToolDetailView: View {
             }
         } else if let web = row.web, let url = URL(string: web.url) {
             Link(destination: url) { rowText(row, accessory: "arrow.up.right") }
-        } else if let source = row.source {
-            VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-                rowText(row).textSelection(.enabled)
-                Button { sourcePreview = source } label: {
-                    Label("查看原文", systemImage: "book")
-                }
-            }
         } else {
             rowText(row).textSelection(.enabled)
         }
@@ -352,68 +315,6 @@ extension AIConversation {
             guard item.kind == .tool, item.name.hasPrefix("propose_"), let output = item.output else { return false }
             return !["denied", "error"].contains(output.object["status"]?.string ?? "")
         } ?? false
-    }
-}
-
-struct AIResultSource: Identifiable {
-    init(id: String, book: ReadingToolTarget.BookReference, start: UInt64, end: UInt64, title: String) {
-        self.id = id; self.book = book; self.start = start; self.end = end; self.title = title
-    }
-    let id: String
-    let book: ReadingToolTarget.BookReference
-    let start: UInt64
-    let end: UInt64
-    let title: String
-    static func all(in output: JSONValue) -> [AIResultSource] {
-        let data = output.object["data"] ?? .null
-        let items = (data.object["items"]?.array ?? []).map { item -> JSONValue in
-            var value = item.object
-            value["bookRef"] = value["bookRef"] ?? data.object["bookRef"]
-            return .object(value)
-        }
-        let values = [data] + (output.object["sources"]?.array ?? [])
-            + (data.object["hits"]?.array ?? []) + items
-        var seen = Set<String>()
-        return values.compactMap(Self.init).filter { seen.insert($0.id).inserted }
-    }
-    init?(_ value: JSONValue) {
-        let object = value.object
-        guard let id = object["sourceRef"]?.string, let rawBook = object["bookRef"]?.string,
-              let book = try? AIReadingReferences.parseBookReference(rawBook),
-              let start = object["range"]?.object["startUtf8"]?.int,
-              let end = object["range"]?.object["endUtf8"]?.int,
-              start >= 0, end > start,
-              id == AIReadingTools.ref("source", "\(rawBook):\(start):\(end)") else { return nil }
-        self.id = id; self.book = book; self.start = UInt64(start); self.end = UInt64(end)
-        title = object["title"]?.string ?? object["chapterTitle"]?.string ?? ""
-    }
-}
-struct AISourcePreview: View {
-    let source: AIResultSource
-    @Environment(\.dismiss) private var dismiss
-    @State private var text: String?
-    @State private var error: String?
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                if let text { Text(text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
-                else if let error { Text(error).padding() }
-                else { ProgressView().padding() }
-            }.themedPage().navigationTitle(source.title.isEmpty ? String(localized: "原文") : source.title).navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() } } }
-        }.presentationDetents([.medium, .large]).task(id: source.id) {
-            do {
-                let reader = AppDataService.shared
-                let sha = source.book.sha
-                let id = try await reader.aiBookID(sha: sha)
-                let snapshot = try await reader.snapshot(id)
-                guard snapshot.book.readingKey.formalSHA256 == sha else { throw AIToolError("stale_reference") }
-                // Inspect the exact, bounded, SHA-keyed source; never write reading position/statistics.
-                guard source.end - source.start <= 65_536 else { throw AIToolError("resource_limit") }
-                let range = try await reader.textRange(id, start: source.start, end: source.end)
-                text = range.text
-            } catch { self.error = String(localized: "此处原文暂时不可用。") }
-        }
     }
 }
 
