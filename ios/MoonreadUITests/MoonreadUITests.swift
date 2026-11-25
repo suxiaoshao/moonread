@@ -785,6 +785,11 @@ import XCTest
     XCTAssertEqual(rows.count, 1)
     XCTAssertTrue(rows.firstMatch.label.contains("上次来源："))
     XCTAssertTrue(rows.firstMatch.label.contains("读到 50%"))
+    let search = app.searchFields.firstMatch
+    if !search.isHittable { app.collectionViews.firstMatch.swipeDown() }
+    ready(search).tap()
+    search.typeText("星灯\n")
+    ready(rows.firstMatch)
     ready(app.buttons["selectReadingData"]).tap()
     XCTAssertEqual(app.buttons["selectReadingData"].label, "结束选择")
     XCTAssertTrue(app.buttons["readingDataSort"].exists)
@@ -802,6 +807,8 @@ import XCTest
     app.buttons["readingDataFilterAll"].tap()
     // Native List selection exposes row content as text, not a Button.
     ready(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-")).firstMatch).tap()
+    ready(app.buttons["deleteSelectedReadingData"]).tap()
+    ready(app.alerts.buttons["取消"]).tap()
     ready(app.buttons["deleteSelectedReadingData"]).tap()
     ready(app.buttons["confirmDeleteReadingData"].firstMatch).tap()
     ready(app.buttons["closeReadingDeletionTask"]).tap()

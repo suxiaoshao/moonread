@@ -2068,29 +2068,6 @@
         }
       }
     },
-    "按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Based on this device’s current index. Books not yet indexed or reconnected may also appear here."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "依此裝置目前的索引判斷；尚未建立索引或重新連接的小說也可能出現在這裡。"
-          }
-        }
-      }
-    },
     "未关联到书架": {
       "extractionState": "manual",
       "localizations": {
