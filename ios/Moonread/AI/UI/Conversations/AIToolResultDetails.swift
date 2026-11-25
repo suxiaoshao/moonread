@@ -79,6 +79,15 @@ struct AIToolResultDetails {
         }
     }
 
+    struct FilterSummary {
+        let root: BookSearchNode?
+        let sorts: [BookSearchSort]
+    }
+
+    private(set) var requestedFilter: FilterSummary?
+    private(set) var suggestedFilter: FilterSummary?
+    private(set) var bookResult: Section?
+    private let bookFilterInput: JSONValue?
     private let item: AIProcessItem
     private let outcome: AIAgentStatus
     private let hasReplyResult: Bool
@@ -112,6 +121,12 @@ struct AIToolResultDetails {
         input = item.input.object
         data = result.object["data"] ?? .null
         bytes = try? JSONEncoder().encode(data)
+        bookFilterInput = switch item.name {
+        case "propose_book_filter": item.input
+        case "query_books_by_filter": input["filter"]
+        default: nil
+        }
+        if let bookFilterInput { requestedFilter = Self.filterSummary(bookFilterInput) }
         let request = projectRequest()
         if !request.isEmpty { requestSection = .init(id: ["request"], title: String(localized: "请求"), rows: request) }
         project()
@@ -163,12 +178,28 @@ struct AIToolResultDetails {
 
     var explanation: String? {
         switch state {
-        case .running: nil
-        case .waiting: String(localized: "此调用需要确认后才能继续。")
-        case .denied: String(localized: "未同意准备所需内容，此调用没有执行。")
-        case .stopped: nil
+        case .running: return nil
+        case .waiting: return String(localized: "此调用需要确认后才能继续。")
+        case .denied: return String(localized: "未同意准备所需内容，此调用没有执行。")
+        case .stopped: return nil
         case .failed:
-            switch code {
+            if item.name == "show_book_list" {
+                let field = result.object["error"]?.object["field"]?.string
+                let index = field.flatMap { value in
+                    value.hasPrefix("refs[") && value.hasSuffix("]") ? Int(value.dropFirst(5).dropLast()) : nil
+                }
+                if let index, (0..<5).contains(index) {
+                    let number = index + 1
+                    if code == "not_found" { return String(localized: "书库中找不到书单的第 \(number) 项。") }
+                    if code == "invalid_argument" { return String(localized: "书单的第 \(number) 项不是有效的小说。") }
+                }
+                if code == "invalid_argument" { return String(localized: "书单须包含 1–5 个不同的书目引用。") }
+            }
+            if item.name == "query_books_by_filter", code == "invalid_argument",
+               result.object["error"]?.object["field"]?.string == "shelf" {
+                return String(localized: "有多个同名书架，无法确定要查哪一个。")
+            }
+            return switch code {
             case "timeout": String(localized: "等待回复超时")
             case "not_found", "stale_reference", "invalid_scope": String(localized: "所需资料已不可用。")
             case "stale_cursor": String(localized: "查询范围已变化。")
@@ -182,7 +213,7 @@ struct AIToolResultDetails {
             case "network": String(localized: "网络连接失败，请稍后再试。")
             default: serviceMessage
             }
-        case .empty, .available, .missing: nil
+        case .empty, .available, .missing: return nil
         }
     }
 
@@ -336,18 +367,15 @@ struct AIToolResultDetails {
                     $0.object["name"]?.string ?? names[$0.object["fileRef"]?.string]
                 }))
             }
-        case "propose_book_filter":
-            if let filter = try? JSONDecoder().decode(AIBookFilterInput.self, from: JSONEncoder().encode(item.input)),
-               let configuration = try? filter.configuration(resolveShelf: { $0 }) {
-                rows = filterRows(configuration)
-            } else {
-                let order = (input["sorts"]?.array ?? []).compactMap { entry -> BookSearchSort? in
-                    guard let raw = entry.object["field"]?.string, ["name", "recent", "author"].contains(raw),
-                          let field = BookSearchSortField(rawValue: raw),
-                          case .some(.bool(let descending)) = entry.object["descending"] else { return nil }
-                    return .init(field: field, descending: descending)
-                }
-                if let row = sortRow(order) { rows.append(row) }
+        case "query_books_by_filter":
+            if let limit = input["limit"]?.int {
+                put("limit", String(localized: "数量上限"), String(localized: "\(limit) 本"))
+            }
+        case "show_book_list":
+            let shown = decode(AIShownBooksResult.self)?.items ?? []
+            rows = (input["refs"]?.strings ?? []).compactMap { ref in
+                guard let title = shown.first(where: { $0.ref == ref })?.title ?? names[ref] else { return nil }
+                return .init(key: ["book", ref], text: title)
             }
         default: break
         }
@@ -440,6 +468,8 @@ struct AIToolResultDetails {
         case "web_search", "find_cover": web()
         case "generate_image": images()
         case "propose_book_filter": filterProposal()
+        case "query_books_by_filter": filteredBooks()
+        case "show_book_list": shownBooks()
         case "propose_cover", "propose_book_metadata", "propose_note", "propose_bookmark", "propose_library_organization": proposal()
         default: break
         }
@@ -702,30 +732,94 @@ struct AIToolResultDetails {
     }
 
     private mutating func filterProposal() {
-        guard let suggestion = decode(AIBookFilterSuggestion.self), let configuration = try? suggestion.filter.configuration(resolveShelf: { $0 }) else { return }
-        let rows = filterRows(configuration)
-        let rule = configuration.root.children.isEmpty ? nil : configuration.root.expression { $0 }
-        if let rule, rule.count > 72 {
-            let groups = configuration.root.children.filter { $0.group != nil }.count
-            fact = groups > 0 ? String(localized: "\(groups) 个条件组") :
-                String(localized: "\(configuration.root.children.count) 项筛选条件")
-        } else { fact = rule ?? rows.first?.text }
+        guard let suggestion = decode(AIBookFilterSuggestion.self),
+              let configuration = try? suggestion.filter.configuration(resolveShelf: { $0 }) else { return }
+        let summary = Self.ruleSummary(configuration.root)
+        fact = summary ?? configuration.sortDescription(hasTerm: false)
         resultRecorded = true
-        if request.map(\.text) != rows.map(\.text) || request.map(\.label) != rows.map(\.label) {
-            add(["filter"], String(localized: "筛选建议"), rows)
+        if requestedFilter == nil {
+            requestedFilter = .init(root: configuration.root, sorts: configuration.sorts)
+        } else if let bookFilterInput, !Self.sameFilter(bookFilterInput, suggestion.filter) {
+            suggestedFilter = .init(root: configuration.root, sorts: configuration.sorts)
         }
     }
 
-    private func filterRows(_ value: BookSearchConfiguration) -> [Row] {
-        let rule = value.root.children.isEmpty ? nil : value.root.expression { $0 }
-        return [.fact("rule", String(localized: "筛选条件"), rule), sortRow(value.sorts)].compactMap { $0 }
+    private static func sameFilter(_ input: JSONValue, _ suggestion: AIBookFilterInput) -> Bool {
+        guard let original = try? JSONDecoder().decode(AIBookFilterInput.self, from: JSONEncoder().encode(input)) else { return false }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return (try? encoder.encode(original)) == (try? encoder.encode(suggestion))
     }
 
-    private func sortRow(_ sorts: [BookSearchSort]) -> Row? {
-        let order = sorts.map { sort in
-            [sort.field.title, sort.descending ? String(localized: "降序") : String(localized: "升序")].joined(separator: " · ")
+    private static func filterSummary(_ value: JSONValue) -> FilterSummary? {
+        if let filter = try? JSONDecoder().decode(AIBookFilterInput.self, from: JSONEncoder().encode(value)),
+           let configuration = try? filter.configuration(resolveShelf: { $0 }) {
+            return .init(root: configuration.root, sorts: configuration.sorts)
         }
-        return .fact("sort", String(localized: "排序"), order.joined(separator: "\n"))
+        var fields: Set<BookSearchSortField> = []
+        let sorts = (value.object["sorts"]?.array ?? []).compactMap { row -> BookSearchSort? in
+            guard let raw = row.object["field"]?.string, ["name", "recent", "author"].contains(raw),
+                  let field = BookSearchSortField(rawValue: raw), fields.insert(field).inserted,
+                  case .some(.bool(let descending)) = row.object["descending"] else { return nil }
+            return .init(field: field, descending: descending)
+        }
+        return sorts.isEmpty ? nil : .init(root: nil, sorts: sorts)
+    }
+
+    private static func ruleSummary(_ root: BookSearchNode) -> String? {
+        guard !root.children.isEmpty else { return nil }
+        let rule = root.expression { $0 }
+        guard rule.count > 72 else { return rule }
+        let groups = root.children.filter { $0.group != nil }.count
+        return groups > 0 ? String(localized: "\(groups) 个条件组") :
+            String(localized: "\(root.children.count) 项筛选条件")
+    }
+
+    private static func queryRuleSummary(_ root: BookSearchNode) -> String? {
+        guard !root.excluded, root.group == .all else { return ruleSummary(root) }
+        let labels = root.children.compactMap { child -> String? in
+            guard !child.excluded, child.values.count == 1, let value = child.values.first else { return nil }
+            switch child.kind {
+            case .rule(.status), .rule(.tag(.all, _)), .rule(.tag(.any, _)):
+                return child.valueTitle(value, shelfTitle: { $0 })
+            default: return nil
+            }
+        }
+        guard !labels.isEmpty, labels.count == root.children.count else { return ruleSummary(root) }
+        let summary = labels.joined(separator: " · ")
+        return summary.count <= 72 ? summary : ruleSummary(root)
+    }
+
+    private mutating func filteredBooks() {
+        guard let value = decode(AIFilteredBooksResult.self) else { return }
+        let matches = String(localized: "符合 \(value.totalMatches) 本")
+        let count: String
+        if value.unknownCount > 0 {
+            count = joined([matches, String(localized: "另有 \(value.unknownCount) 本资料不足")]) ?? matches
+        } else if value.totalMatches == 0 {
+            count = String(localized: "没有匹配的小说")
+        } else {
+            count = matches
+        }
+        let rule = requestedFilter?.root.flatMap { Self.queryRuleSummary($0) }
+        fact = value.unknownCount == 0 && value.totalMatches > 0 ? joined([rule, count]) : count
+        bookResult = .init(id: ["matches"], title: count, rows: value.items.map { book in
+            .init(key: ["file", book.fileRef], text: book.title, subtitle: joined([
+                book.author, book.readingStatus.flatMap { BookSearchStatus(rawValue: $0)?.title },
+                book.availability == "ready" ? nil : availability(book.availability)
+            ]))
+        })
+        resultRecorded = true
+    }
+
+    private mutating func shownBooks() {
+        guard let value = decode(AIShownBooksResult.self) else { return }
+        let count = String(localized: "\(value.items.count) 本")
+        if let first = value.items.first {
+            fact = value.items.count == 1 ? first.title : String(localized: "\(count) · \(first.title) 等")
+        }
+        bookResult = .init(id: ["shown"], title: count, rows: [])
+        resultRecorded = true
     }
 
     private mutating func proposal() {
@@ -866,6 +960,8 @@ struct AIToolRequestNames: Equatable {
         func book(_ value: JSONValue) {
             for source in value.object["files"]?.array ?? [] { file(source) }
             remember(value.object["bookRef"]?.string, value.object["title"]?.string)
+            remember(value.object["fileRef"]?.string, value.object["title"]?.string)
+            remember(value.object["ref"]?.string, value.object["title"]?.string)
         }
 
         func record(_ item: AIProcessItem) {
@@ -875,7 +971,7 @@ struct AIToolRequestNames: Equatable {
             let rows = data.object["items"]?.array ?? []
             switch item.name {
             case "ls": rows.forEach(file)
-            case "search_books": rows.forEach(book)
+            case "search_books", "query_books_by_filter", "show_book_list": rows.forEach(book)
             case "get_book": book(data)
             case "get_chapters":
                 if let bytes = try? JSONEncoder().encode(data), let saved = try? JSONDecoder().decode(AIChaptersResult.self, from: bytes) {
@@ -922,7 +1018,7 @@ struct AIToolRequestNames: Equatable {
             let input = item.input.object
             let referenceKeys = ["bookRef", "fileRef", "chapterRef", "parentRef", "scopeRef", "markRef", "variantRef", "attachmentRef"]
             var values = referenceKeys.compactMap { input[$0]?.string }
-            for key in ["bookRefs", "sourceRefs"] { values += input[key]?.array?.compactMap(\.string) ?? [] }
+            for key in ["bookRefs", "sourceRefs", "refs"] { values += input[key]?.array?.compactMap(\.string) ?? [] }
             for placement in input["placements"]?.array ?? [] {
                 values += ["fileRef", "parentRef"].compactMap { placement.object[$0]?.string }
             }

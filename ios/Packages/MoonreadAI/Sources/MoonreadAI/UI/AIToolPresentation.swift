@@ -16,6 +16,8 @@ public enum AIToolPresentation {
         case "ls": String(localized: "浏览书架")
         case "search_books": String(localized: "查找书籍")
         case "list_filter_options": String(localized: "查找筛选选项")
+        case "query_books_by_filter": String(localized: "按条件查找小说")
+        case "show_book_list": String(localized: "展示书单")
         case "propose_book_filter": String(localized: "建议书架筛选")
         case "get_book": String(localized: "查看书籍资料")
         case "get_chapters": String(localized: "查看目录")
@@ -41,6 +43,8 @@ public enum AIToolPresentation {
         case "ls": "folder"
         case "search_books": "magnifyingglass"
         case "list_filter_options": "magnifyingglass"
+        case "query_books_by_filter": "line.3.horizontal.decrease.circle"
+        case "show_book_list": "books.vertical"
         case "propose_book_filter": "line.3.horizontal.decrease.circle"
         case "get_book": "book.closed"
         case "get_chapters": "list.bullet"

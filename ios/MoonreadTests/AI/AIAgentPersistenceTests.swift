@@ -11,6 +11,45 @@ import XCTest
 @testable import Moonread
 
 final class AIAgentPersistenceAgentRuntimeTests: AgentRuntimeFixture {
+  func testBookListThumbnailCommitsLocallyAndNeverReplaysToModel() async throws {
+    let owner = UUID().uuidString
+    let repository = try await makeRepository(owner)
+    let store = AIAgentStore(repository: repository)
+    let ref = AIReference.make("f", "fixture")
+    let bytes = imageBytes()
+    let model = AgentModel([[
+      .streamStart(warnings: []),
+      .toolCall(.init(toolCallId: "books", toolName: "show_book_list", input: "{\"refs\":[\"\(ref)\"]}")),
+      .finish(finishReason: .init(unified: .toolCalls), usage: .init(), providerMetadata: nil),
+    ], text("完成")])
+    let definition = AIAgentTool(name: "show_book_list", description: "Book list fixture", input: AIShowBookListInput.self,
+      executeBookList: { input in
+        let attachment = try await AIImageStore.shared.save(bytes, owner: owner)
+        let item = AIShownBooksResult.Item(ref: input.refs[0], title: "Fixture", author: nil)
+        return (.init(data: .init(items: [item])), [.init(book: item, needsDownload: false, progress: 0.37, coverSeed: nil, thumbnail: attachment.id)])
+      })
+    let configuration = config(model)
+    let runtime = try await AIAgentRuntime(id: owner, store: store, tools: [definition], resolve: { configuration })
+    try await runtime.enqueue("展示")
+    await runtime.wait()
+    XCTAssertEqual(runtime.head.status, .completed)
+    let entries = try await store.all(owner)
+    let results = entries.flatMap { AICommittedResultDecoder.results($0, sessionID: owner) }
+    guard case .bookList(let books) = try XCTUnwrap(results.first).body else { return XCTFail("Expected a committed book list") }
+    let item = try XCTUnwrap(books.first)
+    let thumbnail = try XCTUnwrap(item.thumbnail)
+    XCTAssertEqual(item.book.ref, ref)
+    let read = try await repository.assetBytes(thumbnail, sessionID: owner)
+    XCTAssertEqual(read, bytes)
+    let requests = await model.requests
+    let replay = String(decoding: try JSONEncoder().encode(try XCTUnwrap(requests.last).prompt), as: UTF8.self)
+    XCTAssertTrue(replay.contains(ref))
+    XCTAssertFalse(replay.contains(thumbnail))
+    XCTAssertFalse(replay.contains("0.37"))
+    try await repository.delete(owner)
+    await AIImageStore.shared.forget(owner)
+  }
+
   // S006: 一次工具回合提交成对调用/结果并可重载；只用假模型，不重跑四协议 wire 循环。
   func testToolLoopPersistsPairsAndCanReload() async throws {
     let repository = try await makeRepository("one")

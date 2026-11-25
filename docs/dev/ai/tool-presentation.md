@@ -15,6 +15,8 @@
 | 书库与资料 | ls | 浏览书架 | folder | 书架/文件夹名 |
 | 搜索 | search_books | 查找书籍 | magnifyingglass | 查询词/筛选条件 |
 | 书库与资料 | get_book | 查看书籍资料 | book.closed | 书名 |
+| 搜索 | query_books_by_filter | 按条件查找小说 | line.3.horizontal.decrease.circle | 条件、总命中数与资料不足数 |
+| 书库与资料 | show_book_list | 展示书单 | books.vertical | 书名或实际本数与首项 |
 | 正文与目录 | get_chapters | 查看目录 | list.bullet | 书名 |
 | 正文与目录 | read | 阅读正文 | book | 书名与章节 |
 | 搜索 | rg | 搜索正文 | doc.text.magnifyingglass | 查询词；书籍数量 |

@@ -22,6 +22,7 @@ struct AIChatView: View {
     /// A search match to open at, instead of the newest message.
     var anchor: AIConversationAnchor? = nil
     var readingSearch: AIReadingSearchContext?
+    @State private var bookDetails: StatisticsRoute?
     @State private var filterSearch: BookSearchConfiguration?
     @State private var shelfChoice: FilterShelfRequest?
     @State private var resolvedShelfSearch: BookSearchConfiguration?
@@ -69,6 +70,9 @@ struct AIChatView: View {
         .sheet(item: $shelfChoice, onDismiss: showResolvedShelfSearch) { request in
             AIFilterShelfChoiceSheet(suggestion: request.suggestion) { resolvedShelfSearch = $0 }.themeScope(theme)
         }
+        .navigationDestination(item: $bookDetails) { route in
+            AIChatSearchPage(model: library, destination: .book(route), reading: readingSearch)
+        }
         .navigationDestination(item: $filterSearch) { configuration in
             AIChatSearchPage(model: library, destination: .suggestion(configuration), reading: readingSearch)
         }
@@ -88,7 +92,11 @@ struct AIChatView: View {
                                          preview: { attachmentPreview = $0 }, loadEarlier: {
                             listRequest = .init(target: .preserve)
                             ai.loadEarlier(conversationID)
-                        }, openFilter: openFilter, toggleProcessItem: toggle)
+                        }, openFilter: openFilter, openBook: { route in
+                            guard visible, bookDetails == nil else { return }
+                            inputFocused = false
+                            bookDetails = route
+                        }, toggleProcessItem: toggle)
                         .background(row.turnID == highlightedTurn && highlightedTurn != nil ? Color(uiColor: theme.search) : .clear)
                         .environment(ai).environment(\.theme, theme).environment(\.dynamicTypeSize, typeSize)
                         .environment(library)
@@ -187,7 +195,7 @@ struct AIChatView: View {
 
 /// Search and a newly saved shelf stay in the stack that already owns this chat.
 private struct AIChatSearchPage: View {
-    enum Destination { case suggestion(BookSearchConfiguration), savedShelf(UUID) }
+    enum Destination { case suggestion(BookSearchConfiguration), savedShelf(UUID), book(StatisticsRoute) }
     let model: LibraryModel
     let destination: Destination
     let reading: AIReadingSearchContext?
@@ -201,6 +209,7 @@ private struct AIChatSearchPage: View {
             switch destination {
             case .suggestion(let configuration): AppSearchPage(model: model, configuration: configuration, host: host)
             case .savedShelf(let id): SavedFilterDestination(model: model, id: id, host: host)
+            case .book(let route): StatisticsView(library: model, target: route, host: host)
             }
         }
         .toolbar(.hidden, for: .tabBar)

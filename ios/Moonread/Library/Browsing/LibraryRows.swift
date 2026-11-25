@@ -235,17 +235,10 @@ struct LibraryFileRow: View {
     private var showsMenu: Bool { recent || interaction.menuHost != nil }
 
     var body: some View {
-        HStack(spacing: LayoutTokens.control) {
-            Color.clear.frame(width: Self.coverSize.width, height: Self.coverSize.height)
-            VStack(alignment: .leading) {
-                label.title().font(.body.weight(.medium)).lineLimit(1)
-                if let author = label.author() {
-                    author.font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
-                }
-                statusLine.alignmentGuide(.libraryStatus) { $0[.bottom] }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, showsMenu ? LayoutTokens.hit : 0)
+        Content(title: label.title(), author: label.author(), showsMenu: showsMenu) {
+            Color.clear
+        } status: {
+            statusLine
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -261,6 +254,34 @@ struct LibraryFileRow: View {
         }
         .overlay(alignment: Alignment(horizontal: .trailing, vertical: .libraryStatus)) {
             if showsMenu { LibraryItemMore(entry: entry) { actions } }
+        }
+    }
+
+    struct Content<Cover: View, Status: View>: View {
+        let title: Text
+        let author: Text?
+        var showsMenu = false
+        var unavailable = false
+        @ViewBuilder let cover: Cover
+        @ViewBuilder let status: Status
+        @Environment(\.theme) private var theme
+
+        var body: some View {
+            HStack(spacing: LayoutTokens.control) {
+                cover.frame(width: LibraryFileRow.coverSize.width, height: LibraryFileRow.coverSize.height)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading) {
+                    title.font(.body.weight(.medium)).lineLimit(1)
+                        .foregroundStyle(Color(uiColor: unavailable ? theme.secondary : theme.ink))
+                    if let author {
+                        author.font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
+                    }
+                    status.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                        .alignmentGuide(.libraryStatus) { $0[.bottom] }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, showsMenu ? LayoutTokens.hit : 0)
+            }
         }
     }
 

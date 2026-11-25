@@ -127,3 +127,91 @@ public struct AIBookFilterSuggestion: Codable, Sendable {
 private func filterEnum<T: RawRepresentable>(_ values: [T]) -> [String: JSONValue] where T.RawValue == String {
     ["type": .string("string"), "enum": .array(values.map { .string($0.rawValue) })]
 }
+
+public struct AIQueryBooksByFilterInput: AIReadingInput {
+    public let filter: AIBookFilterInput
+    public let limit: Int?
+    public let cursor: String?
+
+    public static var constraints: [String: [String: JSONValue]] {
+        ["filter": AIBookFilterInput.schema.object, "limit": ["maximum": .number(100), "default": .number(20)]]
+    }
+
+    public func validate() throws {
+        if let limit, !(1...100).contains(limit) { throw AIToolError("invalid_argument", field: "limit") }
+    }
+}
+
+public struct AIFilteredBookResult: Codable, Sendable {
+    public let title: String
+    public let author: String?
+    public let readingStatus: String?
+    public let availability: String
+    public let fileRef: String
+    public let bookRef: String?
+
+    public init(title: String, author: String?, readingStatus: String?, availability: String, fileRef: String, bookRef: String?) {
+        self.title = title; self.author = author; self.readingStatus = readingStatus
+        self.availability = availability; self.fileRef = fileRef; self.bookRef = bookRef
+    }
+}
+
+public struct AIFilteredBooksResult: Codable, Sendable {
+    public let totalMatches: Int
+    public let unknownCount: Int
+    public let items: [AIFilteredBookResult]
+
+    public init(totalMatches: Int, unknownCount: Int, items: [AIFilteredBookResult]) {
+        self.totalMatches = totalMatches; self.unknownCount = unknownCount; self.items = items
+    }
+}
+
+public struct AIShowBookListInput: AIReadingInput {
+    public let refs: [String]
+    public static var constraints: [String: [String: JSONValue]] {
+        ["refs": ["type": .string("array"), "items": .object(["type": .string("string")]),
+                  "minItems": .number(1), "maxItems": .number(5), "uniqueItems": .bool(true)]]
+    }
+
+    public func validate() throws {
+        guard (1...5).contains(refs.count), Set(refs).count == refs.count else {
+            throw AIToolError("invalid_argument", field: "refs")
+        }
+        for (index, ref) in refs.enumerated() {
+            let bytes = ref.utf8
+            guard bytes.count == 66, ref.hasPrefix("b:") || ref.hasPrefix("f:"),
+                  bytes.dropFirst(2).allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
+                throw AIToolError("invalid_argument", field: "refs[\(index)]")
+            }
+        }
+    }
+}
+
+public struct AIShownBooksResult: Codable, Sendable {
+    public struct Item: Codable, Equatable, Sendable {
+        public let ref: String
+        public let title: String
+        public let author: String?
+
+        public init(ref: String, title: String, author: String?) {
+            self.ref = ref; self.title = title; self.author = author
+        }
+    }
+
+    public let items: [Item]
+    public init(items: [Item]) { self.items = items }
+}
+
+/// Local presentation stored with the tool result but omitted from its model message.
+public struct AIBookListPresentation: Codable, Equatable, Sendable, Identifiable {
+    public let book: AIShownBooksResult.Item
+    public let needsDownload: Bool
+    public let progress: Double?
+    public let coverSeed: String?
+    public let thumbnail: String?
+    public var id: String { book.ref }
+
+    public init(book: AIShownBooksResult.Item, needsDownload: Bool, progress: Double?, coverSeed: String?, thumbnail: String?) {
+        self.book = book; self.needsDownload = needsDownload; self.progress = progress; self.coverSeed = coverSeed; self.thumbnail = thumbnail
+    }
+}
