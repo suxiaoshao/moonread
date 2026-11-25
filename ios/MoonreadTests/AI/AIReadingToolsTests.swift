@@ -6,6 +6,76 @@ import XCTest
 @testable import Moonread
 
 final class AIReadingToolsTests: AIReadingToolsFixture {
+  func testFilteredLookupSharesSearchOrderCountsAndExactBookListTargets() async throws {
+    let (root, reader, book, store, tools) = try await fixture()
+    defer { try? store.index.session.close(); try? FileManager.default.removeItem(at: root) }
+    let shelf = try await reader.shelves().first { !$0.builtin }
+    let shelfID = try XCTUnwrap(shelf?.id)
+    let folder = root.appendingPathComponent("Subfolder")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(at: root.appendingPathComponent("book.txt"), to: root.appendingPathComponent("a.txt"))
+    try "Not indexed".write(to: folder.appendingPathComponent("unindexed.txt"), atomically: true, encoding: .utf8)
+    try await reader.refreshLibraryShelf(shelfID)
+    let files = try await reader.allLibraryBooks(shelfID)
+    try store.index.linkLibraryFile(fileId: XCTUnwrap(files.first { $0.name == "a.txt" }?.id), bookId: book.id)
+    let filter: JSONValue = .object([
+      "nodes": .array([
+        .object(["kind": .string("group"), "relation": .string("all")]),
+        .object(["kind": .string("status"), "parent": .number(0), "values": .array([.string("unread")])]),
+      ]),
+      "sorts": .array([.object(["field": .string("name"), "descending": .bool(false)])]),
+    ])
+    let configuration = try JSONDecoder().decode(AIBookFilterInput.self, from: JSONEncoder().encode(filter)).configuration { $0 }
+    let search = try await reader.searchLibrary(query: "", configuration: configuration)
+    XCTAssertEqual(search.entries.count, 2)
+    XCTAssertEqual(search.unknownCount, 1)
+
+    let first = try await invoke(tools, "query_books_by_filter", ["filter": filter, "limit": .number(1)])
+    XCTAssertEqual(first.object["status"], .string("partial"))
+    XCTAssertEqual(first.object["data"]?.object["totalMatches"]?.int, search.entries.count)
+    XCTAssertEqual(first.object["data"]?.object["unknownCount"]?.int, search.unknownCount)
+    let item = try XCTUnwrap(first.object["data"]?.object["items"]?.array?.first?.object)
+    XCTAssertEqual(item["readingStatus"], .string("unread"))
+    let cursor = try XCTUnwrap(first.object["page"]?.object["nextCursor"])
+    let second = try await invoke(tools, "query_books_by_filter", ["filter": filter, "limit": .number(5), "cursor": cursor])
+    let next = try XCTUnwrap(second.object["data"]?.object["items"]?.array?.first?.object)
+    XCTAssertEqual([item["fileRef"]?.string, next["fileRef"]?.string], search.entries.map { AIReference.make("f", $0.id) })
+    XCTAssertEqual(second.object["page"]?.object["complete"], .bool(true))
+    XCTAssertEqual(item["bookRef"], next["bookRef"], "Duplicate files have distinct file references and the same formal book reference")
+    let changed = JSONValue.object(["nodes": .array([]), "sorts": filter.object["sorts"]!])
+    let stale = try await invoke(tools, "query_books_by_filter", ["filter": changed, "cursor": cursor])
+    XCTAssertEqual(stale.object["error"]?.object["code"], .string("stale_cursor"))
+
+    let generalSearch = try await invoke(tools, "search_books", ["query": .string(search.entries[0].title)])
+    let formal = try XCTUnwrap(generalSearch.object["data"]?.object["items"]?.array?.first?.object["bookRef"])
+    let contents = try await invoke(tools, "ls", ["parentRef": .string(AIReference.make("d", shelfID + "/Subfolder"))])
+    let fromFolder = try XCTUnwrap(contents.object["data"]?.object["items"]?.array?.first?.object["fileRef"])
+    let refs = [try XCTUnwrap(next["fileRef"]), formal, fromFolder]
+    let details = AIToolResultDetails(item: .init(id: "query", kind: .tool, name: "query_books_by_filter",
+      input: .object(["filter": filter, "limit": .number(1)]), output: first), outcome: .completed, hasReplyResult: false)
+    XCTAssertTrue(details.opensDetail)
+    XCTAssertEqual(details.bookResult?.rows.map(\.text), [search.entries[0].title])
+    XCTAssertNotNil(details.requestedFilter?.root)
+    let shown = try await invoke(tools, "show_book_list", ["refs": .array(refs)])
+    XCTAssertEqual(shown.object["data"]?.object["items"]?.array?.compactMap { $0.object["ref"] }, refs)
+    for rejected in [[refs[0], refs[0]], Array(repeating: refs[0], count: 6)] {
+      let args = try JSONDecoder().decode(AIShowBookListInput.self, from: JSONEncoder().encode(["refs": JSONValue.array(rejected)]))
+      XCTAssertThrowsError(try args.validate()) { XCTAssertEqual(($0 as? AIToolError)?.code, "invalid_argument") }
+    }
+    let entries = try await reader.libraryEntries(.init(shelfID: shelfID))
+    let folderID = try XCTUnwrap(entries.first(where: \.directory)?.id)
+    let folderRef = JSONValue.string(AIReference.make("f", folderID))
+    let invalid = try await invoke(tools, "show_book_list", ["refs": .array([folderRef])])
+    XCTAssertEqual(invalid.object["error"]?.object["field"], .string("refs[0]"))
+    XCTAssertEqual(invalid.object["error"]?.object["code"], .string("invalid_argument"))
+
+    try FileManager.default.removeItem(at: root.appendingPathComponent(search.entries[1].relativePath))
+    try await reader.refreshLibraryShelf(shelfID)
+    let resolved = try await reader.aiBookListEntries(refs.compactMap(\.string))
+    XCTAssertNil(resolved.entries[refs[0].string!])
+    XCTAssertNotNil(resolved.entries[refs[1].string!], "Removing a selected file does not discard a separate formal book target")
+  }
+
   func testFilterToolsKeepExactNamesAndReplayOnlySuccessfulCommittedSuggestions() async throws {
     let (root, reader, book, store, tools) = try await fixture()
     defer { try? store.index.session.close(); try? FileManager.default.removeItem(at: root) }

@@ -1,5 +1,6 @@
 import MoonreadAI
 import Foundation
+import GRDB
 
 enum ReadingToolTarget {
   struct BookReference: Sendable {
@@ -99,5 +100,49 @@ actor AIReadingReferences {
       throw AIToolError("stale_reference")
     }
     return try await reader.aiBookID(sha: sha(ref))
+  }
+}
+
+struct AIBookListResolution: Sendable {
+  var entries: [String: LibraryEntry]
+  var folders: Set<String>
+}
+
+extension AppDataService {
+  /// Resolve a card's exact targets in one snapshot, hydrating only the selected rows.
+  func aiBookListEntries(_ refs: [String], modelRead: Bool = false) async throws -> AIBookListResolution {
+    let fileRefs = Set(refs.filter { $0.hasPrefix("f:") })
+    let bookRefs = Set(refs.filter { $0.hasPrefix("b:") })
+    return try await fixedReaderRead { index in
+      let scope = index.lease.scope
+      return try index.session.readUsers(index.lease) { db in
+        if modelRead { try LibrarySearchRead.requireAIReadable(db, scope: scope, catalogue: .all) }
+        let rows = try Row.fetchCursor(db, sql: """
+          WITH display_books AS (SELECT id FROM main.library_files WHERE directory=0),
+          \(LibraryCardSQL.fileIdentities(scopeParameter: "?1", includeNames: false))
+          SELECT c.id,c.directory,f.book_key FROM main.library_files c LEFT JOIN files f ON f.id=c.id
+          ORDER BY c.id
+          """, arguments: [scope.key])
+        var ids: [String: String] = [:]
+        var folders: Set<String> = []
+        while let row = try rows.next() {
+          let id: String = row["id"]
+          if !fileRefs.isEmpty {
+            let ref = AIReference.make("f", id)
+            if fileRefs.contains(ref) {
+              if row["directory"] as Bool { folders.insert(ref) } else { ids[ref] = id }
+            }
+          }
+          if !bookRefs.isEmpty, let key: String = row["book_key"] {
+            let ref = AIReadingTools.bookRef(key)
+            if bookRefs.contains(ref), ids[ref] == nil { ids[ref] = id }
+          }
+          if ids.count + folders.count == refs.count { break }
+        }
+        let page = try FolderRead.hitCards(db, scope: scope, ids: Array(Set(ids.values)))
+        let cards = try Dictionary(uniqueKeysWithValues: FolderRead.entries(page).map { ($0.id, $0) })
+        return .init(entries: ids.compactMapValues { cards[$0] }, folders: folders)
+      }
+    }
   }
 }

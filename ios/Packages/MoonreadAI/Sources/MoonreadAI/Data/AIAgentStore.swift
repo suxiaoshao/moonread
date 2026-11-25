@@ -36,7 +36,7 @@ public struct AIAgentStore: Sendable {
         try await repository.history(id, after: after, through: through, limit: limit)
     }
     @discardableResult public func commit(_ id: String, head: AIAgentHead, entries: [AIAgentEntry] = [], listed: Bool? = nil, sentAt: Date? = nil, finish: Bool = false) async throws -> [AIAgentEntry] {
-        let refs = AIAssetReferences.head(head).union(entries.flatMap { AIAssetReferences.entry($0) })
+        let refs = AIAssetReferences.head(head).union(entries.flatMap { AIAssetReferences.entry($0).union(AIAssetReferences.bookLists($0)) })
         let staged = await AIImageStore.shared.staged(owner: id, refs: refs)
         let changes = try await repository.commit(id, head: head, entries: entries, assets: staged, references: Array(refs), listed: listed, sentAt: sentAt, finish: finish)
         await AIImageStore.shared.didCommit(owner: id, refs: refs)
@@ -60,7 +60,11 @@ public enum AIAssetReferences {
     public static func head(_ head: AIAgentHead) -> Set<String> {
         var refs = Set(head.queue.flatMap { $0.readingAttachments.compactMap(\.attachmentRef) })
         for call in head.pendingCalls { if let output = call.output { refs.formUnion(Self.output(output)) } }
+        for call in head.pendingCalls { refs.formUnion(call.bookList?.compactMap(\.thumbnail) ?? []) }
         return refs
+    }
+    public static func bookLists(_ entry: AIAgentEntry) -> Set<String> {
+        Set(entry.bookLists?.values.flatMap { $0.compactMap(\.thumbnail) } ?? [])
     }
     public static func entry(_ entry: AIAgentEntry) -> Set<String> {
         var refs = Set(entry.readingAttachments.compactMap(\.attachmentRef))

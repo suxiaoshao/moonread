@@ -208,8 +208,11 @@ struct AIToolDetailView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: LayoutTokens.section) {
+                    if let filter = result.requestedFilter {
+                        filterCards(filter, title: "筛选条件")
+                    }
                     if let request = result.requestSection {
-                        detailSection(request, showTitle: true, secondaryTitle: true)
+                        detailSection(request, showTitle: result.requestedFilter == nil, secondaryTitle: true)
                     }
                     if result.state != .available {
                         if result.sections.isEmpty || result.state == .empty {
@@ -223,6 +226,20 @@ struct AIToolDetailView: View {
                                 Label(result.statusTitle, systemImage: result.state.symbol).font(.headline)
                                 if let explanation = result.explanation { Text(explanation).font(.subheadline) }
                             }.foregroundStyle(Color(uiColor: theme.secondary))
+                        }
+                    }
+                    if let suggestion = result.suggestedFilter {
+                        filterCards(suggestion, title: "筛选建议")
+                    }
+                    if let books = result.bookResult {
+                        BookSearchSummaryCard {
+                            VStack(alignment: .leading, spacing: LayoutTokens.control) {
+                                Text(verbatim: books.title).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                                ForEach(books.rows) { row in
+                                    if row.id != books.rows.first?.id { Divider() }
+                                    rowText(row).textSelection(.enabled)
+                                }
+                            }
                         }
                     }
                     if result.state != .empty {
@@ -243,6 +260,13 @@ struct AIToolDetailView: View {
                 } }
         }.tint(Color(uiColor: theme.accent)).preferredColorScheme(theme.scheme)
             .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+    }
+
+    @ViewBuilder private func filterCards(_ filter: AIToolResultDetails.FilterSummary, title: LocalizedStringKey) -> some View {
+        if let root = filter.root {
+            BookSearchRuleCard(root: root, title: title, shelfTitle: { $0 }) { EmptyView() } footer: { EmptyView() }
+        }
+        BookSearchSortCard(sorts: filter.sorts)
     }
 
     private func detailSection(_ section: AIToolResultDetails.Section, showTitle: Bool, secondaryTitle: Bool = false) -> some View {
@@ -366,6 +390,7 @@ struct AIMessageRowView: View {
     let preview: (AIReadingAttachment) -> Void
     let loadEarlier: () -> Void
     let openFilter: (AIBookFilterSuggestion) -> Void
+    let openBook: (StatisticsRoute) -> Void
     let toggleProcessItem: AIProcessExpansionHandler
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
@@ -417,10 +442,14 @@ struct AIMessageRowView: View {
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: LayoutTokens.inputRadius))
             case .image(let image): AIGeneratedImageView(owner: conversationID, attachment: image)
             case .result(let result, _):
-                if case .bookFilter(let suggestion, let summary) = result.body {
+                switch result.body {
+                case .bookFilter(let suggestion, let summary):
                     AIBookFilterCard(suggestion: suggestion, configuration: summary) { openFilter(suggestion) }
                         .accessibilityIdentifier("aiResult-\(result.id)")
-                } else {
+                case .bookList(let books):
+                    AIBookListCard(owner: result.sessionID, books: books, openBook: openBook)
+                        .accessibilityIdentifier("aiResult-\(result.id)")
+                default:
                     AIResultCard(result: result)
                 }
             case .error(let text): Label(text, systemImage: "exclamationmark.circle").font(.subheadline).foregroundStyle(Color(uiColor: theme.destructive))

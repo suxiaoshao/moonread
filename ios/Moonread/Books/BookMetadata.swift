@@ -353,10 +353,10 @@ extension AppDataService {
         try bytes.write(to: url, options: .atomic)
         return cover
     }
-    private func normalizedCoverImage(_ data: Data) throws -> CGImage {
+    private nonisolated func normalizedCoverImage(_ data: Data, pixels: Int = 1600) throws -> CGImage {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 1600,
+                  kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels,
                   kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
         return image
     }
@@ -410,6 +410,16 @@ extension AppDataService {
             scope: configuration, attachment: { [self] in try await storedCoverBytes(cover) })
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         return image
+    }
+
+    /// Produce a list-sized snapshot from an existing local cover attachment.
+    func aiBookListThumbnail(_ cover: BookCoverAsset) async -> Data? {
+        guard let bytes = try? await coverBytes(cover) else { return nil }
+        return await Task.detached(priority: .utility) {
+            guard let thumbnail = try? self.normalizedCoverImage(bytes, pixels: 240) else { return nil }
+            let image = UIImage(cgImage: thumbnail)
+            return cover.extension == "png" ? image.pngData() : image.jpegData(compressionQuality: 0.86)
+        }.value
     }
 
     private func storedCoverBytes(_ cover: BookCoverAsset) throws -> Data? {

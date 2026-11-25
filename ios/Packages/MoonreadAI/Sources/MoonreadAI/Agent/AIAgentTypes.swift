@@ -37,6 +37,7 @@ public struct AIAgentPendingCall: Codable, Equatable, Sendable {
   public var name: String
   public var input: JSONValue
   public var output: JSONValue?
+  var bookList: [AIBookListPresentation]?
 
     public init(
         id: String,
@@ -122,6 +123,7 @@ public struct AIAgentEntry: Codable, Equatable, Sendable, Identifiable {
   public var thinking: String?
   public var userText: String?
   public var readingAttachments: [AIReadingAttachment] = []
+  public var bookLists: [String: [AIBookListPresentation]]?
   public var outcome: AIAgentStatus?
   public var error: String?
 
@@ -200,6 +202,7 @@ public struct AIAgentEntry: Codable, Equatable, Sendable, Identifiable {
         thinking: String? = nil,
         userText: String? = nil,
         readingAttachments: [AIReadingAttachment] = [],
+        bookLists: [String: [AIBookListPresentation]]? = nil,
         outcome: AIAgentStatus? = nil,
         error: String? = nil
     ) {
@@ -219,6 +222,7 @@ public struct AIAgentEntry: Codable, Equatable, Sendable, Identifiable {
         self.thinking = thinking
         self.userText = userText
         self.readingAttachments = readingAttachments
+        self.bookLists = bookLists
         self.outcome = outcome
         self.error = error
     }
@@ -327,12 +331,19 @@ public enum AIAgentFailure: Error, Equatable {
 
 /// Business tools own argument and object validation, permissions and resources.
 /// Returning an approval reason suspends execution; approval is never a model argument.
+struct AIAgentToolExecution: Sendable {
+  let output: JSONValue
+  var bookList: [AIBookListPresentation]?
+}
+
 public struct AIAgentTool: Sendable {
   public let name: String
   public let enabled: @MainActor @Sendable () -> Bool
   public let schema: JSONValue
   public let sdkTool: Tool
   public let confirmation: @Sendable (JSONValue) async throws -> String?
+  private var executeBookList: (@Sendable (JSONValue) async throws -> AIAgentToolExecution)?
+
 
   public init<Input: AIReadingInput, Output: Codable & Sendable>(
     name: String, description: String, input: Input.Type,
@@ -362,6 +373,26 @@ public struct AIAgentTool: Sendable {
     }
 
   }
+  init(
+    name: String, description: String, input: AIShowBookListInput.Type,
+    executeBookList: @escaping @Sendable (AIShowBookListInput) async throws -> (AIToolResponse<AIShownBooksResult>, [AIBookListPresentation])
+  ) {
+    self.init(name: name, description: description, input: input, execute: { try await executeBookList($0).0 })
+    self.executeBookList = { value in
+      let input = try JSONDecoder().decode(AIShowBookListInput.self, from: JSONEncoder().encode(value))
+      try input.validate()
+      let (response, books) = try await executeBookList(input)
+      let output = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(response))
+      return .init(output: output, bookList: books)
+    }
+  }
+
+  func run(_ input: JSONValue, options: ToolExecutionOptions) async throws -> AIAgentToolExecution {
+    if let executeBookList { return try await executeBookList(input) }
+    guard let execute = sdkTool.execute else { throw AIAgentFailure.invalidTool }
+    return .init(output: try await execute(input, options).resolve())
+  }
+
 }
 
 /// A request-scoped signal shared with the SDK's stream tasks.

@@ -34,7 +34,7 @@ import SwiftAISDK
   var requestOutputLimit = 1
   var toolCount = 0
   var results: [String: JSONValue] = [:]
-  var toolTasks: [String: Task<JSONValue, Error>] = [:]
+  var toolTasks: [String: Task<AIAgentToolExecution, Error>] = [:]
   public internal(set) var pendingConfirmations: [AIAgentConfirmation] = []
   var approvals: [String: CheckedContinuation<Bool, Error>] = [:]
   var turn: String { head.currentTurn }
@@ -250,15 +250,23 @@ import SwiftAISDK
     publication = .committing(turn: expectedTurn, step: head.currentStep)
     do { try await transact { next in
       guard next.currentTurn == expectedTurn else { throw CancellationError() }
+      let bookLists = Dictionary(uniqueKeysWithValues: next.pendingCalls.compactMap { call in
+        call.bookList.map { (call.id, $0) }
+      })
       if clearPending { next.pendingCalls = []; next.pendingParts = [] }
       defer { if messages.contains(where: { if case .assistant = $0 { return true }; return false }) { next.currentStep += 1 } }
       return try messages.enumerated().map { index, message in
         defer { next.nextSequence += 1 }
+        let payload = try AIAgentEntry.json(message)
+        let localLists = bookLists.filter { id, _ in
+          payload.object["role"]?.string == "tool" &&
+            (payload.object["content"]?.array ?? []).contains { $0.object["toolCallId"]?.string == id }
+        }
         return AIAgentEntry(sequence: next.nextSequence, step: next.currentStep, turn: expectedTurn, provider: provider, model: model,
-          message: try AIAgentEntry.json(message), inputTokens: index == 0 ? usage?.inputTokens : nil,
+          message: payload, inputTokens: index == 0 ? usage?.inputTokens : nil,
           outputTokens: index == 0 ? usage?.outputTokens : nil, cacheReadTokens: index == 0 ? usage?.inputTokenDetails.cacheReadTokens : nil,
           cacheWriteTokens: index == 0 ? usage?.inputTokenDetails.cacheWriteTokens : nil, reasoningTokens: index == 0 ? usage?.outputTokenDetails.reasoningTokens : nil,
-          finishReason: reason, thinking: next.activeThinking)
+          finishReason: reason, thinking: next.activeThinking, bookLists: localLists.isEmpty ? nil : localLists)
       }
     } } catch { finishStepPublication(); throw error }
   }

@@ -215,7 +215,7 @@ struct AISessionSummary: Identifiable {
                 let coordinator = AIAgentCoordinator(
                     repository: repository, providers: self.providers,
                     appTools: { [reader = self.reader, proposals = self.proposals, providers = self.providers, makeTransport = self.makeTransport] id in
-                        AIReadingTools(reader: reader).definitions() + proposals.definitions(owner: id, providers: providers, makeTransport: makeTransport)
+                        AIReadingTools(reader: reader, owner: id).definitions() + proposals.definitions(owner: id, providers: providers, makeTransport: makeTransport)
                     },
                     classifyToolError: { error in
                         guard let issue = error as? ReaderError else { return nil }

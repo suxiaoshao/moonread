@@ -5,14 +5,15 @@ import Foundation
 
 actor AIReadingTools: AIReadingToolActions {
   private let reader: AppDataService
+  private let owner: String?
   private struct Cursor: Codable {
     var signature: String
     var offset: Int
   }
   private let lineLimit: Int
-  init(reader: AppDataService = .shared, lineLimit: Int = 2000) {
+  init(reader: AppDataService = .shared, lineLimit: Int = 2000, owner: String? = nil) {
     precondition((1...2000).contains(lineLimit))
-    self.reader = reader; self.lineLimit = lineLimit
+    self.reader = reader; self.lineLimit = lineLimit; self.owner = owner
   }
   static func ref(_ type: String, _ key: String) -> String {
     AIReference.make(type, key)
@@ -57,17 +58,19 @@ actor AIReadingTools: AIReadingToolActions {
     _ items: [T], signature: String, cursor token: String?, limit: Int
   ) throws -> ([T], AIToolPage) {
     let start = try cursorOffset(token, signature: signature)
-    guard start <= items.count else { throw AIToolError("stale_cursor", field: "cursor") }
-    var end = min(items.count, start + min(limit, items.count - start))
-    while end > start + 1, try JSONEncoder().encode(Array(items[start..<end])).count > 50 * 1024 {
-      end -= 1
-    }
-    guard end > start || start == items.count else { throw AIToolError("resource_limit") }
-    var next: String?
-    if end < items.count {
-      next = try cursor(end, signature: signature)
-    }
-    return (Array(items[start..<end]), .init(nextCursor: next, complete: end == items.count))
+    return try pageWindow(Array(items.dropFirst(start).prefix(limit)), start: start, total: items.count, signature: signature)
+  }
+
+  private func pageWindow<T: Codable & Sendable>(
+    _ items: [T], start: Int, total: Int, signature: String
+  ) throws -> ([T], AIToolPage) {
+    guard start <= total else { throw AIToolError("stale_cursor", field: "cursor") }
+    var count = items.count
+    while count > 1, try JSONEncoder().encode(Array(items.prefix(count))).count > 50 * 1024 { count -= 1 }
+    guard count > 0 || start == total else { throw AIToolError("resource_limit") }
+    let end = start + count
+    let next = end < total ? try cursor(end, signature: signature) : nil
+    return (Array(items.prefix(count)), .init(nextCursor: next, complete: end == total))
   }
   private func source(_ ref: String, _ range: AIToolRange, title: String = "") -> AIToolSource {
     .init(
@@ -91,6 +94,11 @@ actor AIReadingTools: AIReadingToolActions {
   }
 
   func proposeBookFilter(_ input: AIBookFilterInput) async throws -> AIToolResponse<AIBookFilterSuggestion> {
+    let (suggestion, _) = try await validatedBookFilter(input)
+    return .init(data: suggestion)
+  }
+
+  private func validatedBookFilter(_ input: AIBookFilterInput) async throws -> (AIBookFilterSuggestion, [LibraryShelf]) {
     _ = try input.configuration(resolveShelf: { $0 })
     if input.nodes.contains(where: { $0.kind == .author || $0.kind == .tag }) {
       let options = try await reader.metadataOptions(shelfID: nil)
@@ -106,8 +114,8 @@ actor AIReadingTools: AIReadingToolActions {
     }
     let names = input.shelfNames
     var references: [AIBookFilterSuggestion.Shelf] = []
+    let shelves = names.isEmpty ? [] : LibraryQueryRules.filterShelves(try await reader.shelves())
     if !names.isEmpty {
-      let shelves = LibraryQueryRules.filterShelves(try await reader.shelves())
       for name in names {
         let matches = shelves.filter { LibraryQueryRules.filterShelfName($0).utf8.elementsEqual(name.utf8) }
         guard let shelf = matches.first else {
@@ -117,8 +125,56 @@ actor AIReadingTools: AIReadingToolActions {
         if matches.count == 1 { references.append(.init(name: name, reference: AIBookFilterSuggestion.shelfReference(shelf))) }
       }
     }
-    return .init(data: .init(filter: input, shelves: references))
+    return (.init(filter: input, shelves: references), shelves)
   }
+  func queryBooksByFilter(_ input: AIQueryBooksByFilterInput) async throws -> AIToolResponse<AIFilteredBooksResult> {
+    try input.validate()
+    let (suggestion, shelves) = try await validatedBookFilter(input.filter)
+    let resolution = suggestion.resolveShelves(shelves)
+    if let ambiguous = resolution.choices.first {
+      throw AIToolError("invalid_argument", field: "shelf",
+                        message: "More than one shelf is named “\(ambiguous.name)”. Ask the user to choose with propose_book_filter.")
+    }
+    let configuration = try resolution.configuration(suggestion)
+    let signature = try signature("query_books_by_filter", suggestion)
+    let start = try cursorOffset(input.cursor, signature: signature)
+    let found = try await reader.aiFilteredBookPage(configuration, offset: start, limit: input.limit ?? 20)
+    let items = found.books.map { hit in
+      let entry = hit.entry, author = entry.displayMetadata?.author
+      return AIFilteredBookResult(title: entry.title, author: author.flatMap { $0.isEmpty ? nil : $0 },
+        readingStatus: hit.status.map(statusName), availability: availability(entry),
+        fileRef: Self.ref("f", entry.id), bookRef: entry.readingIdentity?.formalSHA256.map(Self.bookRef))
+    }
+    let (rows, page) = try pageWindow(items, start: start, total: found.count, signature: signature)
+    return .init(status: found.unknownCount == 0 ? "ok" : "partial",
+                 data: .init(totalMatches: found.count, unknownCount: found.unknownCount, items: rows), page: page)
+  }
+
+  func showBookList(_ input: AIShowBookListInput) async throws -> (AIToolResponse<AIShownBooksResult>, [AIBookListPresentation]) {
+    try input.validate()
+    let resolved = try await reader.aiBookListEntries(input.refs, modelRead: true)
+    let entries = try input.refs.enumerated().map { index, ref in
+      let field = "refs[\(index)]"
+      if resolved.folders.contains(ref) { throw AIToolError("invalid_argument", field: field) }
+      guard let entry = resolved.entries[ref] else { throw AIToolError("not_found", field: field) }
+      return entry
+    }
+    var books: [AIBookListPresentation] = []
+    for (ref, entry) in zip(input.refs, entries) {
+      let author = entry.displayMetadata?.author
+      let book = AIShownBooksResult.Item(ref: ref, title: entry.title, author: author.flatMap { $0.isEmpty ? nil : $0 })
+      var thumbnail: String?
+      if let owner, let cover = entry.displayMetadata?.cover,
+         let bytes = await reader.aiBookListThumbnail(cover) {
+        thumbnail = try await AIImageStore.shared.save(bytes, owner: owner).id
+      }
+      try Task.checkCancellation()
+      books.append(.init(book: book, needsDownload: entry.needsDownload, progress: entry.libraryProgressFraction,
+                         coverSeed: entry.readingIdentity?.formalSHA256, thumbnail: thumbnail))
+    }
+    return (.init(data: .init(items: books.map(\.book))), books)
+  }
+
   private func availability(_ row: LibraryEntry) -> String {
     row.needsDownload ? "needs_download" : row.bookId == nil ? "needs_parse" : "ready"
   }

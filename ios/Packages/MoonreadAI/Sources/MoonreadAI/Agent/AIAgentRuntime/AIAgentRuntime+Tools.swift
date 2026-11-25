@@ -60,6 +60,7 @@ extension AIAgentRuntime {
     inFlightCalls.append((callID, definition.name, input))
     toolCount += 1
     var output: JSONValue
+    var bookList: [AIBookListPresentation]?
     do {
       if let reason = try await definition.confirmation(input) {
         try check(expected)
@@ -82,17 +83,18 @@ extension AIAgentRuntime {
         try await status(approvals.isEmpty ? .running : .waitingConfirmation)
       }
       let work = Task {
-        guard let execute = definition.sdkTool.execute else { throw AIAgentFailure.invalidTool }
         let options = ToolExecutionOptions(toolCallId: callID, messages: [])
-        return try await execute(input, options).resolve()
+        return try await definition.run(input, options: options)
       }
       toolTasks[callID] = work
       defer {
         toolTasks[callID] = nil
       }
       observe(.init(status: head.status, text: partialText, reasoning: partialReasoning, reasoningActive: reasoningActive, tool: definition.name))
-      output = try await work.value
+      let completed = try await work.value
       try check(expected)
+      output = completed.output
+      bookList = completed.bookList
 
     } catch {
       if generation != expected || stopped || error is CancellationError {
@@ -104,14 +106,15 @@ extension AIAgentRuntime {
         output = Self.errorResult((error as? URLError)?.code == .timedOut ? "timeout" : "execution_failed")
       }
     }
-    try await recordResult(output, callID: callID, expected: expected, expectedTurn: expectedTurn)
+    try await recordResult(output, bookList: bookList, callID: callID, expected: expected, expectedTurn: expectedTurn)
     return output
   }
-  private func recordResult(_ output: JSONValue, callID: String, expected: UUID, expectedTurn: String) async throws {
+  private func recordResult(_ output: JSONValue, bookList: [AIBookListPresentation]? = nil, callID: String, expected: UUID, expectedTurn: String) async throws {
     try await transact { next in
       guard self.generation == expected, next.currentTurn == expectedTurn,
             let index = next.pendingCalls.firstIndex(where: { $0.id == callID }) else { throw CancellationError() }
       next.pendingCalls[index].output = output
+      next.pendingCalls[index].bookList = bookList
       return []
     }
     results[callID] = output
