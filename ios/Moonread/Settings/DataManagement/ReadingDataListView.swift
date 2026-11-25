@@ -5,6 +5,8 @@ struct ReadingDataListView: View {
     @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
     @State private var detail: ReadingDataItem?
+    @State private var showingReadingDeletion = false
+    private var canDelete: Bool { !model.busy && model.readingDeletion.phase == .idle }
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -35,12 +37,14 @@ struct ReadingDataListView: View {
                 Label(message, systemImage: "checkmark.circle").font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal).padding(.vertical, 8).accessibilityIdentifier("readingDataResult")
             }
+            ReadingDeletionSummary(task: model.readingDeletion) { showingReadingDeletion = true }
+                .padding(.horizontal)
             if !model.visible.isEmpty {
                 ThemedGroupedList(sections: [
                     .init(id: "readingData", footer: String(localized: "按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。", table: "DataManagement"), rows: model.visible.map { item in
-                        .init(item.id, action: { detail = item }, actions: [
+                        .init(item.id, action: { detail = item }, actions: canDelete ? [
                             .init(title: String(localized: "删除", table: "DataManagement"), destructive: true, perform: { model.requestDelete([item.id]) })
-                        ], accessibilityID: "reading-data-" + item.id) {
+                        ] : [], accessibilityID: "reading-data-" + item.id) {
                             DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
                                 .accessibilityIdentifier("reading-data-" + item.id)
                         }
@@ -79,13 +83,8 @@ struct ReadingDataListView: View {
                     Button { model.toggleVisibleSelection() } label: { Text(model.allVisibleSelected ? "取消全选" : "全选", tableName: "DataManagement") }
                         .accessibilityIdentifier("selectAllReadingData")
                     Spacer()
-                    if let working = model.working {
-                        InlineTaskProgress(title: Text(verbatim: working))
-                            .accessibilityIdentifier("readingDataWorking")
-                    } else {
-                        Button(role: .destructive) { model.requestDelete(model.selected) } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
-                            .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
-                    }
+                    Button(role: .destructive) { model.requestDelete(model.selected) } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
+                        .disabled(model.selected.isEmpty || !canDelete).accessibilityIdentifier("deleteSelectedReadingData")
                 }
             }
         }
@@ -102,8 +101,13 @@ struct ReadingDataListView: View {
             if !model.busy { Task { await model.load() } }
         }
         .onDisappear { model.selecting = false; model.selected.removeAll() }
-        .modifier(ReadingDataWorking(model: model, showsInBottomBar: model.selecting))
-        .modifier(ReadingDataDeletionPrompt(model: model))
+        .modifier(ReadingDataDeletionPrompt(model: model) { request in
+            model.startReadingDeletion(request)
+            showingReadingDeletion = model.readingDeletion.phase == .running
+        })
+        .sheet(isPresented: $showingReadingDeletion) {
+            ReadingDeletionTaskView(task: model.readingDeletion).presentationSizing(.page)
+        }
         .sheet(item: $detail) { item in
             NavigationStack {
                 VStack(alignment: .leading, spacing: 20) {

@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import BackgroundTasks
 
-/// Shared platform execution for user-initiated import and export. Each task
+/// Shared platform execution for user-initiated data exchange. Each task
 /// keeps its own run and system claim.
 @MainActor final class DataExchangeSystemExecution {
     enum PauseReason: Equatable { case unavailable, expired }
@@ -119,7 +119,8 @@ import BackgroundTasks
     private let kind: String
     private let title: String
     private let subtitle: String
-    private let export: (Request, @escaping @Sendable (Int, Int) async -> Void) async throws -> Output
+    private let commitsChanges: Bool
+    private let operation: (Request, @escaping @Sendable (Int, Int) async -> Void) async throws -> Output
     @ObservationIgnored private let systemExecution = DataExchangeSystemExecution()
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var request: Request?
@@ -138,13 +139,15 @@ import BackgroundTasks
     }
 
     init(service: AppDataService, usesSystemExecution: Bool, kind: String, title: String, subtitle: String,
-         export: @escaping (Request, @escaping @Sendable (Int, Int) async -> Void) async throws -> Output) {
+         commitsChanges: Bool = false,
+         operation: @escaping (Request, @escaping @Sendable (Int, Int) async -> Void) async throws -> Output) {
         self.service = service
         self.usesSystemExecution = usesSystemExecution
         self.kind = kind
         self.title = title
         self.subtitle = subtitle
-        self.export = export
+        self.commitsChanges = commitsChanges
+        self.operation = operation
     }
 
     func start(_ request: Request) {
@@ -203,13 +206,24 @@ import BackgroundTasks
             }
             do {
                 try Task.checkCancellation()
-                let result = try await export(request) { [weak self] done, count in
+                let result = try await operation(request) { [weak self] done, count in
                     await self?.updateProgress(done, count)
                 }
-                try Task.checkCancellation()
+                if !commitsChanges { try Task.checkCancellation() }
                 output = result
                 phase = .completed
             } catch {
+                if commitsChanges {
+                    self.error = if error is CancellationError {
+                        switch stopReason {
+                        case .unavailable: String(localized: "系统未提供后台执行资格。", table: "DataManagement")
+                        case .expired: String(localized: "系统后台执行时间已结束。", table: "MetadataExchange")
+                        case nil: ReaderMessages.error(error)
+                        }
+                    } else { ReaderMessages.error(error) }
+                    phase = .failed
+                    return
+                }
                 switch stopReason {
                 case .unavailable:
                     self.error = String(localized: "系统未提供后台执行资格。返回后可以重试导出。", table: "MetadataExchange")

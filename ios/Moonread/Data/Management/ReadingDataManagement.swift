@@ -197,8 +197,9 @@ extension AppDataService {
         // Finish writes before checking live readers; completed/failed batches
         // no longer own reading leases or need a separate discard operation.
         await managementStatisticsWriter().drain()
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+        try Task.checkCancellation()
         let index = try relationalUserIndex()
         let deleted = try index.deleteUserBooks(keys, activeReadingIDs: activeReadingIDsForDeletion()) { ReadingDataError.busy }
         for key in deleted { metadataImportDeletionTokens[key] = nil }
