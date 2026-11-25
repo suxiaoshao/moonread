@@ -52,7 +52,7 @@ struct LibraryView: View {
                         .accessibilityIdentifier("chooseFolder")
                     if model.homeReady {
                         Divider()
-                        Button("编辑首页") { editingHome = true }
+                        Button("编辑首页", systemImage: "pencil") { editingHome = true }
                     }
                 } label: {
                     Label("书架操作", systemImage: "ellipsis")
@@ -107,7 +107,7 @@ struct LibraryView: View {
                         Label(enabledSections.isEmpty ? "首页区块已全部隐藏" : "暂无可显示的区块",
                               systemImage: "rectangle.3.group")
                     } actions: {
-                        Button("编辑首页") { editingHome = true }.buttonStyle(.bordered)
+                        Button("编辑首页", systemImage: "pencil") { editingHome = true }.buttonStyle(.bordered)
                     }
                     .frame(minHeight: geometry.size.height)
                 }
