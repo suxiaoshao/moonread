@@ -1,3 +1,5 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import OSLog
@@ -46,92 +48,11 @@ final class ReadingLease: Sendable {
 /// Serializes blocking Rust and file-provider calls away from the main actor.
 actor AppDataService {
     let coverResources = CoverResourceLoader()
-    static let shared: AppDataService = {
-        #if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--ui-test-store-screenshots"), arguments.contains("--ui-testing"),
-           let i = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(i + 1),
-           let session = UUID(uuidString: arguments[i + 1])?.uuidString {
-            let suite = "Moonread.StoreShots." + session
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-StoreShots-" + session, isDirectory: true)
-            guard let capture = StoreShotCapture.requested else { preconditionFailure("Missing screenshot capture configuration") }
-            UserDefaults(suiteName: "Moonread.AI.UITest-" + session)!.set(StoreShotScene.requested == .recap, forKey: "Moonread.ai.enabled.v1")
-            UserDefaults.standard.set(ReadingSettingsTab.typography.rawValue, forKey: "readingSettingsTab")
-            var snapshot = defaultThemeSnapshot()
-            let dark = capture.appearance == "dark"
-            snapshot.preferences.appMode = dark ? .dark : .light
-            if dark { snapshot.preferences.appDark = .palette(id: capture.appPalette) }
-            else { snapshot.preferences.appLight = .palette(id: capture.appPalette) }
-            guard let reader = snapshot.palettes.first(where: { $0.id == capture.readerPalette }) else { preconditionFailure("Unknown screenshot reader palette") }
-            snapshot.preferences.readerMode = reader.appearance == .dark ? .dark : .light
-            if reader.appearance == .dark { snapshot.preferences.readerDark = .palette(id: reader.id) }
-            else { snapshot.preferences.readerLight = .palette(id: reader.id) }
-            do {
-                let supported = builtinReaderTextures().contains { $0.paletteId == capture.readerPalette }
-                if supported {
-                    snapshot.preferences = try setReaderPaletteTexture(preferences: snapshot.preferences, paletteId: capture.readerPalette, enabled: capture.readerTextureEnabled)
-                } else { precondition(!capture.readerTextureEnabled, "Unsupported screenshot texture palette") }
-                _ = try encodeThemeSnapshot(value: snapshot)
-            } catch { preconditionFailure("Invalid screenshot theme configuration: \(error)") }
-            UserDefaults(suiteName: suite)!.set(try! encodeThemePreferences(value: snapshot.preferences), forKey: "Moonread.themePreferences")
-            UserDefaults.standard.set(try! encodeThemeSnapshot(value: snapshot), forKey: "Moonread.appearanceCache." + session)
-            return AppDataService(libraryDirectory: root, sourceDefaultsSuite: suite)
-        }
-        if arguments.contains("--ui-testing"),
-           let index = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(index + 1),
-           let session = UUID(uuidString: arguments[index + 1])?.uuidString {
-            let defaults = UserDefaults.standard
-            let key = "Moonread.uiTest.readingSettingsSession.v1"
-            if defaults.string(forKey: key) != session {
-                // A new test starts at the product defaults. Relaunches within the
-                // same UUID retain changes so persistence remains testable.
-                defaults.removeObject(forKey: "Moonread.readerSettings")
-                defaults.removeObject(forKey: "readingSettingsTab")
-                defaults.set(session, forKey: key)
-            }
-        }
-        if arguments.contains("--ui-test-library-trash"),
-           let index = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(index + 1),
-           UUID(uuidString: arguments[index + 1]) != nil {
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Library-" + arguments[index + 1])
-            return AppDataService(libraryDeletion: { url, permanently in
-                // Deterministic A-line UI fixture only. Ordinary launches and
-                // provider/system-integration checks always use real trashItem.
-                guard !permanently, url.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/"),
-                      !url.pathComponents.contains(".Trash") else { throw LibraryFileError.invalidDestination }
-                let trash = root.appendingPathComponent(".Trash", isDirectory: true)
-                try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
-                try FileManager.default.moveItem(at: url, to: trash.appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent))
-            })
-        }
-        #endif
-        #if READER_OPEN_DIAGNOSTICS
-        if ReaderOpenDiagnostics.benchmark, let session = ReaderOpenDiagnostics.session {
-            let suite = "Moonread.ReaderOpen." + session
-            if let settings = UserDefaults.standard.string(forKey: "Moonread.readerSettings") { UserDefaults(suiteName: suite)?.set(settings, forKey: "Moonread.readerSettings") }
-            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-ReaderOpen-" + session, isDirectory: true)
-            return AppDataService(libraryDirectory: directory, sourceDefaultsSuite: suite)
-        }
-        #endif
-        return AppDataService(readingCloudEnvironment: CloudConfiguration.readingEnvironment ?? .production)
-    }()
-    var systemCatalog: SystemReadingCatalog?
-    var systemReadingBatches = Set<UUID>()
-    var systemReadingLastError: String?
-    var systemExposureTask: Task<Void, Never>?
-    var systemWidgetReloadSnapshot: SystemReadingSnapshot?
-    var systemSpotlightTask: Task<Void, Never>?
-    var systemSpotlightSubmissionStatus: String?
-    var systemSpotlightAdapter: SystemSpotlightAdapter?
-    var systemSpotlightMetadata: [String: SystemSpotlightMetadata] = [:]
-    let systemSpotlightThumbnails: NSCache<NSString, NSData> = {
-        let cache = NSCache<NSString, NSData>(); cache.totalCostLimit = 16 * 1024 * 1024; cache.countLimit = 128; return cache
-    }()
-    var systemSpotlightThumbnailFailures = Set<String>()
+    static let shared = AppDataServiceFactory.make()
+    var systemPublication = SystemReadingPublication()
     private var core: ReaderIndex?
     private var dataSession: DataSession?
     private(set) var changingUserScope = false
-    var verifiedScopePublicationPending: Bool?
     private var prepareUserScopePresentation: (@MainActor @Sendable () async throws -> Void)?
     private var finishUserScopePresentation: (@MainActor @Sendable (Bool) -> Void)?
     var recoveryTask: Task<Void, Never>?
@@ -359,7 +280,7 @@ actor AppDataService {
             var ownsWriteGate = false
             do {
                 if rebind {
-                    verifiedScopePublicationPending = true
+                    systemPublication.verifiedScopePublicationPending = true
                     setSystemReadingAccountPending(true)
                     handoffStarted = true
                     // Existing readers finish their own accepted position and
@@ -478,7 +399,7 @@ actor AppDataService {
             let intent = cloudSyncIntent
             do {
                 if needsClear {
-                    verifiedScopePublicationPending = true
+                    systemPublication.verifiedScopePublicationPending = true
                     setSystemReadingAccountPending(true)
                     let prepare = beforeClear ?? prepareUserScopePresentation
                     try await prepare?()
@@ -511,7 +432,7 @@ actor AppDataService {
                     if result == .reset {
                         userCloudConfigurationRevision = UUID()
                         resetUserScopeMemory()
-                        verifiedScopePublicationPending = false
+                        systemPublication.verifiedScopePublicationPending = false
                         setSystemReadingAccountPending(false)
                     }
                     finishReadingScopeHandoff(invalidate: result == .reset)
@@ -542,8 +463,8 @@ actor AppDataService {
             try await waitForGateChange()
         }
         // Publication tokens are already retired; join submitted work.
-        await systemSpotlightTask?.value
-        await systemExposureTask?.value
+        await systemPublication.spotlightTask?.value
+        await systemPublication.exposureTask?.value
     }
 
     private func resetUserScopeMemory() {
@@ -565,7 +486,7 @@ actor AppDataService {
     private func updateReadingScopePublication(_ status: DataIdentityStatus, _ selected: DataScopeSelection) {
         if case .paused = status { return }
         let pending: Bool = if case .unknown = status { selected.scope != .local } else { false }
-        verifiedScopePublicationPending = pending
+        systemPublication.verifiedScopePublicationPending = pending
         setSystemReadingAccountPending(pending)
     }
 
@@ -705,9 +626,9 @@ actor AppDataService {
         let index = try relationalUserIndex()
         guard admission == index.lease else { throw CancellationError() }
         try index.session.writeUsers(index.lease) { db in
-            let body = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key)
+            let body = try IndexedBookBody.fetch(db, id: id, scope: index.lease.scope.key)
             guard (try? parseSha256(value: body.sha)) != nil else { throw ReaderError.ImportBusy }
-            try ReaderIndex.validateChapterCorrection(db, body: body, offset: offset)
+            try ReaderChapterRead.validateChapterCorrection(db, body: body, offset: offset)
             let value = ChapterValue(content_key: body.sha, offset: offset, title: title.trimmingCharacters(in: .whitespaces), level: level, excluded: excluded)
             try UserValueRows.put(db, key: .init("chapter/\(body.sha)/\(offset)"), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock,
                                   scope: index.lease.scope)
@@ -721,7 +642,7 @@ actor AppDataService {
         let index = try relationalUserIndex()
         guard admission == index.lease else { throw CancellationError() }
         try index.session.writeUsers(index.lease) { db in
-            let body = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key)
+            let body = try IndexedBookBody.fetch(db, id: id, scope: index.lease.scope.key)
             try UserValueRows.retractChapters(db, book: body.sha, device: userDevice, now: userValueClock, scope: index.lease.scope)
         }
         dataChanged()

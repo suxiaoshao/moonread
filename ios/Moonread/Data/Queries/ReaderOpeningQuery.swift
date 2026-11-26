@@ -1,3 +1,5 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import GRDB
 import struct MoonreadQueries.ReaderOpeningQuery
@@ -7,7 +9,7 @@ enum ReaderOpeningRead {
 
     struct Header: Sendable {
         let snapshot: ReadingSnapshot
-        let body: ReaderIndex.Body
+        let body: IndexedBookBody
         let confirmed: UInt64
         let projectionRevision: UInt64
     }
@@ -34,7 +36,7 @@ enum ReaderOpeningRead {
         else { throw ReaderError.NotFound }
 
         let key: String = row["content_sha256"]
-        let body = ReaderIndex.Body(id: row["id"], sha: key, bytes: bytes, count: count)
+        let body = IndexedBookBody(id: row["id"], sha: key, bytes: bytes, count: count)
         let position = try currentPosition(db, body: body, scope: scope)
         let output = Output(readerOpening: .init(sessionID: id, title: row["title"], readingKey: key,
             encoding: row["encoding"], bytes: String(bytes), chunks: Int(count),
@@ -64,14 +66,14 @@ enum ReaderOpeningRead {
         let updated: Int64
     }
 
-    private static func currentPosition(_ db: Database, body: ReaderIndex.Body, scope: DataScope) throws -> Position? {
+    private static func currentPosition(_ db: Database, body: IndexedBookBody, scope: DataScope) throws -> Position? {
         // Only identities that can resolve to the selected body participate.
         // Check aliases' independent compatibility barriers, then join refs,
         // never fetching the book's raw position history or source candidates.
         let row = try Row.fetchOne(db, sql: """
             WITH keys(key) AS MATERIALIZED (
                 SELECT alias FROM (
-                    \(ReaderIndex.verifiedReadingAliasPairsSQL)
+                    \(ReadingIdentitySQL.verifiedReadingAliasPairsSQL)
                     AND (j.canonical_id=?2 OR (j.canonical_id IS NULL AND j.book_id=?2))
                 )
                 UNION ALL SELECT ?3
@@ -94,7 +96,7 @@ enum ReaderOpeningRead {
         return row.map { .init(offset: $0["offset"], updated: $0["position_updated_ms"]) }
     }
 
-    static func resume(_ db: Database, body: ReaderIndex.Body, currentOffset: UInt64?) throws -> Resume? {
+    static func resume(_ db: Database, body: IndexedBookBody, currentOffset: UInt64?) throws -> Resume? {
         let key = body.sha
         guard (try? parseSha256(value: key)) != nil, body.bytes > 0,
               try isComplete(db, body: body),
@@ -116,17 +118,17 @@ enum ReaderOpeningRead {
                       location: .init(offsetUtf8: target, percentage: ReadingProgress.percentage(target, of: body.bytes), chapter: chapter))
     }
 
-    static func isComplete(_ db: Database, body: ReaderIndex.Body) throws -> Bool {
+    static func isComplete(_ db: Database, body: IndexedBookBody) throws -> Bool {
         try Bool.fetchOne(db, sql: """
             SELECT NOT EXISTS(SELECT 1 FROM main.import_jobs WHERE book_id=? AND phase<>'complete')
             """, arguments: [body.id]) == true
     }
 
-    static func location(_ db: Database, body: ReaderIndex.Body, percentage requested: Double) throws -> ReadingLocation {
+    static func location(_ db: Database, body: IndexedBookBody, percentage requested: Double) throws -> ReadingLocation {
         guard requested.isFinite, (0...100).contains(requested) else { throw ReaderError.InvalidRange }
         guard try isComplete(db, body: body) else { throw ReaderError.ImportBusy }
         let target = min(UInt64((Double(body.bytes) * requested / 100).rounded()), body.bytes)
-        let offset = try ReaderIndex.scalarOffset(ReaderIndex.chunk(db, id: body.id, at: target), at: target, forward: false)
+        let offset = try ReaderIndex.scalarOffset(IndexedBookBody.chunk(db, id: body.id, at: target), at: target, forward: false)
         return try .init(offsetUtf8: offset, percentage: ReadingProgress.percentage(offset, of: body.bytes),
                          chapter: ReaderChapterRead.point(db, body: body, offset: offset))
     }
@@ -139,13 +141,13 @@ extension ReaderIndex {
 
     func readerLocation(_ id: String, percentage: Double) throws -> ReadingLocation {
         try session.readUsers(lease) { db in
-            try ReaderOpeningRead.location(db, body: Self.body(db, id: id, scope: self.lease.scope.key), percentage: percentage)
+            try ReaderOpeningRead.location(db, body: IndexedBookBody.fetch(db, id: id, scope: self.lease.scope.key), percentage: percentage)
         }
     }
 
     func readerResume(_ id: String, currentOffset: UInt64?) throws -> ReaderOpeningRead.Resume? {
         try session.readUsers(lease) { db in
-            try ReaderOpeningRead.resume(db, body: Self.body(db, id: id, scope: self.lease.scope.key), currentOffset: currentOffset)
+            try ReaderOpeningRead.resume(db, body: IndexedBookBody.fetch(db, id: id, scope: self.lease.scope.key), currentOffset: currentOffset)
         }
     }
 

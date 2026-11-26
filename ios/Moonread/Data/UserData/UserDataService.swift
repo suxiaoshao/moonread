@@ -1,16 +1,10 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import SwiftData
 import CryptoKit
 import GRDB
-
-extension ReadingKey {
-    var storageKey: String { serializeReadingKey(key: self) }
-    var formalSHA256: String? {
-        if case .formal(let sha256) = self { return sha256 }
-        return nil
-    }
-}
 
 enum UserAuthorityPreparationError: LocalizedError {
     case ownership, unreadableSource, verification
@@ -215,7 +209,7 @@ extension AppDataService {
         guard admission == index.lease else { throw CancellationError() }
         try promoteUserDataLocked(id, index: index)
         return try index.session.writeUsers(index.lease) { db in
-            let key = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key).sha
+            let key = try IndexedBookBody.fetch(db, id: id, scope: index.lease.scope.key).sha
             return try operation(db, key, admission, index.lease.scope)
         }
     }
@@ -228,7 +222,7 @@ extension AppDataService {
         guard admission == index.lease else { throw CancellationError() }
         try promoteUserDataLocked(id, index: index)
         let result = try index.session.readUsers(index.lease) { db in
-            let key = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key).sha
+            let key = try IndexedBookBody.fetch(db, id: id, scope: index.lease.scope.key).sha
             return try AnnotationRows.snapshot(db, key: key)
         }
         var stamped = result
@@ -396,7 +390,7 @@ extension AppDataService {
                 let (key, heads) = try AnnotationRows.find(db, markID: id)
                 if let prior, prior.key != key {
                     guard case let .pending(source) = try parseReadingKey(value: prior.key),
-                          try ReaderIndex.body(db, id: source, scope: index.lease.scope.key).sha == key
+                          try IndexedBookBody.fetch(db, id: source, scope: index.lease.scope.key).sha == key
                     else { throw UserDataConflict(candidates: heads) }
                 }
                 let baseline = prior?.heads ?? heads

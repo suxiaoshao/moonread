@@ -1,3 +1,5 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -145,8 +147,8 @@ enum ReadingPositionRows {
     /// their position clock (not opened). Hide before taking its fixed budget.
     static func restorationPositions(_ db: Database, scope: DataScope, limit: Int) throws -> [RestorationPosition] {
         try Row.fetchAll(db, sql: """
-            WITH aliases AS MATERIALIZED (\(ReaderIndex.verifiedReadingAliasPairsSQL)),
-                 hidden AS (\(ReaderIndex.hiddenReadingKeysSQL))
+            WITH aliases AS MATERIALIZED (\(ReadingIdentitySQL.verifiedReadingAliasPairsSQL)),
+                 hidden AS (\(ReadingIdentitySQL.hiddenReadingKeysSQL))
             SELECT p.book_key,p.offset,p.updated_ms,p.token,p.device_id,p.source_kind,
                    p.relative_path,p.file_name,p.byte_size,p.decoding
             FROM usr.reading_current r JOIN usr.position_candidate p
@@ -420,7 +422,7 @@ enum ReadingPositionRows {
 extension ReaderIndex {
     func writeReadingOpened(bookID: String, openedAt: Int64, file: String?, device: String, now: Int64, token: String) throws {
         try session.writeUsers(lease) { db in
-            let body = try Self.body(db, id: bookID, scope: lease.scope.key)
+            let body = try IndexedBookBody.fetch(db, id: bookID, scope: lease.scope.key)
             try ReadingPositionRows.recordOpened(db, book: body.sha, openedAt: openedAt, file: file, device: device, now: now, token: token,
                                                 scope: lease.scope)
         }
@@ -429,12 +431,12 @@ extension ReaderIndex {
     func writeReadingPosition(bookID: String, offset: UInt64, hint: PositionSourceHint?, file: String?, device: String,
                               now: Int64, token: String) throws {
         try session.writeUsers(lease) { db in
-            let body = try Self.body(db, id: bookID, scope: lease.scope.key)
+            let body = try IndexedBookBody.fetch(db, id: bookID, scope: lease.scope.key)
             let offset = min(offset, body.bytes)
             let normalized: UInt64
             if body.bytes == 0 { normalized = 0 }
             else {
-                let chunk = try Self.chunk(db, id: body.id, at: offset)
+                let chunk = try IndexedBookBody.chunk(db, id: body.id, at: offset)
                 normalized = try Self.scalarOffset(chunk, at: offset, forward: false)
             }
             _ = try ReadingPositionRows.recordPosition(db, book: body.sha, offset: normalized, hint: hint, file: file,

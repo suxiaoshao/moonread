@@ -1,3 +1,4 @@
+import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
@@ -82,7 +83,7 @@ enum StatisticsHistoryRead {
             [window.first, window.last, scope.key, requestedKeys]
         }
         var aliases: String {
-            "WITH aliases AS (\(ReaderIndex.verifiedReadingAliasPairs(scopeParameter: "?3")))"
+            "WITH aliases AS (\(ReadingIdentitySQL.verifiedReadingAliasPairs(scopeParameter: "?3")))"
         }
         func range(_ relation: String) -> String {
             let keys = requestedKeys == nil ? "?4 IS NULL" : "\(relation).book_key IN (SELECT value FROM json_each(?4))"
@@ -105,7 +106,7 @@ enum StatisticsHistoryRead {
             }
             let requested = keys.sorted()
             let aliases = try String.fetchAll(db, sql: """
-                SELECT alias FROM (\(ReaderIndex.verifiedReadingAliasPairs(scopeParameter: "?1")))
+                SELECT alias FROM (\(ReadingIdentitySQL.verifiedReadingAliasPairs(scopeParameter: "?1")))
                 WHERE book_key IN (SELECT value FROM json_each(?2))
                 """, arguments: [scope.key, try UserSyncJSON.encode(requested)])
             let selection = try Selection(scope: scope, keys: requested + aliases)

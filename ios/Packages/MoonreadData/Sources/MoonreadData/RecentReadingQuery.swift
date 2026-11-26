@@ -1,14 +1,15 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import GRDB
 import struct MoonreadQueries.RecentReadingQuery
 
 /// The fixed implementation of the generated RecentReading operation.
-enum RecentReadingRead {
-    typealias Output = MoonreadQueries.RecentReadingQuery.Data
-    typealias Card = Output.RecentReading
+public enum RecentReadingRead {
+    public typealias Output = MoonreadQueries.RecentReadingQuery.Data
+    public typealias Card = Output.RecentReading
 
-    static func fetch(_ db: Database, scope: DataScope, limit: UInt32) throws -> Output {
+    public static func fetch(_ db: Database, scope: DataScope, limit: UInt32) throws -> Output {
         let rows = try Row.fetchAll(db, sql: statement, arguments: [scope.key,min(limit,1000)])
         return try .init(recentReading: rows.map(card))
     }
@@ -38,7 +39,7 @@ enum RecentReadingRead {
     // Materialize identities and the rank before reading any card metadata.
     // Across verified aliases only the chosen current refs are compared; this
     // never reopens the per-device candidate collections.
-    static func rankedKeys(_ db: Database, scope: DataScope) throws -> [String] {
+    public static func rankedKeys(_ db: Database, scope: DataScope) throws -> [String] {
         try String.fetchAll(db, sql: rankSQL + """
             SELECT book_key FROM selected ORDER BY recent_order DESC,preferred DESC,id
             """, arguments: [scope.key,1000])
@@ -46,7 +47,7 @@ enum RecentReadingRead {
 
     private static let rankSQL = """
         WITH aliases AS MATERIALIZED (
-            \(ReaderIndex.verifiedReadingAliasPairsSQL)
+            \(ReadingIdentitySQL.verifiedReadingAliasPairsSQL)
         ), alias_position_keys(k) AS MATERIALIZED (
             SELECT alias FROM aliases UNION SELECT book_key FROM aliases
         ), blocked_raw AS (
@@ -62,7 +63,7 @@ enum RecentReadingRead {
         ), blocked AS (
             SELECT coalesce(a.book_key,k) AS book_key FROM blocked_raw LEFT JOIN aliases a ON a.alias=k
         ), hidden AS (
-            \(ReaderIndex.hiddenReadingKeysSQL)
+            \(ReadingIdentitySQL.hiddenReadingKeysSQL)
         ), activity AS MATERIALIZED (
             SELECT coalesce(a.book_key,r.book_key) AS book_key,r.book_key AS source,
                 r.position_updated_ms,r.position_partition,p.offset,p.token AS position_token,
@@ -138,7 +139,7 @@ enum RecentReadingRead {
 extension RecentReadingRead.Card {
     /// Presentation boundary for the existing card components. Numeric strings
     /// originate in the fixed query and never pass through Double or JSON.
-    func libraryEntry() throws -> LibraryEntry {
+    public func libraryEntry() throws -> LibraryEntry {
         let key = try parseReadingKey(value: readingKey)
         guard let size = UInt64(file.size), let modified = Int64(file.modified), let lastRead = Int64(lastRead),
               let position = UInt64(position), let byteCount = UInt64(byteCount) else { throw ReaderError.InvalidRange }

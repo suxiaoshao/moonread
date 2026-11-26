@@ -1,18 +1,7 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import OSLog
-
-/// A read barrier, not a lossy repair. Quarantined records remain in SwiftData unchanged.
-struct UserSyncCompatibilityError: LocalizedError, Sendable {
-    enum Reason: Sendable { case newerFormat, unreadable }
-    var statistics = false
-    var reason: Reason = .unreadable
-    var errorDescription: String? {
-        if reason == .unreadable { return String(localized: "阅读数据无法读取，原始记录已保留。", table: "DataManagement") }
-        return statistics ? String(localized: "统计数据来自更新版本，请更新 App。") :
-            String(localized: "部分阅读数据当前版本无法理解，已保留并设为只读，请更新 App。")
-    }
-}
 
 /// Wire validation belongs here, never in the UniFFI records. No floating-point JSON
 /// intermediate: JSONDecoder reads every integer directly into its declared width.

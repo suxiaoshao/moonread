@@ -1,3 +1,4 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import XCTest
 @testable import Moonread

@@ -1,3 +1,5 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import GRDB
 
@@ -21,11 +23,6 @@ enum LocalReadingRows {
         } else {
             try db.execute(sql: "DELETE FROM usr.local_hidden_book WHERE book_key=?", arguments: [key])
         }
-    }
-
-    static func preferredFile(_ db: Database, book: String) throws -> String? {
-        try String.fetchOne(db, sql: "SELECT file_id FROM usr.local_preferred_file WHERE book_key=?",
-                            arguments: [DataIdentity.canonical(book)])
     }
 
     static func setPreferredFile(_ db: Database, book: String, file: String) throws {
@@ -52,7 +49,7 @@ enum LocalReadingRows {
     static func promote(_ db: Database, from pending: String, to formal: String) throws {
         let old = DataIdentity.canonical(pending)
         guard old != DataIdentity.canonical(formal) else { return }
-        if let file = try preferredFile(db, book: pending) {
+        if let file = try LocalReadingRead.preferredFile(db, book: pending) {
             try setPreferredFile(db, book: formal, file: file)
             try db.execute(sql: "DELETE FROM usr.local_preferred_file WHERE book_key=?", arguments: [old])
         }

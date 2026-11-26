@@ -1,3 +1,5 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -230,7 +232,7 @@ extension ReaderIndex {
     /// pending source removal use the same writer.
     func promotePendingUserData(bookId: String) throws -> PendingUserPromotion.Outcome {
         try session.writeUsers(lease) { db in
-            guard let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + Self.completedReadingIdentitySQL +
+            guard let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + ReadingIdentitySQL.completedReadingIdentitySQL +
                                                " AND j.book_id=?", arguments: [lease.scope.key,bookId]),
                   (try? parseSha256(value: sha)) != nil else { return .notReady }
             let pending = serializeReadingKey(key: .pending(bookId: bookId))
@@ -239,37 +241,8 @@ extension ReaderIndex {
         }
     }
 
-    static let completedReadingIdentitySQL = completedReadingIdentityClause(scopeParameter: "?")
-
-    private static func completedReadingIdentityClause(scopeParameter: String) -> String {
-        """
-        FROM main.import_jobs j JOIN main.books b ON b.id=COALESCE(j.canonical_id,j.book_id)
-        WHERE j.pending_owner=\(scopeParameter) AND j.phase='complete' AND j.purpose='reading'
-          AND b.byte_count>0 AND b.chunk_count>0
-          AND (j.final_sha IS NULL OR j.final_sha=b.content_sha256)
-          AND EXISTS(SELECT 1 FROM main.chunks c WHERE c.book_id=b.id AND c.chunk_index=0 AND c.end_utf8>c.start_utf8)
-        """
-    }
-
-    static let verifiedReadingAliasPairsSQL = verifiedReadingAliasPairs(scopeParameter: "?")
-
-    static func verifiedReadingAliasPairs(scopeParameter: String) -> String {
-        """
-        SELECT 'pending:'||j.book_id AS alias,b.content_sha256 AS book_key
-        \(completedReadingIdentityClause(scopeParameter: scopeParameter))
-        AND length(b.content_sha256)=64 AND b.content_sha256 NOT GLOB '*[^0-9a-f]*'
-        """
-    }
-
-    // Both recents and cache restoration hide a formal book if any verified
-    // alias is locally hidden. The caller supplies the scope-bound aliases CTE.
-    static let hiddenReadingKeysSQL = """
-        SELECT coalesce(a.book_key,h.book_key) AS book_key
-        FROM usr.local_hidden_book h LEFT JOIN aliases a ON a.alias=h.book_key
-        """
-
     static func verifiedReadingSHA(_ db: Database, pendingID: String, scope: String, transferringLocal: Bool = false) throws -> String? {
-        guard let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + completedReadingIdentitySQL +
+        guard let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + ReadingIdentitySQL.completedReadingIdentitySQL +
                                            " AND j.book_id=?", arguments: [scope,pendingID]),
               (try? parseSha256(value: sha)) != nil else {
             if transferringLocal, scope != DataScope.local.key {
@@ -286,7 +259,7 @@ extension ReaderIndex {
     static func verifiedReadingSHAs(_ db: Database, pendingIDs: Set<String>, scope: String) throws -> [String: String] {
         guard !pendingIDs.isEmpty else { return [:] }
         let ids = try UserSyncJSON.encode(pendingIDs.sorted())
-        let rows = try Row.fetchAll(db, sql: "SELECT j.book_id,b.content_sha256 " + completedReadingIdentitySQL + """
+        let rows = try Row.fetchAll(db, sql: "SELECT j.book_id,b.content_sha256 " + ReadingIdentitySQL.completedReadingIdentitySQL + """
             AND j.book_id IN (SELECT value FROM json_each(?))
             """, arguments: [scope,ids])
         return Dictionary(uniqueKeysWithValues: rows.compactMap { row in
@@ -296,7 +269,7 @@ extension ReaderIndex {
     }
 
     func verifiedReadingAliasIDs(_ db: Database, sha: String) throws -> [String] {
-        try String.fetchAll(db, sql: "SELECT j.book_id " + Self.completedReadingIdentitySQL +
+        try String.fetchAll(db, sql: "SELECT j.book_id " + ReadingIdentitySQL.completedReadingIdentitySQL +
                             " AND b.content_sha256=?", arguments: [lease.scope.key,sha])
     }
 
@@ -338,7 +311,7 @@ extension ReaderIndex {
                     let ids = try verifiedReadingAliasIDs(db, sha: sha)
                     for id in ids { targets.insert(serializeReadingKey(key: .pending(bookId: id))) }
                 case .pending(let id):
-                    if let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + Self.completedReadingIdentitySQL +
+                    if let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + ReadingIdentitySQL.completedReadingIdentitySQL +
                                                      " AND j.book_id=?", arguments: [lease.scope.key,id]) {
                         busyKeys.insert(sha)
                     }
@@ -346,7 +319,7 @@ extension ReaderIndex {
             }
             busyKeys.formUnion(targets)
             for id in activeReadingIDs {
-                guard let body = try? Self.body(db, id: id, scope: lease.scope.key),
+                guard let body = try? IndexedBookBody.fetch(db, id: id, scope: lease.scope.key),
                       !busyKeys.contains(body.sha), !busyKeys.contains(serializeReadingKey(key: .pending(bookId: id)))
                 else { throw busyError() }
             }

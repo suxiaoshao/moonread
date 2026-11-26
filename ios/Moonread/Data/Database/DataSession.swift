@@ -1,70 +1,9 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import CryptoKit
 import Foundation
 import GRDB
-
-enum DataScope: Codable, Equatable, Sendable {
-    case local
-    case account(String)
-
-    enum Environment: String, Codable, Sendable { case development, production }
-
-    static func confirmed(container: String, environment: Environment, recordName: String) throws -> Self {
-        guard !container.isEmpty, !recordName.isEmpty else { throw DataV2Error.invalidOwnerState }
-        return .account(DataIdentity.id("account", [container, environment.rawValue, recordName]))
-    }
-
-    var key: String {
-        switch self { case .local: "local"; case .account(let key): key }
-    }
-
-    var metadataImportKey: String { self == .local ? key : "account:" + key }
-
-    var valid: Bool {
-        switch self {
-        case .local: true
-        case .account(let key):
-            key.utf8.count == 64 && key.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
-        }
-    }
-}
-
-enum DataIdentity {
-    static func canonical(_ value: String) -> String { value.precomposedStringWithCanonicalMapping }
-    static func sha(_ bytes: Data) -> String { SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() }
-
-    /// v1 identities: explicit UTF-8 byte lengths, independent of separator,
-    /// process, row ordering and locale. Original strings stay in the rows.
-    static func id(_ domain: String, _ components: [String]) -> String {
-        var input = Data()
-        for component in ["1", domain] + components {
-            let bytes = Data(canonical(component).utf8)
-            var length = UInt64(bytes.count).bigEndian
-            withUnsafeBytes(of: &length) { input.append(contentsOf: $0) }
-            input.append(bytes)
-        }
-        return sha(input)
-    }
-
-    static func unsigned(_ value: UInt64) -> String {
-        let text = String(value)
-        return String(repeating: "0", count: 20 - text.count) + text
-    }
-}
-
-enum DataIdentityStatus: Sendable {
-    /// Scene suspension stops network capability without asserting the
-    /// account became unknown or authorizing a different library.
-    case paused
-    case unknown
-    case signedOut
-    case confirmed(DataScope, syncRequested: Bool, verifiedRecordName: String? = nil)
-}
-
-struct DataScopeSelection: Equatable, Sendable {
-    var scope: DataScope
-    var maySync: Bool
-}
 
 struct DataLayout: Sendable {
     let applicationSupport: URL
@@ -91,36 +30,6 @@ struct DataLayout: Sendable {
 
     func user(_ scope: DataScope) throws -> URL { try directory(scope).appending(path: "user.sqlite") }
     func staging(_ scope: DataScope) throws -> URL { try directory(scope).appending(path: "staging", directoryHint: .isDirectory) }
-}
-
-struct DataOwnerState: Codable, Equatable {
-    struct Move: Codable, Equatable {
-        let id: UUID
-        let target: DataScope
-    }
-    var version = 1
-    var current: DataScope = .local
-    var lastConfirmed: DataScope?
-    var ownedIndex = false
-    var move: Move?
-
-    static func load(at url: URL) throws -> Self {
-        let data: Data
-        do { data = try Data(contentsOf: url) }
-        catch let error as CocoaError where error.code == .fileReadNoSuchFile { return .init() }
-        let state = try JSONDecoder().decode(Self.self, from: data)
-        guard state.version == 1, state.current.valid,
-              state.lastConfirmed.map({ $0.valid && $0 != .local }) ?? true,
-              state.move.map({ $0.target.valid && $0.target != .local }) ?? true else {
-            throw DataV2Error.invalidOwnerState
-        }
-        return state
-    }
-
-    func save(at url: URL) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(self).write(to: url, options: .atomic)
-    }
 }
 
 struct DataSessionLease: Equatable, Sendable {
@@ -220,35 +129,8 @@ final class DataSession: @unchecked Sendable {
         }
     }
 
-    private func plan(_ status: DataIdentityStatus) throws -> (DataScopeSelection, DataScope?, DataOwnerState) {
-        let next: DataScopeSelection
-        let verified: DataScope?
-        var state = owner
-        switch status {
-        case .paused, .unknown:
-            verified = nil
-            next = .init(scope: owner.lastConfirmed ?? .local, maySync: false)
-        case .signedOut:
-            verified = nil
-            state.lastConfirmed = nil
-            next = .init(scope: .local, maySync: false)
-        case .confirmed(let scope, let requested, _):
-            guard scope.valid, scope != .local else { throw DataV2Error.invalidOwnerState }
-            verified = scope
-            if owner.lastConfirmed == nil {
-                // Discovering the system account does not claim unassigned
-                // data or authorize sync. The enable/consent path calls claimLocal.
-                next = .init(scope: .local, maySync: false)
-            } else {
-                state.lastConfirmed = scope
-                next = .init(scope: scope, maySync: requested)
-            }
-        }
-        return (next, verified, state)
-    }
-
     func destination(_ status: DataIdentityStatus) throws -> DataScopeSelection {
-        try lifecycle.withLock { try plan(status).0 }
+        try lifecycle.withLock { try owner.plan(status).0 }
     }
 
     func activate(_ status: DataIdentityStatus) throws -> (DataSessionLease, DataScopeSelection) {
@@ -261,7 +143,7 @@ final class DataSession: @unchecked Sendable {
             owner = try DataOwnerState.load(at: layout.ownerState)
         }
         try recoverLocalMove()
-        let (next, verified, planned) = try plan(status)
+        let (next, verified, planned) = try owner.plan(status)
         var state = planned
         if let lease, lease.scope == next.scope {
             // An offline pause or a toggle must not tear down the reader,

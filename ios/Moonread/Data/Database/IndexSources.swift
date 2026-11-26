@@ -1,3 +1,4 @@
+import MoonreadData
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -207,7 +208,7 @@ extension ReaderIndex {
 
     func linkLibraryFile(fileId: String, bookId: String) throws {
         try write { db in
-            let canonical = try Self.body(db, id: bookId, scope: lease.scope.key)
+            let canonical = try IndexedBookBody.fetch(db, id: bookId, scope: lease.scope.key)
             try db.execute(sql: "UPDATE main.library_files SET book_id=? WHERE id=? AND directory=0", arguments: [canonical.id,fileId])
             try db.execute(sql: "UPDATE main.import_jobs SET library_file_id=? WHERE book_id=? AND pending_owner=?",
                            arguments: [fileId,bookId,lease.scope.key])
@@ -240,7 +241,7 @@ extension ReaderIndex {
                 let current = try Row.fetchOne(db, sql: "SELECT book_id FROM main.library_files WHERE id=? AND directory=0", arguments: [file.fileId])
                 var associated: String?
                 if let id = (current?["book_id"] as String?) ?? file.bookId {
-                    do { associated = try Self.body(db, id: id, scope: lease.scope.key).id }
+                    do { associated = try IndexedBookBody.fetch(db, id: id, scope: lease.scope.key).id }
                     catch ReaderError.NotFound {
                         associated = try String.fetchOne(db, sql: """
                             SELECT book_id FROM main.source_imports WHERE raw_sha256=? AND decoding=?

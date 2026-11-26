@@ -1,3 +1,4 @@
+import MoonreadData
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -9,7 +10,7 @@ extension ReaderIndex {
     }
 
     fileprivate static func completeBody(_ db: Database, for id: String, scope: String) throws -> Body {
-        let body = try Self.body(db, id: id, scope: scope)
+        let body = try IndexedBookBody.fetch(db, id: id, scope: scope)
         guard !body.sha.hasPrefix("pending:"),
               try Bool.fetchOne(db, sql: "SELECT NOT EXISTS(SELECT 1 FROM main.import_jobs WHERE book_id=? AND phase<>'complete')",
                                 arguments: [body.id]) == true else { throw ReaderError.ImportBusy }
@@ -20,11 +21,11 @@ extension ReaderIndex {
     func startSearch(bookId: String, query: String, regularExpression: Bool, caseSensitive: Bool,
                      range: SearchRange?) throws -> SearchJob {
         let frozen = try session.readUsers(lease) { db in
-            let body = try Self.body(db, id: bookId, scope: self.lease.scope.key)
+            let body = try IndexedBookBody.fetch(db, id: bookId, scope: self.lease.scope.key)
             let area = range ?? SearchRange(startUtf8: 0, endUtf8: body.bytes)
             guard area.startUtf8 <= area.endUtf8, area.endUtf8 <= body.bytes else { throw ReaderError.InvalidRange }
             for offset in [area.startUtf8,area.endUtf8] where offset < body.bytes {
-                let chunk = try Self.chunk(db, id: body.id, at: offset)
+                let chunk = try IndexedBookBody.chunk(db, id: body.id, at: offset)
                 guard let idx = chunk.text.utf8.index(chunk.text.utf8.startIndex,
                       offsetBy: Int(offset - chunk.startUtf8), limitedBy: chunk.text.utf8.endIndex),
                       idx < chunk.text.utf8.endIndex, chunk.text.utf8[idx] & 0b1100_0000 != 0b1000_0000
@@ -43,10 +44,10 @@ extension ReaderIndex {
 
     fileprivate func searchText(book: String, frozen: Body, requested: SearchRange) throws -> TextRange {
         try read { db in
-            let body = try Self.body(db, id: book, scope: self.lease.scope.key)
+            let body = try IndexedBookBody.fetch(db, id: book, scope: self.lease.scope.key)
             guard frozen.sha.hasPrefix("pending:") || frozen.sha == body.sha, body.bytes >= frozen.bytes,
                   requested.startUtf8 < requested.endUtf8 else { throw ReaderError.SourceChanged }
-            let chunk = try Self.chunk(db, id: body.id, at: requested.startUtf8)
+            let chunk = try IndexedBookBody.chunk(db, id: body.id, at: requested.startUtf8)
             let offset = Int(requested.startUtf8 - chunk.startUtf8)
             let end = Int(min(requested.endUtf8, chunk.endUtf8) - chunk.startUtf8)
             let raw = chunk.text.utf8
@@ -73,7 +74,7 @@ struct ChapterRebuildProgress: Sendable {
 
 final class ChapterRebuild: @unchecked Sendable {
     private let index: ReaderIndex
-    private let body: ReaderIndex.Body
+    private let body: IndexedBookBody
     private let run = UUID().uuidString
     private let work = NSLock()
     private let stop = NSLock()
@@ -83,7 +84,7 @@ final class ChapterRebuild: @unchecked Sendable {
     private var count: UInt64 = 0
     private var applied = false
 
-    fileprivate init(index: ReaderIndex, body: ReaderIndex.Body) { self.index = index; self.body = body }
+    fileprivate init(index: ReaderIndex, body: IndexedBookBody) { self.index = index; self.body = body }
 
     private var stopped: Bool { stop.withLock { cancelled } }
 
@@ -107,7 +108,7 @@ final class ChapterRebuild: @unchecked Sendable {
             ticket = nil
             do {
                 let id = body.id, from = nextChunk
-                let chunks = try index.read { db in try ReaderIndex.chunks(db, id: id, from: from, limit: 16) }
+                let chunks = try index.read { db in try IndexedBookBody.chunks(db, id: id, from: from, limit: 16) }
                 let expected = min(16, body.count - from)
                 guard chunks.count == expected else { throw ReaderError.SourceChanged }
                 let end = from + UInt32(chunks.count) == body.count
@@ -175,7 +176,7 @@ final class ChapterRebuild: @unchecked Sendable {
 final class SearchJob: @unchecked Sendable {
     private let index: ReaderIndex
     private let book: String
-    private let body: ReaderIndex.Body
+    private let body: IndexedBookBody
     private let end: UInt64
     private let partial: Bool
     private let work = NSLock()
@@ -185,7 +186,7 @@ final class SearchJob: @unchecked Sendable {
     private var requested: SearchRange?
     private var result: SearchBatch
 
-    fileprivate init(index: ReaderIndex, book: String, body: ReaderIndex.Body, area: SearchRange,
+    fileprivate init(index: ReaderIndex, book: String, body: IndexedBookBody, area: SearchRange,
                      partial: Bool, state: SearchScanState) {
         self.index = index; self.book = book; self.body = body; self.end = area.endUtf8; self.partial = partial
         ticket = state

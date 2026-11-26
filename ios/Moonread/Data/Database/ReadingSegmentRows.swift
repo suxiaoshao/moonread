@@ -1,3 +1,5 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -349,7 +351,7 @@ extension ReaderIndex {
         var written = Set<String>()
         for batch in batches {
             guard !batch.values.isEmpty, authorize(batch) else { continue }
-            let body = try Self.body(db, id: batch.bookID, scope: lease.scope.key)
+            let body = try IndexedBookBody.fetch(db, id: batch.bookID, scope: lease.scope.key)
             let part = try ReadingPositionRows.partition(for: body.sha)
             for value in batch.values {
                 if try ReadingSegmentRows.ingest(db, value: value, book: body.sha, partition: part,

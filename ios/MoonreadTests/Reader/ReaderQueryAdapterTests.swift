@@ -1,3 +1,5 @@
+@testable import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import CryptoKit
 import GRDB
@@ -673,8 +675,8 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
         }
       }
       try index.session.readUsers(index.lease) { db in
-        let body = try ReaderIndex.body(db, id: "body-scalars", scope: index.lease.scope.key)
-        let counts = try ReaderIndex.chapterCorrectionCounts(db, body: body, offset: titleOffset)
+        let body = try IndexedBookBody.fetch(db, id: "body-scalars", scope: index.lease.scope.key)
+        let counts = try ReaderChapterRead.chapterCorrectionCounts(db, body: body, offset: titleOffset)
         XCTAssertEqual(counts.start, 8)
         XCTAssertEqual(counts.body, 11)
         let chapter = SourceSpan(startUtf8: counts.body, endUtf8: 12)
@@ -782,8 +784,8 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
 }
 
 private extension AppDataService {
-  func installSystemReadingFixture(_ file: SystemReadingSnapshotFile) { systemCatalog = .init(file: file) }
-  func waitForStatisticsFixture() async { await systemCatalog?[.statistics].task?.value }
+  func installSystemReadingFixture(_ file: SystemReadingSnapshotFile) { systemPublication.catalog = .init(file: file) }
+  func waitForStatisticsFixture() async { await systemPublication.catalog?[.statistics].task?.value }
 
 }
 

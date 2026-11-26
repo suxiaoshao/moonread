@@ -1,3 +1,4 @@
+import MoonreadData
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -372,7 +373,7 @@ extension ReaderIndex {
                 if replay.count < needed {
                     let start = from + UInt32(replay.count)
                     replay += try read { db in
-                        try Self.chunks(db, id: control.id, from: start, limit: needed - (start - from))
+                        try IndexedBookBody.chunks(db, id: control.id, from: start, limit: needed - (start - from))
                     }
                 }
                 guard replay.count == needed else { throw ReaderError.SourceChanged }
@@ -456,8 +457,8 @@ extension ReaderIndex {
     func reuseImport(control: ImportControl, existingId: String) throws {
         try write { db in
             try check(db, control)
-            let current = try Self.body(db, id: control.id, scope: lease.scope.key)
-            let target = try Self.body(db, id: existingId, scope: lease.scope.key)
+            let current = try IndexedBookBody.fetch(db, id: control.id, scope: lease.scope.key)
+            let target = try IndexedBookBody.fetch(db, id: existingId, scope: lease.scope.key)
             guard current.count == 0, !target.sha.hasPrefix("pending:"),
                   try Bool.fetchOne(db, sql: """
                 SELECT EXISTS(SELECT 1 FROM main.import_jobs j JOIN main.source_imports s

@@ -55,14 +55,14 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 书架同步描述、本机授权绑定和扫描后准入 | Swift `ShelfRecovery.swift`、`UserSyncJSON.swift`、`FullIndex.swift` | 用户库裁决同步描述，local_shelf_recovery 按账户保存本机绑定；平台扫描成功范围限制自动任务，不复制 Rust 查询 | 平台边界 |
 | SHA 格式 | Rust `identity/content.rs::parse_sha256` | 身份及资产校验共享严格语法，语义字段仍区分 | 单源 |
 | 最近阅读与首页继续阅读 | Swift `RecentReadingRead` 固定查询 / `RecentReadingStore`；Apollo 只生成结果类型 | 同一 main＋usr 快照先读 current、已验证别名和本机偏好并定副本，再读入选书的卡片与章名；首页与完整列表共享观察，页面持有期间保留上一结果，最后一个释放时停读；首页按钮直接打开卡片显示的来源 | 移除最近阅读旧投影入口；单书正文与章节路径另行切换 |
-| 页面查询输入与失效 | Swift `Data/Queries` 固定查询、`DataSession` 同池观察；本地包 `MoonreadQueries` 提供 Apollo 生成类型 | 读入口明确声明所需列和书键。领域写者在同一事务结算 current；页面按账户和参数持有观察、拒绝迟到的结果，不再拼接 SwiftData 投影或用 TEMP 做候选裁决 | 旧 SwiftData 仅由只读迁入打开 |
-| 明确书目标后的正文首帧、当前位置标题与章结构 | Swift `Data/Queries/ReaderOpeningQuery.swift`、`ReaderWindowRead.swift`、`ReaderChapterQuery.swift`；Rust `reading/window_payload.rs` 和 `reading/layout.rs` 做显示计算 | 同一索引/用户快照内按已确定书 ID、当前位置引用、已发布正文与章修正读取；标题、目录与最近卡片共用章修正组合。Swift 只取有界正文和已证实空白，Rust 切片、标记段落，不开库。结构与覆盖分开；覆盖在第 5 步另接 | 阅读会话持有窗口，工具页持有目录结果 |
+| 页面查询输入与失效 | 本地包 `MoonreadData` 的目录、书目、最近和书籍资料固定读，主 App 的 `DataSession` 同池观察；`MoonreadQueries` 提供 Apollo 生成类型 | 读入口明确声明所需列和书键。领域写者在同一事务结算 current；页面按账户和参数持有观察、拒绝迟到的结果，不再拼接 SwiftData 投影或用 TEMP 做候选裁决 | 旧 SwiftData 仅由只读迁入打开 |
+| 明确书目标后的正文首帧、当前位置标题与章结构 | Swift `Data/Queries/ReaderOpeningQuery.swift`、`ReaderWindowRead.swift` 与 `MoonreadData/ReaderChapterQuery.swift`；Rust `reading/window_payload.rs` 和 `reading/layout.rs` 做显示计算 | 同一索引/用户快照内按已确定书 ID、当前位置引用、已发布正文与章修正读取；标题、目录与最近卡片共用章修正组合。Swift 只取有界正文和已证实空白，Rust 切片、标记段落，不开库。结构与覆盖分开；覆盖在第 5 步另接 | 阅读会话持有窗口，工具页持有目录结果 |
 | 最近打开与后台恢复 | Swift `ReaderSession.bodyDidDisplay`、`ReadingPositionRows`、`RecentReadingRestoration` | 正文真正显示后记录 opened，和位置独立；最近排序与副本归 `RecentReadingRead`。后台只按同一用户库里已提交的正式位置取恢复限额，隐藏在排名前排除，文件准备后复核旧票据；恢复不写 opened/位置或计时 | 同一用户数据权威 |
 | 封面资源与静默替换 | Swift `Books/BookMetadata.swift` 的 `CoverResourceLoader`、`CoverImageLoader`、`BookCoverDisplay` | 独立资源 actor 统一 UI/Widget/Spotlight I/O 与派生；按作用域/资源/尺寸合并并有界缓存，ready 不随订阅销毁。同书旧图等新图成功，删除/换书/换账号立即清；系统文字更新复用图像输入版本 | 单一资源 owner |
 | 默认阅读中状态 | Swift `Data/Queries` 书架固定查询 | 保留按正式 SHA 的位置事实（含无本机正文的已索引书）及显式状态优先规则 | 旧 Rust 查询已移除 |
-| 文件夹列表、计数与封面候选 | Swift `Data/Queries/FolderQuery.swift` / `FolderStore.swift`；Rust `library/order.rs` 保留原自然行序 | 直系成员和子树在单个读快照中计算；活动和最多四张预览按有效位置时间，不读 opened 时间。经已核实别名合并位置，直接书卡定点补位置/章/作者/封面，只补入选预览的作者/封面。移动选择器按原顺序单次读取文件夹，不补书卡或封面 | 页面各自观察；单次查询不建观察 |
-| 书目、名称与标签分组 | Swift `Data/Queries/CatalogueQuery.swift` / `CatalogueStore.swift`；Rust `library/order.rs` / `catalogue_cards.rs` | 与目录共用已核实身份、位置和窄卡读取；名称模式不读标签，标签模式同快照定点取可见成员。自然顺序和特殊分组沿发布规则，标签通过文件 ID 引用单份卡片，实体副本不合并。换分组保留已显示结果直到新值到达 | 本页观察；目录、名称和标签共用卡片规则 |
-| 单书详情、来源与阅读状态 | Swift `Data/Queries/BookInformationQuery.swift` / `BookInformationModel`，来源行序沿用 Rust `library/order.rs` | 从明确书键读取已结算资料、有效位置与正文/章概况；未读副本按修改时间，已读副本按自然名称、路径、ID，显式文件优先。正式资料隔离禁用编辑并随观察重验；详情不读事实或覆盖，统计仍独立取数 | 页面各自观察；准备编辑和单次消费者复用固定读 |
+| 文件夹列表、计数与封面候选 | `MoonreadData/FolderQuery.swift` / Swift `FolderStore`；Rust `library/order.rs` 保留原自然行序 | 直系成员和子树在单个读快照中计算；活动和最多四张预览按有效位置时间，不读 opened 时间。经已核实别名合并位置，直接书卡定点补位置/章/作者/封面，只补入选预览的作者/封面。移动选择器按原顺序单次读取文件夹，不补书卡或封面 | 页面各自观察；单次查询不建观察 |
+| 书目、名称与标签分组 | `MoonreadData/CatalogueQuery.swift` / Swift `CatalogueStore`；Rust `library/order.rs` / `catalogue_cards.rs` | 与目录共用已核实身份、位置和窄卡读取；名称模式不读标签，标签模式同快照定点取可见成员。自然顺序和特殊分组沿发布规则，标签通过文件 ID 引用单份卡片，实体副本不合并。换分组保留已显示结果直到新值到达 | 本页观察；目录、名称和标签共用卡片规则 |
+| 单书详情、来源与阅读状态 | `MoonreadData/BookInformationQuery.swift` / Swift `BookInformationModel`，来源行序沿用 Rust `library/order.rs` | 从明确书键读取已结算资料、有效位置与正文/章概况；未读副本按修改时间，已读副本按自然名称、路径、ID，显式文件优先。正式资料隔离禁用编辑并随观察重验；详情不读事实或覆盖，统计仍独立取数 | 页面各自观察；准备编辑和单次消费者复用固定读 |
 | 搜索与筛选按用途取数 | Swift `LibrarySearchQuery.swift` / `FolderQuery.swift` / `LibraryQueryRules.swift`；Apollo 生成固定结果类型 | 筛选取当前作者及标签，选项查询按正文身份一次汇总标签用量；普通搜索按条件选列，匹配在事务外执行，再核对输入并只给命中项补卡。AI 资料搜索保留简介与正式资料兼容屏障。AI 按条件查找沿用普通筛选求值和排序，加同一 AI 读取屏障，复核快照后只给当页的条目补状态与作者。两者沿用写入时结算的 pending 整对象覆盖 | 搜索与选择页按需观察 |
 | 标签选择页的浏览分组与顺序 | Swift `Library/Search/BookTagCategories.swift` | 原词查随包词表，按标签使用本数和拼音分组排序。计数复用选项查询，两种入口共享展示规则，查询与存储仍使用原词 | 仅展示，不写用户数据 |
 | AI 工具输入/schema/输出契约与执行 | Swift `AI/Tools/Reading/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 只拆契约、执行和 `AppDataService+AIReading.swift` 平台适配的物理文件；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
@@ -189,6 +189,8 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 `ios/MoonreadShare` 是独立分享扩展 target，只负责接收与取消。`ios/ShareReceiveShared` 同时编译进主 App 与扩展，提供版本化 ShareInbox、原字节复制和 provider 生命周期适配；不依赖主 App 的 Rust、SwiftData、AI 或阅读 UI。App Group 只共享待导入原件，主 App 继续独占书架写入和正文准备。
 
 拆分保留现有类型、状态 owner 和 actor 隔离；SwiftUI 的 `@State` / `@FocusState` 留在原父视图，目录子视图只接收 Binding 和回调。UIKit 控制器跨文件扩展共用状态与方法时，仅将必要成员调整为模块内访问，其余保持 private，不增加 public API。原有 Sources UUID 与 target membership 保留，新增拆分文件显式加入应用 target。设置和统计按完整 View/model 类型移动，原有私有状态和 actor 标注保持；共享的页面与图表 helper 只在必要时由文件私有调整为模块内访问。
+
+`AppDataServiceFactory` 选择普通、测试、截图与诊断环境。系统发布状态归 `SystemReadingPublication`，并与现有服务共用 actor，保持账户撤销顺序。
 
 `AppDataService` 当前协调小说来源、Swift 索引与 Rust 正文计算、用户阅读数据、配色与同步，不仅服务阅读页；`ReaderSession` 才是阅读会话状态 owner。其扩展已随领域位于 Library、Books、Statistics 和 AI，Data 保存用户事实、备份/缓存及同步协调。`Data/Management` 内的 `UserBackupRestore` 负责预览与还原，`RelationalReadingData` 负责清单与导出，`DataExchangeTask` 承载小说信息和阅读数据共用的后台任务执行。名称仍为 `AppDataService`，领域扩展共用同一 actor 的串行边界；文件目录不改变数据权威和存储归属。
 

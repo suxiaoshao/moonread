@@ -1,3 +1,4 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import CryptoKit
 import GRDB
@@ -203,10 +204,10 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         try Self.require(try session.readUsers(ownedB.lease) { try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.local_hidden_book") } == 0,
                     "A contents cannot be claimed by B")
         _ = try await service.selectReadingCloudScope(.paused, approval: nil, lookup: { .unknown })
-        try Self.require(await service.verifiedScopePublicationPending == false, "ordinary background keeps the latest confirmed shared scope")
+        try Self.require(await service.verifiedScopePublicationIsPending() == false, "ordinary background keeps the latest confirmed shared scope")
         let offline = try await service.selectReadingCloudScope(.unknown, approval: nil, lookup: { .unknown })
         try Self.require(offline.scope == b.scope && !offline.maySync, "temporarily unknown still uses B")
-        try Self.require(await service.verifiedScopePublicationPending == true, "unknown B stays out of shared snapshots")
+        try Self.require(await service.verifiedScopePublicationIsPending() == true, "unknown B stays out of shared snapshots")
         try Self.require(try await service.relationalUserIndex().lease == ownedB.lease, "temporarily unknown does not retire local reads")
         let signedOut = try await service.selectReadingCloudScope(.signedOut, approval: nil, lookup: { .signedOut })
         let returnedLocal = try await service.relationalUserIndex()
@@ -548,4 +549,8 @@ private final class SyncLifecycleHeldLookup: Operation, @unchecked Sendable {
         super.cancel()
         sawCancel.continuation.yield()
     }
+}
+
+private extension AppDataService {
+    func verifiedScopePublicationIsPending() -> Bool? { systemPublication.verifiedScopePublicationPending }
 }

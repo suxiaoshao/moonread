@@ -1,3 +1,5 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -100,7 +102,7 @@ extension ReaderIndex {
                 let route: (key: String, title: String)
                 if let cached = routes[slice.bookId] { route = cached }
                 else {
-                    let body = try Self.body(db, id: slice.bookId, scope: lease.scope.key)
+                    let body = try IndexedBookBody.fetch(db, id: slice.bookId, scope: lease.scope.key)
                     // The prior snapshot used the opened copy's title even
                     // when its position and reading key were canonical.
                     guard let title = try String.fetchOne(db, sql: "SELECT title FROM main.books WHERE id=?", arguments: [slice.bookId])

@@ -1,3 +1,5 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -46,26 +48,6 @@ final class ReaderIndex: @unchecked Sendable {
         }
     }
 
-    struct Body: Equatable, Sendable {
-        let id: String
-        let sha: String
-        let bytes: UInt64
-        let count: UInt32
-    }
-
-    static func body(_ db: Database, id: String, scope: String) throws -> Body {
-        guard let row = try Row.fetchOne(db, sql: """
-            SELECT b.id,b.content_sha256,b.byte_count,b.chunk_count
-            FROM main.books original
-            LEFT JOIN main.import_jobs j ON j.book_id=original.id
-            JOIN main.books b ON b.id=COALESCE(j.canonical_id,original.id)
-            WHERE original.id=? AND (original.content_sha256 NOT LIKE 'pending:%' OR j.pending_owner=?)
-            """, arguments: [id,scope]),
-            let bytes = UInt64(exactly: row["byte_count"] as Int64),
-            let count = UInt32(exactly: row["chunk_count"] as Int64) else { throw ReaderError.NotFound }
-        return Body(id: row["id"], sha: row["content_sha256"], bytes: bytes, count: count)
-    }
-
     func readingCaptureTitle(bookID: String) throws -> String {
         try read { db in
             guard let title = try String.fetchOne(db, sql: "SELECT title FROM main.books WHERE id=?",
@@ -74,36 +56,15 @@ final class ReaderIndex: @unchecked Sendable {
         }
     }
 
+    typealias Body = IndexedBookBody
+
     static func chunk(_ row: Row) throws -> TextChunk {
-        guard let index = UInt32(exactly: row["chunk_index"] as Int64),
-              let start = UInt64(exactly: row["start_utf8"] as Int64),
-              let end = UInt64(exactly: row["end_utf8"] as Int64) else { throw ReaderError.InvalidRange }
-        let text: String = row["text"]
-        guard end >= start, end - start == text.utf8.count else { throw ReaderError.SourceChanged }
-        return .init(index: index, startUtf8: start, endUtf8: end, text: text)
-    }
-
-    static func chunks(_ db: Database, id: String, from: UInt32, limit: UInt32) throws -> [TextChunk] {
-        try Row.fetchAll(db, sql: """
-            SELECT chunk_index,start_utf8,end_utf8,text FROM main.chunks
-            WHERE book_id=? AND chunk_index>=? ORDER BY chunk_index LIMIT ?
-            """, arguments: [id,from,limit]).map(chunk)
-    }
-
-    static func chunk(_ db: Database, id: String, at offset: UInt64) throws -> TextChunk {
-        guard let start = Int64(exactly: offset),
-              let row = try Row.fetchOne(db, sql: """
-                  SELECT chunk_index,start_utf8,end_utf8,text FROM main.chunks
-                  WHERE book_id=? AND start_utf8<=? ORDER BY start_utf8 DESC LIMIT 1
-                  """, arguments: [id,start]) else { throw ReaderError.NotFound }
-        let text = try chunk(row)
-        guard text.startUtf8 <= offset, offset <= text.endUtf8 else { throw ReaderError.SourceChanged }
-        return text
+        try IndexedBookBody.validatedChunk(index: row["chunk_index"], start: row["start_utf8"], end: row["end_utf8"], text: row["text"])
     }
 
     func resolveBookIdentity(bookId: String) throws -> ResolvedBookIdentity {
         try read { db in
-            let body = try Self.body(db, id: bookId, scope: self.lease.scope.key)
+            let body = try IndexedBookBody.fetch(db, id: bookId, scope: self.lease.scope.key)
             return .init(key: try parseReadingKey(value: body.sha), canonicalBookId: body.id)
         }
     }

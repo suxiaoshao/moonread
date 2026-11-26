@@ -1,9 +1,6 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import SwiftUI
-
-enum LibraryGrouping: String, Sendable {
-    case name, tags
-}
 
 extension CatalogueTagSection: Identifiable {
     var id: String {

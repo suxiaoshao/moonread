@@ -1,3 +1,5 @@
+import MoonreadData
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import GRDB
 import struct MoonreadQueries.BookFilterOptionsQuery
@@ -122,7 +124,7 @@ enum LibrarySearchRead {
         let selection = try Scope(catalogue)
         let visible = selection.recursive ? "identity_keys"
             : "(SELECT DISTINCT f.book_key FROM files f JOIN main.library_files c ON c.id=f.id WHERE c.parent_path=?2)"
-        if try MetadataExchangeRows.hasFormalMetadataBarrier(db, keysSQL: selection.tree + """
+        if try FormalMetadataRead.hasFormalMetadataBarrier(db, keysSQL: selection.tree + """
             \(LibraryCardSQL.fileIdentities(scopeParameter: "?3", includeNames: false))
             SELECT book_key FROM \(visible) WHERE length(book_key)=64 AND book_key NOT GLOB '*[^0-9a-f]*'
             """, arguments: selection.arguments(scope)) { throw UserSyncCompatibilityError() }

@@ -1,3 +1,4 @@
+import MoonreadData
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -303,27 +304,27 @@ extension ReaderIndex {
 
     func textRange(bookId: String, startUtf8: UInt64, endUtf8: UInt64) throws -> TextRange {
         try read { db in
-            try Self.range(db, body: Self.body(db, id: bookId, scope: self.lease.scope.key), from: startUtf8, to: endUtf8)
+            try Self.range(db, body: IndexedBookBody.fetch(db, id: bookId, scope: self.lease.scope.key), from: startUtf8, to: endUtf8)
         }
     }
 
     private static func paragraph(_ db: Database, body: Body, at offset: UInt64) throws -> TextRange {
         guard body.bytes > 0 else { throw ReaderError.EmptyBook }
         let point = min(offset, body.bytes - 1)
-        let current = try Self.chunk(db, id: body.id, at: point)
+        let current = try IndexedBookBody.chunk(db, id: body.id, at: point)
         guard try scalarOffset(current, at: point, forward: false) == point else { throw ReaderError.InvalidRange }
         var start = current.startUtf8, end = current.endUtf8
         var bytes = Array(current.text.utf8), before = current.index, after = current.index + 1
         while !bytes[..<Int(point - start)].contains(10), before > 0 {
             before -= 1
-            guard let prior = try chunks(db, id: body.id, from: before, limit: 1).first,
+            guard let prior = try IndexedBookBody.chunks(db, id: body.id, from: before, limit: 1).first,
                   prior.index == before, prior.endUtf8 == start else { throw ReaderError.SourceChanged }
             start = prior.startUtf8
             bytes.insert(contentsOf: prior.text.utf8, at: 0)
             guard bytes.count <= 1_048_576 else { throw ReaderError.InvalidRange }
         }
         while !bytes[Int(point - start)...].contains(10), end < body.bytes {
-            guard let next = try chunks(db, id: body.id, from: after, limit: 1).first,
+            guard let next = try IndexedBookBody.chunks(db, id: body.id, from: after, limit: 1).first,
                   next.index == after, next.startUtf8 == end else { throw ReaderError.SourceChanged }
             after += 1
             end = next.endUtf8
@@ -339,13 +340,13 @@ extension ReaderIndex {
 
     func paragraphRange(bookId: String, offsetUtf8: UInt64) throws -> TextRange {
         try read { db in
-            try Self.paragraph(db, body: Self.body(db, id: bookId, scope: self.lease.scope.key), at: offsetUtf8)
+            try Self.paragraph(db, body: IndexedBookBody.fetch(db, id: bookId, scope: self.lease.scope.key), at: offsetUtf8)
         }
     }
 
     func textContext(bookId: String, offsetUtf8: UInt64, beforeParagraphs: UInt32, afterParagraphs: UInt32) throws -> TextRange {
         try read { db in
-            let body = try Self.body(db, id: bookId, scope: self.lease.scope.key)
+            let body = try IndexedBookBody.fetch(db, id: bookId, scope: self.lease.scope.key)
             guard offsetUtf8 < body.bytes, beforeParagraphs <= 20, afterParagraphs <= 20 else { throw ReaderError.InvalidRange }
             let anchor = try Self.paragraph(db, body: body, at: offsetUtf8)
             var start = anchor.startUtf8, end = anchor.endUtf8
@@ -365,12 +366,12 @@ extension ReaderIndex {
 
     func displayTextRange(bookId: String, startUtf8 start: UInt64, endUtf8 end: UInt64, indent: ReadingIndent) throws -> TextRange {
         let input = try session.readUsers(lease) { db -> ([ReadingPayloadChunk], [SourceSpan], [ChapterInfo], UInt64) in
-            let body = try Self.body(db, id: bookId, scope: self.lease.scope.key)
+            let body = try IndexedBookBody.fetch(db, id: bookId, scope: self.lease.scope.key)
             guard start <= end, end <= body.bytes else { throw ReaderError.InvalidRange }
             let confirmed = try UInt64.fetchOne(db, sql: "SELECT projection_end FROM main.books WHERE id=?", arguments: [body.id]) ?? 0
             guard end <= confirmed else { throw ReaderError.ImportBusy }
             for offset in [start,end] where offset < body.bytes {
-                guard try Self.scalarOffset(Self.chunk(db, id: body.id, at: offset), at: offset, forward: false) == offset
+                guard try Self.scalarOffset(IndexedBookBody.chunk(db, id: body.id, at: offset), at: offset, forward: false) == offset
                 else { throw ReaderError.InvalidRange }
             }
             guard start < end else { return ([], [], [], confirmed) }
@@ -393,7 +394,7 @@ extension ReaderIndex {
                     var history: [TextChunk] = [], idx = first.index, budget = 1_048_576
                     while idx > 0, budget > 0 {
                         idx -= 1
-                        guard let prior = try Self.chunks(db, id: body.id, from: idx, limit: 1).first, prior.index == idx
+                        guard let prior = try IndexedBookBody.chunks(db, id: body.id, from: idx, limit: 1).first, prior.index == idx
                         else { throw ReaderError.SourceChanged }
                         history.append(prior); budget -= prior.text.utf8.count
                         if !isHorizontalIndent(text: prior.text) { break }
@@ -407,7 +408,7 @@ extension ReaderIndex {
             let source = try chunks.map { chunk -> ReadingPayloadChunk in
                 let previous = if let last, last.endUtf8 == chunk.startUtf8 { last }
                     else if try (chunk.index == 0 || ReaderWindowRead.gap(db, id: body.id, at: chunk.startUtf8 - 1) != nil) { nil as TextChunk? }
-                    else { try Self.chunks(db, id: body.id, from: chunk.index - 1, limit: 1).first }
+                    else { try IndexedBookBody.chunks(db, id: body.id, from: chunk.index - 1, limit: 1).first }
                 last = chunk
                 return .init(chunk: chunk, continued: previous?.text.utf8.last.map { $0 != 10 } ?? false)
             }

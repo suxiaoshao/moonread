@@ -1,3 +1,4 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -666,53 +667,4 @@ enum UserValueRows {
         return try (.init(key: key, device: row["device_id"], payload: encode(head, envelope: true)), attachment)
     }
 
-}
-
-extension ReaderIndex {
-    /// Check the released chapter-correction line constraints from the
-    /// published body, using at most the preceding/current/next chunks.
-    static func validateChapterCorrection(_ db: Database, body: Body, offset: UInt64) throws {
-        _ = try chapterCorrectionLine(db, body: body, offset: offset)
-    }
-
-    private static func chapterCorrectionLine(_ db: Database, body: Body, offset: UInt64) throws -> (chunk: TextChunk, bytes: Data) {
-        guard offset < body.bytes else { throw ReaderError.InvalidRange }
-        let text = try chunk(db, id: body.id, at: offset)
-        let bytes = text.text.utf8, relative = Int(offset - text.startUtf8)
-        let start = bytes.index(bytes.startIndex, offsetBy: relative)
-        if relative == 0 {
-            if text.index > 0 {
-                guard let previous = try chunks(db, id: body.id, from: text.index - 1, limit: 1).first,
-                      previous.index == text.index - 1, previous.text.utf8.last == 10 else { throw ReaderError.InvalidRange }
-            }
-        } else {
-            guard bytes[bytes.index(before: start)] == 10 else { throw ReaderError.InvalidRange }
-        }
-        let tail = bytes[start...]
-        var line = Data(tail.prefix { $0 != 10 })
-        if line.count == tail.count, text.index + 1 < body.count {
-            guard let next = try chunks(db, id: body.id, from: text.index + 1, limit: 1).first,
-                  next.index == text.index + 1 else { throw ReaderError.InvalidRange }
-            let prefix = next.text.utf8.prefix { $0 != 10 }
-            guard prefix.count < next.text.utf8.count || text.index + 2 >= body.count else { throw ReaderError.InvalidRange }
-            line.append(contentsOf: prefix)
-        }
-        guard line.count <= 4096 else { throw ReaderError.InvalidRange }
-        let scalars = String(decoding: line, as: UTF8.self).unicodeScalars
-        let title = scalars.drop(while: { $0.properties.isWhitespace }).reversed().drop(while: { $0.properties.isWhitespace })
-        guard !title.isEmpty, title.count <= 80 else { throw ReaderError.InvalidRange }
-        return (text, line)
-    }
-
-    static func chapterCorrectionCounts(_ db: Database, body: Body, offset: UInt64) throws -> (start: UInt64, body: UInt64) {
-        let (text, line) = try chapterCorrectionLine(db, body: body, offset: offset)
-        let bytes = text.text.utf8
-        let start = bytes.index(bytes.startIndex, offsetBy: Int(offset - text.startUtf8))
-        guard let prefix = try UInt64.fetchOne(db, sql: """
-            SELECT start_char_count FROM main.chunks WHERE book_id=? AND chunk_index=?
-            """, arguments: [body.id, text.index]) else { throw ReaderError.SourceChanged }
-        let counts = chapterTextCounts(blockPrefix: prefix, linePrefix: String(decoding: bytes[..<start], as: UTF8.self),
-                                       title: String(decoding: line, as: UTF8.self))
-        return (counts.titleStart, counts.bodyStart)
-    }
 }

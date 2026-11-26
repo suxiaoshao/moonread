@@ -1,12 +1,13 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 
 /// Fixed card reads share current position, alias, chapter and metadata
 /// rules. Callers supply only their file scope and whether card fields are
 /// needed. Bind parameters and predicate fragments are internal SQL constants.
-enum LibraryCardSQL {
+public enum LibraryCardSQL {
     /// Use verified identities and body links to narrow before resolving the
     /// record; the caller rechecks the effective SHA after resolving.
-    static let recordFileIDs = """
+    public static let recordFileIDs = """
         SELECT file_id AS id FROM main.valid_indexed_identities WHERE content_sha256=?1
         UNION SELECT f.id FROM main.books b JOIN main.library_files f ON f.book_id=b.id
           WHERE b.content_sha256=?1 AND f.directory=0
@@ -15,11 +16,11 @@ enum LibraryCardSQL {
           WHERE b.content_sha256=?1 AND f.directory=0
         """
 
-    static func preferredOrder(_ candidate: String, file: String) -> String {
+    public static func preferredOrder(_ candidate: String, file: String) -> String {
         "coalesce(\(candidate)=\(file),0) DESC,\(file)"
     }
 
-    static func fileIdentities(scopeParameter: String, includeNames: Bool) -> String {
+    public static func fileIdentities(scopeParameter: String, includeNames: Bool) -> String {
         """
         files AS MATERIALIZED (
             SELECT f.id\(includeNames ? ",f.name,f.modified" : ""),
@@ -36,16 +37,16 @@ enum LibraryCardSQL {
         """
     }
 
-    static func currentFiles(scopeParameter: String, includeCardPosition: Bool) -> String {
+    public static func currentFiles(scopeParameter: String, includeCardPosition: Bool) -> String {
         fileIdentities(scopeParameter: scopeParameter, includeNames: includeCardPosition)
             + ", " + currentPositions(scopeParameter: scopeParameter, includeCardPosition: includeCardPosition)
     }
 
     /// The caller declares identity_keys(book_key) for the fixed scope.
-    static func currentPositions(scopeParameter: String, includeCardPosition: Bool) -> String {
+    public static func currentPositions(scopeParameter: String, includeCardPosition: Bool) -> String {
         """
         aliases AS MATERIALIZED (
-            \(ReaderIndex.verifiedReadingAliasPairs(scopeParameter: scopeParameter))
+            \(ReadingIdentitySQL.verifiedReadingAliasPairs(scopeParameter: scopeParameter))
             AND b.content_sha256 IN (SELECT book_key FROM identity_keys)
         ), position_sources(book_key,raw_key) AS MATERIALIZED (
             SELECT book_key,book_key FROM identity_keys
@@ -72,7 +73,7 @@ enum LibraryCardSQL {
         """
     }
 
-    static let columns = """
+    public static let columns = """
         p.offset AS position,coalesce(l.bytes,body.byte_count,0) AS byte_count,
                coalesce(coalesce(pref.file_id,source_pref.file_id)=c.id,0) AS preferred,
                CASE WHEN p.offset IS NOT NULL THEN
@@ -84,7 +85,7 @@ enum LibraryCardSQL {
                cover.format AS cover_format,cover.width AS cover_width,cover.height AS cover_height
         """
 
-    static func joins(onlyWhen condition: String? = nil) -> String {
+    public static func joins(onlyWhen condition: String? = nil) -> String {
         let detailPredicate = condition.map { $0 + " AND " } ?? ""
         return """
         LEFT JOIN main.books body ON \(detailPredicate)body.id=f.body_id

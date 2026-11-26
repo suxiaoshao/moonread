@@ -1,3 +1,4 @@
+import MoonreadDataTypes
 #if READER_OPEN_DIAGNOSTICS
 import MoonreadCoreBindings
 import SwiftUI
