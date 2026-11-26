@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import SwiftUI
 
 @MainActor @Observable final class ChapterEditDraft: Identifiable, Hashable {

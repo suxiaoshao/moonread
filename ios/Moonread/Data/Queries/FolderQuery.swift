@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import GRDB
 import struct MoonreadQueries.FolderDestinationsQuery
 import struct MoonreadQueries.FolderPageQuery

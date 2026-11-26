@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// Only tiny, validated reading settings cross this lock. Opening never queues behind database work.

@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import SwiftUI
 
 /// Only mode changes rebuild the native picker. Typography updates must not

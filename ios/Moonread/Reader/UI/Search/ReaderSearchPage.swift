@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import SwiftUI
 
 /// The expanded search owns only native page/focus state; the same tools model

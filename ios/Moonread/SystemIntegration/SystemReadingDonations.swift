@@ -1,4 +1,5 @@
 @preconcurrency import AppIntents
+import MoonreadCoreBindings
 import Foundation
 import WidgetKit
 

@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import GRDB
 import struct MoonreadQueries.BookFilterOptionsQuery
 import struct MoonreadQueries.SearchCandidatesQuery

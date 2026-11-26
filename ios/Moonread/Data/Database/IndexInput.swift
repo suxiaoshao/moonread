@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// Coordinated access and task cancellation stay with the caller. EOF means a

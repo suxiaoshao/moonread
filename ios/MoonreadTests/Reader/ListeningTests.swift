@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import AVFoundation
 import XCTest
 import UIKit

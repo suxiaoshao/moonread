@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 final class BackupStaging: Sendable {

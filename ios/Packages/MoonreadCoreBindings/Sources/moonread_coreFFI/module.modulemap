@@ -1,0 +1,7 @@
+module moonread_coreFFI {
+    header "module.h"
+    export *
+    use "Darwin"
+    use "_Builtin_stdbool"
+    use "_Builtin_stdint"
+}

@@ -61,12 +61,12 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - 构建阶段先进入 Nix devShell，再在本机按 PATH、`$HOME/.cargo/bin/mbx` 的顺序寻找 mbx；找到时用 `mbx build`，否则用 `cargo build`。CI 始终直接用 Cargo。mbx 使用 devShell 中锁定的 Cargo/Rust（含 iOS targets），不选系统 rustup 工具链；UniFFI 绑定生成仍用 Cargo。
 - 构建阶段每次编译当前 Rust 库与 host bindgen 工具，再运行生成器；三段分别输出耗时。target、Debug/Release、链接路径声明在 [Rust.xcconfig](../../../ios/Rust.xcconfig)。
 - 主 App 的 `Prune unused math fonts` 阶段依赖 SwiftPM 已复制的资源 bundle，在 Release 签名前只保留 Latin Modern Math 的 OTF、metrics plist 与三份许可证；上游依赖不变。该阶段每次构建执行，防止增量复制恢复未用字体，缺少必需资源时构建失败。Debug 的 SwiftPM 资源 bundle 有独立临时签名，不做裁剪。
-- UniFFI 从 [uniffi.toml](../../../crates/moonread-core/uniffi.toml) 读取输出名称；使用 `--no-format` 写入临时目录；三个预期输出全部成功生成后逐文件 `cmp`，缺失或内容变化才替换正式文件，内容相同保留原 mtime。失败不能回退旧绑定，生成目录与 CI DerivedData 成套缓存；不跳过当前 Rust 构建。
+- UniFFI 绑定由本地 Swift 包 `ios/Packages/MoonreadCoreBindings` 编译。包内提交 Swift 接口、C 头和 module map。Xcode 构建使用锁定生成器和 [uniffi.toml](../../../crates/moonread-core/uniffi.toml)，对当前 SDK 的 Rust 静态库用 `--no-format` 重新生成到临时目录，逐文件比对。接口缺失或内容不一致会使构建失败。ABI 变动时，用同一生成命令更新包内三份接口并提交。
 - 链接明确指定 `libmoonread_core.a`，避免同目录动态库被优先选中或把 Mac 路径带进 iPhone。
 - 主 App 另外链接 `libmoonread_ai_cover.a`，由同一个 Nix 构建阶段编译。封面 crate 含网页解析，C 接口不参与正文 UniFFI 生成。Swift 包通过 App 注入的封面适配调用该接口。
 - `ios/Packages/MoonreadAI` 是 iOS 18 / Swift 6 本地包。Swift AI SDK、Litext、MarkdownView 版本在其清单声明，由 Xcode workspace 同一 `Package.resolved` 锁定。模型快照和品牌资源随包资源复制，测试继续由 Moonread scheme 运行。
 - `MoonreadStatistics` 是 iOS 18 / Swift 6 本地包。主 App 注入统计读取与观察、书籍导航和展示附件。统计图表使用 `MoonreadDesign` 的共用样式，日界和格式由 `MoonreadStatisticsDates` 提供。统计仍查找 App 的 `Localizable.xcstrings`，保留与书籍详情及系统入口共用的翻译。
-- Rust 输出位于仓库默认的 `target/`，绑定位于 `build/ios/Generated/<Configuration>/`，均不提交。模拟器使用 `aarch64-apple-ios-sim`（arm64）。`ios/Rust.xcconfig` 对模拟器 SDK 排除 x86_64，使 Xcode 在选择通用 iOS Simulator 目的地时也只链接 arm64。
+- Rust 二进制输出位于仓库默认的 `target/`，构建产物不入库。模拟器使用 `aarch64-apple-ios-sim`（arm64）。`ios/Rust.xcconfig` 对模拟器 SDK 排除 x86_64，使 Xcode 在选择通用 iOS Simulator 目的地时也只链接 arm64。
 - Xcode 构建缓存只用两份：模拟器构建和测试统一 `-derivedDataPath build/DerivedData`，真机构建统一 `build/DeviceDerivedData`。不按任务另建缓存目录；任务的日志、截图等验证记录可以放在 `build/<任务名>/`，任务合并后删除。
 - 不使用 git worktree；在主目录切分支，共用 `target`、`build/DerivedData` 和 `build/DeviceDerivedData`。
 - Nix 默认路径为 `/nix/var/nix/profiles/default/bin/nix`；非标准安装可在本地 `LocalSigning.xcconfig` 覆盖 `MOONREAD_NIX`。

@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Combine
 import Foundation
 

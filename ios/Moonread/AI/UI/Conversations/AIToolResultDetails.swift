@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import MoonreadStatisticsDates
 import AISDKProvider
 import Foundation

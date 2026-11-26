@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import CryptoKit
 import GRDB
 import Observation

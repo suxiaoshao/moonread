@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import SwiftUI
 
 /// The object a quick task works on, shown at the top of both phases.

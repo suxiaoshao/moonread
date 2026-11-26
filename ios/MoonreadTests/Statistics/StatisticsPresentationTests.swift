@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import GRDB
 import MoonreadStatisticsDates
 import Observation

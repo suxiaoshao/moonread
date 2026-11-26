@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// Owns only disposable copies. The presentation and its completion handler

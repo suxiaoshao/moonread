@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// Device-only evidence of an actual local write, never a competing sync fact.

@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import CoreText
 import Foundation
 import Observation

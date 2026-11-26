@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// The two sides of a deleted source interval share a display boundary.

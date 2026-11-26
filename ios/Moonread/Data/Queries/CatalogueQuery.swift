@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import GRDB
 import struct MoonreadQueries.ShelfBookCardsQuery
 import struct MoonreadQueries.ShelfTagGroupsQuery

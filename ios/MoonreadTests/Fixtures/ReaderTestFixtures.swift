@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Observation
 import GRDB
 import SwiftData

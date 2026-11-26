@@ -1,2 +1,7 @@
 # Preserve upstream license formatting in the aggregated attribution resource.
 ios/Moonread/Resources/ThirdPartyNotices.txt whitespace=-blank-at-eol
+
+# Keep the UniFFI interface byte-identical to the locked generator output.
+ios/Packages/MoonreadCoreBindings/Sources/MoonreadCoreBindings/moonread_core.swift linguist-generated=true whitespace=-blank-at-eol
+ios/Packages/MoonreadCoreBindings/Sources/moonread_coreFFI/module.h linguist-generated=true whitespace=-blank-at-eol,-blank-at-eof
+ios/Packages/MoonreadCoreBindings/Sources/moonread_coreFFI/module.modulemap linguist-generated=true

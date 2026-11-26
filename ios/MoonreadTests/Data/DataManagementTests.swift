@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import GRDB
 import UIKit
 import XCTest

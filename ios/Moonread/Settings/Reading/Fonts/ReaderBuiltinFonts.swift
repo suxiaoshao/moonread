@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import CoreText
 import Observation
 import UIKit

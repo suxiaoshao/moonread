@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import SwiftUI
 
 /// App-wide reader preferences. Views and reading sessions never keep writable copies.

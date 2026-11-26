@@ -1,4 +1,5 @@
 #if MOONREAD_INTERNAL_TOOLS
+import MoonreadCoreBindings
 import SwiftUI
 
 struct DeveloperMetadataCleanupView: View {

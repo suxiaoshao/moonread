@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import TipKit
 import SwiftUI
 import UIKit

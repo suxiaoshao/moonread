@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import AISDKProvider
 import AISDKProviderUtils
 import SwiftData

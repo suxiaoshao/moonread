@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// A bounded speech unit carries the reader's existing display/source map. No

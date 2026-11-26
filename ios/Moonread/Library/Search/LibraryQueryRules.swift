@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// Book matching and result composition. Fixed reads supply scope/identity;

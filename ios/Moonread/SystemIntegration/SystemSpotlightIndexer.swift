@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import CoreSpotlight
 import GRDB
 import Foundation

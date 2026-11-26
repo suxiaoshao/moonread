@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// Shared by a search draft and a saved virtual bookshelf. Search text lives separately.

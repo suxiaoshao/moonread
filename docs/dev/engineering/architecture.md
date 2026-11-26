@@ -4,7 +4,7 @@
 
 ## 平台与职责
 
-首个平台是 iOS，后续可能增加 Android。每条业务规则有一个明确归属方，按语义、数据权威与平台依赖选择 Rust 或 Swift，见下方规则归属表；Swift 同时负责 iOS 界面、原生排版和平台适配。当前通过 UniFFI 连接；#270 的 Swift GRDB 池是正文、索引、任务和用户阅读数据的本机权威。发布版 SwiftData 的阅读库只作为迁入源，禁止保存和旧 CloudKit 镜像。
+首个平台是 iOS，后续可能增加 Android。每条业务规则有一个明确归属方，按语义、数据权威与平台依赖选择 Rust 或 Swift，见下方规则归属表；Swift 同时负责 iOS 界面、原生排版和平台适配。当前通过 `MoonreadCoreBindings` 的 UniFFI 接口连接；#270 的 Swift GRDB 池是正文、索引、任务和用户阅读数据的本机权威。发布版 SwiftData 的阅读库只作为迁入源，禁止保存和旧 CloudKit 镜像。
 
 | 部分 | 当前实现与职责 |
 | --- | --- |

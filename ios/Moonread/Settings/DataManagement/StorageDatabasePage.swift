@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import SwiftUI
 
 struct StorageDatabasePage: View {

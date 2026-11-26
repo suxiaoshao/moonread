@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import GRDB
 
 /// Device-only decisions in the active user file. Callers compose these

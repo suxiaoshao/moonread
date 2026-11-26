@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// Platform access only. Download admission, file snapshots, decoding and cache

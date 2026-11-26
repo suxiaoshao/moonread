@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 struct BackupRecord: Codable, Sendable, Equatable {

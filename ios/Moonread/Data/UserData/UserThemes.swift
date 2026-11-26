@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 enum PaletteSaveIssue: LocalizedError, Equatable {

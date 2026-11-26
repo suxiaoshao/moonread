@@ -1,3 +1,6 @@
+#if !MOONREAD_WIDGET
+import MoonreadCoreBindings
+#endif
 import CoreText
 import ImageIO
 import SwiftUI

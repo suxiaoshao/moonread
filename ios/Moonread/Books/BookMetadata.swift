@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Combine
 import SwiftUI
 import ImageIO

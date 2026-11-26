@@ -219,7 +219,6 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
 		A10000000000000000000004 /* ReaderScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* ReaderScreen.swift */; };
 		A10000000000000000000005 /* ReadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* ReadingView.swift */; };
 		A10000000000000000000006 /* TextCoordinates.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* TextCoordinates.swift */; };
-		A10000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */; };
 		A10000000000000000000008 /* ../assets/icon/Moonread.icon in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* ../assets/icon/Moonread.icon */; };
 		A10000000000000000000009 /* MoonreadUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* MoonreadUITests.swift */; };
 		A1000000000000000000000A /* ReaderTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* ReaderTestFixtures.swift */; };
@@ -459,6 +458,7 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		A37602000000000000000006 /* MoonreadStatistics in Frameworks */ = {isa = PBXBuildFile; productRef = A37602000000000000000003; };
 		A37602000000000000000007 /* MoonreadStatisticsDates in Frameworks */ = {isa = PBXBuildFile; productRef = A37602000000000000000004; };
 		A37602000000000000000008 /* MoonreadDesign in Frameworks */ = {isa = PBXBuildFile; productRef = A37602000000000000000005; };
+		A37603000000000000000003 /* MoonreadCoreBindings in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -696,7 +696,6 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		A20000000000000000000004 /* ReaderScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderScreen.swift"; sourceTree = "<group>"; };
 		A20000000000000000000005 /* ReadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingView.swift; sourceTree = "<group>"; };
 		A20000000000000000000006 /* TextCoordinates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TextCoordinates.swift"; sourceTree = "<group>"; };
-		A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift"; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000008 /* ../assets/icon/Moonread.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = ../assets/icon/Moonread.icon; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000009 /* MoonreadUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadUITests.swift; sourceTree = "<group>"; };
 		A2000000000000000000000A /* Moonread.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Moonread.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -935,6 +934,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 270D00000000000000000043,
                 270E40000000000000000003,
 				A37602000000000000000008 /* MoonreadDesign in Frameworks */,
+				A37603000000000000000003 /* MoonreadCoreBindings in Frameworks */,
 				A37602000000000000000007 /* MoonreadStatisticsDates in Frameworks */,
 				A37602000000000000000006 /* MoonreadStatistics in Frameworks */,
 
@@ -1004,7 +1004,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 AC2000000000000000000004,
                 FC3100000000000000000001,
                 AB2000000000000000000002,
-				A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */,
 			);
 			path = Moonread;
 			sourceTree = "<group>";
@@ -1940,7 +1939,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			buildConfigurationList = A70000000000000000000001 /* Build configuration list for PBXNativeTarget "Moonread" */;
 			buildPhases = (
                 6502577E2278509DB864FF63,
-				A60000000000000000000001 /* Build Rust core and UniFFI bindings */,
+				A60000000000000000000001 /* Build Rust core and verify UniFFI bindings */,
 				A60000000000000000000002 /* Sources */,
 				A40000000000000000000001 /* Frameworks */,
 				A60000000000000000000003 /* Resources */,
@@ -1952,7 +1951,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 F1C19004BB32432C8F23B23B,
                 24EC65B9F10B59B19FF49005,
 			);
-			packageProductDependencies = (A1A276000000000000000002,270D00000000000000000042,270E40000000000000000002,A37602000000000000000003,A37602000000000000000004,A37602000000000000000005);
+			packageProductDependencies = (A1A276000000000000000002,270D00000000000000000042,270E40000000000000000002,A37602000000000000000003,A37602000000000000000004,A37602000000000000000005,A37603000000000000000002);
 			name = Moonread;
 			productName = Moonread;
 			productReference = A2000000000000000000000A /* Moonread.app */;
@@ -2044,7 +2043,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			productRefGroup = A50000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-            packageReferences = (A1A276000000000000000003,270D00000000000000000041,270E40000000000000000001,A37602000000000000000001,A37602000000000000000002);
+            packageReferences = (A1A276000000000000000003,270D00000000000000000041,270E40000000000000000001,A37602000000000000000001,A37602000000000000000002,A37603000000000000000001);
 			targets = (
                 AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */,
                 04C2476D974D589BB2C7513F,
@@ -2115,25 +2114,25 @@ OS1000000000000000000001,
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		A60000000000000000000001 /* Build Rust core and UniFFI bindings */ = {
+		A60000000000000000000001 /* Build Rust core and verify UniFFI bindings */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputPaths = (
+                "$(MOONREAD_BINDINGS_DIR)/MoonreadCoreBindings/moonread_core.swift",
+                "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI/module.h",
+                "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI/module.modulemap",
 			);
-			name = "Build Rust core and UniFFI bindings";
+			name = "Build Rust core and verify UniFFI bindings";
 			outputPaths = (
-				"$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift",
-				"$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)/module.h",
-				"$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)/module.modulemap",
 				"$(MOONREAD_BINDGEN_LIBRARY)",
 				"$(MOONREAD_AI_COVER_LIBRARY)",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"$PWD/target\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command bash -c '\n  set -eu\n  builder=cargo\n  if [ -z \"${CI:-}\" ]; then\n    if command -v mbx >/dev/null 2>&1; then\n      builder=$(command -v mbx)\n    elif [ -x \"$HOME/.cargo/bin/mbx\" ]; then\n      builder=\"$HOME/.cargo/bin/mbx\"\n    fi\n  fi\n  echo \"Rust builder: $builder; rustc: $(command -v rustc)\"\n  start=$SECONDS\n  \"$builder\" build --locked --package moonread-core --package moonread-ai-cover --lib --profile \"$1\" ${2}\n  printf \"CI_TIMING rust_library_seconds=%s\\n\" \"$((SECONDS - start))\"\n' bash \"${MOONREAD_CARGO_PROFILE}\" \"${MOONREAD_RUST_TARGET_FLAGS}\"\nstart=$SECONDS\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo build --locked --package moonread-core --features cli --bin uniffi-bindgen\nprintf 'CI_TIMING rust_bindgen_build_seconds=%s\\n' \"$((SECONDS - start))\"\nmkdir -p \"${MOONREAD_BINDINGS_DIR}\"\ngenerated=$(mktemp -d \"${MOONREAD_BINDINGS_DIR}.XXXXXX\")\ntrap 'rm -rf \"$generated\"' EXIT\nstart=$SECONDS\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command \"$CARGO_TARGET_DIR/debug/uniffi-bindgen\" generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"$generated\"\nprintf 'CI_TIMING uniffi_generation_seconds=%s\\n' \"$((SECONDS - start))\"\n# Check the complete known output contract before replacing any owned file.\nfor name in moonread_core.swift module.h module.modulemap; do\n  if [ ! -s \"$generated/$name\" ]; then\n    printf 'Missing expected UniFFI output: %s\\n' \"$name\" >&2\n    exit 1\n  fi\ndone\nfor name in moonread_core.swift module.h module.modulemap; do\n  if ! cmp -s \"$generated/$name\" \"${MOONREAD_BINDINGS_DIR}/$name\"; then\n    mv -f \"$generated/$name\" \"${MOONREAD_BINDINGS_DIR}/$name\"\n  fi\ndone\n";
+			shellScript = "set -euo pipefail\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"$PWD/target\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command bash -c '\n  set -eu\n  builder=cargo\n  if [ -z \"${CI:-}\" ]; then\n    if command -v mbx >/dev/null 2>&1; then\n      builder=$(command -v mbx)\n    elif [ -x \"$HOME/.cargo/bin/mbx\" ]; then\n      builder=\"$HOME/.cargo/bin/mbx\"\n    fi\n  fi\n  echo \"Rust builder: $builder; rustc: $(command -v rustc)\"\n  start=$SECONDS\n  \"$builder\" build --locked --package moonread-core --package moonread-ai-cover --lib --profile \"$1\" ${2}\n  printf \"CI_TIMING rust_library_seconds=%s\\n\" \"$((SECONDS - start))\"\n' bash \"${MOONREAD_CARGO_PROFILE}\" \"${MOONREAD_RUST_TARGET_FLAGS}\"\nstart=$SECONDS\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo build --locked --package moonread-core --features cli --bin uniffi-bindgen\nprintf 'CI_TIMING rust_bindgen_build_seconds=%s\\n' \"$((SECONDS - start))\"\ngenerated=$(mktemp -d \"${TMPDIR:-/tmp}/moonread-bindings.XXXXXX\")\ntrap 'rm -rf \"$generated\"' EXIT\nstart=$SECONDS\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command \"$CARGO_TARGET_DIR/debug/uniffi-bindgen\" generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"$generated\"\nprintf 'CI_TIMING uniffi_generation_seconds=%s\\n' \"$((SECONDS - start))\"\n# Fail when the checked-in interfaces differ from this SDK's archive.\nfor relative in MoonreadCoreBindings/moonread_core.swift moonread_coreFFI/module.h moonread_coreFFI/module.modulemap; do\n  if ! cmp -s \"$generated/${relative##*/}\" \"$MOONREAD_BINDINGS_DIR/$relative\"; then\n    printf 'error: UniFFI binding differs: %s. Regenerate the checked-in MoonreadCoreBindings interfaces.\\n' \"$relative\" >&2\n    exit 1\n  fi\ndone\n";
 		};
 		A60000000000000000000008 /* Prune unused math fonts */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2453,7 +2452,6 @@ F01900000000000000000001,
 				A10000000000000000000005 /* ReadingView.swift in Sources */,
 				A10000000000000000000006 /* TextCoordinates.swift in Sources */,
                 AB1000000000000000000001,
-				A10000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2587,6 +2585,7 @@ F01900000000000000000001,
 		270E40000000000000000001 = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadQueries; };
 		A37602000000000000000001 /* MoonreadStatistics */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadStatistics; };
 		A37602000000000000000002 /* MoonreadDesign */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadDesign; };
+		A37603000000000000000001 /* MoonreadCoreBindings */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadCoreBindings; };
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -2603,6 +2602,7 @@ F01900000000000000000001,
 		A37602000000000000000003 /* MoonreadStatistics */ = {isa = XCSwiftPackageProductDependency; package = A37602000000000000000001; productName = MoonreadStatistics; };
 		A37602000000000000000004 /* MoonreadStatisticsDates */ = {isa = XCSwiftPackageProductDependency; package = A37602000000000000000001; productName = MoonreadStatisticsDates; };
 		A37602000000000000000005 /* MoonreadDesign */ = {isa = XCSwiftPackageProductDependency; package = A37602000000000000000002; productName = MoonreadDesign; };
+		A37603000000000000000002 /* MoonreadCoreBindings */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000001; productName = MoonreadCoreBindings; };
 /* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -2710,7 +2710,6 @@ F01900000000000000000001,
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(MOONREAD_TOOLS_CONDITION)";
 				EXCLUDED_SOURCE_FILE_NAMES = "$(inherited) DeveloperTools.xcstrings";
 				INCLUDED_SOURCE_FILE_NAMES = "$(inherited) $(MOONREAD_TOOLS_RESOURCES_$(MOONREAD_TOOLS_CONDITION))";
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2746,7 +2745,6 @@ F01900000000000000000001,
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(MOONREAD_TOOLS_CONDITION)";
 				EXCLUDED_SOURCE_FILE_NAMES = "$(inherited) DeveloperTools.xcstrings";
 				INCLUDED_SOURCE_FILE_NAMES = "$(inherited) $(MOONREAD_TOOLS_RESOURCES_$(MOONREAD_TOOLS_CONDITION))";
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2761,6 +2759,7 @@ F01900000000000000000001,
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadUITests;
 				CODE_SIGN_ENTITLEMENTS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_INCLUDE_PATHS = ("$(inherited)", "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI");
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Moonread;
@@ -2775,6 +2774,7 @@ F01900000000000000000001,
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadUITests;
 				CODE_SIGN_ENTITLEMENTS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_INCLUDE_PATHS = ("$(inherited)", "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI");
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Moonread;
@@ -2791,7 +2791,7 @@ F01900000000000000000001,
 				CODE_SIGN_ENTITLEMENTS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(MOONREAD_TOOLS_CONDITION)";
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
+				SWIFT_INCLUDE_PATHS = ("$(inherited)", "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI");
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Moonread.app/Moonread";
@@ -2807,7 +2807,7 @@ F01900000000000000000001,
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadTests;
 				CODE_SIGN_ENTITLEMENTS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
+				SWIFT_INCLUDE_PATHS = ("$(inherited)", "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI");
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Moonread.app/Moonread";

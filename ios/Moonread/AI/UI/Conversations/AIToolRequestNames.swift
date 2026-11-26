@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import AISDKProvider
 import Foundation
 import MoonreadAI

@@ -1,3 +1,5 @@
+import MoonreadCoreBindings
+
 /// Progress uses the byte offset and length of the same normalized UTF-8 body.
 enum ReadingProgress {
     static func fraction(_ offset: UInt64, of byteCount: UInt64) -> Double {

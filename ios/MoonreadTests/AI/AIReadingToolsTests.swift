@@ -1,4 +1,5 @@
 @testable import MoonreadAI
+import MoonreadCoreBindings
 import AISDKProvider
 import SwiftData
 import XCTest

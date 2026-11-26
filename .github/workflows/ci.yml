@@ -216,7 +216,6 @@ jobs:
             ~/.cargo/git
             target
             build/DerivedData
-            build/ios/Generated/Debug
             ${{ steps.cache-key.outputs.nix-inputs }}
           key: ${{ steps.cache-key.outputs.key }}
           restore-keys: ${{ steps.cache-key.outputs.prefix }}
@@ -316,7 +315,7 @@ jobs:
           python3 - <<'PY'
           import json, os, pathlib, subprocess
           paths = [pathlib.Path.home() / '.cargo/registry', pathlib.Path.home() / '.cargo/git',
-                   pathlib.Path('target'), pathlib.Path('build/DerivedData'), pathlib.Path('build/ios/Generated/Debug'),
+                   pathlib.Path('target'), pathlib.Path('build/DerivedData'),
                    pathlib.Path(os.environ['NIX_INPUTS'])]
           sizes = {str(p): int(subprocess.check_output(['du', '-sk', str(p)], text=True).split()[0]) * 1024
                    if p.exists() else 0 for p in paths}
@@ -347,7 +346,6 @@ jobs:
             ~/.cargo/git
             target
             build/DerivedData
-            build/ios/Generated/Debug
             ${{ steps.cache-key.outputs.nix-inputs }}
           key: ${{ steps.cache-key.outputs.key }}
       - name: Identify the cache candidate for trusted post-save verification

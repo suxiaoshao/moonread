@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import GRDB
 
 /// Implements the existing Swift token comparison. The domain decides which

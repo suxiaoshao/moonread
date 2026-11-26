@@ -1,3 +1,5 @@
+import MoonreadCoreBindings
+
 /// Fixed card reads share current position, alias, chapter and metadata
 /// rules. Callers supply only their file scope and whether card fields are
 /// needed. Bind parameters and predicate fragments are internal SQL constants.

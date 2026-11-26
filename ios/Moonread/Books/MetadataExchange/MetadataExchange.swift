@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// The import owns disposable package contents and cover drafts, never the source file.
