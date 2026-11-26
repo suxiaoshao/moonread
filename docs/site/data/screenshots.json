@@ -2826,25 +2826,25 @@
           "path": "images/screenshots/zh/F/R05-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 21066
+          "bytes": 25696
         },
         {
           "path": "images/screenshots/zh/F/R05-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 50746
+          "bytes": 64710
         },
         {
           "path": "images/screenshots/zh/F/R05-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 92516
+          "bytes": 113276
         }
       ],
       "source": {
         "id": "R05-F-zh-Hans-light",
-        "origin": "1.5",
-        "sha256": "0d165fd4e58311dbdd1326a1bcf6855a6a029b40ae9b56c852fa0c52e02e4165",
+        "origin": "1.9",
+        "sha256": "a1d7728ce9926d98bd0408d0f230306a2f16a2cccb00d761f71e583e9a6ad239",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -2870,25 +2870,25 @@
           "path": "images/screenshots/zh/F/R05-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 20016
+          "bytes": 24522
         },
         {
           "path": "images/screenshots/zh/F/R05-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 48764
+          "bytes": 61888
         },
         {
           "path": "images/screenshots/zh/F/R05-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 88720
+          "bytes": 110494
         }
       ],
       "source": {
         "id": "R05-F-zh-Hans-dark",
-        "origin": "1.5",
-        "sha256": "e209e54b929ff7c72a1105fe1f9f49a307615b867f0623ecc14c3b6dfb81dd1d",
+        "origin": "1.9",
+        "sha256": "ce1e2256f776bbd66746256d76c3f5b8cea9ff3e3223b37f942873ec523e6ac7",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -2914,25 +2914,25 @@
           "path": "images/screenshots/en/F/R05-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 22754
+          "bytes": 27692
         },
         {
           "path": "images/screenshots/en/F/R05-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 53360
+          "bytes": 68932
         },
         {
           "path": "images/screenshots/en/F/R05-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 95840
+          "bytes": 118254
         }
       ],
       "source": {
         "id": "R05-F-en-light",
-        "origin": "1.5",
-        "sha256": "2e20357d28b59c9f0892b2511ba03b1f9c4b2be6454e7c1887281840d67885c1",
+        "origin": "1.9",
+        "sha256": "29cff22b644c02fd09dcc430783cca5577ef8c3f62118dcf5bd277ef2aec1f9b",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -2958,25 +2958,25 @@
           "path": "images/screenshots/en/F/R05-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 22066
+          "bytes": 26470
         },
         {
           "path": "images/screenshots/en/F/R05-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 52050
+          "bytes": 67100
         },
         {
           "path": "images/screenshots/en/F/R05-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 94062
+          "bytes": 116212
         }
       ],
       "source": {
         "id": "R05-F-en-dark",
-        "origin": "1.5",
-        "sha256": "33223357e11d08ab5bef7f383dd64fe9cb5777aaf0c6afa5681b4e23b99688a0",
+        "origin": "1.9",
+        "sha256": "10f7b9e09c9c507609817ef99eea53541aa6b8595daa86dc5b089bf85e7d354c",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -3002,25 +3002,25 @@
           "path": "images/screenshots/zh/O/R05-light-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 16378
+          "bytes": 19004
         },
         {
           "path": "images/screenshots/zh/O/R05-light-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 39506
+          "bytes": 48158
         },
         {
           "path": "images/screenshots/zh/O/R05-light-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 76722
+          "bytes": 97592
         }
       ],
       "source": {
         "id": "R05-O-zh-Hans-light",
-        "origin": "1.5",
-        "sha256": "9a31a5fcea2346ef55c42cb1f1a7c94c2dbefffe7c3130d20864efe02a288a8b",
+        "origin": "1.9",
+        "sha256": "34bb53b11e99113f7725f0cf1769b9577acef3b754ec67c956d4ff3633be53e9",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -3046,25 +3046,25 @@
           "path": "images/screenshots/zh/O/R05-dark-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 15706
+          "bytes": 18204
         },
         {
           "path": "images/screenshots/zh/O/R05-dark-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 38318
+          "bytes": 46560
         },
         {
           "path": "images/screenshots/zh/O/R05-dark-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 76204
+          "bytes": 95650
         }
       ],
       "source": {
         "id": "R05-O-zh-Hans-dark",
-        "origin": "1.5",
-        "sha256": "273983d106475e23de69081f65c61891be4f79d4e3c92da0732271d24b01ed34",
+        "origin": "1.9",
+        "sha256": "6f3133126ef2e33db8713edf1f6a2780e53a56a60e3f21263697e2763568a6a7",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -3090,25 +3090,25 @@
           "path": "images/screenshots/en/O/R05-light-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 17746
+          "bytes": 20270
         },
         {
           "path": "images/screenshots/en/O/R05-light-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 41396
+          "bytes": 51188
         },
         {
           "path": "images/screenshots/en/O/R05-light-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 80564
+          "bytes": 100546
         }
       ],
       "source": {
         "id": "R05-O-en-light",
-        "origin": "1.5",
-        "sha256": "98beeca4252d50a095caf629761e3a08e6e3501a22c094bcddb04f9d8dd448a9",
+        "origin": "1.9",
+        "sha256": "a74c45f936dc12ad308b9bbf9e11564201289d3d3adad083bae1a16266120538",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -3134,25 +3134,25 @@
           "path": "images/screenshots/en/O/R05-dark-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 17076
+          "bytes": 19588
         },
         {
           "path": "images/screenshots/en/O/R05-dark-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 40694
+          "bytes": 49760
         },
         {
           "path": "images/screenshots/en/O/R05-dark-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 80866
+          "bytes": 99798
         }
       ],
       "source": {
         "id": "R05-O-en-dark",
-        "origin": "1.5",
-        "sha256": "a76b72e430d357e068bc56e70e1efe1cdd3da67b344357e87e5eb874c6289131",
+        "origin": "1.9",
+        "sha256": "8f0f41789a83ed93ecacd0f283e555efa8141b437bc7853d33c0e8ad9d221188",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -3178,25 +3178,25 @@
           "path": "images/screenshots/zh/I/R05-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 7412
+          "bytes": 8746
         },
         {
           "path": "images/screenshots/zh/I/R05-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 19372
+          "bytes": 22534
         },
         {
           "path": "images/screenshots/zh/I/R05-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 38034
+          "bytes": 45962
         }
       ],
       "source": {
         "id": "R05-I-zh-Hans-light",
-        "origin": "1.5",
-        "sha256": "b58e31cede245eae6245d7dfe96e4e459900c34537d48f0d4715705fee16e605",
+        "origin": "1.9",
+        "sha256": "f644f73f2674b6213b4c0aeb3e9eb6af64939464b2228f0cca1182ee130cba59",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -3222,25 +3222,25 @@
           "path": "images/screenshots/zh/I/R05-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 7106
+          "bytes": 8322
         },
         {
           "path": "images/screenshots/zh/I/R05-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 18514
+          "bytes": 21700
         },
         {
           "path": "images/screenshots/zh/I/R05-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 36866
+          "bytes": 44744
         }
       ],
       "source": {
         "id": "R05-I-zh-Hans-dark",
-        "origin": "1.5",
-        "sha256": "c5ab5a579b3dd1f6bc38dd06b68a2354a2e2a46d5d4698a5f05408101b88e411",
+        "origin": "1.9",
+        "sha256": "bf0dba3a7a86199cc677ab2457a6ac3bf93d50056cf6fb1f221d694b0873d160",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -3266,25 +3266,25 @@
           "path": "images/screenshots/en/I/R05-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 8022
+          "bytes": 9366
         },
         {
           "path": "images/screenshots/en/I/R05-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 20460
+          "bytes": 24602
         },
         {
           "path": "images/screenshots/en/I/R05-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 39810
+          "bytes": 47218
         }
       ],
       "source": {
         "id": "R05-I-en-light",
-        "origin": "1.5",
-        "sha256": "1354d9a343b7580c4e9e33aca7efb6e2ddd8f03908609cf7a953581dc8dc7bc0",
+        "origin": "1.9",
+        "sha256": "ff59636f2db54f861df6455a03c161708f02427a724d4a47bf2612c37ebc13a4",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -3310,25 +3310,25 @@
           "path": "images/screenshots/en/I/R05-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 7844
+          "bytes": 9046
         },
         {
           "path": "images/screenshots/en/I/R05-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 20102
+          "bytes": 23750
         },
         {
           "path": "images/screenshots/en/I/R05-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 38954
+          "bytes": 47192
         }
       ],
       "source": {
         "id": "R05-I-en-dark",
-        "origin": "1.5",
-        "sha256": "d72d0bf16a2c765078ddc588830a8edcecec72a5fb6060d1075fd51350c5d5b7",
+        "origin": "1.9",
+        "sha256": "4f80779c8978d53c8b0827eec0eed97a3b1552c09bf139b7f3fb67f48512a323",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -3347,44 +3347,44 @@
     },
     "zh/L/R05/light": {
       "cropped": false,
-      "width": 2300,
-      "height": 3000,
+      "width": 3000,
+      "height": 2300,
       "variants": [
         {
           "path": "images/screenshots/zh/L/R05-light-480.webp",
           "width": 480,
-          "height": 626,
-          "bytes": 5968
+          "height": 368,
+          "bytes": 4460
         },
         {
           "path": "images/screenshots/zh/L/R05-light-960.webp",
           "width": 960,
-          "height": 1252,
-          "bytes": 16558
+          "height": 736,
+          "bytes": 12406
         },
         {
           "path": "images/screenshots/zh/L/R05-light-1600.webp",
           "width": 1600,
-          "height": 2087,
-          "bytes": 34222
+          "height": 1227,
+          "bytes": 26914
         }
       ],
       "source": {
         "id": "R05-L-zh-Hans-light",
-        "origin": "1.5",
-        "sha256": "1bab5a7959be084eec004c85b50475cba794776469ad3751de535fd7b2a8af91",
+        "origin": "1.9",
+        "sha256": "0e0f9740899eb2c2c55e82df15d8f5e8cfd632fa2ca5e5a292af772918986c15",
         "frame": {
-          "file": "ipad13.png",
-          "sha256": "0f995b4f4f48ea4f50f4da416eb18979ca4b0987a653158730a3b272901c2cc6",
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
           "screen": [
-            118,
             124,
-            2064,
-            2752
+            118,
+            2752,
+            2064
           ],
           "canvas": [
-            2300,
-            3000
+            3000,
+            2300
           ]
         }
       }
@@ -3398,25 +3398,25 @@
           "path": "images/screenshots/zh/L/R05-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 3750
+          "bytes": 4320
         },
         {
           "path": "images/screenshots/zh/L/R05-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 10534
+          "bytes": 12036
         },
         {
           "path": "images/screenshots/zh/L/R05-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 22154
+          "bytes": 25858
         }
       ],
       "source": {
         "id": "R05-L-zh-Hans-dark",
-        "origin": "1.5",
-        "sha256": "5f091d725fb40e9c021ba776e71f7e38dba30460de858dd55f6d8c27ee3ab3c6",
+        "origin": "1.9",
+        "sha256": "90e9e12697bfecf6104208412a52b78f30c691a5af9caa3687971e0842690baf",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -3435,44 +3435,44 @@
     },
     "en/L/R05/light": {
       "cropped": false,
-      "width": 2300,
-      "height": 3000,
+      "width": 3000,
+      "height": 2300,
       "variants": [
         {
           "path": "images/screenshots/en/L/R05-light-480.webp",
           "width": 480,
-          "height": 626,
-          "bytes": 6516
+          "height": 368,
+          "bytes": 4934
         },
         {
           "path": "images/screenshots/en/L/R05-light-960.webp",
           "width": 960,
-          "height": 1252,
-          "bytes": 17732
+          "height": 736,
+          "bytes": 13826
         },
         {
           "path": "images/screenshots/en/L/R05-light-1600.webp",
           "width": 1600,
-          "height": 2087,
-          "bytes": 36416
+          "height": 1227,
+          "bytes": 28608
         }
       ],
       "source": {
         "id": "R05-L-en-light",
-        "origin": "1.5",
-        "sha256": "5480082059013cd820dea4cefbedef14cddbc00409d3364716d161ea00820278",
+        "origin": "1.9",
+        "sha256": "b954f920b6d3170975f2f96c64d02f5f2148843586cf3e8f45193e2e1bd141a4",
         "frame": {
-          "file": "ipad13.png",
-          "sha256": "0f995b4f4f48ea4f50f4da416eb18979ca4b0987a653158730a3b272901c2cc6",
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
           "screen": [
-            118,
             124,
-            2064,
-            2752
+            118,
+            2752,
+            2064
           ],
           "canvas": [
-            2300,
-            3000
+            3000,
+            2300
           ]
         }
       }
@@ -3486,25 +3486,25 @@
           "path": "images/screenshots/en/L/R05-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 4172
+          "bytes": 4876
         },
         {
           "path": "images/screenshots/en/L/R05-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 11848
+          "bytes": 13468
         },
         {
           "path": "images/screenshots/en/L/R05-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 24894
+          "bytes": 28286
         }
       ],
       "source": {
         "id": "R05-L-en-dark",
-        "origin": "1.5",
-        "sha256": "e05bde8857ffa8466065e0fd2f0537d7b603533bc21d5903bf2aefa4a1774036",
+        "origin": "1.9",
+        "sha256": "8ab0f1315459ce52903c808f93234a58dc5203fe8444c0ce2e3279eb6c4cfb8a",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -4234,25 +4234,25 @@
           "path": "images/screenshots/zh/F/R07-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 21150
+          "bytes": 23664
         },
         {
           "path": "images/screenshots/zh/F/R07-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 47986
+          "bytes": 55620
         },
         {
           "path": "images/screenshots/zh/F/R07-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 85578
+          "bytes": 92988
         }
       ],
       "source": {
         "id": "R07-F-zh-Hans-light",
-        "origin": "1.5",
-        "sha256": "05cb710a55dcaafdf80f4a595c60ee9061029709075813f49b9f896f796ce8a7",
+        "origin": "1.9",
+        "sha256": "5dcc39c3b7c4c071be39e9c32bdda06e1c129849ea0da604e0255041556eb068",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -4278,25 +4278,25 @@
           "path": "images/screenshots/zh/F/R07-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 19954
+          "bytes": 22512
         },
         {
           "path": "images/screenshots/zh/F/R07-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 45808
+          "bytes": 52754
         },
         {
           "path": "images/screenshots/zh/F/R07-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 82020
+          "bytes": 89486
         }
       ],
       "source": {
         "id": "R07-F-zh-Hans-dark",
-        "origin": "1.5",
-        "sha256": "52d81df0a171ea6df0b90ab61aca4c22cb90c5f7f00a085d0d9719a9452758ae",
+        "origin": "1.9",
+        "sha256": "c63dc45295b78cc92a0d057064ec44d4ed5a2feadedf2a5bd6f9c0429eb2fcdc",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -4322,25 +4322,25 @@
           "path": "images/screenshots/en/F/R07-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 23092
+          "bytes": 25814
         },
         {
           "path": "images/screenshots/en/F/R07-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 51886
+          "bytes": 59284
         },
         {
           "path": "images/screenshots/en/F/R07-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 91380
+          "bytes": 99770
         }
       ],
       "source": {
         "id": "R07-F-en-light",
-        "origin": "1.5",
-        "sha256": "9453a951793cda52dd3db1dd4934b143c074aa6a5fb83cecbd0d9fd0dd681690",
+        "origin": "1.9",
+        "sha256": "e8062597ce63b8f4115e50eeba9deb056fc49c2bc2e088667e60d1020aa19089",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -4366,25 +4366,25 @@
           "path": "images/screenshots/en/F/R07-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 21642
+          "bytes": 24306
         },
         {
           "path": "images/screenshots/en/F/R07-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 49462
+          "bytes": 55428
         },
         {
           "path": "images/screenshots/en/F/R07-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 87862
+          "bytes": 96210
         }
       ],
       "source": {
         "id": "R07-F-en-dark",
-        "origin": "1.5",
-        "sha256": "78407a825cc99df3ece373fd49d0aadd09aa9828d37779f9a703a4ad2551ed2d",
+        "origin": "1.9",
+        "sha256": "ca3727c8fd5f1d29d78afea2c8a2a8b26b04889d5de791034b6ae83db429fe53",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -4410,25 +4410,25 @@
           "path": "images/screenshots/zh/O/R07-light-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 16334
+          "bytes": 17448
         },
         {
           "path": "images/screenshots/zh/O/R07-light-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 37350
+          "bytes": 40972
         },
         {
           "path": "images/screenshots/zh/O/R07-light-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 69148
+          "bytes": 76690
         }
       ],
       "source": {
         "id": "R07-O-zh-Hans-light",
-        "origin": "1.5",
-        "sha256": "2f1330fe9cafdc36326390a72860c6f7c6ef40c36724076e4f235a5789b223cf",
+        "origin": "1.9",
+        "sha256": "145c622284d710772b412bd3844e26c6e7a7572fe899ee555c0bcfe0e7228f2a",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -4454,25 +4454,25 @@
           "path": "images/screenshots/zh/O/R07-dark-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 15426
+          "bytes": 16698
         },
         {
           "path": "images/screenshots/zh/O/R07-dark-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 35726
+          "bytes": 39324
         },
         {
           "path": "images/screenshots/zh/O/R07-dark-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 67372
+          "bytes": 74202
         }
       ],
       "source": {
         "id": "R07-O-zh-Hans-dark",
-        "origin": "1.5",
-        "sha256": "c3aa6984df580632e711e134278e246d14c5456598de947dcd7a88cac00183ab",
+        "origin": "1.9",
+        "sha256": "774b04cf3e57f170731ff2f4cd9c3b05b2f655e7faaa0c3b00c71130cb91e583",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -4498,25 +4498,25 @@
           "path": "images/screenshots/en/O/R07-light-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 17368
+          "bytes": 18658
         },
         {
           "path": "images/screenshots/en/O/R07-light-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 39402
+          "bytes": 43294
         },
         {
           "path": "images/screenshots/en/O/R07-light-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 74414
+          "bytes": 81732
         }
       ],
       "source": {
         "id": "R07-O-en-light",
-        "origin": "1.5",
-        "sha256": "6b460946b2cb1fb91c297c1748a35b0def2794924bb336e96a4200ec54173692",
+        "origin": "1.9",
+        "sha256": "a615002be8bfae16d8d503b426546da59e325a34d3907177e1a1ece5814e61ae",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -4542,25 +4542,25 @@
           "path": "images/screenshots/en/O/R07-dark-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 16502
+          "bytes": 17902
         },
         {
           "path": "images/screenshots/en/O/R07-dark-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 37706
+          "bytes": 41590
         },
         {
           "path": "images/screenshots/en/O/R07-dark-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 71422
+          "bytes": 78774
         }
       ],
       "source": {
         "id": "R07-O-en-dark",
-        "origin": "1.5",
-        "sha256": "3f0c6cd0d880a299be6f58c3359400cf4d9a6150afbed077ebaa8aebd2e38993",
+        "origin": "1.9",
+        "sha256": "f9fd1f81e845475e5039ab1907c41985d317407b135af7cc33bb40159537f796",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -4586,25 +4586,25 @@
           "path": "images/screenshots/zh/I/R07-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 7916
+          "bytes": 8854
         },
         {
           "path": "images/screenshots/zh/I/R07-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 19544
+          "bytes": 21798
         },
         {
           "path": "images/screenshots/zh/I/R07-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 36852
+          "bytes": 41370
         }
       ],
       "source": {
         "id": "R07-I-zh-Hans-light",
-        "origin": "1.5",
-        "sha256": "4401219878b34435b443c610341ec274d46acb51f7f0b1d6fdf86784bfebf480",
+        "origin": "1.9",
+        "sha256": "60d6af6993ab171bf5447c6d20ed458a03eace68b25f0cdd28497380ab638d3a",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -4630,25 +4630,25 @@
           "path": "images/screenshots/zh/I/R07-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 7600
+          "bytes": 8430
         },
         {
           "path": "images/screenshots/zh/I/R07-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 18558
+          "bytes": 20668
         },
         {
           "path": "images/screenshots/zh/I/R07-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 35562
+          "bytes": 39932
         }
       ],
       "source": {
         "id": "R07-I-zh-Hans-dark",
-        "origin": "1.5",
-        "sha256": "daf13406bd26a69af6d4b0eb9bff301b847f381697e411f5e5f3eadd06190937",
+        "origin": "1.9",
+        "sha256": "5c98f4ddd0c6e4f4c44d36eae3ba8bb8b61f8b69b91d4be6c04449a6913c9add",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -4674,25 +4674,25 @@
           "path": "images/screenshots/en/I/R07-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 8468
+          "bytes": 9320
         },
         {
           "path": "images/screenshots/en/I/R07-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 20290
+          "bytes": 22506
         },
         {
           "path": "images/screenshots/en/I/R07-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 38860
+          "bytes": 43476
         }
       ],
       "source": {
         "id": "R07-I-en-light",
-        "origin": "1.5",
-        "sha256": "02b02f33051e97508a053ac86b25d9232831ac42c0f00118b8bb7aef0af8b9f9",
+        "origin": "1.9",
+        "sha256": "d90339beb1faedaa7f7b369a75af7fad597223737cb036df85afdcaa08b51f00",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -4718,25 +4718,25 @@
           "path": "images/screenshots/en/I/R07-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 8076
+          "bytes": 8880
         },
         {
           "path": "images/screenshots/en/I/R07-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 19596
+          "bytes": 21600
         },
         {
           "path": "images/screenshots/en/I/R07-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 37602
+          "bytes": 42086
         }
       ],
       "source": {
         "id": "R07-I-en-dark",
-        "origin": "1.5",
-        "sha256": "37b314e083a9ecee3b877ec85f15ffa597df44c4ea2c637c093bd2a8483633f8",
+        "origin": "1.9",
+        "sha256": "b8238202cce55d104c2eaad7c5b22128c8cc82b53ac9f04506b5ebd81192e73c",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -4755,44 +4755,44 @@
     },
     "zh/L/R07/light": {
       "cropped": false,
-      "width": 2300,
-      "height": 3000,
+      "width": 3000,
+      "height": 2300,
       "variants": [
         {
           "path": "images/screenshots/zh/L/R07-light-480.webp",
           "width": 480,
-          "height": 626,
-          "bytes": 6702
+          "height": 368,
+          "bytes": 4964
         },
         {
           "path": "images/screenshots/zh/L/R07-light-960.webp",
           "width": 960,
-          "height": 1252,
-          "bytes": 16638
+          "height": 736,
+          "bytes": 12614
         },
         {
           "path": "images/screenshots/zh/L/R07-light-1600.webp",
           "width": 1600,
-          "height": 2087,
-          "bytes": 33354
+          "height": 1227,
+          "bytes": 25402
         }
       ],
       "source": {
         "id": "R07-L-zh-Hans-light",
-        "origin": "1.5",
-        "sha256": "f8361db2674fe5f41501d335d193a46c7c57c5f73215cd3869cb0dc255ee5c05",
+        "origin": "1.9",
+        "sha256": "4bcc8dcb58f76c55a5618dd8aeac4affa256bcae4c5962eb8f02b2b8caddf307",
         "frame": {
-          "file": "ipad13.png",
-          "sha256": "0f995b4f4f48ea4f50f4da416eb18979ca4b0987a653158730a3b272901c2cc6",
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
           "screen": [
-            118,
             124,
-            2064,
-            2752
+            118,
+            2752,
+            2064
           ],
           "canvas": [
-            2300,
-            3000
+            3000,
+            2300
           ]
         }
       }
@@ -4806,25 +4806,25 @@
           "path": "images/screenshots/zh/L/R07-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 4288
+          "bytes": 4680
         },
         {
           "path": "images/screenshots/zh/L/R07-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 11480
+          "bytes": 12040
         },
         {
           "path": "images/screenshots/zh/L/R07-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 23292
+          "bytes": 24790
         }
       ],
       "source": {
         "id": "R07-L-zh-Hans-dark",
-        "origin": "1.5",
-        "sha256": "2cacf2b964ee8e314c6c2838fde6514fdcac929b7772b76d0fc04c1fcaba44c3",
+        "origin": "1.9",
+        "sha256": "976291899866a35a49a7e223447d987b5ea2fbed12497015ff0a792b821a28c2",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -4843,44 +4843,44 @@
     },
     "en/L/R07/light": {
       "cropped": false,
-      "width": 2300,
-      "height": 3000,
+      "width": 3000,
+      "height": 2300,
       "variants": [
         {
           "path": "images/screenshots/en/L/R07-light-480.webp",
           "width": 480,
-          "height": 626,
-          "bytes": 7276
+          "height": 368,
+          "bytes": 5362
         },
         {
           "path": "images/screenshots/en/L/R07-light-960.webp",
           "width": 960,
-          "height": 1252,
-          "bytes": 18154
+          "height": 736,
+          "bytes": 13530
         },
         {
           "path": "images/screenshots/en/L/R07-light-1600.webp",
           "width": 1600,
-          "height": 2087,
-          "bytes": 35938
+          "height": 1227,
+          "bytes": 27450
         }
       ],
       "source": {
         "id": "R07-L-en-light",
-        "origin": "1.5",
-        "sha256": "ca5e71dce962fb6f38265ce3e8b77df54dd64dfdbb09c712f11c2a974e6b5757",
+        "origin": "1.9",
+        "sha256": "baf37d9c7d618b535202ac7f7bd7fc7fd6e18d875df15f63aad1f42df343f074",
         "frame": {
-          "file": "ipad13.png",
-          "sha256": "0f995b4f4f48ea4f50f4da416eb18979ca4b0987a653158730a3b272901c2cc6",
+          "file": "ipad-landscape.png",
+          "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
           "screen": [
-            118,
             124,
-            2064,
-            2752
+            118,
+            2752,
+            2064
           ],
           "canvas": [
-            2300,
-            3000
+            3000,
+            2300
           ]
         }
       }
@@ -4894,25 +4894,25 @@
           "path": "images/screenshots/en/L/R07-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 4790
+          "bytes": 5192
         },
         {
           "path": "images/screenshots/en/L/R07-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 12154
+          "bytes": 12964
         },
         {
           "path": "images/screenshots/en/L/R07-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 24778
+          "bytes": 26600
         }
       ],
       "source": {
         "id": "R07-L-en-dark",
-        "origin": "1.5",
-        "sha256": "17e18dd7422986febc02a609b4210c152e09b41028c37cfbc514afdd69348161",
+        "origin": "1.9",
+        "sha256": "4b26abbd9b36b76dd725b39ebaa1ca6abefe7071fda3e102c58ffe1d7c3ba279",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -4938,25 +4938,25 @@
           "path": "images/screenshots/zh/F/R10-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 32244
+          "bytes": 28684
         },
         {
           "path": "images/screenshots/zh/F/R10-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 78230
+          "bytes": 69468
         },
         {
           "path": "images/screenshots/zh/F/R10-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 130820
+          "bytes": 115036
         }
       ],
       "source": {
         "id": "R10-F-zh-Hans-light",
-        "origin": "1.8",
-        "sha256": "a759348eb41752c610a618c2beebdbe34ea6d421972896446889f582db0f2a15",
+        "origin": "1.9",
+        "sha256": "ccda054c137b5506f488282fa70fc1e47cbaff57a8341684b7cffa8f0ee97454",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -4982,25 +4982,25 @@
           "path": "images/screenshots/zh/F/R10-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 31516
+          "bytes": 27784
         },
         {
           "path": "images/screenshots/zh/F/R10-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 77080
+          "bytes": 67508
         },
         {
           "path": "images/screenshots/zh/F/R10-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 130536
+          "bytes": 115650
         }
       ],
       "source": {
         "id": "R10-F-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "ab29ab86111ed024999f78fc23b9c4e46fdb89633a34f0ab189a47be33f6dd2c",
+        "origin": "1.9",
+        "sha256": "69338135976a65e629209b65c66e7ad20d20042d60eda11d12dea6ab93809c81",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -5026,25 +5026,25 @@
           "path": "images/screenshots/en/F/R10-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 38186
+          "bytes": 32228
         },
         {
           "path": "images/screenshots/en/F/R10-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 90102
+          "bytes": 75564
         },
         {
           "path": "images/screenshots/en/F/R10-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 149358
+          "bytes": 121706
         }
       ],
       "source": {
         "id": "R10-F-en-light",
-        "origin": "1.7",
-        "sha256": "f971bf0c10d6e217911858043c2df622eceff18e947ff6a805be46692f4c7a98",
+        "origin": "1.9",
+        "sha256": "8bb1b5dbc4f26f2847609ac95648aeee74de7d06114733c73ba80a524bcd1029",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -5070,25 +5070,25 @@
           "path": "images/screenshots/en/F/R10-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 37762
+          "bytes": 31464
         },
         {
           "path": "images/screenshots/en/F/R10-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 90576
+          "bytes": 74596
         },
         {
           "path": "images/screenshots/en/F/R10-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 151978
+          "bytes": 121308
         }
       ],
       "source": {
         "id": "R10-F-en-dark",
-        "origin": "1.7",
-        "sha256": "84df676189b4640a583cc72716fc892472b92d4a214d9a0ceb1ecd2f0aefa4a8",
+        "origin": "1.9",
+        "sha256": "06d36722d47aac4d5a891335ffa5481680d12d0d7c8a8ffd2170917c1f392214",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -5290,25 +5290,25 @@
           "path": "images/screenshots/zh/I/R10-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 14692
+          "bytes": 13222
         },
         {
           "path": "images/screenshots/zh/I/R10-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 40412
+          "bytes": 36604
         },
         {
           "path": "images/screenshots/zh/I/R10-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 79542
+          "bytes": 71322
         }
       ],
       "source": {
         "id": "R10-I-zh-Hans-light",
-        "origin": "1.7",
-        "sha256": "5597c5fa2acf47bc8fdd59473cc193b061ba831c9741587bf94d75ad584ba3e8",
+        "origin": "1.9",
+        "sha256": "f25d64ed6d54d79e5aeefdd3762863fbe21e82e2a6d371af8f8854ad1a29c60f",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -5334,25 +5334,25 @@
           "path": "images/screenshots/zh/I/R10-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 13478
+          "bytes": 13216
         },
         {
           "path": "images/screenshots/zh/I/R10-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 36982
+          "bytes": 36110
         },
         {
           "path": "images/screenshots/zh/I/R10-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 73214
+          "bytes": 71560
         }
       ],
       "source": {
         "id": "R10-I-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "1fe34c97650cb6325f9e3add42149fcd6155df09921dd86b30834e90f3078b52",
+        "origin": "1.9",
+        "sha256": "d53c1a947d85c5ba9f36eacf5d6d5adfa7027fe004ce82eaf778c72e38ef7a6e",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -5378,25 +5378,25 @@
           "path": "images/screenshots/en/I/R10-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 17402
+          "bytes": 14970
         },
         {
           "path": "images/screenshots/en/I/R10-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 46394
+          "bytes": 40308
         },
         {
           "path": "images/screenshots/en/I/R10-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 89202
+          "bytes": 76002
         }
       ],
       "source": {
         "id": "R10-I-en-light",
-        "origin": "1.7",
-        "sha256": "37ab59b857c70f2f1ecc521a83d80d1c9deb636e8d9476e17e600bd5b7e17100",
+        "origin": "1.9",
+        "sha256": "772c80b7d3106139d30d431e0cd7ad8b9f7d30570e010f33ffa85a7e16b1ea8e",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -5422,25 +5422,25 @@
           "path": "images/screenshots/en/I/R10-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 15252
+          "bytes": 14748
         },
         {
           "path": "images/screenshots/en/I/R10-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 41024
+          "bytes": 39762
         },
         {
           "path": "images/screenshots/en/I/R10-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 77990
+          "bytes": 75956
         }
       ],
       "source": {
         "id": "R10-I-en-dark",
-        "origin": "1.8",
-        "sha256": "3c637d2598cd5d9972eaf0bb0f7cfd92113ca07bc6007ac1c3a09ebf253f2e4a",
+        "origin": "1.9",
+        "sha256": "01ad189dd49531bb1b7caf299ecaff0e8d7fe1848ffc24aef62fd18516e8f531",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -5466,25 +5466,25 @@
           "path": "images/screenshots/zh/L/R10-light-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 8274
+          "bytes": 7742
         },
         {
           "path": "images/screenshots/zh/L/R10-light-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 24198
+          "bytes": 22608
         },
         {
           "path": "images/screenshots/zh/L/R10-light-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 53344
+          "bytes": 49230
         }
       ],
       "source": {
         "id": "R10-L-zh-Hans-light",
-        "origin": "1.8",
-        "sha256": "0d61d6b9ea1fa9e307e51670cdb40ff7ea7bdfc2762fe6d76d6c6d14abdd8d21",
+        "origin": "1.9",
+        "sha256": "22e6cafbd2c5441b1e2a283a07943c7067b20984d2c6099254cf9b60c041aaad",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -5510,25 +5510,25 @@
           "path": "images/screenshots/zh/L/R10-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 8212
+          "bytes": 7774
         },
         {
           "path": "images/screenshots/zh/L/R10-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 24202
+          "bytes": 22700
         },
         {
           "path": "images/screenshots/zh/L/R10-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 53122
+          "bytes": 48992
         }
       ],
       "source": {
         "id": "R10-L-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "77a1bedf001dcae22c51684396c379cb77ad6327b13f468b24f52c04f54c534e",
+        "origin": "1.9",
+        "sha256": "48376069985d2591d7a350728b9ecfe425cd0f636da97d087824ba942b453dd2",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -5554,25 +5554,25 @@
           "path": "images/screenshots/en/L/R10-light-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 9896
+          "bytes": 9100
         },
         {
           "path": "images/screenshots/en/L/R10-light-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 29648
+          "bytes": 26886
         },
         {
           "path": "images/screenshots/en/L/R10-light-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 60762
+          "bytes": 56124
         }
       ],
       "source": {
         "id": "R10-L-en-light",
-        "origin": "1.8",
-        "sha256": "f29d95d5c0049d8634b8bcd9596e0c6aea33620408b6c3fef4f96c80e68be550",
+        "origin": "1.9",
+        "sha256": "a0dd8203a2b7a19807d1a15d77bcf0cb18dd3dbaa692b107d7ca299b4b06e35b",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -5598,25 +5598,25 @@
           "path": "images/screenshots/en/L/R10-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 9808
+          "bytes": 9094
         },
         {
           "path": "images/screenshots/en/L/R10-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 29822
+          "bytes": 26358
         },
         {
           "path": "images/screenshots/en/L/R10-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 60418
+          "bytes": 55760
         }
       ],
       "source": {
         "id": "R10-L-en-dark",
-        "origin": "1.8",
-        "sha256": "e09f65845bcc8702310943ecc8f6719f630eb14bf0ed25d58477cde341b034ee",
+        "origin": "1.9",
+        "sha256": "54ce70f2fa8832dd74043967fd503d5964454311f08a1fa3852e606c341acd0c",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -6522,25 +6522,25 @@
           "path": "images/screenshots/zh/F/R16-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 29636
+          "bytes": 29692
         },
         {
           "path": "images/screenshots/zh/F/R16-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 72156
+          "bytes": 72176
         },
         {
           "path": "images/screenshots/zh/F/R16-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 121424
+          "bytes": 121338
         }
       ],
       "source": {
         "id": "R16-F-zh-Hans-light",
-        "origin": "1.8",
-        "sha256": "ab73d929acc75f77d7c227d51996582b7ad5bb7f2a1f37c06884741fcf10f564",
+        "origin": "1.9",
+        "sha256": "d8e4255d65a2488d3a8d00b8aedf0c3266dd78f1ec140a706330869ed06b764d",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -6566,25 +6566,25 @@
           "path": "images/screenshots/zh/F/R16-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 28450
+          "bytes": 28482
         },
         {
           "path": "images/screenshots/zh/F/R16-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 69876
+          "bytes": 69752
         },
         {
           "path": "images/screenshots/zh/F/R16-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 118892
+          "bytes": 118888
         }
       ],
       "source": {
         "id": "R16-F-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "e6c5a935e83175a0237596d191c7c6a511e2372ca2cde65161274c40bfa66209",
+        "origin": "1.9",
+        "sha256": "f2500bb0867822899b2c4314f70ea657f2876924f5e78d275adc35f672666ba7",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -6610,25 +6610,25 @@
           "path": "images/screenshots/en/F/R16-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 32632
+          "bytes": 32710
         },
         {
           "path": "images/screenshots/en/F/R16-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 76290
+          "bytes": 78064
         },
         {
           "path": "images/screenshots/en/F/R16-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 131790
+          "bytes": 131826
         }
       ],
       "source": {
         "id": "R16-F-en-light",
-        "origin": "1.8",
-        "sha256": "65332985899b343239afb804811dce8878a6dfea2b677d2b950c82cb3c168ce6",
+        "origin": "1.9",
+        "sha256": "55d1eba991c3192708aedd84008930b4e6b964f27e87fdf1b02f34461a65acf3",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -6654,25 +6654,25 @@
           "path": "images/screenshots/en/F/R16-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 31446
+          "bytes": 31612
         },
         {
           "path": "images/screenshots/en/F/R16-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 76206
+          "bytes": 76282
         },
         {
           "path": "images/screenshots/en/F/R16-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 129254
+          "bytes": 129404
         }
       ],
       "source": {
         "id": "R16-F-en-dark",
-        "origin": "1.8",
-        "sha256": "3ade29bf789ed9b765e6d7c153495069e35d2e96020a89a7bbe270204569444c",
+        "origin": "1.9",
+        "sha256": "e54ed2fba89d4d903b7ea85a8ddd8d8ef9ddb000240398122fe2d8698b041cf7",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -6698,25 +6698,25 @@
           "path": "images/screenshots/zh/F/R17-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 24134
+          "bytes": 27344
         },
         {
           "path": "images/screenshots/zh/F/R17-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 58786
+          "bytes": 69550
         },
         {
           "path": "images/screenshots/zh/F/R17-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 100682
+          "bytes": 120824
         }
       ],
       "source": {
         "id": "R17-F-zh-Hans-light",
-        "origin": "1.8",
-        "sha256": "774f32ba9edd2be0afafe504d48edba91d8894c538147af8cd5dad61e0f7c6d0",
+        "origin": "1.9",
+        "sha256": "d2b4e4fbcdbdbd317db43ba0520abefe05876eb9254e925745331b4d78b46944",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -6742,25 +6742,25 @@
           "path": "images/screenshots/zh/F/R17-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 22964
+          "bytes": 26258
         },
         {
           "path": "images/screenshots/zh/F/R17-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 56230
+          "bytes": 66766
         },
         {
           "path": "images/screenshots/zh/F/R17-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 98244
+          "bytes": 118422
         }
       ],
       "source": {
         "id": "R17-F-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "19b1a2a5a09cae3e92e93ccceba03836c266400967301b8b6c7c1c8aaa431c48",
+        "origin": "1.9",
+        "sha256": "0d77dc7a455f2b99c0e49ac34e141abc72603dbf329c4fb226ee405ee16909e5",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -6786,25 +6786,25 @@
           "path": "images/screenshots/en/F/R17-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 25616
+          "bytes": 30072
         },
         {
           "path": "images/screenshots/en/F/R17-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 60132
+          "bytes": 74696
         },
         {
           "path": "images/screenshots/en/F/R17-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 101740
+          "bytes": 128282
         }
       ],
       "source": {
         "id": "R17-F-en-light",
-        "origin": "1.8",
-        "sha256": "5307495befb7efb9f8701a668f26f98307ed5a6fb81cd2d40337c417cd7911f4",
+        "origin": "1.9",
+        "sha256": "1b5a87fa1b32b3dcce2463fb07292d8aea8c4dd214ae8d61814ab63a9c5ae0f6",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -6830,25 +6830,25 @@
           "path": "images/screenshots/en/F/R17-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 24466
+          "bytes": 28938
         },
         {
           "path": "images/screenshots/en/F/R17-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 58658
+          "bytes": 72816
         },
         {
           "path": "images/screenshots/en/F/R17-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 100184
+          "bytes": 126878
         }
       ],
       "source": {
         "id": "R17-F-en-dark",
-        "origin": "1.8",
-        "sha256": "57c7251d6d5665309cdf6b0280e9ab909c1625ea92cf6c451e9d743b8a6fc363",
+        "origin": "1.9",
+        "sha256": "8ba5eff677c6131c4dd94cf21f535e204b2d2ad1798b67e2094faafc7f81fb1e",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -7050,25 +7050,25 @@
           "path": "images/screenshots/zh/L/R16-light-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 5346
+          "bytes": 5358
         },
         {
           "path": "images/screenshots/zh/L/R16-light-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 14520
+          "bytes": 14566
         },
         {
           "path": "images/screenshots/zh/L/R16-light-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 31630
+          "bytes": 31568
         }
       ],
       "source": {
         "id": "R16-L-zh-Hans-light",
-        "origin": "1.8",
-        "sha256": "6cd6a21354e184c3ee08bb8662ec0713070479d828e3be70a8662aebbf01061f",
+        "origin": "1.9",
+        "sha256": "ea695a82428245d35f8e76e72d59cf7ca7ef6dc1f1626a21e4100147255ce5fe",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -7094,25 +7094,25 @@
           "path": "images/screenshots/zh/L/R16-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 4984
+          "bytes": 4996
         },
         {
           "path": "images/screenshots/zh/L/R16-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 13886
+          "bytes": 13834
         },
         {
           "path": "images/screenshots/zh/L/R16-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 30288
+          "bytes": 30388
         }
       ],
       "source": {
         "id": "R16-L-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "0f435dcd8ce1012ecf0f77ee510162dff49d6d5abfabb8ce3e2cac74d79072b7",
+        "origin": "1.9",
+        "sha256": "b1f31f9dae7c693f61aa4df6ce37a9056bb4aeb730e04819e917e52bf836c4eb",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -7138,25 +7138,25 @@
           "path": "images/screenshots/en/L/R16-light-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 5982
+          "bytes": 6042
         },
         {
           "path": "images/screenshots/en/L/R16-light-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 16602
+          "bytes": 16566
         },
         {
           "path": "images/screenshots/en/L/R16-light-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 34226
+          "bytes": 34300
         }
       ],
       "source": {
         "id": "R16-L-en-light",
-        "origin": "1.8",
-        "sha256": "ed47b41da4a017ecf46088537c12b253c362f922c6e69b7484d2418d4de533fb",
+        "origin": "1.9",
+        "sha256": "020cc12d30518d3bca996290106e5b8f88a8aa69f5f378235e3151deab92f76b",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -7182,25 +7182,25 @@
           "path": "images/screenshots/en/L/R16-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 5762
+          "bytes": 5756
         },
         {
           "path": "images/screenshots/en/L/R16-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 15930
+          "bytes": 15938
         },
         {
           "path": "images/screenshots/en/L/R16-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 33356
+          "bytes": 33456
         }
       ],
       "source": {
         "id": "R16-L-en-dark",
-        "origin": "1.8",
-        "sha256": "f42fcf151c238fa5f844084d48e390ae2a28f7fe43e7ee5669d688aad85330be",
+        "origin": "1.9",
+        "sha256": "5e8792ba3851f45bf2bb245f24847a2b2d1a4fd612de1659ba9279ca63584a60",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -7226,25 +7226,25 @@
           "path": "images/screenshots/zh/L/R17-light-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 4304
+          "bytes": 4882
         },
         {
           "path": "images/screenshots/zh/L/R17-light-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 12128
+          "bytes": 13530
         },
         {
           "path": "images/screenshots/zh/L/R17-light-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 26442
+          "bytes": 29616
         }
       ],
       "source": {
         "id": "R17-L-zh-Hans-light",
-        "origin": "1.8",
-        "sha256": "8d44d60377407af5c3a8f412a1140ce4afd1dffb4d60a18e51c8609530e82e91",
+        "origin": "1.9",
+        "sha256": "50674565b15afabb4ea136936c5842b4daa844690ca11496244fe739b5bd5d1c",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -7270,25 +7270,25 @@
           "path": "images/screenshots/zh/L/R17-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 4226
+          "bytes": 4776
         },
         {
           "path": "images/screenshots/zh/L/R17-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 11794
+          "bytes": 13074
         },
         {
           "path": "images/screenshots/zh/L/R17-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 25538
+          "bytes": 28844
         }
       ],
       "source": {
         "id": "R17-L-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "bd3fab8700071d2d13db023c3786d1d253c45aeeaf527713761b5564669a95c9",
+        "origin": "1.9",
+        "sha256": "245a6afc371ede62f11325a1ad52cd5a4252de4cca1a8408d9faa94ef76ef961",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -7314,25 +7314,25 @@
           "path": "images/screenshots/en/L/R17-light-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 4746
+          "bytes": 5370
         },
         {
           "path": "images/screenshots/en/L/R17-light-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 13306
+          "bytes": 15166
         },
         {
           "path": "images/screenshots/en/L/R17-light-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 27670
+          "bytes": 32168
         }
       ],
       "source": {
         "id": "R17-L-en-light",
-        "origin": "1.8",
-        "sha256": "72baa8288d2faefb8d8ac615cb7bafaeb52443e21fd3308a6d3abf02a0443f06",
+        "origin": "1.9",
+        "sha256": "8e004e0b04fba98cd8d61e1a13c9c6cccce85798571279f2cd5d49e4ad741e25",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -7358,25 +7358,25 @@
           "path": "images/screenshots/en/L/R17-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 4650
+          "bytes": 5308
         },
         {
           "path": "images/screenshots/en/L/R17-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 12838
+          "bytes": 14792
         },
         {
           "path": "images/screenshots/en/L/R17-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 27234
+          "bytes": 31608
         }
       ],
       "source": {
         "id": "R17-L-en-dark",
-        "origin": "1.8",
-        "sha256": "8f0373bed6944c54f8ba670fac180eaefaae729934946f437e9dcbd594ddb5f2",
+        "origin": "1.9",
+        "sha256": "a9f90f07cf1620c6e82fc26195e043f52ca296846ca1d0d638e3567887ae55f3",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -7402,25 +7402,25 @@
           "path": "images/screenshots/zh/O/R16-light-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 21396
+          "bytes": 21404
         },
         {
           "path": "images/screenshots/zh/O/R16-light-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 52438
+          "bytes": 52408
         },
         {
           "path": "images/screenshots/zh/O/R16-light-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 100256
+          "bytes": 100180
         }
       ],
       "source": {
         "id": "R16-O-zh-Hans-light",
-        "origin": "1.8",
-        "sha256": "c652ea102999c7d8ad5045a7a5082a4ed05ece2ebd1a60bfefbeafd644c7fca8",
+        "origin": "1.9",
+        "sha256": "07a850dee8e9f50fb8fc1ea6d2968f10ff64c69b82feb3fdc6b48070c02d3d2d",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -7446,25 +7446,25 @@
           "path": "images/screenshots/zh/O/R16-dark-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 20320
+          "bytes": 20474
         },
         {
           "path": "images/screenshots/zh/O/R16-dark-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 50052
+          "bytes": 50506
         },
         {
           "path": "images/screenshots/zh/O/R16-dark-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 97992
+          "bytes": 98928
         }
       ],
       "source": {
         "id": "R16-O-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "04d38b86f679a4f68c051a72d435f9c93e4a4ee491bb5f6c93ac32d149df2648",
+        "origin": "1.9",
+        "sha256": "2708410cd010bac17c371ee6dbd65bb82e6fe955decaff9cf7d0c1a6643c2290",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -7490,25 +7490,25 @@
           "path": "images/screenshots/en/O/R16-light-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 22168
+          "bytes": 22530
         },
         {
           "path": "images/screenshots/en/O/R16-light-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 53274
+          "bytes": 54208
         },
         {
           "path": "images/screenshots/en/O/R16-light-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 100634
+          "bytes": 102424
         }
       ],
       "source": {
         "id": "R16-O-en-light",
-        "origin": "1.8",
-        "sha256": "27a15b12035cef2c915da9c7c8001ce5a4c0a0b83c2c335d3810c302109f9c21",
+        "origin": "1.9",
+        "sha256": "1499ea982cf2072bfb9bdabafc6a518f4e80e9f5bc4a0f227909ffcacadafd62",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -7534,25 +7534,25 @@
           "path": "images/screenshots/en/O/R16-dark-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 21302
+          "bytes": 21674
         },
         {
           "path": "images/screenshots/en/O/R16-dark-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 51586
+          "bytes": 52854
         },
         {
           "path": "images/screenshots/en/O/R16-dark-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 99464
+          "bytes": 101220
         }
       ],
       "source": {
         "id": "R16-O-en-dark",
-        "origin": "1.8",
-        "sha256": "38945de508f83e30047c03dfb461749a332ff9fbb9814d878ab988918d54c06d",
+        "origin": "1.9",
+        "sha256": "6ca3f7edbe761c508a87009ab3b82fd66d923224dbe5bf2032c47b7ca5bad662",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -7578,25 +7578,25 @@
           "path": "images/screenshots/zh/O/R17-light-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 18672
+          "bytes": 21320
         },
         {
           "path": "images/screenshots/zh/O/R17-light-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 46344
+          "bytes": 54912
         },
         {
           "path": "images/screenshots/zh/O/R17-light-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 89556
+          "bytes": 109330
         }
       ],
       "source": {
         "id": "R17-O-zh-Hans-light",
-        "origin": "1.8",
-        "sha256": "3e4d4dc103331e3ec65a423b538f97fe9218e8f29f35ffe8bf8c11e5bdeda0fa",
+        "origin": "1.9",
+        "sha256": "d9edb0f7e10dc14d3e5b49dd35ac04a176a5302b81164bd9a3917240d3bc62cb",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -7622,25 +7622,25 @@
           "path": "images/screenshots/zh/O/R17-dark-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 17826
+          "bytes": 20396
         },
         {
           "path": "images/screenshots/zh/O/R17-dark-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 44702
+          "bytes": 52828
         },
         {
           "path": "images/screenshots/zh/O/R17-dark-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 87862
+          "bytes": 107570
         }
       ],
       "source": {
         "id": "R17-O-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "b25fdc520a74d0aab648e476f21c8ccd74aafd0e03f216728a47ab8fcae054b8",
+        "origin": "1.9",
+        "sha256": "387f1d593c771b1155c5e9fa828359c7e9fa4a592bd22b89e4413ad78f31cbf3",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -7666,25 +7666,25 @@
           "path": "images/screenshots/en/O/R17-light-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 20538
+          "bytes": 23718
         },
         {
           "path": "images/screenshots/en/O/R17-light-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 48916
+          "bytes": 59738
         },
         {
           "path": "images/screenshots/en/O/R17-light-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 92522
+          "bytes": 118152
         }
       ],
       "source": {
         "id": "R17-O-en-light",
-        "origin": "1.8",
-        "sha256": "be121a5e890f3f0aa0b953e20651f71a0506ee7ad1da8d4bff16d631eb54cebb",
+        "origin": "1.9",
+        "sha256": "ec93f757c5646e1504b95a323b0f7d093aaf2bd1d0609eda0d9cd173921abfe3",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -7710,25 +7710,25 @@
           "path": "images/screenshots/en/O/R17-dark-480.webp",
           "width": 480,
           "height": 669,
-          "bytes": 19958
+          "bytes": 23050
         },
         {
           "path": "images/screenshots/en/O/R17-dark-960.webp",
           "width": 960,
           "height": 1338,
-          "bytes": 47564
+          "bytes": 58354
         },
         {
           "path": "images/screenshots/en/O/R17-dark-1574.webp",
           "width": 1574,
           "height": 2194,
-          "bytes": 91496
+          "bytes": 115318
         }
       ],
       "source": {
         "id": "R17-O-en-dark",
-        "origin": "1.8",
-        "sha256": "448f3caa5dc8767e4a6078bc75b350af4c975533c044ed832d9b414260a10cb3",
+        "origin": "1.9",
+        "sha256": "544a32638d36b0e1db360ac9aa893321a308ae5282df18a304f3896bb728895d",
         "frame": {
           "file": "duo-outer.png",
           "sha256": "f972a6062a0ca2bef2186d61366beaf746a7725a34a4bfa1dabc4410d7c0dbdf",
@@ -7754,25 +7754,25 @@
           "path": "images/screenshots/zh/I/R16-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 10100
+          "bytes": 10128
         },
         {
           "path": "images/screenshots/zh/I/R16-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 26258
+          "bytes": 26298
         },
         {
           "path": "images/screenshots/zh/I/R16-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 52082
+          "bytes": 52306
         }
       ],
       "source": {
         "id": "R16-I-zh-Hans-light",
-        "origin": "1.8",
-        "sha256": "e3b32bc6127cbcbe232f01b56c95dfe2d0d02b1383c06bafa184d0035d18c417",
+        "origin": "1.9",
+        "sha256": "26b05e5c1966538f33db6079e46693f3438040528341295f6014e38ee353988e",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -7798,25 +7798,25 @@
           "path": "images/screenshots/zh/I/R16-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 9466
+          "bytes": 9460
         },
         {
           "path": "images/screenshots/zh/I/R16-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 24820
+          "bytes": 24924
         },
         {
           "path": "images/screenshots/zh/I/R16-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 50308
+          "bytes": 50280
         }
       ],
       "source": {
         "id": "R16-I-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "e12f5319c0dc01ba55fb1ef7f419e73cd2df4057fe594cbf7ae038b7042e262a",
+        "origin": "1.9",
+        "sha256": "8bdc46295af497d19919af502a506ff0b51947f4158ca9f6d01aa8e0bb717954",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -7842,25 +7842,25 @@
           "path": "images/screenshots/en/I/R16-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 11596
+          "bytes": 11598
         },
         {
           "path": "images/screenshots/en/I/R16-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 28700
+          "bytes": 28788
         },
         {
           "path": "images/screenshots/en/I/R16-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 55644
+          "bytes": 55652
         }
       ],
       "source": {
         "id": "R16-I-en-light",
-        "origin": "1.8",
-        "sha256": "f669f8e310f7ae3fec07e4003ac8d0f85f16360cf2aa0dccf2216a7b9cbecf90",
+        "origin": "1.9",
+        "sha256": "2cf85dba1944bd4afb94d9f9dfa9bd070af00986fb8a9bbb3dfcbb71a7f53dad",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -7892,19 +7892,19 @@
           "path": "images/screenshots/en/I/R16-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 27786
+          "bytes": 27874
         },
         {
           "path": "images/screenshots/en/I/R16-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 54702
+          "bytes": 54762
         }
       ],
       "source": {
         "id": "R16-I-en-dark",
-        "origin": "1.8",
-        "sha256": "0f264bc232fd1f5a4d8acf4b1464647bc57d6a9db6d2fbe63515538023b22565",
+        "origin": "1.9",
+        "sha256": "b4501f8463ac872885c2003c929766301dfda117e06865874614832a7d3a1515",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -7930,25 +7930,25 @@
           "path": "images/screenshots/zh/I/R17-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 8762
+          "bytes": 9516
         },
         {
           "path": "images/screenshots/zh/I/R17-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 22862
+          "bytes": 24696
         },
         {
           "path": "images/screenshots/zh/I/R17-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 43824
+          "bytes": 51330
         }
       ],
       "source": {
         "id": "R17-I-zh-Hans-light",
-        "origin": "1.8",
-        "sha256": "e5ae278116ff0a2a28d2fe0a9bd545ab96c8919c21ca2b3a1feae5da523b9c03",
+        "origin": "1.9",
+        "sha256": "9e0060d166baa274e44cbe9ebb2ace8c23c7be39a68f4ca8139c8290dc849673",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -7974,25 +7974,25 @@
           "path": "images/screenshots/zh/I/R17-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 8338
+          "bytes": 8916
         },
         {
           "path": "images/screenshots/zh/I/R17-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 21456
+          "bytes": 23648
         },
         {
           "path": "images/screenshots/zh/I/R17-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 43110
+          "bytes": 49672
         }
       ],
       "source": {
         "id": "R17-I-zh-Hans-dark",
-        "origin": "1.8",
-        "sha256": "1f0a52444cc171bfe5e924ac2b8b13d8caed168aa1b56f6d7c4478c3c7830872",
+        "origin": "1.9",
+        "sha256": "6dc71f70f52c6b54d18193830ea5fe343411734da7a5d2bb2d2da3247878d898",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -8018,25 +8018,25 @@
           "path": "images/screenshots/en/I/R17-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 9402
+          "bytes": 10534
         },
         {
           "path": "images/screenshots/en/I/R17-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 24242
+          "bytes": 28062
         },
         {
           "path": "images/screenshots/en/I/R17-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 45600
+          "bytes": 53752
         }
       ],
       "source": {
         "id": "R17-I-en-light",
-        "origin": "1.8",
-        "sha256": "310a99f4483456b5bdbd560d0c818a1957c50d8dd08439d017d1214aa8a4c190",
+        "origin": "1.9",
+        "sha256": "d8c37aef3ea860e90b1cd3b10ac2ec9e913985787014fd8d29e18806f1b3cbd4",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -8062,25 +8062,25 @@
           "path": "images/screenshots/en/I/R17-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 9138
+          "bytes": 10174
         },
         {
           "path": "images/screenshots/en/I/R17-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 23082
+          "bytes": 26866
         },
         {
           "path": "images/screenshots/en/I/R17-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 44936
+          "bytes": 53498
         }
       ],
       "source": {
         "id": "R17-I-en-dark",
-        "origin": "1.8",
-        "sha256": "a7433545a6d7564cffa0da44480c805aed6311338c2e2f4ab6691e24523eff45",
+        "origin": "1.9",
+        "sha256": "f19b6ba8154c735a9a1fb0f5feeb3ddab7f20f3e43359c7dd750cb59b926fb35",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
