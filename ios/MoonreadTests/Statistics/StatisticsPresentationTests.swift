@@ -4,7 +4,6 @@ import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import GRDB
-import MoonreadStatisticsDates
 import Observation
 import SQLite3
 import SwiftData

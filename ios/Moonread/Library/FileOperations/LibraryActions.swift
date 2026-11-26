@@ -14,7 +14,7 @@ enum LibraryFilePicker {
 
 enum LibrarySheet: Identifiable {
     case rename(LibraryEntry), create(LibraryLocation)
-    case move([LibraryEntry]), export(LibraryExport), share(LibraryExport), importResults
+    case move([LibraryEntry]), export(ShareFiles), share(ShareFiles), importResults
     case fullIndex(String)
     var id: String {
         switch self {
@@ -51,7 +51,7 @@ struct LibraryPresentations: ViewModifier {
                 case .create(let location): nameEditor(entry: nil, location: location).themeScope(theme)
                 case .move(let entries): NavigationStack { moveDestination(entries) }.themeScope(theme)
                 case .export(let files): LibraryExportPicker(files: files)
-                case .share(let files): LibraryShareSheet(files: files)
+                case .share(let files): ShareSheet(files: files)
                 case .fullIndex(let shelf): HostedFullIndexView(shelfID: shelf) { id in
                     model.runAfterSheetDismiss { model.openIndexFailure(id) }
                 }.themeScope(theme)

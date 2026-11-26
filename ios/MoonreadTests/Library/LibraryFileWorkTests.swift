@@ -1,3 +1,4 @@
+import MoonreadDesign
 import MoonreadData
 @testable import MoonreadLibrary
 import MoonreadDataTypes
@@ -323,7 +324,7 @@ final class LibraryFileWorkReaderIntegrationTests: ReaderIntegrationFixture {
     let entry = try await service.libraryEntries(LibraryLocation(shelfID: "builtin"))[0]
     let original = root.appendingPathComponent(entry.name)
     let originalBytes = try Data(contentsOf: original)
-    var presentation: LibraryExport? = try await service.exportLibraryFiles([entry])
+    var presentation: ShareFiles? = try await service.exportLibraryFiles([entry])
     let stagedDirectory = try XCTUnwrap(presentation?.directory)
     let stagedURL = try XCTUnwrap(presentation?.urls.first)
     XCTAssertEqual(try Data(contentsOf: stagedURL), originalBytes)
@@ -339,7 +340,7 @@ final class LibraryFileWorkReaderIntegrationTests: ReaderIntegrationFixture {
 
     var failedDirectory: URL?
     XCTAssertThrowsError(
-      try LibraryExport { staging in
+      try ShareFiles { staging in
         failedDirectory = staging
         try originalBytes.write(to: staging.appendingPathComponent("copied.txt"))
         throw CocoaError(.fileWriteOutOfSpace)

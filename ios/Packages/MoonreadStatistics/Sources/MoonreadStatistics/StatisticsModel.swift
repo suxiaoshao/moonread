@@ -1,7 +1,6 @@
 import MoonreadCoreBindings
 import MoonreadDataTypes
 import Combine
-import MoonreadStatisticsDates
 import SwiftUI
 
 @MainActor @Observable

@@ -1,3 +1,4 @@
+import MoonreadDesign
 import MoonreadSearchText
 import MoonreadData
 import MoonreadDataTypes
@@ -542,9 +543,9 @@ import BackgroundTasks
         }
     }
 
-    public func diagnosticFile() throws -> LibraryExport? {
+    public func diagnosticFile() throws -> ShareFiles? {
         guard let diagnostics = preview?.diagnostics, !diagnostics.isEmpty else { return nil }
-        return try LibraryExport { directory in
+        return try ShareFiles { directory in
             let url = directory.appendingPathComponent("metadata-errors.jsonl")
             FileManager.default.createFile(atPath: url.path, contents: nil)
             let handle = try FileHandle(forWritingTo: url); defer { try? handle.close() }

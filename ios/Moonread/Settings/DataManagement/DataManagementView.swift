@@ -135,7 +135,7 @@ struct DataManagementView: View {
 private struct BackupExportView: View {
     let model: DataManagementModel
     @Environment(\.dismiss) private var dismiss
-    @State private var sharing: LibraryExport?
+    @State private var sharing: ShareFiles?
     @State private var sharingError: String?
     @State private var preparingShare = false
     private var task: DataExchangeTask<Void, URL> { model.backupExport }

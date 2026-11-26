@@ -65,7 +65,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - 链接明确指定 `libmoonread_core.a`，避免同目录动态库被优先选中或把 Mac 路径带进 iPhone。
 - 主 App 另外链接 `libmoonread_ai_cover.a`，由同一个 Nix 构建阶段编译。封面 crate 含网页解析，C 接口不参与正文 UniFFI 生成。Swift 包通过 App 注入的封面适配调用该接口。
 - `ios/Packages/MoonreadAI` 是 iOS 18 / Swift 6 本地包。Swift AI SDK、Litext、MarkdownView 版本在其清单声明，由 Xcode workspace 同一 `Package.resolved` 锁定。模型快照和品牌资源随包资源复制，测试继续由 Moonread scheme 运行。
-- `MoonreadStatistics` 是 iOS 18 / Swift 6 本地包。主 App 注入统计读取与观察、书籍导航和展示附件。统计图表使用 `MoonreadDesign` 的共用样式，日界和格式由 `MoonreadStatisticsDates` 提供。统计仍查找 App 的 `Localizable.xcstrings`，保留与书籍详情及系统入口共用的翻译。
+- `MoonreadStatistics` 是 iOS 18 / Swift 6 本地包。主 App 注入统计读取与观察、书籍导航和展示附件。统计图表使用 `MoonreadDesign` 的共用样式，日界和格式由 `MoonreadDataTypes` 中的 `StatisticsDates` 提供。统计仍查找 App 的 `Localizable.xcstrings`，保留与书籍详情及系统入口共用的翻译。
 - `MoonreadData` 拥有当前作用域的 `DataSession`、GRDB 池、`ReaderIndex`、账户和同步引擎 lease，以及 SQL、候选结算和事务。SQL 资源由 SwiftPM 随包复制，使用 `Bundle.module`。轻量 `MoonreadDataTypes` 共享书键、来源和作用域。`MoonreadSearchText` 共享普通搜索和系统实体用的文字匹配，Widget 只需这个轻量产品。
 - `MoonreadLibrary` 保存书架首页、列表和网格、目录及最近阅读、文件任务界面、索引呈现、搜索和虚拟书架、书架管理、作者页、书籍资料及交换界面。App 注入具体服务、封面和跨页路由。共用的中文、繁中和英文仍来自 App 的本地化表，书架标签词表由 `MoonreadLibrary` 通过 `Bundle.module` 加载。
 - `MoonreadReader` 是 iOS 18 / Swift 6 本地包。它拥有会话、阅读工具和 UIKit 渲染，并向设置提供排版和字体预览。App 继续通过主资源清单提供已有本地化表、封面图库和纸张纹理。App 与 Widget 都能使用 `MoonreadInstalledFonts`，Widget 只链接这份字体检查。

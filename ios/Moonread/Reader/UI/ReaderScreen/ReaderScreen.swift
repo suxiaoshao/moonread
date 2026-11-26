@@ -77,12 +77,11 @@ struct ReaderScreen: View {
             aiProposes: { ai.runtime?.conversation($0)?.latestTurnProposes == true },
             aiPage: { request in
                 AnyView(AIEntry {
-                    AIReadingConversation(context: request.context, close: request.close, selected: request.selected,
+                    AIReadingConversation(context: aiContext(request.context), close: request.close, selected: request.selected,
                         openingIsActive: request.openingIsActive,
                         readingSearch: .init(isOpenBook: request.isOpenBook, returnToBook: request.close))
                 })
             },
-            bookReference: AIReadingTools.bookRef,
             showsControlsTip: Onboarding.shared.enabled && !Onboarding.shared.revealedControls,
             showsSelectionTip: Onboarding.shared.enabled && Onboarding.shared.revealedControls && !Onboarding.shared.selectedText,
             controlsTip: { AnyView(TipView(Onboarding.shared.controls).tipViewStyle(ThemedTipStyle())) },
@@ -99,6 +98,21 @@ struct ReaderScreen: View {
                 #endif
             }
         )
+    }
+
+    private func aiContext(_ passage: ReaderPassageContext) -> AIEntryContext {
+        let reference = passage.contentSHA.map(AIReadingTools.bookRef)
+        var attachments: [AIReadingAttachment] = [
+            .init(kind: .position, origin: "reader", bookRef: reference, title: passage.title, chapter: passage.chapter,
+                  startUtf8: passage.start, endUtf8: passage.end, progress: passage.progress)
+        ]
+        if let selection = passage.selection {
+            attachments.append(.init(kind: .selection, origin: "reader", bookRef: reference, title: passage.title,
+                                     chapter: passage.chapter, startUtf8: selection.startUtf8, endUtf8: selection.endUtf8,
+                                     excerpt: selection.text))
+        }
+        return AIEntryContext(association: AIContext(contentSHA: passage.contentSHA, title: passage.title, chapter: passage.chapter),
+                              attachments: attachments)
     }
 
     private var smokeEnabled: Bool {

@@ -1,7 +1,6 @@
 import MoonreadCoreBindings
 import MoonreadDataTypes
 import MoonreadDesign
-import MoonreadStatisticsDates
 import SwiftUI
 
 public struct StatisticsPage<Route: Hashable>: View {

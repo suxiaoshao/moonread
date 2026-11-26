@@ -1,5 +1,4 @@
 import MoonreadDataTypes
-import MoonreadLibrary
 import MoonreadDesign
 import MoonreadCoreBindings
 import SwiftUI
@@ -110,7 +109,7 @@ struct ReaderNotesList: View {
         }
         .onChange(of: model.deletedIDs, initial: true) { _, ids in model.setUndoVisible(ids != nil) }
         .onDisappear { model.setUndoVisible(false) }
-        .sheet(item: $sharing) { LibraryShareSheet(files: $0.files, text: $0.text) }
+        .sheet(item: $sharing) { ShareSheet(files: $0.files, text: $0.text) }
     }
     private func noteContent(_ mark: ReaderMark) -> some View {
         VStack(alignment: .leading, spacing: 8) {

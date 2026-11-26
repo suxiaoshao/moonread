@@ -12,9 +12,7 @@ let package = Package(
     dependencies: [
         .package(path: "../MoonreadCoreBindings"),
         .package(path: "../MoonreadData"),
-        .package(path: "../MoonreadDesign"),
-        .package(path: "../MoonreadLibrary"),
-        .package(path: "../MoonreadAI")
+        .package(path: "../MoonreadDesign")
     ],
     targets: [
         .target(name: "MoonreadReader", dependencies: [
@@ -22,9 +20,7 @@ let package = Package(
             .product(name: "MoonreadDataTypes", package: "MoonreadData"),
             .product(name: "MoonreadCoreBindings", package: "MoonreadCoreBindings"),
             .product(name: "MoonreadData", package: "MoonreadData"),
-            .product(name: "MoonreadDesign", package: "MoonreadDesign"),
-            .product(name: "MoonreadLibrary", package: "MoonreadLibrary"),
-            .product(name: "MoonreadAI", package: "MoonreadAI")
+            .product(name: "MoonreadDesign", package: "MoonreadDesign")
         ]),
         .target(name: "MoonreadInstalledFonts")
     ]

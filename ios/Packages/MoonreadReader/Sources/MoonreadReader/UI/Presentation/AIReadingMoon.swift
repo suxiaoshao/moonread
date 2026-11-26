@@ -1,17 +1,20 @@
 import MoonreadDesign
-import MoonreadAI
 import SwiftUI
 
 /// What the reading Moon can see of the conversation selected in this opening.
 public struct AIMoonSnapshot: Equatable {
     let conversationID: String
     let running: Bool
-    let status: AIAgentStatus
+    public enum Status: Equatable {
+        case idle, waitingConfirmation, waitingDataSharing, completed, failed
+    }
+
+    let status: Status
     /// The live pose while the run is going.
     let pose: MoonPose
     let label: String
 
-    public init(conversationID: String, running: Bool, status: AIAgentStatus, pose: MoonPose, label: String) {
+    public init(conversationID: String, running: Bool, status: Status, pose: MoonPose, label: String) {
         self.conversationID = conversationID
         self.running = running
         self.status = status
@@ -43,7 +46,7 @@ struct AIMoonPresence: Equatable {
 
     private(set) var conversationID: String?
     private(set) var running = false
-    private(set) var status = AIAgentStatus.idle
+    private(set) var status = AIMoonSnapshot.Status.idle
     private(set) var queued: Notice?
     private(set) var shown: Shown?
     /// An outcome the person has not seen in the conversation yet, kept for the
@@ -68,7 +71,7 @@ struct AIMoonPresence: Equatable {
         case .completed:
             let pose: MoonPose = review() ? .doneReview : .done
             queued = .outcome(pose); unseen = pose == .doneReview ? pose : nil
-        case .failed, .limitReached, .interrupted:
+        case .failed:
             queued = .outcome(.failed); unseen = .failed
         default:
             // Stopped by the person: nothing to announce.

@@ -1,7 +1,6 @@
 import MoonreadDesign
 import MoonreadDataTypes
 import MoonreadCoreBindings
-import MoonreadStatisticsDates
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers

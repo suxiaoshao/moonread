@@ -324,7 +324,6 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		338BB8A6D7043A0DD640FC65 /* AIConnectionFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E81C5D3417332DCB4691CF5 /* AIConnectionFixtures.swift */; };
 		7CE986CF432C7B672BAB0E6F /* AINativeToolsFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1DA2437A2F7FD02A7278FB /* AINativeToolsFixture.swift */; };
 		A37602000000000000000006 /* MoonreadStatistics in Frameworks */ = {isa = PBXBuildFile; productRef = A37602000000000000000003; };
-		A37602000000000000000007 /* MoonreadStatisticsDates in Frameworks */ = {isa = PBXBuildFile; productRef = A37602000000000000000004; };
 		A37602000000000000000008 /* MoonreadDesign in Frameworks */ = {isa = PBXBuildFile; productRef = A37602000000000000000005; };
 		A37603000000000000000003 /* MoonreadCoreBindings in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000002; };
 		A37603000000000000000013 /* MoonreadDataTypes in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000012; };
@@ -681,7 +680,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				A37603000000000000000015 /* MoonreadData in Frameworks */,
                 A37603000000000000000025 /* MoonreadSearchText in App Frameworks */,
 				A37603000000000000000013 /* MoonreadDataTypes in Frameworks */,
-				A37602000000000000000007 /* MoonreadStatisticsDates in Frameworks */,
 				A37602000000000000000006 /* MoonreadStatistics in Frameworks */,
 
 
@@ -1602,7 +1600,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 F1C19004BB32432C8F23B23B,
                 24EC65B9F10B59B19FF49005,
 			);
-			packageProductDependencies = (A1A276000000000000000002,270D00000000000000000042,270E40000000000000000002,A37602000000000000000003,A37602000000000000000004,A37602000000000000000005,A37603000000000000000002,A37603000000000000000012,A37603000000000000000014,A37603000000000000000022,A37603000000000000000024,A37604000000000000000002,A37604000000000000000004);
+			packageProductDependencies = (A1A276000000000000000002,270D00000000000000000042,270E40000000000000000002,A37602000000000000000003,A37602000000000000000005,A37603000000000000000002,A37603000000000000000012,A37603000000000000000014,A37603000000000000000022,A37603000000000000000024,A37604000000000000000002,A37604000000000000000004);
 			name = Moonread;
 			productName = Moonread;
 			productReference = A2000000000000000000000A /* Moonread.app */;
@@ -2122,7 +2120,6 @@ F01900000000000000000001,
 
 
 		A37602000000000000000003 /* MoonreadStatistics */ = {isa = XCSwiftPackageProductDependency; package = A37602000000000000000001; productName = MoonreadStatistics; };
-		A37602000000000000000004 /* MoonreadStatisticsDates */ = {isa = XCSwiftPackageProductDependency; package = A37602000000000000000001; productName = MoonreadStatisticsDates; };
 		A37602000000000000000005 /* MoonreadDesign */ = {isa = XCSwiftPackageProductDependency; package = A37602000000000000000002; productName = MoonreadDesign; };
 		A37603000000000000000002 /* MoonreadCoreBindings */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000001; productName = MoonreadCoreBindings; };
 		A37603000000000000000012 /* MoonreadDataTypes */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000011; productName = MoonreadDataTypes; };

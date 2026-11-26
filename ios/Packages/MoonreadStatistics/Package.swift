@@ -5,20 +5,16 @@ import PackageDescription
 let package = Package(
     name: "MoonreadStatistics",
     platforms: [.iOS(.v18)],
-    products: [
-        .library(name: "MoonreadStatistics", targets: ["MoonreadStatistics"]),
-        .library(name: "MoonreadStatisticsDates", targets: ["MoonreadStatisticsDates"])
-    ],
+    products: [.library(name: "MoonreadStatistics", targets: ["MoonreadStatistics"])],
     dependencies: [
         .package(path: "../MoonreadCoreBindings"),
         .package(path: "../MoonreadData"),
         .package(path: "../MoonreadDesign")
     ],
     targets: [
-        .target(name: "MoonreadStatistics", dependencies: ["MoonreadStatisticsDates",
+        .target(name: "MoonreadStatistics", dependencies: [
             .product(name: "MoonreadCoreBindings", package: "MoonreadCoreBindings"),
             .product(name: "MoonreadDataTypes", package: "MoonreadData"),
-            .product(name: "MoonreadDesign", package: "MoonreadDesign")]),
-        .target(name: "MoonreadStatisticsDates")
+            .product(name: "MoonreadDesign", package: "MoonreadDesign")])
     ]
 )

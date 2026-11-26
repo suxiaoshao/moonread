@@ -1,9 +1,8 @@
-import MoonreadCoreBindings
 import Foundation
 
 /// Owns only disposable copies. The presentation and its completion handler
 /// retain this object until the system has finished consuming the files.
-public final class LibraryExport: Sendable {
+public final class ShareFiles: Sendable {
     public let directory: URL
     public let urls: [URL]
     private static let root: URL = {

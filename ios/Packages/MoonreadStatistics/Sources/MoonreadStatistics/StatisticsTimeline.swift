@@ -1,5 +1,5 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
-import MoonreadStatisticsDates
 
 public struct StatisticsSpan: Identifiable, Equatable, Sendable {
     public struct ID: Hashable, Sendable {

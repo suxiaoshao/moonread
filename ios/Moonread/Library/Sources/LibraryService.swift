@@ -1,3 +1,4 @@
+import MoonreadDesign
 import MoonreadLibrary
 import MoonreadData
 import MoonreadDataTypes
@@ -728,8 +729,8 @@ extension AppDataService {
         return try await libraryEntry(id)
     }
 
-    func exportLibraryFiles(_ entries: [LibraryEntry]) throws -> LibraryExport {
-        try LibraryExport { directory in try entries.map { entry in
+    func exportLibraryFiles(_ entries: [LibraryEntry]) throws -> ShareFiles {
+        try ShareFiles { directory in try entries.map { entry in
             let targetDirectory = directory.appendingPathComponent(entry.id)
             try FileManager.default.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
             let target = targetDirectory.appendingPathComponent(entry.name)

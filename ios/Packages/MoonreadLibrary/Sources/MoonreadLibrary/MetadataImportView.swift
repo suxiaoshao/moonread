@@ -18,7 +18,7 @@ struct MetadataImportView: View {
     @State private var confirmEnd = false
     @State private var confirmContinue = false
     @State private var inspectingPreview = false
-    @State private var sharing: LibraryExport?
+    @State private var sharing: ShareFiles?
     private var visible: [MetadataPreviewBook] { model.visible(query: query, filter: filter) }
     private var wide: Bool { width == .regular && !typeSize.isAccessibilitySize }
     private var detailedBookID: String? { selected ?? (wide ? model.books.first?.id : nil) }
@@ -88,7 +88,7 @@ struct MetadataImportView: View {
                 Text("会继续保存未提交的资料，并处理尚未执行的改名。", tableName: "MetadataExchange")
             }
         }
-        .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) { if let sharing { LibraryShareSheet(files: sharing) } }
+        .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) { if let sharing { ShareSheet(files: sharing) } }
     }
     private var bookList: some View {
         let pending = model.pending

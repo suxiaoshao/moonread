@@ -1,4 +1,3 @@
-import MoonreadAI
 import MoonreadCoreBindings
 import MoonreadDataTypes
 import SwiftUI
@@ -42,8 +41,19 @@ public struct ReaderSourceNavigation {
     public let editorClosed: () -> Void
 }
 
+/// Source coordinates and reading context captured when the reader opens an assistant page.
+public struct ReaderPassageContext {
+    public let contentSHA: String?
+    public let title: String
+    public let chapter: String?
+    public let start: UInt64
+    public let end: UInt64?
+    public let progress: Double?
+    public let selection: TextRange?
+}
+
 @MainActor public struct ReaderAIPage {
-    public let context: AIEntryContext
+    public let context: ReaderPassageContext
     public let selected: Binding<String?>
     public let close: () -> Void
     public let openingIsActive: () -> Bool
@@ -83,7 +93,6 @@ typealias ReaderCoverRenderer = (String, BookCoverAsset?, String?, String?) -> A
     let aiSnapshot: (String) -> AIMoonSnapshot?
     let aiProposes: (String) -> Bool
     let aiPage: (ReaderAIPage) -> AnyView
-    let bookReference: (String) -> String
     let showsControlsTip: Bool
     let showsSelectionTip: Bool
     let controlsTip: () -> AnyView
@@ -104,7 +113,7 @@ typealias ReaderCoverRenderer = (String, BookCoverAsset?, String?, String?) -> A
         cover: @escaping (String, BookCoverAsset?, String?, String?) -> AnyView,
         listeningCover: @escaping (String, String?, String?, UIImage?) -> AnyView,
         aiAvailable: Bool, aiSnapshot: @escaping (String) -> AIMoonSnapshot?, aiProposes: @escaping (String) -> Bool,
-        aiPage: @escaping (ReaderAIPage) -> AnyView, bookReference: @escaping (String) -> String,
+        aiPage: @escaping (ReaderAIPage) -> AnyView,
         showsControlsTip: Bool, showsSelectionTip: Bool, controlsTip: @escaping () -> AnyView,
         selectionTip: @escaping () -> AnyView, didShowControls: @escaping () -> Void, didSelectText: @escaping () -> Void,
         smokeEnabled: Bool = false, annotationWitness: String? = nil, bodyDisplayed: @escaping (ReaderSession) -> Void = { _ in }
@@ -124,7 +133,6 @@ typealias ReaderCoverRenderer = (String, BookCoverAsset?, String?, String?) -> A
         self.aiSnapshot = aiSnapshot
         self.aiProposes = aiProposes
         self.aiPage = aiPage
-        self.bookReference = bookReference
         self.showsControlsTip = showsControlsTip
         self.showsSelectionTip = showsSelectionTip
         self.controlsTip = controlsTip

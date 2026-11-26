@@ -1,4 +1,3 @@
-import MoonreadLibrary
 import MoonreadDesign
 import MoonreadData
 import MoonreadDataTypes
@@ -524,7 +523,7 @@ public struct ReaderPage: View {
         .onChange(of: isLibrary) { old, new in
             if old && !new { tools.finishNoteSelection() }
         }
-        .sheet(item: $excerptShare) { LibraryShareSheet(files: $0.files, text: $0.text) }
+        .sheet(item: $excerptShare) { ShareSheet(files: $0.files, text: $0.text) }
         .modifier(SystemReadingConfirmation(active: !sheetPresented))
         .alert("阅读遇到问题", isPresented: readingErrorPresented) {
             Button("知道了", role: .cancel) { session.error = nil }
@@ -556,7 +555,7 @@ public struct ReaderPage: View {
     }
     private func openAI(selection: TextRange? = nil) {
         guard host.aiAvailable, !session.isLeaving else { return }
-        sendTool(.open(.ai(aiContext(selection: selection))))
+        sendTool(.open(.ai(assistantContext(selection: selection))))
     }
     private func revealAIMoonNotice() {
         guard aiNoticeAllowed, let shown = aiPresence.reveal() else { return }

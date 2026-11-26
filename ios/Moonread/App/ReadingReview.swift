@@ -1,5 +1,5 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
-import MoonreadStatisticsDates
 import Foundation
 import StoreKit
 import SwiftUI

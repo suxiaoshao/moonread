@@ -1,7 +1,7 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import SwiftUI
 import MoonreadDesign
-import MoonreadStatisticsDates
 
 /// A book's time in the range. The bar is scaled to the range's longest book and
 /// ends at its written duration, so it reads as a comparison, never as progress.

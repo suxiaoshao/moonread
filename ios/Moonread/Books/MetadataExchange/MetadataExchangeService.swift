@@ -1,3 +1,4 @@
+import MoonreadDesign
 import MoonreadData
 import MoonreadLibrary
 import MoonreadDataTypes
@@ -184,7 +185,7 @@ extension AppDataService {
         try manifestOutput.finish()
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
-        let file = try LibraryExport { directory in
+        let file = try ShareFiles { directory in
             if hasCovers {
                 try Data("Moonread metadata v1\nFormat: https://suxiaoshao.github.io/moonread/metadata-format/\nSchema: https://suxiaoshao.github.io/moonread/schema/moonread-metadata-v1.schema.json\nSkill: https://suxiaoshao.github.io/moonread/skills/moonread-metadata/SKILL.md\nAgent: https://suxiaoshao.github.io/moonread/agent.txt\nWhen editing this exported manifest, preserve content_sha256 and reference unchanged. New manifests may be generated directly from TXT using normalization-v1. Use the same text encoding as Moonread. Reference: https://suxiaoshao.github.io/moonread/skills/moonread-metadata/identity/README.md\nThis is not a reading-data backup.\n".utf8).write(to: stage.appendingPathComponent("README.txt"))
                 let output = directory.appendingPathComponent("Moonread.moonread-metadata")

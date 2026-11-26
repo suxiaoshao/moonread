@@ -1,5 +1,5 @@
+import MoonreadDataTypes
 import SwiftUI
-import MoonreadStatisticsDates
 
 /// One local calendar day: its clock-hour timeline and exact sessions.
 struct StatisticsDayView: View {

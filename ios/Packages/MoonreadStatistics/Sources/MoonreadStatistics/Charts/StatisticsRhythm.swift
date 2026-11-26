@@ -1,7 +1,7 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import SwiftUI
 import Charts
-import MoonreadStatisticsDates
 
 /// The selected range's day-level rhythm: seven daily bars, a month calendar,
 /// a year's monthly bars, or all-time monthly or yearly bars.

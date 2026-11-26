@@ -1,7 +1,7 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import SwiftUI
 import Charts
-import MoonreadStatisticsDates
 
 struct ReadingSessionsChart: View {
     let spans: [StatisticsSpan]

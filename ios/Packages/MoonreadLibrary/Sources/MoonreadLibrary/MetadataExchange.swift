@@ -1,3 +1,4 @@
+import MoonreadDesign
 import MoonreadDataTypes
 import MoonreadData
 import MoonreadCoreBindings
@@ -437,12 +438,12 @@ public struct MetadataSkippedFile: Identifiable, Sendable {
     }
 }
 public struct MetadataExportResult: Sendable {
-    public let file: LibraryExport
+    public let file: ShareFiles
     public let count: Int
     public let skipped: [MetadataSkippedFile]
     public let warnings: [String]
-    public func shareCopy() throws -> LibraryExport {
-        try LibraryExport { directory in
+    public func shareCopy() throws -> ShareFiles {
+        try ShareFiles { directory in
             try file.urls.map { source in
                 let target = directory.appendingPathComponent(source.lastPathComponent)
                 try FileManager.default.copyItem(at: source, to: target)
@@ -451,7 +452,7 @@ public struct MetadataExportResult: Sendable {
         }
     }
 
-    public init(file: LibraryExport, count: Int, skipped: [MetadataSkippedFile], warnings: [String]) {
+    public init(file: ShareFiles, count: Int, skipped: [MetadataSkippedFile], warnings: [String]) {
         self.file = file
         self.count = count
         self.skipped = skipped

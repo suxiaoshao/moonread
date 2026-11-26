@@ -1,3 +1,4 @@
+import MoonreadDesign
 import MoonreadReader
 import MoonreadLibrary
 import MoonreadData
@@ -242,7 +243,7 @@ extension AppDataService {
         let index = try relationalUserIndex()
         return try await index.exportReadingDataSnapshot(directory: directory, writerVersion: writerVersion)
     }
-    func readingBackupShareCopy(_ url: URL) async throws -> LibraryExport {
+    func readingBackupShareCopy(_ url: URL) async throws -> ShareFiles {
         let source = url.deletingLastPathComponent()
         backupShareCopies[source, default: 0] += 1
         defer {
@@ -252,7 +253,7 @@ extension AppDataService {
         // Reuse the ordinary file share lifetime: the system consumes its own
         // disposable copy, never an export directory that the next export cleans.
         return try await Task.detached(priority: .utility) {
-            try LibraryExport { directory in
+            try ShareFiles { directory in
                 let copy = directory.appendingPathComponent(url.lastPathComponent)
                 try FileManager.default.copyItem(at: url, to: copy)
                 return [copy]

@@ -126,8 +126,8 @@ public struct LibraryMoveDestination: View {
 }
 
 public struct LibraryExportPicker: UIViewControllerRepresentable {
-    let files: LibraryExport
-    public init(files: LibraryExport) { self.files = files }
+    let files: ShareFiles
+    public init(files: ShareFiles) { self.files = files }
     public func makeCoordinator() -> Coordinator { Coordinator(files) }
     public func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
         let controller = UIDocumentPickerViewController(forExporting: files.urls, asCopy: true)
@@ -136,8 +136,8 @@ public struct LibraryExportPicker: UIViewControllerRepresentable {
     }
     public func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
     public final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        private var files: LibraryExport?
-        init(_ files: LibraryExport) { self.files = files }
+        private var files: ShareFiles?
+        init(_ files: ShareFiles) { self.files = files }
         public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { files?.finish(); files = nil }
         public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { files?.finish(); files = nil }
     }

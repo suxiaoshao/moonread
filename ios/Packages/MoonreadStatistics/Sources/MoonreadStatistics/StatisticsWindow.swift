@@ -1,4 +1,4 @@
-import MoonreadStatisticsDates
+import MoonreadDataTypes
 import SwiftUI
 
 /// The recent window answers "what have I been reading"; months and years are

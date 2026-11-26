@@ -1,5 +1,4 @@
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 import UIKit
 
@@ -44,7 +43,7 @@ enum ReaderToolRoute {
     case settings(ReaderSettingsVisit)
     case details(ReaderDetailsTarget)
     case history
-    case ai(AIEntryContext)
+    case ai(ReaderPassageContext)
     case annotations([String], editing: NoteEditorModel? = nil)
     case note(NoteEditorModel)
     case chapter(ReaderEditSession)

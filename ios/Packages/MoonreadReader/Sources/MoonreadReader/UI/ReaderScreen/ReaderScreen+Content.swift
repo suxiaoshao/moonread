@@ -1,7 +1,6 @@
 import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
-import MoonreadAI
 import TipKit
 import SwiftUI
 import UIKit
@@ -22,21 +21,14 @@ extension ReaderPage {
         .modifier(ReaderOpenContentFade(phase: readerSession.opening.phase, enabled: readerSession.opening.fadesContent && !reduceMotion))
     }
 
-    func aiContext(selection: TextRange? = nil) -> AIEntryContext {
-        let sha = readerSession.book?.readingKey.formalSHA256
-        let title = readerSession.book?.title ?? route.title
+    func assistantContext(selection: TextRange?) -> ReaderPassageContext {
+        let book = readerSession.book
         let visible = readerSession.viewportAccess.controller?.statisticsRange()
         let start = visible?.0 ?? readerSession.anchor
-        var attachments: [AIReadingAttachment] = [
-            .init(kind: .position, origin: "reader", bookRef: sha.map(host.bookReference), title: title,
-                  chapter: readerSession.chapter?.title, startUtf8: start, endUtf8: visible?.1,
-                  progress: readerSession.incomplete ? nil : readerSession.book.map { ReadingProgress.fraction(start, of: $0.byteCount) })
-        ]
-        if let selection {
-            attachments.append(.init(kind: .selection, origin: "reader", bookRef: sha.map(host.bookReference), title: title,
-                                     chapter: readerSession.chapter?.title, startUtf8: selection.startUtf8, endUtf8: selection.endUtf8, excerpt: selection.text))
-        }
-        return AIEntryContext(association: AIContext(contentSHA: sha, title: title, chapter: readerSession.chapter?.title), attachments: attachments)
+        let progress = readerSession.incomplete ? nil : book.map { ReadingProgress.fraction(start, of: $0.byteCount) }
+        return ReaderPassageContext(contentSHA: book?.readingKey.formalSHA256, title: book?.title ?? route.title,
+                                    chapter: readerSession.chapter?.title, start: start, end: visible?.1,
+                                    progress: progress, selection: selection)
     }
 
     var preparationView: some View {

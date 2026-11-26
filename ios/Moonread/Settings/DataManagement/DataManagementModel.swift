@@ -1,3 +1,4 @@
+import MoonreadDesign
 import MoonreadDataTypes
 import MoonreadLibrary
 import MoonreadSearchText
@@ -174,7 +175,7 @@ import SwiftUI
         catch { issueErrors[item.id] = ReaderMessages.error(error) }
         await load()
     }
-    func shareBackup() async throws -> LibraryExport {
+    func shareBackup() async throws -> ShareFiles {
         guard let exported = backupExport.output else { throw ReadingDataError.invalid }
         return try await service.readingBackupShareCopy(exported)
     }

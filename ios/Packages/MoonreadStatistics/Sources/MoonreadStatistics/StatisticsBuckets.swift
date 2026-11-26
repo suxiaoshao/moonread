@@ -1,6 +1,6 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
-import MoonreadStatisticsDates
 
 /// One bar or cell of a rhythm chart: an inclusive run of local calendar days.
 struct StatisticsBucket: Identifiable, Equatable {

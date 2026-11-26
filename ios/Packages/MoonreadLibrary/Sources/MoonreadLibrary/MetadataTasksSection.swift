@@ -197,7 +197,7 @@ public struct MetadataExportView: View {
     @State private var loadedShelves = false
     @State private var shelvesReload = 0
     @State private var sharingError: String?
-    @State private var sharing: LibraryExport?
+    @State private var sharing: ShareFiles?
     private let initialShelfName: String?
     private var validScope: Bool { scope.isEmpty || shelves.contains { $0.id == scope } }
 
@@ -461,7 +461,7 @@ public struct DataExchangeTaskSummary<Title: View, Detail: View>: View {
 }
 
 public struct DataExchangeTaskSheet<Content: View, Footer: View>: View {
-    public init(title: Text, sharing: Binding<LibraryExport?>, onShared: @escaping @MainActor @Sendable () -> Void,
+    public init(title: Text, sharing: Binding<ShareFiles?>, onShared: @escaping @MainActor @Sendable () -> Void,
                 closeIdentifier: String = "closeExportTask", @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer) {
         self.title = title; self._sharing = sharing; self.onShared = onShared; self.closeIdentifier = closeIdentifier
         self.content = content(); self.footer = footer()
@@ -469,7 +469,7 @@ public struct DataExchangeTaskSheet<Content: View, Footer: View>: View {
 
     @Environment(\.dismiss) private var dismiss
     let title: Text
-    @Binding var sharing: LibraryExport?
+    @Binding var sharing: ShareFiles?
     let onShared: @MainActor @Sendable () -> Void
     var closeIdentifier = "closeExportTask"
     @ViewBuilder let content: Content
@@ -488,7 +488,7 @@ public struct DataExchangeTaskSheet<Content: View, Footer: View>: View {
                 .modifier(MetadataTaskBar { footer })
         }
         .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
-            if let sharing { LibraryShareSheet(files: sharing, onShared: onShared) }
+            if let sharing { ShareSheet(files: sharing, onShared: onShared) }
         }
     }
 }

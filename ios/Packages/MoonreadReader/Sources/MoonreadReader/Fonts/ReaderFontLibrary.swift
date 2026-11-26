@@ -1,4 +1,3 @@
-import MoonreadLibrary
 import MoonreadData
 import MoonreadCoreBindings
 import CoreText

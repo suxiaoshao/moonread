@@ -1,4 +1,3 @@
-import MoonreadLibrary
 import MoonreadDesign
 import MoonreadData
 import MoonreadDataTypes
@@ -73,14 +72,14 @@ public struct NoteDocument: Sendable {
 struct NoteSharePayload: Identifiable {
     let id = UUID()
     let text: String?
-    let files: LibraryExport?
+    let files: ShareFiles?
     var url: URL? { files?.urls.first }
     init(text: String) { self.text = text; files = nil }
     init(document: NoteDocument, format: NoteDocument.Format) throws {
         let ext = format == .markdown ? ".md" : ".txt"
         let proposed = document.title + "-" + String(localized: "笔记") + ext
         let name = (try? validateLibraryName(input: proposed, profile: .manualForm)) != nil ? proposed : String(localized: "月读笔记") + ext
-        files = try LibraryExport { folder in
+        files = try ShareFiles { folder in
             let file = folder.appendingPathComponent(name)
             try document.render(format).write(to: file, atomically: true, encoding: .utf8)
             return [file]
@@ -129,7 +128,7 @@ struct NoteExportView: View {
                         .background(Color(uiColor: theme.canvas))
                 }
             }
-            .sheet(item: $sharing) { LibraryShareSheet(files: $0.files, text: $0.text) }
+            .sheet(item: $sharing) { ShareSheet(files: $0.files, text: $0.text) }
             .task { await load() }
     }
     private func load() async {

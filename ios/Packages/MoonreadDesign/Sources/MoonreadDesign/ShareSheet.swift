@@ -1,11 +1,11 @@
 import SwiftUI
 import UIKit
 
-public struct LibraryShareSheet: UIViewControllerRepresentable {
-    let files: LibraryExport?
+public struct ShareSheet: UIViewControllerRepresentable {
+    let files: ShareFiles?
     var text: String? = nil
     var onShared: (@MainActor @Sendable () -> Void)? = nil
-    public init(files: LibraryExport?, text: String? = nil, onShared: (@MainActor @Sendable () -> Void)? = nil) {
+    public init(files: ShareFiles?, text: String? = nil, onShared: (@MainActor @Sendable () -> Void)? = nil) {
         self.files = files; self.text = text; self.onShared = onShared
     }
     public func makeUIViewController(context: Context) -> UIActivityViewController {
