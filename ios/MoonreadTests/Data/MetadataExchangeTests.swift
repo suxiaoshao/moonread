@@ -1,3 +1,4 @@
+import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
@@ -85,7 +86,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         var preview = try await service.previewMetadata(exported.file.urls[0])
         let match = try XCTUnwrap(preview.books.firstIndex { $0.id == key })
         preview.books[match].adopt(true)
-        preview.books[match].validateSelection(using: service)
+        preview.books[match].validateSelection()
         let restored = await service.applyMetadata(preview) { _, _ in }
         XCTAssertNil(restored.failure)
         let final = try await service.details(sha: key)
@@ -297,7 +298,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         firstEdit.author = "Temporary author"
         firstEdit.cover = proposedCover
         let initialValues = try store.metadataTokens()
-        let firstWrite = try service.metadataEditPlan(base: firstBase, edited: firstEdit)
+        let firstWrite = try BookMetadataEditPlan.make(base: firstBase, edited: firstEdit)
         let draft = await service.coverDraftURL(proposedCover)
         let validCover = try Data(contentsOf: draft)
         let badField = BookMetadataEditPlan(sha: second.fixtureSHA256,

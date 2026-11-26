@@ -1,3 +1,4 @@
+import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import TipKit
@@ -190,23 +191,15 @@ private struct FolderOverview: View {
     let location: LibraryLocation
     let shelf: LibraryShelf?
     @Environment(\.theme) private var theme
+
     var body: some View {
-        VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-            if let error = shelf?.error {
-                Button("重新连接", systemImage: "folder.badge.questionmark") { model.chooseFiles(.folder(location.shelfID)) }
-                Text(verbatim: error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-            }
-            if location.path.isEmpty {
-                Button { host.navigate(.allBooks(location.shelfID), in: model) } label: {
-                    HStack(spacing: LayoutTokens.compact) {
-                        Label("全部小说", systemImage: "books.vertical").font(.subheadline.weight(.medium)).foregroundStyle(Color(uiColor: theme.accent))
-                        Spacer()
-                        Text("\(shelf?.bookCount ?? 0) 本小说").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color(uiColor: theme.secondary))
-                    }.frame(minHeight: LayoutTokens.hit).contentShape(.rect)
-                }.buttonStyle(.plain).accessibilityIdentifier("library-all-books")
-                ShelfIndexGuidance(model: model, shelfID: location.shelfID)
-            }
+        LibraryFolderOverview(
+            isRoot: location.path.isEmpty, bookCount: shelf?.bookCount ?? 0, error: shelf?.error,
+            accent: Color(uiColor: theme.accent), secondary: Color(uiColor: theme.secondary),
+            reconnect: { model.chooseFiles(.folder(location.shelfID)) },
+            showAll: { host.navigate(.allBooks(location.shelfID), in: model) }
+        ) {
+            ShelfIndexGuidance(model: model, shelfID: location.shelfID)
         }
     }
 }

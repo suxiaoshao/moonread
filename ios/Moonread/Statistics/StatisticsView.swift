@@ -1,3 +1,4 @@
+import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import MoonreadAI
@@ -53,15 +54,15 @@ struct StatisticsView: View {
             bookFooter: { AnyView(Group { fileInformation; deletionSection }) },
             optionsMenu: { window, clear in AnyView(optionsMenu(window, clearStatistics: clear)) }
         )
-        .task(id: InformationRequest(identity: target.map(BookInformationModel.Identity.init), revision: information.requestRevision)) {
-            if let target { await information.observe(target) }
+        .task(id: InformationRequest(identity: target.map(\.informationTarget), revision: information.requestRevision)) {
+            if let target { await information.observe(target.informationTarget) }
         }
         .sheet(item: $information.draft) { draft in
-            BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "").themeScope(theme)
+            BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "", service: library.service).themeScope(theme)
                 .readerToolPresentation()
         }
         .alert("下载小说后才能编辑信息", isPresented: $information.confirmDownload) {
-            Button("下载并准备") { if let target { information.prepareEditing(target) } }
+            Button("下载并准备") { if let target { information.prepareEditing(target.informationTarget) } }
             Button("取消", role: .cancel) {}
         }
         .overlay {
@@ -107,7 +108,7 @@ struct StatisticsView: View {
     private func optionsMenu(_ window: StatisticsWindow, clearStatistics: @escaping () -> Void) -> some View {
         Menu {
             if let target {
-                Button("编辑小说信息", systemImage: "pencil") { information.edit(target) }
+                Button("编辑小说信息", systemImage: "pencil") { information.edit(target.informationTarget) }
                     .disabled(!information.canEdit)
                 if ai.availability.isAvailable {
                     ForEach([AIQuickTaskRequest.Family.metadata, .cover], id: \.self) { family in
@@ -141,13 +142,13 @@ struct StatisticsView: View {
     /// One origin per library file, so the detail page and the library menu reopen the same task.
     private func bookRequest(_ family: AIQuickTaskRequest.Family) -> AIQuickTaskRequest? {
         guard let target else { return nil }
-        let sha = information.contentSHA(for: target)
-        let fileRef = information.matches(target) ? information.entry.map { AIReadingTools.ref("f", $0.id) } : target.fileID.map { AIReadingTools.ref("f", $0) }
+        let sha = information.contentSHA(for: target.informationTarget)
+        let fileRef = information.matches(target.informationTarget) ? information.entry.map { AIReadingTools.ref("f", $0.id) } : target.fileID.map { AIReadingTools.ref("f", $0) }
         guard sha != nil || fileRef != nil else { return nil }
-        let title = information.matches(target) ? (information.entry?.title ?? target.title) : target.title
+        let title = information.matches(target.informationTarget) ? (information.entry?.title ?? target.title) : target.title
         let attachment = AIReadingAttachment(kind: .book, origin: "detail", bookRef: sha.map(AIReadingTools.bookRef), fileRef: fileRef, title: title)
         return AIQuickTaskRequest(family: family, origin: fileRef != nil ? AITaskOrigin(bookSHA: nil, fileRef: fileRef) : AITaskOrigin(bookSHA: sha),
-                                  object: AITaskObject(title: title, subtitle: information.matches(target) ? information.details.flatMap { $0.metadata.author.isEmpty ? nil : $0.metadata.author } : nil, cover: information.matches(target) ? information.details?.metadata.cover : nil),
+                                  object: AITaskObject(title: title, subtitle: information.matches(target.informationTarget) ? information.details.flatMap { $0.metadata.author.isEmpty ? nil : $0.metadata.author } : nil, cover: information.matches(target.informationTarget) ? information.details?.metadata.cover : nil),
                                   attachments: [attachment])
     }
     private func statisticsRequest(_ window: StatisticsWindow) -> AIQuickTaskRequest? {
@@ -155,13 +156,13 @@ struct StatisticsView: View {
     }
 
     private struct InformationRequest: Hashable {
-        let identity: BookInformationModel.Identity?
+        let identity: BookInformationTarget?
         let revision: Int
     }
 
     private var readingSectionReady: Bool {
         guard let target, target.readingSection else { return false }
-        return information.matches(target)
+        return information.matches(target.informationTarget)
     }
 
     @ViewBuilder private var fileInformation: some View {

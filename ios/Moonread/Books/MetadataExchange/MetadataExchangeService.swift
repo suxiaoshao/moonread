@@ -1,3 +1,5 @@
+import MoonreadData
+import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import MoonreadAI
@@ -107,7 +109,7 @@ extension AppDataService {
             guard current == confirmation.values else { throw ReadingDataError.changed }
             let fields = Set(confirmation.fields.map(\.metadataKey))
             let plans = try confirmation.changes.map { base in
-                try metadataEditPlan(base: base, edited: MetadataCleanupInventory.empty(sha: base.sha), fields: fields)
+                try BookMetadataEditPlan.make(base: base, edited: MetadataCleanupInventory.empty(sha: base.sha), fields: fields)
             }
             let reclaimed = try UserValueRows.putMetadata(db, plans.map { .init(plan: $0, cover: nil) },
                                                           device: device, now: now, scope: lease.scope)
@@ -322,7 +324,7 @@ extension AppDataService {
                         if field == .author { validation.author = text ?? "" }
                         if field == .description { validation.synopsis = text ?? "" }
                         if field == .tags { validation.tags = tags }
-                        do { _ = try metadataEditPlan(base: base, edited: validation) }
+                        do { _ = try BookMetadataEditPlan.make(base: base, edited: validation) }
                         catch {
                             let message = String(localized: "资料超出当前编辑限制，未采用该字段", table: "MetadataExchange")
                             item.messages.append(message)
@@ -351,7 +353,7 @@ extension AppDataService {
                 item.fields.append(.init(field: field, options: options, selected: selected))
             }
             item.messages += messagesBySHA[sha, default: []].map { String(localized: String.LocalizationValue($0.message), table: "MetadataExchange") }
-            item.messages = Array(Set(item.messages)).sorted(); item.validateSelection(using: self); books.append(item)
+            item.messages = Array(Set(item.messages)).sorted(); item.validateSelection(); books.append(item)
         }
         guard session.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
@@ -386,7 +388,7 @@ extension AppDataService {
 
     private func prepareMetadataBook(_ index: Int, _ book: MetadataPreviewBook) throws -> PreparedMetadataBook {
         guard let base = book.base, let edited = book.edited else { throw ReaderError.InvalidSettings }
-        let plan = try metadataEditPlan(base: base, edited: edited,
+        let plan = try BookMetadataEditPlan.make(base: base, edited: edited,
                                         fields: Set(book.fields.compactMap { $0.chosen == nil ? nil : $0.field.metadataKey }))
         guard !plan.values.isEmpty else { throw ReaderError.InvalidSettings }
         var text = 0

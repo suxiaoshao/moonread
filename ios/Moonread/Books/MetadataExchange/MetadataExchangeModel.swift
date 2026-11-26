@@ -293,7 +293,7 @@ import GRDB
                     .first { hint.selected == Self.optionIdentity($0) }?.id
                 loaded.books[index].fields[f].replaceTags = hint.replaceTags
             }
-            loaded.books[index].validateSelection(using: service)
+            loaded.books[index].validateSelection()
         }
         review(loaded)
     }
@@ -314,7 +314,7 @@ import GRDB
             guard self.phase == .review, var preview = self.preview,
                   let index = preview.books.firstIndex(where: { $0.id == id }) else { return }
             var value = value
-            value.validateSelection(using: self.service)
+            value.validateSelection()
             preview.books[index] = value
             self.preview = preview
             self.remember(value)
@@ -325,7 +325,7 @@ import GRDB
         guard phase == .review, var preview else { return }
         for index in preview.books.indices {
             preview.books[index].adopt(enabled, replaceTags: replaceTags)
-            preview.books[index].validateSelection(using: service)
+            preview.books[index].validateSelection()
             remember(preview.books[index])
         }
         self.preview = preview

@@ -149,7 +149,6 @@ AP1000000000000000000001 = {isa = PBXBuildFile; fileRef = AP20000000000000000000
 		F01700000000000000000005 /* TipJarTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01700000000000000000006 /* TipJarTestFixtures.swift */; };
         F01700000000000000000001 = {isa = PBXBuildFile; fileRef = F01700000000000000000002; };
         F01600000000000000000001 = {isa = PBXBuildFile; fileRef = F01600000000000000000002; };
-        AF1000000000000000000004 /* LibraryDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000004; };
 		AF1000000000000000000005 /* LibraryDropTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000005 /* LibraryDropTestFixtures.swift */; };
 FB1000000000000000000001 = {isa = PBXBuildFile; fileRef = FB2000000000000000000001; };
 
@@ -460,6 +459,7 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		A37603000000000000000003 /* MoonreadCoreBindings in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000002; };
 		A37603000000000000000013 /* MoonreadDataTypes in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000012; };
 		A37603000000000000000015 /* MoonreadData in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000014; };
+		A37603000000000000000023 /* MoonreadLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000022; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -624,7 +624,6 @@ AP2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.xml
         F01700000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text; path = Moonread/Settings/TipJar.storekit; sourceTree = SOURCE_ROOT; };
         F01700000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/Settings/TipJar.swift; sourceTree = SOURCE_ROOT; };
         F01600000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
-        AF2000000000000000000004 /* LibraryDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryDrop.swift"; sourceTree = "<group>"; };
 		AF2000000000000000000005 /* LibraryDropTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/LibraryDropTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 FB2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AINativeMarkdown.swift"; sourceTree = "<group>"; };
 FA2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIMessageRow.swift"; sourceTree = "<group>"; };
@@ -935,6 +934,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 270E40000000000000000003,
 				A37602000000000000000008 /* MoonreadDesign in Frameworks */,
 				A37603000000000000000003 /* MoonreadCoreBindings in Frameworks */,
+				A37603000000000000000023 /* MoonreadLibrary in Frameworks */,
 				A37603000000000000000015 /* MoonreadData in Frameworks */,
 				A37603000000000000000013 /* MoonreadDataTypes in Frameworks */,
 				A37602000000000000000007 /* MoonreadStatisticsDates in Frameworks */,
@@ -1852,7 +1852,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			children = (
 				A1552663E85DD907D9582A20 /* LibraryExport.swift */,
 				AE2000000000000000000002 /* LibraryActions.swift */,
-				AF2000000000000000000004 /* LibraryDrop.swift */,
 				F853A448B490AEA3E382B39B /* LibraryShelfDrop.swift */,
 			);
 			path = "FileOperations";
@@ -1954,7 +1953,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 F1C19004BB32432C8F23B23B,
                 24EC65B9F10B59B19FF49005,
 			);
-			packageProductDependencies = (A1A276000000000000000002,270D00000000000000000042,270E40000000000000000002,A37602000000000000000003,A37602000000000000000004,A37602000000000000000005,A37603000000000000000002,A37603000000000000000012,A37603000000000000000014);
+			packageProductDependencies = (A1A276000000000000000002,270D00000000000000000042,270E40000000000000000002,A37602000000000000000003,A37602000000000000000004,A37602000000000000000005,A37603000000000000000002,A37603000000000000000012,A37603000000000000000014,A37603000000000000000022);
 			name = Moonread;
 			productName = Moonread;
 			productReference = A2000000000000000000000A /* Moonread.app */;
@@ -2046,7 +2045,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			productRefGroup = A50000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-            packageReferences = (A1A276000000000000000003,270D00000000000000000041,270E40000000000000000001,A37602000000000000000001,A37602000000000000000002,A37603000000000000000001,A37603000000000000000011);
+            packageReferences = (A1A276000000000000000003,270D00000000000000000041,270E40000000000000000001,A37602000000000000000001,A37602000000000000000002,A37603000000000000000001,A37603000000000000000011,A37603000000000000000021);
 			targets = (
                 AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */,
                 04C2476D974D589BB2C7513F,
@@ -2428,7 +2427,6 @@ F01900000000000000000001,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
                 BA332A1147C34AF4B0033201 /* AuthorLibraryView.swift in Sources */,
-                AF1000000000000000000004 /* LibraryDrop.swift in Sources */,
                 F14900000000000000000001,
                 B39A10000000000000000001 /* ShelfRecovery.swift in Sources */,
 				A10000000000000000000004 /* ReaderScreen.swift in Sources */,
@@ -2589,6 +2587,7 @@ F01900000000000000000001,
 		A37602000000000000000002 /* MoonreadDesign */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadDesign; };
 		A37603000000000000000001 /* MoonreadCoreBindings */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadCoreBindings; };
 		A37603000000000000000011 /* MoonreadData */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadData; };
+		A37603000000000000000021 /* MoonreadLibrary */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadLibrary; };
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -2608,6 +2607,7 @@ F01900000000000000000001,
 		A37603000000000000000002 /* MoonreadCoreBindings */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000001; productName = MoonreadCoreBindings; };
 		A37603000000000000000012 /* MoonreadDataTypes */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000011; productName = MoonreadDataTypes; };
 		A37603000000000000000014 /* MoonreadData */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000011; productName = MoonreadData; };
+		A37603000000000000000022 /* MoonreadLibrary */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000021; productName = MoonreadLibrary; };
 /* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */

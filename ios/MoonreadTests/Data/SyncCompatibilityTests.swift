@@ -1,3 +1,4 @@
+import MoonreadLibrary
 import CryptoKit
 import GRDB
 import SwiftData
@@ -386,7 +387,7 @@ final class SyncCompatibilityTests: UserDataFixture {
       readInformation: { _ in (nil, try await service.bookDetails(.cached(bookId: book.id))) },
       readChapters: { _ in [] })
     let target = StatisticsRoute(target: .cached(bookId: book.id), title: "Original sample", origin: .reader())
-    await model.load(target)
+    await model.load(target.informationTarget)
     XCTAssertNotNil(model.details)
     let payload = try UserSyncJSON.encode(
       StoredValue(updated: 1, token: "future", value: "\"Future author\""), envelope: true)
@@ -401,7 +402,7 @@ final class SyncCompatibilityTests: UserDataFixture {
         """, arguments: [sha,"metadata/"+sha+"/author",raw])
       try CurrentUserRows.settleMetadata(db, book: sha)
     }
-    await model.load(target)
+    await model.load(target.informationTarget)
     XCTAssertNil(model.details)
     XCTAssertNil(model.draft)
     XCTAssertNotNil(model.error)

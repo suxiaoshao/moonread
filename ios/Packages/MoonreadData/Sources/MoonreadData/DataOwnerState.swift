@@ -1,8 +1,8 @@
 import Foundation
 import MoonreadDataTypes
 
-public struct DataOwnerState: Codable, Equatable {
-    public struct Move: Codable, Equatable {
+public struct DataOwnerState: Codable, Equatable, Sendable {
+    public struct Move: Codable, Equatable, Sendable {
         public let id: UUID
         public let target: DataScope
 

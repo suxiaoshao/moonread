@@ -1,3 +1,4 @@
+import MoonreadLibrary
 import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
@@ -13,37 +14,9 @@ extension Notification.Name {
     static let libraryIndexChanged = Notification.Name("Moonread.libraryIndexChanged")
 }
 
-enum LibraryFileError: LocalizedError {
-    case conflict(String), invalidDestination, missingShelf, unsupportedFile, trashUnsupported, fileWorkBusy
-    var errorDescription: String? {
-        switch self {
-        case .conflict(let name): String(localized: "目标目录中已有“\(name)”。")
-        case .invalidDestination: String(localized: "无法使用这个名称或目标目录。")
-        case .missingShelf: String(localized: "书架暂时不可用，请重新连接。")
-        case .unsupportedFile: String(localized: "请选择 TXT 小说文件。")
-        case .trashUnsupported: String(localized: "所在位置不支持最近删除。")
-        case .fileWorkBusy: String(localized: "文件操作正在进行，请稍后再试。")
-        }
-    }
-}
-
 /// A successful filesystem deletion is final even when its index refresh fails.
 struct LibraryDeletionResult: Sendable {
     var refreshError: (any Error)?
-}
-
-/// Never occupy AppDataService while a provider waits for coordination or callbacks.
-private enum LibraryDeletionWork {
-    private static let queue = DispatchQueue(label: "moonread.library-delete.io")
-    static func run(_ body: @escaping @Sendable () throws -> Void) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            queue.async { continuation.resume(with: Result { try body() }) }
-        }
-    }
-}
-
-extension LibraryEntry {
-    var source: SourceFile { SourceFile(id: id, shelfID: shelfId, relativePath: relativePath) }
 }
 
 struct LibraryScanSnapshot: Sendable {
@@ -385,7 +358,7 @@ extension AppDataService {
         let access = root.startAccessingSecurityScopedResource()
         defer { if access { root.stopAccessingSecurityScopedResource() } }
         if let libraryScan { return try LibraryScanSnapshot(items: libraryScan(root, cloudItems)) }
-        return try coordinatedRead(root) { directory in try Self.libraryDirectoryScan(directory, cloudItems: cloudItems) }
+        return try LibraryFileOperations.read(root) { directory in try Self.libraryDirectoryScan(directory, cloudItems: cloudItems) }
     }
 
     /// The caller already holds a coordination claim (handoff publication).
@@ -520,13 +493,13 @@ extension AppDataService {
     func aiFileSnapshot(_ location: LibraryLocation) throws -> AIFileSnapshot {
         try withLibraryURL(location) { url in
             try Self.requirePreparedFile(url)
-            return try coordinatedRead(url) { try Self.aiSnapshot($0, location: location) }
+            return try LibraryFileOperations.read(url) { try Self.aiSnapshot($0, location: location) }
         }
     }
     /// Capture the checked directory identity and its actual occupancy in one read.
     func aiDirectoryState(_ location: LibraryLocation) throws -> (snapshot: AIFileSnapshot, names: Set<String>) {
         try withLibraryURL(location) { url in
-            try coordinatedRead(url) { directory in
+            try LibraryFileOperations.read(url) { directory in
                 let snapshot = try Self.aiSnapshot(directory, location: location)
                 guard snapshot.directory else { throw AIToolError("stale_reference") }
                 let names = Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
@@ -540,7 +513,7 @@ extension AppDataService {
         var created = false
         do {
             try withLibraryURL(parent.location) { url in
-                try coordinatedWrite(url) { directory in
+                try LibraryFileOperations.write(url) { directory in
                     try Self.aiValidateSnapshot(directory, expected: parent)
                     let target = directory.appendingPathComponent(name, isDirectory: true)
                     guard !FileManager.default.fileExists(atPath: target.path) else { throw LibraryFileError.conflict(name) }
@@ -556,9 +529,7 @@ extension AppDataService {
     func createLibraryFolder(at location: LibraryLocation, name: String) throws {
         let relative = try libraryChildPath(parent: location.path, name: name)
         try withLibraryURL(location) { parent in
-            try coordinatedWrite(parent) { directory in
-                try FileManager.default.createDirectory(at: directory.appendingPathComponent(name, isDirectory: true), withIntermediateDirectories: false)
-            }
+            try LibraryFileOperations.createFolder(in: parent, name: name)
         }
         _ = relative
         try refreshLibraryShelf(location.shelfID)
@@ -678,46 +649,32 @@ extension AppDataService {
         try withLibraryURL(entry.location) { source in
             if check != nil || renameValidation.required { try Self.requirePreparedFile(source) }
             try withLibraryURL(destination) { parent in
-                let targetURL = parent.appendingPathComponent(name ?? entry.name, isDirectory: entry.directory)
-                guard source.standardizedFileURL != targetURL.standardizedFileURL,
-                      !targetURL.standardizedFileURL.path.hasPrefix(source.standardizedFileURL.path + "/") else { throw LibraryFileError.invalidDestination }
-                let coordinator = NSFileCoordinator()
-                var error: NSError?, result: Result<Void, Error>?
-                coordinator.coordinate(writingItemAt: source, options: .forMoving, writingItemAt: parent, options: [], error: &error) { from, coordinatedParent in
-                    let to = coordinatedParent.appendingPathComponent(name ?? entry.name, isDirectory: entry.directory)
-                    result = Result {
-                        let fm = FileManager.default
+                try LibraryFileOperations.move(
+                    source, into: parent, name: name ?? entry.name, directory: entry.directory, replace: replace,
+                    validate: { from, coordinatedParent in
                         try renameValidation.validate(from)
                         if let check {
                             try Self.aiValidateSnapshot(from, expected: check.source)
                             try Self.aiValidateSnapshot(from.deletingLastPathComponent(), expected: check.sourceParent)
                             try Self.aiValidateSnapshot(coordinatedParent, expected: check.destination)
                         }
-                        if fm.fileExists(atPath: to.path) {
-                            guard replace else { throw LibraryFileError.conflict(to.lastPathComponent) }
-                            _ = try fm.replaceItemAt(to, withItemAt: from)
-                        } else if check != nil && (entry.shelfId != destination.shelfID || Self.aiVolume(from) != Self.aiVolume(coordinatedParent)) {
-                            stage = .uncertain
-                            try fm.copyItem(at: from, to: to)
-                            stage = .copiedSourceRemains
-                            guard let check, let expectedHash = check.source.hash,
-                                  try CloudDocumentHandoff.bytesHash(to) == expectedHash else { throw ReaderError.SourceChanged }
-                            try Self.aiValidateSnapshot(from, expected: check.source)
-                            // The source is removed only after copied bytes and the unchanged source are verified.
-                            try fm.removeItem(at: from)
-                            stage = .movedButIndexFailed
-                        } else {
-                            stage = .uncertain
-                            try fm.moveItem(at: from, to: to)
-                            stage = .movedButIndexFailed
+                    },
+                    requiresCopy: { from, coordinatedParent in
+                        check != nil && (entry.shelfId != destination.shelfID || Self.aiVolume(from) != Self.aiVolume(coordinatedParent))
+                    },
+                    validateCopy: { from, to in
+                        guard let check, let expectedHash = check.source.hash,
+                              try CloudDocumentHandoff.bytesHash(to) == expectedHash else { throw ReaderError.SourceChanged }
+                        try Self.aiValidateSnapshot(from, expected: check.source)
+                    },
+                    progress: { progress in
+                        stage = switch progress {
+                        case .uncertain: .uncertain
+                        case .copiedSourceRemains: .copiedSourceRemains
+                        case .moved: .movedButIndexFailed
                         }
-                        coordinator.item(at: from, didMoveTo: to)
-
                     }
-                }
-                if let error { throw error }
-                guard let result else { throw CocoaError(.fileWriteUnknown) }
-                try result.get()
+                )
             }
         }
         try indexStore().relocateLibraryEntry(fileId: entry.id, targetShelf: destination.shelfID, targetPath: target)
@@ -740,16 +697,7 @@ extension AppDataService {
         // Invalidate before suspending: a pre-delete scan must not publish while IO waits.
         libraryScans[entry.shelfId] = UUID()
         let deletion = libraryDeletion
-        try await LibraryDeletionWork.run {
-            let access = root.startAccessingSecurityScopedResource()
-            defer { if access { root.stopAccessingSecurityScopedResource() } }
-            let url = try Self.libraryURL(entry.location, root: root)
-            do { try deletion(url, permanently) }
-            catch {
-                if !permanently { throw LibraryFileError.trashUnsupported }
-                throw error
-            }
-        }
+        try await LibraryFileOperations.delete(entry.location, root: root, permanently: permanently, perform: deletion)
         // A scan started during IO is also obsolete. Revalidate the current shelf
         // (which may have changed during cloud handoff) with an asynchronous scan.
         libraryScans[entry.shelfId] = UUID()
@@ -770,23 +718,7 @@ extension AppDataService {
         let access = source.startAccessingSecurityScopedResource()
         defer { if access { source.stopAccessingSecurityScopedResource() } }
         try withLibraryURL(destination) { parent in
-            let target = parent.appendingPathComponent(name)
-            guard source.standardizedFileURL != target.standardizedFileURL else { return }
-            let coordinator = NSFileCoordinator()
-            var error: NSError?, result: Result<Void, Error>?
-            coordinator.coordinate(readingItemAt: source, options: [], writingItemAt: target, options: .forReplacing, error: &error) { from, to in
-                result = Result {
-                    let fm = FileManager.default
-                    if fm.fileExists(atPath: to.path), !replace { throw LibraryFileError.conflict(name) }
-                    let staged = to.deletingLastPathComponent().appendingPathComponent(".moonread-\(UUID().uuidString)")
-                    defer { try? fm.removeItem(at: staged) }
-                    try fm.copyItem(at: from, to: staged)
-                    if fm.fileExists(atPath: to.path) { _ = try fm.replaceItemAt(to, withItemAt: staged) }
-                    else { try fm.moveItem(at: staged, to: to) }
-                }
-            }
-            if let error { throw error }
-            guard let result else { throw CocoaError(.fileWriteUnknown) }; try result.get()
+            try LibraryFileOperations.copyForImport(source, into: parent, name: name, replace: replace)
         }
         if cloudLibraryRoot == nil { cloudLibraryCheckNeeded = true; cloudLibraryRetryAfterImport = true }
         try refreshLibraryShelf("builtin")
@@ -810,7 +742,7 @@ extension AppDataService {
             try FileManager.default.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
             let target = targetDirectory.appendingPathComponent(entry.name)
             try withLibraryURL(entry.location) { url in
-                try coordinatedRead(url) { try FileManager.default.copyItem(at: $0, to: target) }
+                try LibraryFileOperations.read(url) { try FileManager.default.copyItem(at: $0, to: target) }
             }
             return target
         } }
@@ -820,33 +752,8 @@ extension AppDataService {
         let root = try resolveShelf(libraryShelf(location.shelfID))
         let access = root.startAccessingSecurityScopedResource()
         defer { if access { root.stopAccessingSecurityScopedResource() } }
-        return try operation(Self.libraryURL(location, root: root))
+        return try operation(LibraryFileOperations.url(location, root: root))
     }
 
-    nonisolated private static func libraryURL(_ location: LibraryLocation, root: URL) throws -> URL {
-        do { try validateRelativePath(path: location.path, allowRoot: true) }
-        catch { throw LibraryFileError.invalidDestination }
-        var url = root
-        if !location.path.isEmpty {
-            for part in location.path.split(separator: "/", omittingEmptySubsequences: false) {
-                url.appendPathComponent(String(part))
-                if try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true { throw LibraryFileError.invalidDestination }
-            }
-        }
-        return url
-    }
-
-    nonisolated private func coordinatedRead<T>(_ url: URL, operation: (URL) throws -> T) throws -> T {
-        var error: NSError?, result: Result<T, Error>?
-        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &error) { coordinated in result = Result { try operation(coordinated) } }
-        if let error { throw error }
-        guard let result else { throw CocoaError(.fileReadUnknown) }; return try result.get()
-    }
-    private func coordinatedWrite<T>(_ url: URL, options: NSFileCoordinator.WritingOptions = [], operation: (URL) throws -> T) throws -> T {
-        var error: NSError?, result: Result<T, Error>?
-        NSFileCoordinator().coordinate(writingItemAt: url, options: options, error: &error) { coordinated in result = Result { try operation(coordinated) } }
-        if let error { throw error }
-        guard let result else { throw CocoaError(.fileWriteUnknown) }; return try result.get()
-    }
 
 }

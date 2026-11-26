@@ -1,3 +1,4 @@
+import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import SwiftUI
@@ -5,314 +6,73 @@ import Combine
 import PhotosUI
 import UniformTypeIdentifiers
 
-@MainActor @Observable
-final class BookInformationModel {
-    struct Identity: Hashable {
-        let target: BookTarget
-        let origin: StatisticsRoute.Origin
-        init(_ route: StatisticsRoute) { target = route.target; origin = route.origin }
-    }
-    struct Preparation {
-        enum Step { case downloading, indexing }
-        let id: UUID
-        let target: Identity
-        var step: Step
-        var progress: Double?
-    }
-    enum EditPreparation {
-        case idle, confirmingDownload(StatisticsRoute), preparing(Preparation), editing(BookMetadataDraft), failed(String)
-    }
-
-    private(set) var resolution: BookDetailsResult?
-    private(set) var entry: LibraryEntry?
-    private(set) var chapters: [ChapterEntry] = []
-    private(set) var coverageError: String?
-    private(set) var preparation: EditPreparation = .idle
-    private var actionError: String?
-    private var task: Task<Void, Never>?
-
-    var details: BookDetails? { if case .identified(_, let details) = resolution { return details }; return nil }
-    var readableBook: BookInfo? {
-        if case .pending(_, let body) = resolution { return body?.book }
-        return details?.book
-    }
-    var error: String? {
-        get { if case .failed(let message) = preparation { return message }; return actionError }
-        set { if case .failed = preparation { preparation = .idle }; actionError = newValue }
-    }
-    var preparing: Bool { if case .preparing = preparation { return true }; return false }
-    var downloading: Bool { if case .preparing(let value) = preparation { return value.step == .downloading }; return false }
-    var progress: Double? { if case .preparing(let value) = preparation { return value.progress }; return nil }
-    var confirmDownload: Bool {
-        get { if case .confirmingDownload = preparation { return true }; return false }
-        set { if !newValue, case .confirmingDownload = preparation { preparation = .idle } }
-    }
-    var draft: BookMetadataDraft? {
-        get { if case .editing(let value) = preparation { return value }; return nil }
-        set {
-            if let newValue { preparation = .editing(newValue) }
-            else if case .editing = preparation { preparation = .idle }
-        }
-    }
-    var canEdit: Bool { !preparing && (details != nil || entry != nil || readableBook != nil) }
-
-    private(set) var loadedIdentity: Identity?
-    private var requestedIdentity: Identity?
-    private var loadRevision = UUID()
-    private var observingRevision: UUID?
-    private(set) var requestRevision = 0
-    @ObservationIgnored private var accountChange: AnyCancellable?
-    @ObservationIgnored private let service: AppDataService
-    @ObservationIgnored private let readInformation: @MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetailsResult)
-    // Coverage is a separate §13.5 consumer. The boundary remains usable
-    // independently of the information read (including existing test fixtures).
-    @ObservationIgnored private let readChapters: (@MainActor (String) async throws -> [ChapterEntry])?
-    init(service: AppDataService = .shared,
-         readInformation: (@MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetailsResult))? = nil,
-         readChapters: (@MainActor (String) async throws -> [ChapterEntry])? = nil) {
-        self.service = service
-        self.readInformation = readInformation ?? { try await Self.read($0, service: service) }
-        self.readChapters = readChapters
-        accountChange = MainActorNotifications.observe(.readingContinuationInvalidated, object: service) { [weak self] in
-            guard let self else { return }
-            loadRevision = UUID(); observingRevision = nil
-            clearInformation()
-            requestRevision &+= 1
-        }
-    }
-    private static func read(_ route: StatisticsRoute, service: AppDataService) async throws -> (LibraryEntry?, BookDetailsResult) {
-        try await service.bookInformation(route.target, fileID: route.fileID, includeRecordSource: !route.fromReader)
-    }
-    func contentSHA(for route: StatisticsRoute) -> String? {
-        if case .record(.formal(let sha)) = route.target { return sha }
-        guard matches(route) else { return nil }
-        return details?.metadata.sha
-    }
-    func matches(_ route: StatisticsRoute) -> Bool { loadedIdentity == Identity(route) }
-    private func clearInformation() {
-        loadedIdentity = nil
-        task?.cancel(); task = nil
-        draft?.cancel()
-        preparation = .idle
-        entry = nil; resolution = nil; releaseCoverage(); error = nil
-    }
-
-    private func begin(_ identity: Identity) -> UUID {
-        let revision = UUID()
-        loadRevision = revision
-        if requestedIdentity != identity {
-            clearInformation()
-            requestedIdentity = identity
-        }
-        return revision
-    }
-
-    private func accepts(_ identity: Identity, revision: UUID) -> Bool {
-        loadRevision == revision && requestedIdentity == identity && !Task.isCancelled
-    }
-
-    private func publish(_ value: (LibraryEntry?, BookDetailsResult), identity: Identity) {
-        entry = value.0; resolution = value.1; loadedIdentity = identity
-        if case .missing = value.1 { error = ReaderMessages.error(ReaderError.NotFound) }
-        else { error = nil }
-    }
-
-    private func publishError(_ failure: Error) {
-        if failure is UserSyncCompatibilityError {
-            clearInformation()
-        }
-        error = ReaderMessages.error(failure)
-    }
-
-    func retryInformation() { requestRevision &+= 1 }
-
-    func observe(_ route: StatisticsRoute) async {
-        let identity = Identity(route), revision = begin(identity)
-        observingRevision = revision
-        defer { if observingRevision == revision { observingRevision = nil } }
-        do {
-            let updates = try await service.bookInformationUpdates(route.target, fileID: route.fileID,
-                                                                  includeRecordSource: !route.fromReader)
-            for try await update in updates {
-                guard accepts(identity, revision: revision) else { return }
-                do { publish(try update.resolved(), identity: identity) }
-                catch {
-                    if case .missingSource = update { clearInformation() }
-                    publishError(error)
-                }
-            }
-        } catch is CancellationError { }
-        catch { if accepts(identity, revision: revision) { publishError(error) } }
-    }
-
-    func load(_ route: StatisticsRoute) async {
-        let identity = Identity(route), revision = begin(identity)
-        do {
-            let value = try await readInformation(route)
-            guard accepts(identity, revision: revision) else { return }
-            publish(value, identity: identity)
-            if let readChapters, let book = readableBook {
-                let chapters = try await readChapters(book.id)
-                guard accepts(identity, revision: revision) else { return }
-                self.chapters = chapters
-            } else { chapters = [] }
-        } catch is CancellationError { }
-        catch { if accepts(identity, revision: revision) { publishError(error) } }
-    }
-
-    func releaseCoverage() { chapters = []; coverageError = nil }
-
-    func observeCoverage(bookID: String) async {
-        do {
-            try await service.observeChapterCoverage(bookID) { [weak self] result in
-                guard let self, readableBook?.id == bookID, !Task.isCancelled else { return }
-                switch result {
-                case .success(let outline): chapters = outline?.items ?? []; coverageError = nil
-                case .failure(let error): coverageError = ReaderMessages.error(error)
-                }
-            }
-        } catch is CancellationError { }
-        catch { if readableBook?.id == bookID && !Task.isCancelled { coverageError = ReaderMessages.error(error) } }
-    }
-
-    func edit(_ route: StatisticsRoute) {
-        guard matches(route), canEdit else { return }
-        if let details { preparation = .editing(BookMetadataDraft(base: details.metadata, service: service)) }
-        else if entry?.needsDownload == true { preparation = .confirmingDownload(route) }
-        else { prepareEditing(route) }
-    }
-    func prepareEditing(_ route: StatisticsRoute) {
-        guard matches(route), !preparing else { return }
-        let context = Preparation(id: UUID(), target: Identity(route), step: entry?.needsDownload == true ? .downloading : .indexing)
-        preparation = .preparing(context)
-        task = Task { [self] in
-            defer {
-                if isPreparing(context) { preparation = .idle }
-                if requestedIdentity == context.target, !preparing { task = nil }
-            }
-            do {
-                let lease: ReadingLease
-                if let entry, !route.fromReader {
-                    try await service.prepareSourceFile(entry.source) { [weak self] progress in
-                        Task { @MainActor in self?.updatePreparation(context, step: .downloading, progress: progress) }
-                    }
-                    try Task.checkCancellation()
-                    updatePreparation(context, step: .indexing, progress: nil)
-                    lease = try await service.openSourceFile(entry.source)
-                } else if let id = readableBook?.id {
-                    lease = try await service.openReading(id)
-                } else { throw ReaderError.NotFound }
-                while true {
-                    try Task.checkCancellation()
-                    let snapshot = try await service.snapshot(lease.id)
-                    if snapshot.preparation.isComplete {
-                        let result = try await service.bookDetails(.cached(bookId: lease.id))
-                        let details = try result.requireIdentified()
-                        guard isPreparing(context), !Task.isCancelled else { return }
-                        resolution = result
-                        preparation = .editing(BookMetadataDraft(base: details.metadata, service: service))
-                        break
-                    }
-                    if snapshot.preparation.isFailed { throw CocoaError(.fileReadCorruptFile) }
-                    if snapshot.preparation.isPaused {
-                        try Task.checkCancellation()
-                        try await service.resumeImport(lease.id)
-                    }
-                    updatePreparation(context, step: .indexing,
-                        progress: snapshot.byteProgress.total > 0 ? Double(snapshot.byteProgress.read) / Double(snapshot.byteProgress.total) : nil)
-                    try await Task.sleep(for: .milliseconds(100))
-                }
-            } catch is CancellationError { }
-            catch { if isPreparing(context) { preparation = .failed(ReaderMessages.error(error)) } }
-        }
-    }
-    private func isPreparing(_ context: Preparation) -> Bool {
-        if case .preparing(let current) = preparation { return current.id == context.id }
-        return false
-    }
-    private func updatePreparation(_ context: Preparation, step: Preparation.Step, progress: Double?) {
-        guard case .preparing(var current) = preparation, current.id == context.id else { return }
-        if step == .downloading, current.step != .downloading { return }
-        current.step = step; current.progress = progress
-        preparation = .preparing(current)
-    }
-    func finishPreparationForDataDeletion() async {
-        let current = task; current?.cancel(); await current?.value
-    }
-    func cancelPreparation() { task?.cancel() }
-    func setStatus(_ status: BookReadingStatus) async {
-        guard let base = details?.metadata, let identity = loadedIdentity else { return }
-        var edited = base; edited.status = status
-        do {
-            try await service.saveMetadata(base: base, edited: edited)
-            if observingRevision == loadRevision { return }
-            let next = try await service.bookDetails(identity.target)
-            guard loadedIdentity == identity, !Task.isCancelled else { return }
-            resolution = next
-        } catch { if loadedIdentity == identity { self.error = ReaderMessages.error(error) } }
+extension BookInformationModel {
+    convenience init(
+        service: AppDataService = .shared,
+        readInformation: (@MainActor (BookInformationTarget) async throws -> (LibraryEntry?, BookDetailsResult))? = nil,
+        readChapters: (@MainActor (String) async throws -> [ChapterEntry])? = nil
+    ) {
+        self.init(source: .init(
+            read: readInformation ?? {
+                try await service.bookInformation($0.target, fileID: $0.fileID, includeRecordSource: !$0.fromReader)
+            },
+            readChapters: readChapters,
+            updates: {
+                try await service.bookInformationUpdates($0.target, fileID: $0.fileID, includeRecordSource: !$0.fromReader)
+            },
+            observeCoverage: { try await service.observeChapterCoverage($0, receive: $1) },
+            prepareMetadata: { try await prepareBookMetadata(service: service, source: $0, cachedBookID: $1, progress: $2) },
+            makeDraft: { base in
+                .init(base: base, makeCover: { try await service.makeCover($0) },
+                      discardCover: { await service.discardCoverDraft($0) }, describeError: { ReaderMessages.error($0) })
+            },
+            saveMetadata: { try await service.saveMetadata(base: $0, edited: $1) },
+            details: { try await service.bookDetails($0) },
+            observeAccount: { MainActorNotifications.observe(.readingContinuationInvalidated, object: service, using: $0) },
+            describeError: { ReaderMessages.error($0) }
+        ))
     }
 }
 
-@MainActor @Observable
-final class BookMetadataDraft: Identifiable {
-    let id = UUID()
-    let base: BookMetadata
-    var value: BookMetadata
-    var error: String?
-    var saving = false
-    private(set) var choosingImage = false
-    var presentsPhotoPicker = false
-    var presentsFilePicker = false
-    let service: AppDataService
-    private var imageRequest = UUID()
-    @ObservationIgnored private var imageTask: Task<Void, Never>?
-    private var closed = false
-    init(base: BookMetadata, service: AppDataService = .shared) {
-        self.base = base; value = base; self.service = service
-    }
-    var changed: Bool { value != base }
-    var blocksInteractiveDismissal: Bool {
-        !closed && (changed || saving || choosingImage || presentsPhotoPicker || presentsFilePicker)
-    }
-    enum LeaveAction { case close, confirmDiscard }
-    func requestLeave() -> LeaveAction { changed ? .confirmDiscard : .close }
-
-    @discardableResult
-    func chooseImage(_ read: @escaping @Sendable () async throws -> Data?) -> Task<Void, Never>? {
-        guard !closed, !saving else { return nil }
-        imageTask?.cancel()
-        let request = UUID(); imageRequest = request; choosingImage = true
-        let task = Task {
-            defer { if imageRequest == request { choosingImage = false; imageTask = nil } }
-            do {
-                guard let data = try await read(), !closed, imageRequest == request, !Task.isCancelled else { return }
-                let cover = try await service.makeCover(data)
-                guard !closed, imageRequest == request, !Task.isCancelled else { await service.discardCoverDraft(cover); return }
-                discardNewCover(); value.cover = cover
-            } catch is CancellationError { }
-            catch { if imageRequest == request { self.error = ReaderMessages.error(error) } }
+@MainActor
+private func prepareBookMetadata(
+    service: AppDataService,
+    source: SourceFile?, cachedBookID: String?,
+    progress: @escaping BookInformationSource.Progress
+) async throws -> BookDetailsResult {
+    let lease: ReadingLease
+    if let source {
+        try await service.prepareSourceFile(source) { value in
+            Task { @MainActor in progress(.downloading, value) }
         }
-        imageTask = task
-        return task
-    }
-    @discardableResult private func discardNewCover() -> Task<Void, Never>? {
-        guard let cover = value.cover, cover != base.cover else { return nil }
-        return Task { [service] in await service.discardCoverDraft(cover) }
-    }
-    private func stopChoosingImage() {
-        imageRequest = UUID(); imageTask?.cancel(); imageTask = nil; choosingImage = false
-    }
-    func removeCover() { stopChoosingImage(); discardNewCover(); value.cover = nil }
-    @discardableResult func cancel() -> Task<Void, Never>? {
-        guard !closed else { return nil }
-        closed = true; stopChoosingImage()
-        return discardNewCover()
+        try Task.checkCancellation()
+        progress(.indexing, nil)
+        lease = try await service.openSourceFile(source)
+    } else if let id = cachedBookID {
+        lease = try await service.openReading(id)
+    } else { throw ReaderError.NotFound }
+    while true {
+        try Task.checkCancellation()
+        let snapshot = try await service.snapshot(lease.id)
+        if snapshot.preparation.isComplete {
+            let result = try await service.bookDetails(.cached(bookId: lease.id))
+            _ = try result.requireIdentified()
+            return result
+        }
+        if snapshot.preparation.isFailed { throw CocoaError(.fileReadCorruptFile) }
+        if snapshot.preparation.isPaused {
+            try Task.checkCancellation()
+            try await service.resumeImport(lease.id)
+        }
+        progress(.indexing, snapshot.byteProgress.total > 0 ? Double(snapshot.byteProgress.read) / Double(snapshot.byteProgress.total) : nil)
+        try await Task.sleep(for: .milliseconds(100))
     }
 }
 
 struct BookMetadataEditor: View {
     @Bindable var draft: BookMetadataDraft
     var title = ""
+    let service: AppDataService
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @FocusState private var focused: Bool
@@ -358,7 +118,7 @@ struct BookMetadataEditor: View {
                 }.listRowBackground(Color(uiColor: theme.surface))
                 Section("标签") {
                     NavigationLink {
-                        BookTagPicker(service: draft.service, purpose: .metadata, selection: $draft.value.tags) {
+                        BookTagPicker(service: service, purpose: .metadata, selection: $draft.value.tags) {
                             EmptyView()
                         } status: {
                             EmptyView()
@@ -389,7 +149,7 @@ struct BookMetadataEditor: View {
                             focused = false; draft.saving = true
                             Task {
                                 defer { draft.saving = false }
-                                do { try await draft.service.saveMetadata(base: draft.base, edited: draft.value); dismiss() }
+                                do { try await service.saveMetadata(base: draft.base, edited: draft.value); dismiss() }
                                 catch { draft.error = ReaderMessages.error(error) }
                             }
                         }.disabled(draft.saving || draft.choosingImage).accessibilityIdentifier("saveBookMetadata")
@@ -501,7 +261,7 @@ struct BookInformationSections: View {
         }.frame(maxWidth: .infinity, alignment: .leading).id("bookInformation")
         .navigationDestination(item: $readerDestination) { route in
             HostedLibraryDestination(route: route, host: .init(allowsFileBrowsing: false, isOpenBook: { entry in
-                entry.id == target.fileID || model.contentSHA(for: target).map { entry.readingKey == $0 } == true
+                entry.id == target.fileID || model.contentSHA(for: target.informationTarget).map { entry.readingKey == $0 } == true
             }, returnToOpenBook: {
                 if let returnToReading { returnToReading() } else { dismiss() }
             }))
@@ -556,7 +316,7 @@ struct BookInformationSections: View {
             if let error = model.error, model.details == nil {
                 Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
                 Button("重试") { model.retryInformation() }
-            } else if model.matches(target), model.contentSHA(for: target) == nil {
+            } else if model.matches(target.informationTarget), model.contentSHA(for: target.informationTarget) == nil {
                 Text("阅读位置暂不可用").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
             } else if model.details == nil { ProgressView() }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -635,7 +395,7 @@ struct BookReadingDataClearSection: View {
             if let message = manager.message { Text(verbatim: message).font(.footnote) }
         }.padding(.top, 8)
             .modifier(ReadingDataDeletionPrompt(model: manager))
-            .onChange(of: manager.busy) { _, busy in if !busy { Task { await book.load(target) } } }
+            .onChange(of: manager.busy) { _, busy in if !busy { Task { await book.load(target.informationTarget) } } }
             .alert("暂时无法完成", isPresented: Binding(get: { manager.error != nil }, set: { if !$0 { manager.clearError() } })) {
                 Button("知道了", role: .cancel) { manager.clearError() }
             } message: { Text(manager.error ?? "") }

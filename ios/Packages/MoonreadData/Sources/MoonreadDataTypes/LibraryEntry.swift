@@ -12,6 +12,20 @@ public struct LibraryLocation: Codable, Hashable, Identifiable, Sendable {
     public var id: String { shelfID + ":" + path }
 }
 
+public struct SourceFile: Identifiable, Hashable, Sendable {
+    public let id: String
+    public let shelfID: String
+    public let relativePath: String
+
+    public init(id: String, shelfID: String, relativePath: String) {
+        self.id = id
+        self.shelfID = shelfID
+        self.relativePath = relativePath
+    }
+
+    public var title: String { URL(fileURLWithPath: relativePath).deletingPathExtension().lastPathComponent }
+}
+
 public extension LibraryEntry {
     var bookRow: BookRow? { if case .book(let row) = item { row } else { nil } }
     var folderRow: FolderRow? { if case .folder(let row) = item { row } else { nil } }
@@ -44,6 +58,7 @@ public extension LibraryEntry {
         return entry
     }
 
+    var source: SourceFile { SourceFile(id: id, shelfID: shelfId, relativePath: relativePath) }
     var location: LibraryLocation { LibraryLocation(shelfID: shelfId, path: relativePath) }
     var parent: LibraryLocation { LibraryLocation(shelfID: shelfId, path: parentPath) }
     var title: String { directory ? name : URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent }

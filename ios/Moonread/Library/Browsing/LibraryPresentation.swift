@@ -1,37 +1,15 @@
+import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import SwiftUI
 
-extension CatalogueTagSection: Identifiable {
-    var id: String {
-        switch kind {
-        case .tag: "tag:" + tag
-        case .untagged: "untagged"
-        case .unindexed: "unindexed"
-        }
-    }
+extension CatalogueTagSection {
     var title: String {
         switch kind {
         case .tag: tag
         case .untagged: String(localized: "未加标签")
         case .unindexed: String(localized: "未建立索引")
         }
-    }
-}
-
-enum LibraryLayout: String {
-    case list, grid
-}
-
-struct LibraryDisplayPicker: View {
-    @Binding var selection: LibraryLayout
-
-    var body: some View {
-        Picker("显示方式", selection: $selection) {
-            Label("列表", systemImage: "list.bullet").tag(LibraryLayout.list)
-            Label("网格", systemImage: "square.grid.3x3").tag(LibraryLayout.grid)
-        }
-        .pickerStyle(.inline)
     }
 }
 
@@ -171,36 +149,6 @@ struct LibraryBookTile: View {
     @ViewBuilder private var actions: some View {
         if let host = interaction.menuHost {
             LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
-        }
-    }
-}
-
-/// Alphabet grouping is a localized platform presentation of the Rust file index.
-/// Normalize Han names to pinyin so the visible letters and ordering agree.
-struct LibraryNameGroup: Identifiable, Sendable {
-    let id: String
-    let entries: [LibraryEntry]
-
-    static func key(_ name: String) -> String {
-        let title = name.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-        return (title.applyingTransform(.mandarinToLatin, reverse: false) ?? title)
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
-            .uppercased()
-    }
-    static func letter(_ key: String) -> String {
-        guard let first = key.first, ("A"..."Z").contains(String(first)) else { return "#" }
-        return String(first)
-    }
-    static func group(_ entries: [LibraryEntry]) -> [Self] {
-        let keyed = entries.map { (entry: $0, key: key($0.title)) }
-        let groups = Dictionary(grouping: keyed) { letter($0.key) }
-        return groups.keys.sorted { $0 == "#" ? false : $1 == "#" ? true : $0 < $1 }.map { letter in
-            let values = groups[letter, default: []].sorted {
-                let order = $0.key.localizedStandardCompare($1.key)
-                if order != .orderedSame { return order == .orderedAscending }
-                return $0.entry.id < $1.entry.id
-            }
-            return Self(id: letter, entries: values.map(\.entry))
         }
     }
 }

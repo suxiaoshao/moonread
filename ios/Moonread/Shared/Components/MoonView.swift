@@ -100,14 +100,6 @@ struct DeferredLoading<Content: View>: View {
     }
 }
 
-/// A superseded query cannot dismiss the next query's loading state.
-@MainActor @Observable final class LoadingState {
-    private(set) var request: UUID?
-    var active: Bool { request != nil }
-    @discardableResult func begin() -> UUID { let id = UUID(); request = id; return id }
-    func finish(_ id: UUID) { if request == id { request = nil } }
-}
-
 struct InlineTaskProgress: View {
     let title: Text
 

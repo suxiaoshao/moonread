@@ -5,13 +5,6 @@ import Foundation
 import OSLog
 import SwiftData
 
-struct SourceFile: Identifiable, Hashable, Sendable {
-    let id: String
-    let shelfID: String
-    let relativePath: String
-    var title: String { URL(fileURLWithPath: relativePath).deletingPathExtension().lastPathComponent }
-}
-
 extension PreparationState {
     var isComplete: Bool { if case .complete = self { true } else { false } }
     var isPaused: Bool { if case .paused = self { true } else { false } }

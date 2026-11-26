@@ -1,23 +1,19 @@
+import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import MoonreadStatistics
 
 struct StatisticsRoute: Hashable {
-    enum Origin: Hashable { case library, reader(fileID: String? = nil) }
-
     let target: BookTarget
     var title: String
-    var origin: Origin = .library
+    var origin: BookInformationTarget.Origin = .library
     var window: StatisticsWindow? = nil
     var readingSection = false
 
-    var fromReader: Bool { if case .reader = origin { return true }; return false }
-    var fileID: String? {
-        if case .file(let id) = target { return id }
-        if case .reader(let id) = origin { return id }
-        return nil
-    }
+    var informationTarget: BookInformationTarget { .init(target: target, origin: origin) }
+    var fromReader: Bool { informationTarget.fromReader }
+    var fileID: String? { informationTarget.fileID }
 }
 enum StatisticsClock {
     static var now: Date {

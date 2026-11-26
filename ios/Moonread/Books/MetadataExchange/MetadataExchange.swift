@@ -1,3 +1,5 @@
+import MoonreadDataTypes
+import MoonreadData
 import MoonreadCoreBindings
 import Foundation
 
@@ -128,10 +130,10 @@ struct MetadataPreviewBook: Identifiable, Sendable {
     var coverFiles: [String] = []
     var coverUnavailable = false
     var incomingCovers: [MetadataOption] { fields.first { $0.field == .cover }?.options.filter { $0.cover != nil } ?? [] }
-    mutating func validateSelection(using service: AppDataService) {
+    mutating func validateSelection() {
         guard let base, let edited else { selectionError = nil; return }
         do {
-            _ = try service.metadataEditPlan(base: base, edited: edited, fields: Set(fields.filter { $0.chosen != nil }.map { $0.field.metadataKey }))
+            _ = try BookMetadataEditPlan.make(base: base, edited: edited, fields: Set(fields.filter { $0.chosen != nil }.map { $0.field.metadataKey }))
             selectionError = nil
         } catch {
             selectionError = String(localized: "所选资料超出编辑限制；请减少标签、改为替换或保留现有值。", table: "MetadataExchange")

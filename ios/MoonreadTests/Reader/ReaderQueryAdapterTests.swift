@@ -1,3 +1,4 @@
+import MoonreadLibrary
 @testable import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
@@ -38,7 +39,7 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
     let model = BookInformationModel(service: f.service)
     await model.load(
       StatisticsRoute(
-        target: .file(fileId: entry.id), title: entry.title))
+        target: .file(fileId: entry.id), title: entry.title).informationTarget)
     XCTAssertNil(model.error)
     XCTAssertEqual(model.entry?.positionUtf8, identity.utf8Bytes / 2)
     XCTAssertEqual(model.details?.metadata.tags, ["星港"])

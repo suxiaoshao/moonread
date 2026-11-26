@@ -3,14 +3,15 @@ import MoonreadCoreBindings
 import Foundation
 import UniformTypeIdentifiers
 
-extension UTType {
+public extension UTType {
     static let moonreadLibraryItem = UTType(exportedAs: "dev.moonread.library-item", conformingTo: .data)
 }
 
 /// Private provider representation carries only an index reference, never novel bytes.
-struct LibraryDragPayload: Codable, Sendable {
-    let fileID: String
-    func provider() throws -> NSItemProvider {
+public struct LibraryDragPayload: Codable, Sendable {
+    public let fileID: String
+    public init(fileID: String) { self.fileID = fileID }
+    public func provider() throws -> NSItemProvider {
         let data = try JSONEncoder().encode(self)
         let provider = NSItemProvider()
         provider.registerDataRepresentation(forTypeIdentifier: UTType.moonreadLibraryItem.identifier, visibility: .ownProcess) { completion in
@@ -18,7 +19,7 @@ struct LibraryDragPayload: Codable, Sendable {
         }
         return provider
     }
-    @MainActor static func load(_ provider: NSItemProvider) async throws -> Self {
+    @MainActor public static func load(_ provider: NSItemProvider) async throws -> Self {
         let control = LibraryDropLoadControl<Self>()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -36,16 +37,16 @@ struct LibraryDragPayload: Codable, Sendable {
 }
 
 /// Hover decisions use the already loaded catalog, never filesystem or bookmark IO.
-enum LibraryDropPolicy {
+public enum LibraryDropPolicy {
     /// Metadata only: one private move batch or one named TXT copy batch, never mixed.
-    static func request(_ providers: [NSItemProvider], at destination: LibraryLocation) -> LibraryDropRequest? {
+    public static func request(_ providers: [NSItemProvider], at destination: LibraryLocation) -> LibraryDropRequest? {
         guard !providers.isEmpty else { return nil }
         let internalCount = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.moonreadLibraryItem.identifier) }.count
         if internalCount > 0 { return internalCount == providers.count ? .moveProviders(providers) : nil }
         return providers.allSatisfy { candidate($0, at: destination) != nil } ? .importProviders(providers) : nil
     }
 
-    static func canMove(_ entry: LibraryEntry, to destination: LibraryLocation, available: Bool) -> Bool {
+    public static func canMove(_ entry: LibraryEntry, to destination: LibraryLocation, available: Bool) -> Bool {
         guard available else { return false }
         guard entry.shelfId == destination.shelfID else { return true }
         let source = entry.relativePath.split(separator: "/")
@@ -54,7 +55,7 @@ enum LibraryDropPolicy {
         return !entry.directory || !target.starts(with: source)
     }
 
-    static func candidate(_ provider: NSItemProvider, at destination: LibraryLocation) -> LibraryDropCandidate? {
+    public static func candidate(_ provider: NSItemProvider, at destination: LibraryLocation) -> LibraryDropCandidate? {
         guard destination.shelfID == "builtin",
               !provider.hasItemConformingToTypeIdentifier(UTType.moonreadLibraryItem.identifier),
               let name = provider.suggestedName,
@@ -67,11 +68,11 @@ enum LibraryDropPolicy {
 }
 
 /// Retained by the import queue and failed-import presentation until consumed.
-final class LibraryDropFile: Sendable {
-    let url: URL
+public final class LibraryDropFile: Sendable {
+    public let url: URL
     private let directory: URL
 
-    init(copying source: URL, fileName: String) throws {
+    public init(copying source: URL, fileName: String) throws {
         let values = try source.resourceValues(forKeys: [.isRegularFileKey])
         guard source.isFileURL, source.pathExtension.lowercased() == "txt", values.isRegularFile == true,
               (try? libraryChildPath(parent: "", name: fileName)) != nil,
@@ -86,7 +87,7 @@ final class LibraryDropFile: Sendable {
         catch { try? FileManager.default.removeItem(at: directory); throw error }
     }
 
-    @MainActor static func load(_ candidate: LibraryDropCandidate) async throws -> LibraryDropFile {
+    @MainActor public static func load(_ candidate: LibraryDropCandidate) async throws -> LibraryDropFile {
         let control = LibraryDropLoadControl<LibraryDropFile>()
         let name = candidate.fileName
         return try await withTaskCancellationHandler {
@@ -108,38 +109,38 @@ final class LibraryDropFile: Sendable {
     deinit { finish() }
 }
 
-struct LibraryDropCandidate {
+public struct LibraryDropCandidate {
     let provider: NSItemProvider
     let contentType: UTType
-    let fileName: String
+    public let fileName: String
 }
 
-enum LibraryImportCompletion { case openSingle, showFolder, stayInFolder }
+public enum LibraryImportCompletion { case openSingle, showFolder, stayInFolder }
 
-enum LibraryDropRequest {
+public enum LibraryDropRequest {
     case moveIDs([String])
     case moveProviders([NSItemProvider])
     case importProviders([NSItemProvider])
 }
 
 /// One occurrence owns its access scope and optional staged copy, including retries.
-final class LibraryImportFile: @unchecked Sendable {
-    let url: URL
+public final class LibraryImportFile: @unchecked Sendable {
+    public let url: URL
     private let staged: LibraryDropFile?
-    private let inbox: (ShareInbox.Batch, ShareInbox.Item)?
+    private let onFinish: (@Sendable () -> Void)?
     private let lock = NSLock()
     private var finished = false
     private let accessed: Bool
-    init(url: URL, staged: LibraryDropFile? = nil, inbox: (ShareInbox.Batch, ShareInbox.Item)? = nil) {
-        self.url = url; self.staged = staged; self.inbox = inbox
+    public init(url: URL, staged: LibraryDropFile? = nil, onFinish: (@Sendable () -> Void)? = nil) {
+        self.url = url; self.staged = staged; self.onFinish = onFinish
         accessed = url.startAccessingSecurityScopedResource()
     }
-    func finish() {
+    public func finish() {
         let release = lock.withLock { if finished { return false }; finished = true; return true }
         guard release else { return }
         if accessed { url.stopAccessingSecurityScopedResource() }
         staged?.finish()
-        if let (batch, item) = inbox { batch.discard(item) }
+        onFinish?()
     }
     deinit {
         // A process ending is not an explicit cancellation of durable shared input.

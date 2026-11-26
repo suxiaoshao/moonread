@@ -1,3 +1,4 @@
+import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import GRDB
@@ -39,7 +40,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     let information = BookInformationModel(service: service)
     let model = StatisticsModel(source: service.statisticsDataSource())
     let month = StatisticsWindow(period: .month, date: Date(timeIntervalSince1970: 1_800_000_000))
-    await information.load(route)
+    await information.load(route.informationTarget)
     XCTAssertNil(information.error)
     let scope = model.scope(month, target: .book(route.target))
     let other = StatisticsRoute(target: .file(fileId: "other-file"), title: route.title)
@@ -49,11 +50,11 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     await awaitState { model.state(scope).content?.waitingForIdentity == true }
     XCTAssertTrue(model.state(scope).content?.waitingForIdentity == true)
 
-    information.prepareEditing(route)
+    information.prepareEditing(route.informationTarget)
     await awaitState { (information.draft != nil && model.state(scope).key != nil) || information.error != nil }
     XCTAssertNil(information.error)
     XCTAssertNotNil(information.draft)
-    let sha = try XCTUnwrap(information.contentSHA(for: route))
+    let sha = try XCTUnwrap(information.contentSHA(for: route.informationTarget))
     XCTAssertTrue(information.chapters.isEmpty, "Statistics must not wait for the separate chapter load")
     await model.load(month, target: .book(route.target))
     XCTAssertEqual(model.scope(month, target: .book(route.target)), scope, "Preparation does not replace the original file target")
@@ -64,7 +65,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     await model.load(year, target: .book(route.target))
     XCTAssertNotNil(model.state(year, target: .book(route.target)).overview)
     XCTAssertNil(model.state(year, target: .book(route.target)).error)
-    XCTAssertNil(information.contentSHA(for: other))
+    XCTAssertNil(information.contentSHA(for: other.informationTarget))
     await information.finishPreparationForDataDeletion()
   }
   @MainActor
