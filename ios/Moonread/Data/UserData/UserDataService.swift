@@ -4,7 +4,6 @@ import MoonreadCoreBindings
 import Foundation
 import SwiftData
 import CryptoKit
-import GRDB
 
 enum UserAuthorityPreparationError: LocalizedError {
     case ownership, unreadableSource, verification
@@ -72,10 +71,7 @@ extension AppDataService {
 
     private func cleanLegacyLocalState(_ index: ReaderIndex) async throws {
         guard libraryDirectoryOverride == nil, testSession == nil, let domain = Bundle.main.bundleIdentifier else { return }
-        let needsCleanup = try index.read { db in
-            try Bool.fetchOne(db, sql: "SELECT legacy_cleanup_done=0 FROM main.library_device_state WHERE id=1") == true
-        }
-        guard needsCleanup else { return }
+        guard try index.needsLegacyLocalCleanup() else { return }
         try await clearLegacySpotlight()
         try await clearLegacyDonations()
         let handoff = try dataDirectoryURL().appending(path: "CloudHandoff", directoryHint: .isDirectory)
@@ -83,7 +79,7 @@ extension AppDataService {
         catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {}
         try approveReadingCloudDuringLegacyCleanup()
         Self.removeLegacyLocalDefaults(sourceDefaults, domain: domain)
-        try index.write { try $0.execute(sql: "UPDATE main.library_device_state SET legacy_cleanup_done=1 WHERE id=1") }
+        try index.completeLegacyLocalCleanup()
     }
 
     static func removeLegacyLocalDefaults(_ defaults: UserDefaults, domain: String) {

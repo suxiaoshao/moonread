@@ -71,7 +71,48 @@ public struct StorageDatabaseResult: Sendable {
 
 public enum StorageMaintenanceError: Error { case busy }
 
-public enum StorageDatabaseFiles {
+public struct StorageDatabaseFiles: Sendable {
+    private let support: URL
+    private let userDirectory: URL
+    private let oldDatabaseDirectory: URL
+    private let databaseDirectory: URL
+
+    init(support: URL, userDatabase: URL) {
+        self.support = support
+        userDirectory = userDatabase.deletingLastPathComponent()
+        let data = support.appending(path: "Data", directoryHint: .isDirectory)
+        oldDatabaseDirectory = data.appending(path: "v2", directoryHint: .isDirectory)
+        databaseDirectory = data.appending(path: "v3", directoryHint: .isDirectory)
+    }
+
+    public func isActiveUserDatabase(_ url: URL) -> Bool {
+        url.deletingLastPathComponent() == userDirectory
+    }
+
+    public func category(of url: URL) -> StorageCategory? {
+        let legacyFiles = ["reader.sqlite3", "user-data.store", "pending-users.store"]
+
+        func isInside(_ directory: URL) -> Bool {
+            url.pathComponents.starts(with: directory.standardizedFileURL.pathComponents)
+        }
+        if isInside(databaseDirectory) {
+            let components = Array(url.pathComponents.dropFirst(databaseDirectory.pathComponents.count))
+            guard let environment = components.first else { return .other }
+            if environment == ".development-upgrade" || environment == ".production-upgrade" { return .old }
+            if environment == "production" || environment == "development" {
+                if components.contains("staging") { return .work }
+                if StorageDatabaseFiles.matches(url.lastPathComponent, base: "index.sqlite") { return .books }
+                if StorageDatabaseFiles.matches(url.lastPathComponent, base: "user.sqlite") { return .database }
+            }
+        }
+        if isInside(oldDatabaseDirectory) { return .old }
+        if isInside(support), let child = url.pathComponents.dropFirst(support.pathComponents.count).first,
+           legacyFiles.contains(where: {
+               StorageDatabaseFiles.matches(child, base: $0) || child == "." + $0 + "_SUPPORT"
+           }) { return .old }
+        return nil
+    }
+
     private static let suffixes = ["", "-wal", "-shm", "-journal"]
     public static func matches(_ name: String, base: String) -> Bool { suffixes.contains { name == base + $0 } }
     public static func group(_ base: URL) throws -> [StorageFile] {
@@ -81,4 +122,10 @@ public enum StorageDatabaseFiles {
         }
     }
     public static func bytes(_ base: URL) throws -> UInt64 { try group(base).reduce(0) { $0 + $1.bytes } }
+}
+
+extension ReaderIndex {
+    public func storageDatabaseFiles() throws -> StorageDatabaseFiles {
+        try .init(support: session.layout.applicationSupport, userDatabase: session.layout.user(lease.scope))
+    }
 }

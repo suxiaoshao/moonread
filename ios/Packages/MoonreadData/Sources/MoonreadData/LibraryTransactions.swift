@@ -50,6 +50,14 @@ extension ReaderIndex {
         try session.writeUsers(lease) { try ReadingSegmentRows.sealOwned($0, owner: installation, scope: lease.scope) }
     }
 
+    public func needsLegacyLocalCleanup() throws -> Bool {
+        try read { try Bool.fetchOne($0, sql: "SELECT legacy_cleanup_done=0 FROM main.library_device_state WHERE id=1") == true }
+    }
+
+    public func completeLegacyLocalCleanup() throws {
+        try write { try $0.execute(sql: "UPDATE main.library_device_state SET legacy_cleanup_done=1 WHERE id=1") }
+    }
+
     public func recoverCloudZone(presence: CloudAccountZoneRecovery.Presence?, scope: DataScope, preparedToClear: Bool,
                                  validate: () throws -> Void) throws -> CloudAccountZoneRecovery.Outcome {
         try session.writeCloudRecovery(lease) { db in
