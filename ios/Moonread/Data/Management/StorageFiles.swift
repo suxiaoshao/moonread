@@ -87,7 +87,13 @@ enum MetadataTemporaryFiles {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var prepared = Set<URL>()
 
-    static func root(_ name: String) -> URL {
+    static var importRoot: URL { root("Moonread-MetadataImports") }
+
+    static func coverDraftRoot(dataDirectoryName: String) -> URL {
+        root("\(dataDirectoryName)-CoverDrafts")
+    }
+
+    private static func root(_ name: String) -> URL {
         FileManager.default.temporaryDirectory.appending(path: name, directoryHint: .isDirectory)
     }
 

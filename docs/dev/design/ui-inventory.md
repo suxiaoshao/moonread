@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 书架、设置 | canvas、surface、ink、secondary、accent | 原生 List/Form/Tab，内容背景和列表行接入主题；系统拥有控件内部间距 |
 | 书架管理 | canvas、surface、ink、secondary、accent、separator、destructive、moon/maria | 标准居中导航标题，右上角原生 `＋`；原生 insetGrouped 列表使用独立紧凑 Label 行，默认 24pt 图标，行内边距由原生列表决定，名称与来源双行对齐；动态字号自然撑高，不使用首页的大图标行或悬浮标题 |
-| 书架小说与找书 | accentSurface/accent、ink、secondary、input、search、separator、moon/maria | 小说预设装帧与文件夹内最多四本小封面共用共享绘制（底图与字色固定，不跟随界面明暗），无身份仍用固定暖灰纸底/深墨文字封面；列表／自适应网格；书籍行上下 12、目录行上下 8、页面左右 20；普通目录固定最近阅读排序，“全部小说”递归书目提供名称索引，使用 accent 并预留宽度；结果路径用 caption2，命中使用 search；恢复原生紧凑导航标题和默认背景，原生操作按钮保持位置，无胶囊标题或自定义滚动显隐；搜索按需展开并保持输入框可见；空白等待页用居中大号系统转圈，内容就绪后淡出，已有内容用导航栏 20pt 系统转圈；文件获取在对应封面内显示可取消原生进度条＋真实百分比，未知进度用系统转圈，更多按钮和条目布局保持不变 |
+| 书架小说与找书 | accentSurface/accent、ink、secondary、input、search、separator、moon/maria | 预设装帧与文件夹封面共用绘制。主题色用于书目和目录、名称索引、文件获取状态与操作，搜索命中使用 search。集合布局、行尺寸和来源文字见[首页与书架](library.md) |
 | 正文与信息栏 | paper、ink、secondary | UIKit 与 SwiftUI 接收同一阅读作用域；动态 UIColor 只更新绘制，正文存储不重写 |
 | 正文底部渐变 | paper → 透明 | 更新 CGColor，不改变渐变位置和高度 |
 | 目录、书签、笔记 | surface、ink、accent、secondary、separator、destructive | 当前章标题与字数都用 accent，其他章字数用 secondary；章节输入区同样采用 input 与 border/focus；删除保留文字与图标 |

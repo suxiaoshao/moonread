@@ -146,7 +146,7 @@ extension AppDataService {
               (try? parseSha256(value: cover.sha256)) != nil else { throw CocoaError(.fileReadCorruptFile) }
         return try coverDirectory().appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
     }
-    func coverDraftRoot() -> URL { MetadataTemporaryFiles.root("\(dataDirectoryName)-CoverDrafts") }
+    func coverDraftRoot() -> URL { MetadataTemporaryFiles.coverDraftRoot(dataDirectoryName: dataDirectoryName) }
     func coverDraftURL(_ cover: BookCoverAsset) -> URL {
         MetadataTemporaryFiles.current(coverDraftRoot()).appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
     }
@@ -502,7 +502,7 @@ actor CoverResourceLoader {
             try manager.createDirectory(at: main.deletingLastPathComponent(), withIntermediateDirectories: true)
             try bytes.write(to: main, options: .atomic)
         }
-        let draft = MetadataTemporaryFiles.current(MetadataTemporaryFiles.root("\(directory)-CoverDrafts"))
+        let draft = MetadataTemporaryFiles.current(MetadataTemporaryFiles.coverDraftRoot(dataDirectoryName: directory))
             .appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
         let url = manager.fileExists(atPath: main.path) ? main : draft
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),

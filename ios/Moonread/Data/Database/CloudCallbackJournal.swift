@@ -239,19 +239,6 @@ actor CloudCallbackJournal {
         }
     }
 
-    // Input contains only deletions whose complete zone ID SDK routing has
-    // already checked. The writer classifies X2, verifies current evidence
-    // and applies each removal without handing a decision back across await.
-    func applyFetchedFixedValueDeletions(_ family: FixedValueCloudRows.Family, names: [String]) throws -> [FixedValueCloudRows.DeleteDecision] {
-        try recordCallback(whileCreating: {
-            guard names.isEmpty else { throw Failure.restartRequired }
-            return []
-        }) { db in
-            if !names.isEmpty { guard try UpgradeOrigins.phase(db) == nil else { throw Failure.restartRequired } }
-            return try names.map { try FixedValueCloudRows.applyDeletion(db, family, name: $0) }
-        }
-    }
-
     func prepareHistoryChange(type: ReadingHistoryTransport.RecordType, id: String) throws -> PreparedHistoryChange? {
         let key = ReadingHistoryTransport.key(type, id: id)
         return try recordCallback(whileCreating: { nil }) { db in
@@ -270,21 +257,6 @@ actor CloudCallbackJournal {
             }
             try CloudTransportRows.noteInitialOffer(db, attempt)
             return prepared
-        }
-    }
-
-    // Use only already-routed history input here. When wiring SDK deletions,
-    // check the full CK zone ID and evaluate X2 inside the writer transaction
-    // that applies the deletion, never from a snapshot taken before an await.
-    func applyFetchedHistory(_ records: [ReadingHistoryTransport.Fetched]) throws {
-        let scope = lease.scope
-        try recordCallback(whileCreating: {
-            // Never let a later checkpoint skip records fetched before the
-            // new area's creation was confirmed.
-            if !records.isEmpty { throw Failure.restartRequired }
-        }) { db in
-            if !records.isEmpty { guard try UpgradeOrigins.phase(db) == nil else { throw Failure.restartRequired } }
-            try ReadingHistoryTransport.applyFetched(db, records: records, scope: scope)
         }
     }
 

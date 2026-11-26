@@ -11,16 +11,6 @@ struct UserDataTransfer: Sendable {
     let facts: [Fact]
 }
 extension UserDataStore {
-    func pendingKeys() throws -> Set<String> {
-        var result = Set(try modelContext.fetch(FetchDescriptor<AnnotationOperation>()).map(\.contentKey))
-        result.formUnion(try modelContext.fetch(FetchDescriptor<ReadingFact>()).map(\.contentKey))
-        result.formUnion(try modelContext.fetch(FetchDescriptor<UserPosition>()).map(\.contentKey))
-        for row in try modelContext.fetch(FetchDescriptor<StatisticsClear>()) where (try? decode(ClearValue.self, row.payload)) == nil {
-            if let scope = try? JSONDecoder().decode(UserSyncClearScope.self, from: Data(row.payload.utf8)), let book = scope.book { result.insert(book) }
-        }
-        for row in try modelContext.fetch(FetchDescriptor<UserValue>()) where row.key.hasPrefix("opened/") { result.insert(String(row.key.dropFirst(7))) }
-        return result.filter { if let key = try? parseReadingKey(value: $0), case .pending = key { return true }; return false }
-    }
     private func requirePendingNonFactReadable(key: String) throws {
         try requireValueReadable("position/" + key)
         try requireValueReadable("opened/" + key)

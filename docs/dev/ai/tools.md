@@ -139,7 +139,7 @@
 
 与现有统计页一致：日期按阅读发生地保存的 local_day，不接受一个 timezone 来悄悄重排历史。环境工具的当前时区只用于解释“今天”等相对日期。多设备同时阅读如实累计，不做时间重叠去重；阅读时长不能断言喜好，覆盖率是估算。summary、分页总计由业务层算，不从当前一页让模型相加。时段使用已结算的时长；结果带 `incomplete: true` 时，只代表当前可理解的记录，不能把缺失数据当作零。
 
-依据：`AppDataService.statistics/activities/chapters`、`statistics.rs`；现有 AIReadingTools 已对结果分页。章节覆盖和原文缺失保留区分。
+[AIReadingTools](../../../ios/Moonread/AI/Tools/Reading/AIReadingTools.swift) 解释日期、视图与分页参数，并分派到目录或[统计查询](../../../ios/Moonread/Data/Queries/StatisticsQuery.swift)。章节覆盖和原文缺失分别表示。
 
 ### 10. `get_environment` — 当前环境
 
