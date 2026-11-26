@@ -1,3 +1,4 @@
+import MoonreadInstalledFonts
 import SwiftUI
 import WidgetKit
 import CoreText

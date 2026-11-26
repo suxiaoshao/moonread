@@ -1,3 +1,4 @@
+@testable import MoonreadReader
 import MoonreadSearchText
 import MoonreadLibrary
 @testable import MoonreadData

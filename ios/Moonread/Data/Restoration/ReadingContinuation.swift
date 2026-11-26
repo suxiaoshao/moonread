@@ -1,22 +1,7 @@
+import MoonreadReader
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
-
-struct ReadingContinuationCandidate: Sendable {
-    let contentSHA: String
-    let token: String
-    let configuration: UUID
-    let location: ReadingContinuation
-}
-struct ReadingResumeContext: Sendable {
-    let localOffset: UInt64?
-    let candidate: ReadingContinuationCandidate?
-}
-
-extension Notification.Name {
-    static let cloudReadingPositionsReceived = Notification.Name("Moonread.cloudReadingPositionsReceived")
-    static let readingContinuationInvalidated = Notification.Name("Moonread.readingContinuationInvalidated")
-}
 
 extension AppDataService {
     /// A suggestion reads only the selected position, its device baseline

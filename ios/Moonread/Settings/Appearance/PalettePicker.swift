@@ -15,19 +15,6 @@ func paletteDisplayName(_ value: ThemePalette) -> String {
     }
 }
 
-@MainActor @Observable final class PaletteDraft: Identifiable {
-    let id = UUID()
-    var palette: ThemePalette
-    var error: String?
-    let creating: Bool
-    private let baseline: ThemePalette
-    var saving = false
-    private(set) var saved = false
-    var hasUnsavedChanges: Bool { !saving && !saved && (creating || palette != baseline) }
-    func markSaved() { saved = true }
-    init(palette: ThemePalette, creating: Bool) { self.palette = palette; baseline = palette; self.creating = creating }
-}
-
 struct PalettePicker: View {
     let reader: Bool
     let appearance: ThemeAppearance

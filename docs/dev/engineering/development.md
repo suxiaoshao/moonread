@@ -68,6 +68,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - `MoonreadStatistics` 是 iOS 18 / Swift 6 本地包。主 App 注入统计读取与观察、书籍导航和展示附件。统计图表使用 `MoonreadDesign` 的共用样式，日界和格式由 `MoonreadStatisticsDates` 提供。统计仍查找 App 的 `Localizable.xcstrings`，保留与书籍详情及系统入口共用的翻译。
 - `MoonreadData` 拥有当前作用域的 `DataSession`、GRDB 池、`ReaderIndex`、账户和同步引擎 lease，以及 SQL、候选结算和事务。SQL 资源由 SwiftPM 随包复制，使用 `Bundle.module`。轻量 `MoonreadDataTypes` 共享书键、来源和作用域。`MoonreadSearchText` 共享普通搜索和系统实体用的文字匹配，Widget 只需这个轻量产品。
 - `MoonreadLibrary` 保存书架首页、列表和网格、目录及最近阅读、文件任务界面、索引呈现、搜索和虚拟书架、书架管理、作者页、书籍资料及交换界面。App 注入具体服务、封面和跨页路由。共用的中文、繁中和英文仍来自 App 的本地化表，书架标签词表由 `MoonreadLibrary` 通过 `Bundle.module` 加载。
+- `MoonreadReader` 是 iOS 18 / Swift 6 本地包。它拥有会话、阅读工具和 UIKit 渲染，并向设置提供排版和字体预览。App 继续通过主资源清单提供已有本地化表、封面图库和纸张纹理。App 与 Widget 都能使用 `MoonreadInstalledFonts`，Widget 只链接这份字体检查。
 - Rust 二进制输出位于仓库默认的 `target/`，构建产物不入库。模拟器使用 `aarch64-apple-ios-sim`（arm64）。`ios/Rust.xcconfig` 对模拟器 SDK 排除 x86_64，使 Xcode 在选择通用 iOS Simulator 目的地时也只链接 arm64。
 - Xcode 构建缓存只用两份：模拟器构建和测试统一 `-derivedDataPath build/DerivedData`，真机构建统一 `build/DeviceDerivedData`。不按任务另建缓存目录；任务的日志、截图等验证记录可以放在 `build/<任务名>/`，任务合并后删除。
 - 不使用 git worktree；在主目录切分支，共用 `target`、`build/DerivedData` 和 `build/DeviceDerivedData`。

@@ -1,3 +1,4 @@
+@testable import MoonreadReader
 @testable import MoonreadData
 @testable import MoonreadLibrary
 import MoonreadCoreBindings
@@ -304,7 +305,7 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
   // S352: 选择集不跨类型/当前书架残留，实际批量动作只用有效当前 ID；不测试 Binding 语法。
   @MainActor
   func testLibrarySelectionIsSynchronousAndDropsOtherKindRows() async {
-    let tools = ReaderToolsModel()
+    let tools = ReaderToolsModel(service: AppDataService.shared)
     tools.select(.notes)
     XCTAssertEqual(tools.tab, .notes)
     XCTAssertTrue(tools.notes.isEmpty)

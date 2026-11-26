@@ -1,3 +1,4 @@
+import MoonreadReader
 import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings

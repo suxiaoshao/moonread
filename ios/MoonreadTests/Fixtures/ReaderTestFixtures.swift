@@ -1,3 +1,4 @@
+@testable import MoonreadReader
 @testable import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
@@ -365,4 +366,28 @@ extension BookInfo {
 
 func requireStoreProjection(_ projection: UserDataStore.StoreProjection?) throws -> UserDataStore.StoreProjection {
   try XCTUnwrap(projection)
+}
+
+
+extension ReaderSession {
+  convenience init(service: AppDataService = .shared, activity: ReadingActivityRecorder? = nil,
+    settingsStore: ReaderSettingsStore? = nil,
+    openSource: (@Sendable (SourceFile, ReaderOpenTrace?, @escaping @Sendable (Double?) -> Void) async throws -> ReadingLease)? = nil,
+    restartReading: (@Sendable (String, String?) async throws -> ReadingLease)? = nil,
+    readContinuation: (@Sendable (String, UInt64?) async throws -> ReadingResumeContext)? = nil,
+    makeListening: ((ReaderSession) -> ListeningSession)? = nil) {
+    self.init(service: service as any ReaderDataAccess, activity: activity,
+      settingsStore: settingsStore ?? (service === AppDataService.shared ? .shared : ReaderSettingsStore(service: service)),
+      openSource: openSource, restartReading: restartReading, readContinuation: readContinuation, makeListening: makeListening)
+  }
+}
+
+extension ReadingActivityRecorder {
+  convenience init() {
+    self.init(preferences: { await AppDataService.shared.statisticsPreferences() })
+  }
+}
+
+extension ReaderToolSession {
+  convenience init() { self.init(reader: nil, service: AppDataService.shared) }
 }

@@ -1,16 +1,9 @@
+import MoonreadReader
 import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import SwiftUI
 import UniformTypeIdentifiers
-
-enum ReaderRoute: Hashable, Sendable {
-    struct CachedBookID: Hashable, Sendable { let value: String }
-    case book(cache: CachedBookID)
-    case source(SourceFile)
-    static func book(_ id: String) -> Self { .book(cache: .init(value: id)) }
-    var title: String { if case let .source(file) = self { return file.title }; return String(localized: "阅读") }
-}
 
 enum LibraryRoute: Hashable {
     case folder(LibraryLocation), allBooks(String), reader(OpeningRequest), recent, manage

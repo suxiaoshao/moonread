@@ -1,3 +1,5 @@
+import MoonreadDesign
+@testable import MoonreadReader
 @testable import MoonreadAI
 import SwiftUI
 import XCTest

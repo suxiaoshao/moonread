@@ -1,3 +1,4 @@
+import MoonreadReader
 import MoonreadCoreBindings
 import Foundation
 
@@ -19,4 +20,13 @@ final class ReaderSettingsCache: @unchecked Sendable {
     }
     func get() throws -> ReaderSettings { lock.lock(); defer { lock.unlock() }; return try value.get() }
     func set(_ settings: ReaderSettings) { lock.lock(); value = .success(settings); lock.unlock() }
+}
+
+
+extension ReaderSettingsStore {
+    static let shared = ReaderSettingsStore(service: .shared)
+
+    convenience init(service: AppDataService, persist: ((ReaderSettings) async throws -> Void)? = nil) {
+        self.init(read: service.settings, persist: persist ?? { try await service.saveSettings($0) })
+    }
 }

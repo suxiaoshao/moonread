@@ -1,3 +1,4 @@
+import MoonreadReader
 import MoonreadDesign
 import MoonreadCoreBindings
 import SwiftUI
@@ -89,7 +90,7 @@ struct ReaderSettingsView: View {
                                      })
                     .frame(width: wide ? min(400, geometry.size.width * 0.46) : nil)
                     .frame(maxHeight: .infinity, alignment: .top)
-                if wide && editor.paletteSession?.presenter != .preview {
+                if wide && !editor.previewPalettePresented {
                     readingPreview
                         .background {
                             ReadingPreviewBackdrop(surface: previewTheme)
@@ -138,10 +139,12 @@ struct ReaderSettingsView: View {
             .toolbarVisibility(.visible, for: .navigationBar)
             .toolbarVisibility(compact ? .hidden : .automatic, for: .tabBar)
             .statusBarHidden(false)
-            .background(NavigationTransitionObserver(willLeave: { _ in
-                previewPosition.capture()
-                navigation.begin(hasPresentation: previewVisible)
-            }, completed: { _, cancelled in navigation.finish(cancelled: cancelled) }))
+            .background {
+                readerNavigationObserver(willLeave: { _ in
+                    previewPosition.capture()
+                    navigation.begin(hasPresentation: previewVisible)
+                }, completed: { _, cancelled in navigation.finish(cancelled: cancelled) })
+            }
             .onAppear {
                 navigation.appear()
                 if !appeared {
@@ -149,11 +152,11 @@ struct ReaderSettingsView: View {
                     previewPresented = verticalSizeClass != .compact
                 }
             }
-            .sheet(item: paletteBinding(.settings), onDismiss: editorClosed) { value in
-                if case let .palette(draft) = value.payload { paletteEditor(draft) }
+            .sheet(item: editor.paletteBinding(.settings), onDismiss: editorClosed) { value in
+                paletteEditor(value)
             }
-            .sheet(isPresented: Binding(get: { editor.paletteSession?.presenter == .preview || (compact && !wide && previewPresented && !navigation.isSuspended) }, set: {
-                guard editor.paletteSession?.presenter != .preview else { return }
+            .sheet(isPresented: Binding(get: { editor.previewPalettePresented || (compact && !wide && previewPresented && !navigation.isSuspended) }, set: {
+                guard !editor.previewPalettePresented else { return }
                 if compact && !wide && !navigation.isSuspended { previewPresented = $0 }
             }), onDismiss: {
                 previewVisible = false
@@ -207,11 +210,11 @@ struct ReaderSettingsView: View {
                 .readerToolPresentation()
                 .interactiveDismissDisabled()
                 .onAppear { previewVisible = true }
-                .sheet(item: paletteBinding(.preview), onDismiss: {
+                .sheet(item: editor.paletteBinding(.preview), onDismiss: {
                     if verticalSizeClass != .compact { previewDetent = .height(60) }
                     editorClosed()
                 }) { value in
-                    if case let .palette(draft) = value.payload { paletteEditor(draft) }
+                    paletteEditor(value)
                 }
             }
             .onChange(of: themes.snapshot.preferences.readerMode) { _, _ in editedAppearance = nil }
@@ -221,13 +224,6 @@ struct ReaderSettingsView: View {
         ReadingPreviewPane(source: preview, settings: settings, surface: previewTheme, position: previewPosition)
             .onDisappear { previewPosition.capture() }
     }
-    private func paletteBinding(_ presenter: ReaderEditPresenter) -> Binding<ReaderEditSession?> {
-        let current = editor.paletteSession(for: presenter)
-        return Binding(get: { editor.paletteSession(for: presenter) }, set: {
-            if $0 == nil, let current { editor.finishPalette(current.id) }
-        })
-    }
-
     private func paletteEditor(_ value: PaletteDraft) -> some View {
         PaletteEditor(draft: value, showsAppPreview: false)
         .readerToolPresentation()

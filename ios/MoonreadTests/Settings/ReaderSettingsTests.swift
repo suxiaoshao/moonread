@@ -1,3 +1,4 @@
+@testable import MoonreadReader
 import MoonreadCoreBindings
 import CryptoKit
 import Observation

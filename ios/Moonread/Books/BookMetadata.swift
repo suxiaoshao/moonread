@@ -1,3 +1,4 @@
+import MoonreadReader
 import MoonreadDataTypes
 import MoonreadData
 import MoonreadCoreBindings
@@ -10,7 +11,6 @@ import SwiftData
 import CoreData
 
 extension Notification.Name {
-    static let bookMetadataChanged = Notification.Name("Moonread.bookMetadataChanged")
 }
 
 extension Notification {

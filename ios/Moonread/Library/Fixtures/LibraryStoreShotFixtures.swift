@@ -1,3 +1,4 @@
+import MoonreadReader
 import MoonreadData
 import MoonreadLibrary
 import MoonreadDataTypes
@@ -257,14 +258,10 @@ extension StoreShotFixture {
     }
 }
 
-extension ReaderSession {
-    func showStoreShotListening() {
-        guard StoreShotScene.requested == .listening, let capture = StoreShotCapture.requested,
-              let fixture = try? StoreShotFixture.localized(capture.language), book?.title == fixture.books.first?.title,
-              let cue = try? fixture.listeningCue(), let window,
-              cue.sentence.lowerBound >= window.start, cue.sentence.upperBound <= window.end else { return }
-        toolsSession.send(.openListening)
-        activeListening?.showStoreShot(sentence: .init(startUtf8: cue.sentence.lowerBound, endUtf8: cue.sentence.upperBound))
-    }
+@MainActor func showStoreShotListening(in session: ReaderSession) {
+    guard StoreShotScene.requested == .listening, let capture = StoreShotCapture.requested,
+          let fixture = try? StoreShotFixture.localized(capture.language), session.book?.title == fixture.books.first?.title,
+          let cue = try? fixture.listeningCue() else { return }
+    session.showListeningFixture(sentence: .init(startUtf8: cue.sentence.lowerBound, endUtf8: cue.sentence.upperBound))
 }
 #endif

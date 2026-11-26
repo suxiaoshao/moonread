@@ -1,3 +1,4 @@
+import MoonreadReader
 import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
@@ -7,7 +8,7 @@ import SwiftUI
 
 /// Requests contain identity only. Sources and the authoritative position are
 /// resolved in the App at execution time; a snapshot is never opening authority.
-enum SystemReadingRequest: Equatable, Sendable {
+enum SystemReadingRequest: Hashable, Sendable {
     case continueReading
     case openBook(SystemReadingBookID)
     case openSearchBook(SystemReadingBookID)
@@ -47,22 +48,8 @@ enum SystemReadingRequest: Equatable, Sendable {
     }
 }
 
-enum SystemReadingRouteError: LocalizedError, Equatable {
-    case noRecent, unavailable, reconnect, contentChanged, searchDisabled
-    var errorDescription: String? {
-        switch self {
-        case .noRecent: String(localized: "打开一本书后，即可在这里继续。", table: "SystemReading")
-        case .unavailable: String(localized: "找不到这本书的原文件，请在书架管理中重新连接来源。", table: "SystemReading")
-        case .reconnect: String(localized: "请先在书架管理中重新连接这本书的来源。", table: "SystemReading")
-        case .searchDisabled: String(localized: "这本书不在系统搜索范围内，请从书架打开。", table: "SystemReading")
-        case .contentChanged: String(localized: "文件内容已变化，请从书架打开。", table: "SystemReading")
-        }
-    }
-}
-
-
 @MainActor @Observable
-final class SystemReadingRouter {
+final class SystemReadingRouter: ReaderSystemConfirmation {
     private weak var library: LibraryModel?
     private let service: AppDataService
     private struct RequestContext {
@@ -243,7 +230,7 @@ final class SystemReadingRouter {
                 if !automatic, reader?.isLeaving == false, reader?.book?.readingKey.formalSHA256 == id.sha { handoff = .idle(current); return }
                 let entry = try await service.resolveSystemReadingBook(id, automatic: automatic)
                 guard sceneActive, requestID == current, !Task.isCancelled else { return }
-                if reader?.isLeaving == false, reader?.book?.readingKey.formalSHA256 == id.sha || reader?.opening.request?.expectedContentSHA == id.sha {
+                if reader?.isLeaving == false, reader?.book?.readingKey.formalSHA256 == id.sha || reader?.expectedContentSHA == id.sha {
                     handoff = .idle(current); return // Never reset an already displayed session to an older saved position.
                 }
                 if await openEntry(entry, expectedSHA: id.sha, in: library, context: context) { handoff = .idle(current) }
@@ -256,25 +243,5 @@ final class SystemReadingRouter {
                 else { requestError = ReaderMessages.error(error) }
             }
         }
-    }
-}
-
-extension EnvironmentValues {
-    @Entry var systemReadingRouter: SystemReadingRouter? = nil
-}
-struct SystemReadingConfirmation: ViewModifier {
-    var editor = false
-    var active = true
-    @Environment(\.systemReadingRouter) private var router
-    func body(content: Content) -> some View {
-        let requestID = router?.requestID
-        return content.alert(Text(router?.confirmationTitle.map { String(format: String(localized: "放弃未保存的修改并打开《%@》？"), $0) } ?? String(localized: "暂时无法完成")), isPresented: Binding(get: {
-            router?.presentsConfirmation(active: active, editor: editor) == true
-        }, set: { if !$0, router?.requestID == requestID { router?.answerConfirmation(discard: false, expectedID: requestID); router?.requestError = nil } })) {
-            if router?.confirmationTitle != nil {
-                Button("取消", role: .cancel) { router?.answerConfirmation(discard: false, expectedID: requestID) }
-                Button("放弃修改并打开", role: .destructive) { router?.answerConfirmation(discard: true, expectedID: requestID) }
-            } else { Button("知道了") { router?.requestError = nil } }
-        } message: { if let error = router?.requestError { Text(error) } }
     }
 }

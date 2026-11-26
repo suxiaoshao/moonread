@@ -1,3 +1,4 @@
+import MoonreadReader
 import MoonreadLibrary
 import MoonreadData
 import MoonreadDataTypes
@@ -6,26 +7,8 @@ import Foundation
 import OSLog
 import SwiftData
 
-/// Kept by the reader until all of its asynchronous work has released it.
-/// Merely hiding the view (for settings, for example) does not end this lease.
-final class ReadingLease: Sendable {
-    let id: String
-    let writeAdmission: DataSessionLease?
-    let service: AppDataService
-    let released: AsyncStream<Void>
-    private let releaseSignal: AsyncStream<Void>.Continuation
-    init(id: String, service: AppDataService, writeAdmission: DataSessionLease? = nil) {
-        self.id = id; self.service = service; self.writeAdmission = writeAdmission
-        (released, releaseSignal) = AsyncStream.makeStream(of: Void.self)
-    }
-    deinit {
-        let id = id, service = service, releaseSignal = releaseSignal
-        Task { await service.releaseReading(id); releaseSignal.finish() }
-    }
-}
-
 /// Serializes blocking Rust and file-provider calls away from the main actor.
-actor AppDataService {
+actor AppDataService: ReaderDataAccess {
     let coverResources = CoverResourceLoader()
     static let shared = AppDataServiceFactory.make()
     var systemPublication = SystemReadingPublication()
@@ -836,7 +819,7 @@ actor AppDataService {
         return ReadingLease(id: id, service: self, writeAdmission: index.lease)
     }
 
-    fileprivate func releaseReading(_ id: String) {
+    func releaseReading(_ id: String) {
         releaseForeground("book:" + id)
         if readers[id] == nil { readingSourceIDs[id] = nil }
         reclaimReleasedImport(id)

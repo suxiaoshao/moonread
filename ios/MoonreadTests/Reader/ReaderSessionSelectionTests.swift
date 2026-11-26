@@ -1,3 +1,4 @@
+@testable import MoonreadReader
 import MoonreadCoreBindings
 import Observation
 import SQLite3

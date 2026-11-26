@@ -1,3 +1,6 @@
+#if !MOONREAD_WIDGET
+import MoonreadReader
+#endif
 import MoonreadSearchText
 import AppIntents
 import Foundation
