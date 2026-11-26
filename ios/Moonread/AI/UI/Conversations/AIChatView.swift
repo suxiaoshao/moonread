@@ -48,7 +48,7 @@ struct AIChatView: View {
         }
         // Both placements keep their own canvas behind the system bar.
         .foregroundStyle(Color(uiColor: theme.ink)).tint(Color(uiColor: theme.accent))
-        .background { Color(uiColor: background).underNavigationBar() }
+        .background(Color(uiColor: background), ignoresSafeAreaEdges: .all)
     }
 
     @ViewBuilder private var chatWithNavigation: some View {
