@@ -240,6 +240,12 @@ private struct LibraryHomeEditor: View {
     init(sections: LibraryHomeSections, save: @escaping (LibraryHomeSections) -> Void) {
         _sections = State(initialValue: sections)
         self.save = save
+        #if DEBUG
+        if let capture = StoreShotCapture.requested,
+           capture.scene == StoreShotScene.homeEditor.rawValue, capture.group.hasPrefix("duo-") {
+            _detent = State(initialValue: .large)
+        }
+        #endif
     }
 
     var body: some View {

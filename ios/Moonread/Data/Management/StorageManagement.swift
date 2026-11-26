@@ -64,12 +64,19 @@ extension AppDataService {
         let support = index.session.layout.applicationSupport
         let currentDatabase = try index.session.layout.user(index.lease.scope)
         let thumbnails = try thumbnailCacheDirectory()
+        #if DEBUG
+        let fixtureShelf = StoreShotScene.requested == .storageOverview && testSession != nil ? libraryDirectoryOverride : nil
+        #else
+        let fixtureShelf: URL? = nil
+        #endif
         return try await Task.detached(priority: .utility) {
-            try Self.scanStorage(support: support, userDatabase: currentDatabase, thumbnails: thumbnails)
+            try Self.scanStorage(support: support, userDatabase: currentDatabase, thumbnails: thumbnails,
+                                 fixtureShelf: fixtureShelf)
         }.value
     }
 
-    private nonisolated static func scanStorage(support: URL, userDatabase: URL, thumbnails: URL) throws -> StorageOverview {
+    private nonisolated static func scanStorage(support: URL, userDatabase: URL, thumbnails: URL,
+                                                fixtureShelf: URL?) throws -> StorageOverview {
         let manager = FileManager.default
         let bundle = Bundle.main.bundleURL
         let appGroup = manager.containerURL(forSecurityApplicationGroupIdentifier: SystemReadingSnapshotFile.groupIdentifier)
@@ -79,7 +86,7 @@ extension AppDataService {
         let covers = support.appending(path: "Assets/Covers", directoryHint: .isDirectory)
         let parent = support.appending(path: "Data/v3", directoryHint: .isDirectory)
         let appData = support.appending(path: "Data", directoryHint: .isDirectory)
-        let documents = try manager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+        let documents = try fixtureShelf ?? manager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
         let share = appGroup?.appending(path: "ShareInbox", directoryHint: .isDirectory)
         let work = ["MetadataImport", "ReadingBackups"].map { support.appending(path: $0, directoryHint: .isDirectory) }
         let tempWork = [MetadataTemporaryFiles.importRoot,
@@ -125,7 +132,10 @@ extension AppDataService {
 
         // The container root also contains iOS-private directories, such as
         // SystemData. Measure the app's public container directories directly.
-        for root in [bundle, library, documents, temp, appGroup].compactMap({ $0 }) {
+        // Screenshot storage measures this session and the installed app. Other
+        // simulator sessions may leave unrelated files in the shared container.
+        let roots = fixtureShelf == nil ? [bundle, library, documents, temp, appGroup] : [bundle, support, documents]
+        for root in roots.compactMap({ $0 }) {
             let files = try StorageFile.files(in: root)
             for file in files where seen[file.device, default: []].insert(file.inode).inserted {
                 let (category, detail) = allocation(file.url)

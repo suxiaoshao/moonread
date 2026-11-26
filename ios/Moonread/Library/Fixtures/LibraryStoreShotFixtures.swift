@@ -9,6 +9,9 @@ extension AppDataService {
     func createLocalizedStoreShotFixture() async throws {
         guard let capture = StoreShotCapture.requested else { throw ReaderError.InvalidSettings }
         let f = try StoreShotFixture.localized(capture.language)
+        let scene = StoreShotScene.scene(for: capture)
+        let books = f.books(for: scene)
+        let bookIndices = Dictionary(uniqueKeysWithValues: books.enumerated().map { ($0.element.title, $0.offset) })
         guard let session = testSession, libraryDirectoryOverride != nil, cloudLibraryRoot == nil else { throw LibraryFileError.invalidDestination }
         let root = try builtinLibraryURL().resolvingSymlinksInPath(), temp = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
         guard root.path.hasPrefix(temp.path + "/"), root.lastPathComponent == "Moonread-StoreShots-" + session,
@@ -20,7 +23,7 @@ extension AppDataService {
         try saveSettings(settings)
         guard !sourceDefaults.bool(forKey: "StoreShots.seeded") else { return }
         for folder in f.folders { try FileManager.default.createDirectory(at: root.appendingPathComponent(folder), withIntermediateDirectories: true) }
-        for (index,book) in f.books.enumerated() {
+        for (index, book) in books.enumerated() {
             let parent = index == 3 || index == 4 ? root.appendingPathComponent(f.folders[0]) : (index == 5 ? root.appendingPathComponent(f.folders[1]) : root)
             let url = parent.appendingPathComponent(book.title + ".txt")
             try book.text.write(to: url, atomically: true, encoding: .utf8)
@@ -28,7 +31,7 @@ extension AppDataService {
         }
         // Unread directories fall back to modification time. Set it after writing their files.
         for (index, folder) in f.folders.enumerated() {
-            try FileManager.default.setAttributes([.modificationDate: Self.storeShotDate(rank: f.books.count + index)],
+            try FileManager.default.setAttributes([.modificationDate: Self.storeShotDate(rank: books.count + index)],
                                                   ofItemAtPath: root.appendingPathComponent(folder).path)
         }
         try refreshLibraryShelf("builtin")
@@ -41,19 +44,33 @@ extension AppDataService {
             let prepared = try await aiPrepare(entry.source)
             let book = try await snapshot(prepared.id).book
             defer { withExtendedLifetime(prepared) {} }
-            guard let index = f.books.firstIndex(where: { $0.title == title }) else { throw ReaderError.InvalidRange }
+            guard let index = bookIndices[title] else { throw ReaderError.InvalidRange }
             if (1...2).contains(index) {
-                let text = f.books[index].text
+                let text = books[index].text
                 guard let range = text.range(of: f.progressChapters[index - 1]) else { throw ReaderError.InvalidRange }
                 let offset = UInt64(text[..<range.lowerBound].utf8.count)
                 try await savePosition(bookID: book.id, offset: offset, at: Self.storeShotMilliseconds(rank: index))
+                if index == 1, scene == .author {
+                    try await createStoreShotStatistics(bookID: book.id, dailyMinutes: [0, 0, 0, 0, 0, 12, 0])
+                }
+            } else if index >= f.books.count, scene == .resumeHome || scene == .author {
+                // Actual resume positions give the additional books a fixed recent order.
+                let text = books[index].text
+                guard let start = text.range(of: "\n\n")?.upperBound else { throw ReaderError.InvalidRange }
+                try await savePosition(bookID: book.id, offset: UInt64(text[..<start].utf8.count),
+                                       at: Self.storeShotMilliseconds(rank: index))
             }
             let metadata = try await details(bookID: book.id).metadata
-            var edited = metadata; edited.author = f.author; edited.tags = [title == f.books[3].title || title == f.books[5].title ? f.folders[1] : f.folders[0]]
+            var edited = metadata
+            // The author scene shows the same works in every language, all with a fixed resume position.
+            if scene != .author || index < 3 || index >= f.books.count { edited.author = f.author }
+            if index < f.books.count {
+                edited.tags = [index == 3 || index == 5 ? f.folders[1] : f.folders[0]]
+            }
             try await saveMetadata(base: metadata, edited: edited)
             if title == f.books[0].title {
                 let original = f.books[0].text
-                for pair in (StoreShotScene.requested.map { [StoreShotScene.paper, .mint, .bamboo, .listening].contains($0) } == true ? [] : f.notes) {
+                for pair in (scene.map { [StoreShotScene.paper, .mint, .bamboo, .listening].contains($0) } == true ? [] : f.notes) {
                     guard let range = original.range(of: pair[0]) else { throw ReaderError.InvalidRange }
                     let start = UInt64(original[..<range.lowerBound].utf8.count), end = start + UInt64(pair[0].utf8.count)
                     let edit = try await prepareAnnotation(book.id, start: start, end: end)
@@ -68,7 +85,7 @@ extension AppDataService {
                     display.synopsis = original.components(separatedBy: "\n\n").first(where: { $0.count > 45 }) ?? ""
                     try await saveMetadata(base: edited, edited: display)
                 }
-                if let scene = StoreShotScene.requested {
+                if let scene {
                     let chapter = original.range(of: f.mainChapters[1])!
                     var start = chapter.lowerBound
                     if scene == .annotation, let note = original.range(of: f.notes[0][0]) {
@@ -99,7 +116,9 @@ extension AppDataService {
                         try writeFixtureValue("position/" + book.readingKey.storageKey, value: json, device: "store-shot-other-device")
                         dataChanged()
                     }
-                    if scene == .statistics { try await createStoreShotStatistics(bookID: book.id) }
+                    if scene == .statistics || scene == .author || scene == .storageOverview {
+                        try await createStoreShotStatistics(bookID: book.id)
+                    }
                     if scene == .widget {
                         try await publishStoreShotWidget(book: book, fixture: f)
                     }
@@ -112,9 +131,9 @@ extension AppDataService {
         }
         guard try core.libraryIdentityInventory(shelfId: "builtin").pending.isEmpty else { throw ReaderError.InvalidRange }
         let inventory = try await readingDataInventory()
-        guard inventory.items.count == 6, inventory.pending == 0, inventory.unsupported == 0,
+        guard inventory.items.count == books.count, inventory.pending == 0, inventory.unsupported == 0,
               try core.libraryShelves().count == 1 else { throw ReaderError.InvalidRange }
-        if StoreShotScene.requested == .resumeHome,
+        if scene == .resumeHome,
            let id = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == f.books[0].title + ".txt" })?.bookId {
             try await recordBookOpened(id, at: Self.storeShotMilliseconds(rank: 0))
         }
@@ -179,9 +198,9 @@ extension AppDataService {
         }
     }
 
-    private func createStoreShotStatistics(bookID: String) async throws {
+    private func createStoreShotStatistics(bookID: String, dailyMinutes: [Int] = [18, 0, 28, 36, 45, 39, 32]) async throws {
         // Frozen original sample, using the same clock and writer as reading.
-        for (index, minutes) in [18, 0, 28, 36, 45, 39, 32].enumerated() where minutes > 0 {
+        for (index, minutes) in dailyMinutes.enumerated() where minutes > 0 {
             let day = Calendar.current.date(byAdding: .day, value: index - 6, to: StoreShotScene.statisticsDate)!
             let start = Calendar.current.date(bySettingHour: 10, minute: 0, second: 0, of: day)!
             let clock = ReadingClock(bookId: bookID)
