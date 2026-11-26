@@ -9,8 +9,8 @@ import struct MoonreadQueries.BookInformationQuery
 /// file action envelope if the route calls for one.
 public enum BookInformationRead {
     public typealias Output = MoonreadQueries.BookInformationQuery.Data
-    typealias Info = Output.BookInformation
-    typealias Source = Info.Source
+    public typealias Info = Output.BookInformation
+    public typealias Source = Info.Source
 
     public enum Snapshot: Equatable, Sendable {
         case value(Output), incompatibleMetadata, missingSource
@@ -34,6 +34,12 @@ public enum BookInformationRead {
         let key: String
         let offset: UInt64
         let updated: Int64
+
+        public init(key: String, offset: UInt64, updated: Int64) {
+            self.key = key
+            self.offset = offset
+            self.updated = updated
+        }
     }
 
     public static func fetch(_ db: Database, scope: DataScope, target: BookTarget,
@@ -300,5 +306,16 @@ extension BookInformationRead {
             parentPath: file.parentPath, name: file.name, size: size, modified: modified, lastRead: lastRead,
             item: .book(row: .init(resolution: resolution, needsDownload: file.needsDownload, positionUtf8: offset,
                 byteCount: bytes, chapterTitle: nil, preferred: selected.preferred, metadata: nil, cardMetadata: nil)))
+    }
+}
+
+extension ReaderIndex {
+    public func bookInformation(_ target: BookTarget, fileID: String? = nil, includeRecordSource: Bool = false) throws
+        -> BookInformationRead.Update {
+        let snapshot = try session.readUsers(lease) { db in
+            try BookInformationRead.fetch(db, scope: self.lease.scope, target: target,
+                                          fileID: fileID, includeRecordSource: includeRecordSource)
+        }
+        return try BookInformationRead.update(snapshot, target: target)
     }
 }

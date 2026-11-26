@@ -1,3 +1,4 @@
+@testable import MoonreadData
 import MoonreadLibrary
 import CryptoKit
 import GRDB

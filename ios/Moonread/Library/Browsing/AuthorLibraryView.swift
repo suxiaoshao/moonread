@@ -1,3 +1,6 @@
+import MoonreadDesign
+import MoonreadSearchText
+import MoonreadData
 import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
@@ -100,11 +103,11 @@ struct AuthorLibraryView: View {
     var body: some View {
         let key = searchKey
         let request = statisticsRequest
-        LibraryCollection(model: model, host: host, sections: sections, accessibilityID: "authorWorks")
+        HostedLibraryCollection(model: model, host: host, sections: sections, accessibilityID: "authorWorks")
             .themedPage()
             .navigationTitle(Text(verbatim: credit.name))
             .navigationBarTitleDisplayMode(.inline)
-            .modifier(LibraryFileActivity(model: model))
+            .modifier(LibraryFileActivity(active: model.processingFiles))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {

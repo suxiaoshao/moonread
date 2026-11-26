@@ -1,3 +1,7 @@
+import MoonreadLibrary
+import MoonreadDesign
+import MoonreadSearchText
+import MoonreadData
 import MoonreadDataTypes
 #if MOONREAD_INTERNAL_TOOLS
 import MoonreadCoreBindings

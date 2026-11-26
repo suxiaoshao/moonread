@@ -1,3 +1,6 @@
+import MoonreadLibrary
+import MoonreadDesign
+import MoonreadData
 import MoonreadCoreBindings
 import Combine
 import SwiftUI
@@ -14,7 +17,8 @@ struct DataManagementView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
-                MetadataTasksSection()
+                MetadataTasksSection(task: .shared, loadShelves: { try await AppDataService.shared.shelves() })
+                    .metadataCoverPresentation()
                 VStack(alignment: .leading, spacing: 16) {
                     Label { Text("阅读数据备份", tableName: "MetadataExchange") } icon: { Image(systemName: "externaldrive") }.font(.headline)
                     VStack(alignment: .leading, spacing: 16) {

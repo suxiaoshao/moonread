@@ -1,3 +1,4 @@
+import MoonreadSearchText
 import MoonreadLibrary
 @testable import MoonreadData
 import MoonreadDataTypes
@@ -61,9 +62,7 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
   }
 
   private func prepareFolder(at root: URL) throws -> ReaderIndex {
-    let fixtureBundle = Bundle(for: Self.self)
-    let resources: Bundle = fixtureBundle.url(forResource: "schema", withExtension: "sql") == nil ? .main : fixtureBundle
-    let session = try DataSession(layout: .init(applicationSupport: root), bundle: resources)
+    let session = try DataSession(layout: .init(applicationSupport: root))
     let lease = try session.activate(.unknown).0
     try session.prepareIndex(root.appending(path: "reader.sqlite3"), token: lease)
     try session.prepareUsers(lease) { nil }

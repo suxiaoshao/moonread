@@ -1,3 +1,4 @@
+import MoonreadDesign
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import MoonreadAI
@@ -131,7 +132,7 @@ struct AIMetadataResultReview: View {
                         }
                         if let tags = metadata.fields.first(where: { $0.kind == .tags }) { tagContent(tags) }
                         else if let tags = ai.proposals.liveMetadata[resultID]?.tags, !tags.isEmpty {
-                            AIFlowLayout { ForEach(tags, id: \.self) { tag in chip(tag, badge: nil, removed: false, changed: false, dashed: false) } }
+                            FlowLayout { ForEach(tags, id: \.self) { tag in chip(tag, badge: nil, removed: false, changed: false, dashed: false) } }
                         }
                         ForEach(metadata.fields.filter { $0.kind == .synopsis || $0.kind == .readingStatus }) { textContent($0) }
                         if !metadata.fields.contains(where: { $0.kind == .synopsis }), let synopsis = ai.proposals.liveMetadata[resultID]?.synopsis, !synopsis.isEmpty {
@@ -225,7 +226,7 @@ struct AIMetadataResultReview: View {
         let offered = Set(field.draft.split(separator: "\n").map(String.init))
         return VStack(alignment: .leading, spacing: LayoutTokens.compact) {
             Text("标签").font(.subheadline.weight(.semibold))
-            AIFlowLayout {
+            FlowLayout {
                 ForEach(current.sorted() + offered.subtracting(current).sorted(), id: \.self) { tag in
                     let added = !current.contains(tag)
                     let removal = field.tagsMode == .replace && !offered.contains(tag)

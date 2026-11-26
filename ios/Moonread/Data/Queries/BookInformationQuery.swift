@@ -4,17 +4,6 @@ import MoonreadCoreBindings
 import Foundation
 import GRDB
 
-extension ReaderIndex {
-    func bookInformation(_ target: BookTarget, fileID: String? = nil, includeRecordSource: Bool = false) throws
-        -> BookInformationRead.Update {
-        let snapshot = try session.readUsers(lease) { db in
-            try BookInformationRead.fetch(db, scope: self.lease.scope, target: target,
-                                          fileID: fileID, includeRecordSource: includeRecordSource)
-        }
-        return try BookInformationRead.update(snapshot, target: target)
-    }
-}
-
 extension AppDataService {
     func bookInformation(_ target: BookTarget, fileID: String?, includeRecordSource: Bool) async throws
         -> (LibraryEntry?, BookDetailsResult) {

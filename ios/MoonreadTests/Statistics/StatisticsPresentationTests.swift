@@ -1,3 +1,5 @@
+import MoonreadDesign
+@testable import MoonreadData
 import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
@@ -219,9 +221,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
 final class StatisticsFixedReadTests: XCTestCase {
   private func openHistory() throws -> (URL, ReaderIndex) {
     let root = FileManager.default.temporaryDirectory.appending(path: "StatisticsReads-\(UUID())")
-    let ownBundle = Bundle(for: Self.self)
-    let resources: Bundle = ownBundle.url(forResource: "schema", withExtension: "sql") == nil ? .main : ownBundle
-    let session = try DataSession(layout: .init(applicationSupport: root), bundle: resources)
+    let session = try DataSession(layout: .init(applicationSupport: root))
     let lease = try session.activate(.unknown).0
     try session.prepareIndex(root.appending(path: "reader.sqlite3"), token: lease)
     try session.prepareUsers(lease) { nil }

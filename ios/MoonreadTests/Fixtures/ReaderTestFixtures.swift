@@ -1,3 +1,4 @@
+@testable import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Observation

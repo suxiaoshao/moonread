@@ -1,3 +1,4 @@
+import MoonreadLibrary
 import MoonreadCoreBindings
 import MoonreadAI
 import Foundation

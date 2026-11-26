@@ -1,3 +1,6 @@
+@testable import MoonreadLibrary
+import MoonreadSearchText
+@testable import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import XCTest

@@ -1,3 +1,5 @@
+import MoonreadDesign
+import MoonreadData
 import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
@@ -13,7 +15,6 @@ struct LibraryView: View {
     @Environment(AIHost.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
-    @Environment(\.horizontalSizeClass) private var sizeClass
     private var enabledSections: [LibraryHomeSection] { model.homeSections.visible }
     private var current: LibraryEntry? {
         enabledSections.contains(.resume) ? model.recents.first : nil
@@ -40,7 +41,12 @@ struct LibraryView: View {
 
     var body: some View {
         Group {
-            if model.homeReady { homeList }
+            if model.homeReady {
+                LibraryHomeLayout(enabledSections: enabledSections, showsSection: showsSection,
+                                  editHome: { editingHome = true },
+                                  refresh: { await model.refresh(showIndicator: false, userInitiated: true) },
+                                  section: homeSection)
+            }
             else if let error = model.error {
                 ContentUnavailableView { Label("暂时无法加载书架", systemImage: "books.vertical") } description: { Text(error) } actions: { Button("重试") { Task { await model.load() } } }
             } else { ProgressView("正在加载书架").frame(maxWidth: .infinity, maxHeight: .infinity).themedPage() }
@@ -75,10 +81,10 @@ struct LibraryView: View {
             }
         }
         .sheet(isPresented: $editingHome, onDismiss: { actionsFocused = true }) {
-            LibraryHomeEditor(sections: model.homeSections) { model.homeSections = $0 }
+            LibraryHomeEditor(sections: model.homeSections, detent: homeEditorDetent) { model.homeSections = $0 }
                 .themeScope(theme)
         }
-        .modifier(LibraryFileActivity(model: model))
+        .modifier(LibraryFileActivity(active: model.processingFiles))
         .safeAreaInset(edge: .top, spacing: 0) {
             if !enabledSections.isEmpty, model.showsImportTip, themes.loaded, model.shell.libraryPath.isEmpty, model.shell.selectedTab == .library {
                 TipView(Onboarding.shared.imports).tipViewStyle(ThemedTipStyle()).padding(.horizontal)
@@ -92,59 +98,12 @@ struct LibraryView: View {
         .modifier(PageLoadingOverlay(request: !themes.loaded || model.busy || model.nativeRefreshing ? nil : (!model.homeReady ? model.loading.request : (model.explicitRefresh ? model.refreshing.request : nil)),
                                      hasContent: !model.shelves.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh))
     }
-    private var homeList: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                if enabledSections.contains(where: showsSection) {
-                    VStack(alignment: .leading, spacing: 24) {
-                        if sizeClass == .regular && geometry.size.width >= 720 {
-                            wideSections
-                        } else {
-                            sectionStack(enabledSections)
-                        }
-                    }
-                    .padding([.horizontal, .top], 20).padding(.bottom)
-                    .frame(maxWidth: 1040).frame(maxWidth: .infinity)
-                } else {
-                    ContentUnavailableView {
-                        Label(enabledSections.isEmpty ? "首页区块已全部隐藏" : "暂无可显示的区块",
-                              systemImage: "rectangle.3.group")
-                    } actions: {
-                        Button("编辑首页", systemImage: "pencil") { editingHome = true }.buttonStyle(.bordered)
-                    }
-                    .frame(minHeight: geometry.size.height)
-                }
-            }
-            .refreshable { await model.refresh(showIndicator: false, userInitiated: true) }
-        }.themedPage()
-    }
-
-    @ViewBuilder private var wideSections: some View {
-        let enabled = enabledSections
-        let hasBanner = enabled.first == .resume
-        let columns = hasBanner ? Array(enabled.dropFirst()) : enabled
-        let leftCount = (columns.count + 1) / 2
-        let left = Array(columns.prefix(leftCount))
-        let right = Array(columns.dropFirst(leftCount))
-        if hasBanner, showsSection(.resume) { homeSection(.resume) }
-        if columns.contains(where: showsSection) {
-            HStack(alignment: .top, spacing: 24) {
-                if left.contains(where: showsSection) {
-                    sectionStack(left).frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-                if right.contains(where: showsSection) {
-                    sectionStack(right).frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-            }
-        }
-    }
-
-    private func sectionStack(_ sections: [LibraryHomeSection]) -> some View {
-        VStack(alignment: .leading, spacing: 24) {
-            ForEach(sections.filter(showsSection)) { section in
-                homeSection(section)
-            }
-        }
+    private var homeEditorDetent: PresentationDetent {
+        #if DEBUG
+        if let capture = StoreShotCapture.requested,
+           capture.scene == StoreShotScene.homeEditor.rawValue, capture.group.hasPrefix("duo-") { return .large }
+        #endif
+        return .medium
     }
 
     private func homeSection(_ section: LibraryHomeSection) -> some View {
@@ -229,111 +188,6 @@ struct LibraryView: View {
 
     private func recentMenu(_ entry: LibraryEntry) -> some View {
         RecentBookActions(model: model, entry: entry)
-    }
-}
-
-private struct LibraryHomeEditor: View {
-    @State private var sections: LibraryHomeSections
-    let save: (LibraryHomeSections) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.theme) private var theme
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var detent: PresentationDetent = .medium
-
-    init(sections: LibraryHomeSections, save: @escaping (LibraryHomeSections) -> Void) {
-        _sections = State(initialValue: sections)
-        self.save = save
-        #if DEBUG
-        if let capture = StoreShotCapture.requested,
-           capture.scene == StoreShotScene.homeEditor.rawValue, capture.group.hasPrefix("duo-") {
-            _detent = State(initialValue: .large)
-        }
-        #endif
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if !sections.visible.isEmpty {
-                    Section("显示") {
-                        ForEach(sections.visible) { section in
-                            sectionRow(section, visible: true)
-                        }
-                        .onMove { sections.visible.move(fromOffsets: $0, toOffset: $1) }
-                    }
-                }
-                if !sections.hidden.isEmpty {
-                    Section("隐藏") {
-                        ForEach(sections.hidden) { section in
-                            sectionRow(section, visible: false)
-                        }
-                    }
-                }
-            }
-            .listStyle(.insetGrouped)
-            .environment(\.editMode, .constant(.active))
-            .scrollContentBackground(.hidden)
-            .themedPage()
-            .navigationTitle("编辑首页").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SystemToolbarButton("取消", role: .cancel) { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    SystemToolbarButton("完成", role: .confirm) {
-                        save(sections)
-                        dismiss()
-                    }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large], selection: $detent)
-        .presentationDragIndicator(.visible)
-        .onChange(of: typeSize, initial: true) { _, size in
-            if size.isAccessibilitySize { detent = .large }
-        }
-    }
-
-    private func sectionRow(_ section: LibraryHomeSection, visible: Bool) -> some View {
-        HStack(spacing: LayoutTokens.compact) {
-            Button {
-                withAnimation {
-                    if visible { sections.hide(section) }
-                    else { sections.show(section) }
-                }
-            } label: {
-                Image(systemName: visible ? "minus.circle.fill" : "plus.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(visible ? Color.red : Color.green)
-                    .frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel(visible ? Text("隐藏\(Text(section.title))") : Text("显示\(Text(section.title))"))
-            Text(section.title)
-        }
-        .listRowBackground(Color(uiColor: theme.surface))
-    }
-}
-
-struct ShelfRow: View {
-    let shelf: LibraryShelf
-    @Environment(\.theme) private var theme
-    var body: some View {
-        HStack(spacing: 14) {
-            Group {
-                Image(systemName: shelf.builtin ? "books.vertical" : "folder").font(.system(size: 29, weight: .light))
-                    .foregroundStyle(Color(uiColor: theme.accent))
-            }.frame(width: 46, height: 48)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(shelf.builtin ? String(localized: "我的书架") : shelf.name).font(.body.weight(.medium)).foregroundStyle(Color(uiColor: theme.ink))
-                if shelf.error != nil { Label("需要重新连接", systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(Color(uiColor: theme.destructive)) }
-                else {
-                    Text("\(shelf.bookCount) 本 · \(shelf.location == "icloud" ? "iCloud Drive" : shelf.builtin ? String(localized: "本机") : String(localized: "文件夹"))")
-                        .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                }
-            }
-        }.padding(.vertical, 12)
     }
 }
 

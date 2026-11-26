@@ -9,13 +9,13 @@ import enum MoonreadQueries.ShelfTagKind
 /// mode adds one narrow read of visible members within the same snapshot.
 public enum CatalogueRead {
     public typealias Books = MoonreadQueries.ShelfBookCardsQuery.Data
-    typealias Card = Books.ShelfBookCard
+    public typealias Card = Books.ShelfBookCard
     public typealias Groups = MoonreadQueries.ShelfTagGroupsQuery.Data
     public typealias Group = Groups.ShelfTagGroup
 
     public struct Input: Equatable, Sendable {
-        let books: Books
-        let tags: [String: [String]]?
+        public let books: Books
+        public let tags: [String: [String]]?
     }
 
     public static func fetch(_ db: Database, scope: DataScope, shelfID: String, grouping: LibraryGrouping) throws -> Input {
@@ -145,5 +145,14 @@ public enum CatalogueRead {
         case .unindexed: .unindexed
         case nil: throw ReaderError.InvalidSettings
         }
+    }
+}
+
+extension ReaderIndex {
+    public func catalogue(_ shelfID: String, grouping: LibraryGrouping) throws -> CatalogueRead.Ordered {
+        let snapshot = try session.readUsers(lease) {
+            try CatalogueRead.fetch($0, scope: self.lease.scope, shelfID: shelfID, grouping: grouping)
+        }
+        return try CatalogueRead.order(snapshot)
     }
 }

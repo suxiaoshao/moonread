@@ -1,3 +1,4 @@
+import MoonreadDesign
 import MoonreadDataTypes
 #if READER_OPEN_DIAGNOSTICS
 import MoonreadCoreBindings

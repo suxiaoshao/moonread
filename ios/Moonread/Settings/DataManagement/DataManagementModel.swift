@@ -1,3 +1,6 @@
+import MoonreadLibrary
+import MoonreadSearchText
+import MoonreadData
 import MoonreadCoreBindings
 import BackgroundTasks
 import SwiftUI
@@ -89,7 +92,7 @@ import SwiftUI
     private var recentOrder: [String] = []
     init(service: AppDataService = .shared) {
         self.service = service
-        backupExport = DataExchangeTask(service: service, usesSystemExecution: service === AppDataService.shared,
+        backupExport = DataExchangeTask(describeError: { ReaderMessages.error($0) }, usesSystemExecution: service === AppDataService.shared,
                                   kind: "reading-backup", title: String(localized: "导出备份", table: "MetadataExchange"),
                                   subtitle: String(localized: "正在生成备份…", table: "DataManagement")) { _, _ in
             try await service.exportReadingData()
@@ -190,7 +193,7 @@ import SwiftUI
         deleting = .init(keys: keys, configuration: configuration)
     }
     private func makeReadingDeletionTask() -> DataExchangeTask<DeletionRequest, Bool> {
-        DataExchangeTask(service: service, usesSystemExecution: service === AppDataService.shared,
+        DataExchangeTask(describeError: { ReaderMessages.error($0) }, usesSystemExecution: service === AppDataService.shared,
                          kind: "reading-delete", title: String(localized: "清除阅读数据", table: "DataManagement"),
                          subtitle: String(localized: "正在清除…", table: "DataManagement"), commitsChanges: true) { [weak self, service] request, _ in
             let cleaned = try await service.deleteReadingData(request.keys, configuration: request.configuration)

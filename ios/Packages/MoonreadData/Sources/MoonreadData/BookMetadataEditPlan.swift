@@ -4,7 +4,7 @@ import MoonreadCoreBindings
 import MoonreadDataTypes
 
 public extension BookMetadata {
-    var normalizedForSaving: BookMetadata {
+    public var normalizedForSaving: BookMetadata {
         var value = self
         value.author = author.trimmingCharacters(in: .whitespacesAndNewlines)
         value.synopsis = synopsis.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -37,11 +37,7 @@ extension Collection where Element == LibraryEntry {
 extension AppDataService {
     func libraryEntry(_ id: String) async throws -> LibraryEntry {
         try await fixedReaderRead { index in
-            let page = try index.session.readUsers(index.lease) {
-                try FolderRead.hitCards($0, scope: index.lease.scope, ids: [id])
-            }
-            guard let item = try FolderRead.entries(page).first else { throw ReaderError.NotFound }
-            return item
+            try index.libraryEntry(fileID: id)
         }
     }
 
@@ -208,11 +204,7 @@ extension AppDataService {
     /// One-shot consumers (Siri and the no-target system route) use the
     /// identical fixed query, without acquiring a page observation.
     func recentLibrary(_ limit: UInt32 = 1000) throws -> [LibraryEntry] {
-        let index = try relationalUserIndex()
-        let scope = index.lease.scope
-        return try index.session.readUsers(index.lease) { db in
-            try RecentReadingRead.fetch(db, scope: scope, limit: limit).recentReading.map { try $0.libraryEntry() }
-        }
+        try relationalUserIndex().recentLibrary(limit: limit)
     }
 
     func hideRecent(_ value: String) async throws {
@@ -223,7 +215,7 @@ extension AppDataService {
         let index = try relationalUserIndex()
         let key = if let parsed = try? parseReadingKey(value: value) { serializeReadingKey(key: parsed) }
             else { try index.resolveBookIdentity(bookId: value).key.storageKey }
-        try index.session.writeUsers(index.lease) { try LocalReadingRows.setHidden($0, book: key, hidden: true) }
+        try index.hideRecent(key)
         dataChanged()
     }
 

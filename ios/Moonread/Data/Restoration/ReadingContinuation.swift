@@ -2,23 +2,6 @@ import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 
-/// Device-only evidence of an actual local write, never a competing sync fact.
-struct LocalReadingResumeState: Codable {
-    struct Entry: Codable, Sendable {
-        var offset: UInt64
-        var lastLocalWriteToken: String?
-    }
-    static let key = "Moonread.localReadingResume.v1"
-    var schemaVersion = 1
-    var scopes: [String: [String: Entry]] = [:]
-    init(data: Data?) throws {
-        if let data {
-            self = try JSONDecoder().decode(Self.self, from: data)
-            guard schemaVersion == 1 else { throw UserSyncCompatibilityError() }
-        }
-    }
-}
-
 struct ReadingContinuationCandidate: Sendable {
     let contentSHA: String
     let token: String

@@ -1,62 +1,6 @@
+import MoonreadData
 import Foundation
 import GRDB
-
-enum StorageCategory: String, CaseIterable, Identifiable, Sendable {
-    case books, database, work, old, app, other
-    var id: String { rawValue }
-}
-
-enum StorageOther: String, CaseIterable, Sendable {
-    case shelf, conversations, fonts, snapshots, caches, preferences
-}
-
-struct StorageOverview: Sendable {
-    var sizes: [StorageCategory: UInt64] = [:]
-    var other: [StorageOther: UInt64] = [:]
-    var activeDatabase: UInt64 = 0
-    var total: UInt64 { sizes.values.reduce(0, +) }
-}
-
-struct StorageMetadataPackages: Sendable {
-    var obsolete: [StorageDirectory] = []
-    var retained: UInt64 = 0
-    var removed: UInt64 = 0
-    var unverified = false
-}
-
-struct StorageWorkInventory: Sendable {
-    let temporary: [StorageDirectory]
-    let packages: StorageMetadataPackages
-    var removableBytes: UInt64 { (temporary + packages.obsolete).reduce(0) { $0 + $1.bytes } }
-}
-
-struct StorageDatabaseInventory: Sendable {
-    let freeBytes, orphanBytes: UInt64
-    let orphanCount: Int
-    let lease: DataSessionLease
-    var canOrganize: Bool { freeBytes > 0 || orphanCount > 0 }
-}
-
-struct StorageDatabaseResult: Sendable {
-    let coversRemoved: Int
-    let bytesRecovered: UInt64
-    let incomplete: Bool
-    let reclaimedCopies: [UserValueRows.CoverCopy]
-}
-
-enum StorageMaintenanceError: Error { case busy }
-
-enum StorageDatabaseFiles {
-    private static let suffixes = ["", "-wal", "-shm", "-journal"]
-    static func matches(_ name: String, base: String) -> Bool { suffixes.contains { name == base + $0 } }
-    static func group(_ base: URL) throws -> [StorageFile] {
-        try suffixes.compactMap { suffix in
-            try StorageFile.file(at: suffix.isEmpty ? base : base.deletingLastPathComponent()
-                .appending(path: base.lastPathComponent + suffix))
-        }
-    }
-    static func bytes(_ base: URL) throws -> UInt64 { try group(base).reduce(0) { $0 + $1.bytes } }
-}
 
 extension AppDataService {
     func storageOverview() async throws -> StorageOverview {

@@ -1,3 +1,4 @@
+import MoonreadDesign
 import SwiftUI
 
 struct ReadingContinuationBanner: View {

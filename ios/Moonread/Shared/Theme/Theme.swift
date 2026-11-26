@@ -3,95 +3,7 @@ import MoonreadDesign
 import SwiftUI
 import UIKit
 
-enum LayoutTokens {
-    static let compact: CGFloat = 8
-    static let control = ControlMetrics.spacing
-    static let content: CGFloat = 16
-    static let page: CGFloat = 20
-    static let section: CGFloat = 24
-    static let hit = ControlMetrics.hitSize
-    static let inputRadius: CGFloat = 16
-    static let floatingRadius: CGFloat = 20
-    static let border: CGFloat = 1
-}
-
-enum MotionTokens {
-    static func controls(reduced: Bool) -> Animation { .easeOut(duration: reduced ? 0.10 : 0.18) }
-    static func panel(reduced: Bool) -> Animation { .easeInOut(duration: reduced ? 0.10 : 0.24) }
-    static func accessoryResize(reduced: Bool) -> Animation {
-        .easeInOut(duration: reduced ? 0.10 : 0.20)
-    }
-    static func accessoryContent(reduced: Bool) -> AnyTransition {
-        // Fade through within the resizing sheet, without moving or scaling
-        // the controls. SwiftUI owns interruption and reversal of transitions.
-        .asymmetric(
-            insertion: .opacity.animation(.easeOut(duration: reduced ? 0.10 : 0.12)),
-            removal: .opacity.animation(.easeOut(duration: 0.08))
-        )
-    }
-    static let color = Animation.easeInOut(duration: 0.18)
-}
-
-extension ResolvedTheme {
-    var appearance: ThemeAppearance {
-        switch surface {
-        case .system(let appearance), .palette(let appearance, _, _): appearance
-        }
-    }
-    var colors: ThemeColors? { if case .palette(_, _, let colors) = surface { colors } else { nil } }
-    var paletteId: String { if case .palette(_, let id, _) = surface { id } else { "system" } }
-}
-extension ResolvedReaderTexture {
-    var descriptor: ReaderTextureDescriptor? {
-        switch self {
-        case .unsupported: nil
-        case .off(let descriptor), .on(let descriptor): descriptor
-        }
-    }
-    var enabled: Bool { if case .on = self { true } else { false } }
-    var activeDescriptor: ReaderTextureDescriptor? { if case .on(let descriptor) = self { descriptor } else { nil } }
-}
-struct ThemeSurface: Equatable {
-    let plan: ResolvedTheme
-    var readerTexture: ResolvedReaderTexture? = nil
-    var scheme: ColorScheme { plan.appearance == .dark ? .dark : .light }
-    var style: UIUserInterfaceStyle { plan.appearance == .dark ? .dark : .light }
-    func ui(_ role: KeyPath<ThemeColors, UInt32>, system: UIColor) -> UIColor {
-        if let colors = plan.colors { return UIColor(rgb: colors[keyPath: role]) }
-        return system.resolvedColor(with: UITraitCollection { traits in
-            traits[UITraitUserInterfaceStyle.self] = style
-            traits[UITraitAccessibilityContrast.self] = plan.highContrast ? .high : .normal
-        })
-    }
-    var canvas: UIColor { ui(\.canvas, system: .systemGroupedBackground) }
-    var surface: UIColor { ui(\.surface, system: .secondarySystemGroupedBackground) }
-    var raised: UIColor { ui(\.raised, system: .tertiarySystemGroupedBackground) }
-    var input: UIColor { ui(\.input, system: .secondarySystemBackground) }
-    var paper: UIColor { ui(\.paper, system: .systemBackground) }
-    var ink: UIColor { ui(\.ink, system: .label) }
-    var secondary: UIColor { ui(\.secondary, system: .secondaryLabel) }
-    var accent: UIColor { ui(\.accent, system: .systemBlue) }
-    var onAccent: UIColor { ui(\.onAccent, system: .white) }
-    var accentSurface: UIColor { ui(\.accentSurface, system: .tertiarySystemFill) }
-    var border: UIColor { ui(\.border, system: .separator) }
-    var separator: UIColor { ui(\.separator, system: .separator) }
-    var focus: UIColor { ui(\.focus, system: .systemBlue) }
-    var selected: UIColor { ui(\.selected, system: .tertiarySystemFill) }
-    var annotation: UIColor { ui(\.annotation, system: .systemYellow.withAlphaComponent(0.22)) }
-    var search: UIColor { ui(\.search, system: .systemBlue.withAlphaComponent(0.16)) }
-    var searchCurrent: UIColor { ui(\.searchCurrent, system: .systemBlue.withAlphaComponent(0.28)) }
-    var selection: UIColor { ui(\.selection, system: .systemBlue) }
-    var destructive: UIColor { ui(\.destructive, system: .systemRed) }
-    var warning: UIColor { ui(\.warning, system: .systemOrange) }
-    var onDestructive: UIColor { ui(\.onDestructive, system: .white) }
-    var success: UIColor { ui(\.success, system: .systemGreen) }
-    var moon: UIColor { ui(\.moon, system: .tertiaryLabel) }
-    var maria: UIColor { ui(\.maria, system: .secondaryLabel) }
-    func floatingBackground(_ material: Material = .regularMaterial) -> AnyShapeStyle {
-        // System colors keep native material; a chosen palette owns the whole
-        // custom surface, including its background rather than just the text.
-        plan.colors == nil ? AnyShapeStyle(material) : AnyShapeStyle(Color(uiColor: raised))
-    }
+extension ThemeSurface {
     struct PaperInput: Equatable {
         let paper: UInt32
         let descriptor: ReaderTextureDescriptor?
@@ -143,7 +55,6 @@ struct ThemeSurface: Equatable {
             data[offset + 3] = 255
         }
     }
-    static let initial = ThemeSurface(plan: try! resolveThemes(value: defaultThemeSnapshot(), system: .light, highContrast: false).app)
 }
 
 /// One prepared result can be retained by both reader and preview. The factory
@@ -202,11 +113,6 @@ extension UIColor {
         func byte(_ value: CGFloat) -> UInt32 { UInt32((min(1, max(0, value)) * 255).rounded()) }
         return byte(r) << 16 | byte(g) << 8 | byte(b)
     }
-}
-
-extension EnvironmentValues {
-    @Entry var theme = ThemeSurface.initial
-    @Entry var moonreadReduceMotion = false
 }
 
 @MainActor @Observable
@@ -320,95 +226,3 @@ final class ThemeStore {
 
 /// Override only this hosting controller. The parent continues observing true
 /// system appearance, even when the App or a reader sheet forces another mode.
-struct NativeThemeHost<Content: View>: UIViewControllerRepresentable {
-    let theme: ThemeSurface
-    @ViewBuilder var content: () -> Content
-    func makeUIViewController(context: Context) -> UIHostingController<Content> {
-        let controller = UIHostingController(rootView: content())
-        controller.overrideUserInterfaceStyle = theme.style
-        controller.view.backgroundColor = theme.canvas
-        return controller
-    }
-    func updateUIViewController(_ controller: UIHostingController<Content>, context: Context) {
-        controller.overrideUserInterfaceStyle = theme.style
-        controller.view.backgroundColor = theme.canvas
-        controller.rootView = content()
-    }
-}
-
-struct ThemedPage: ViewModifier {
-    @Environment(\.theme) private var theme
-    func body(content: Content) -> some View {
-        content.modifier(SurfacePage(canvas: Color(uiColor: theme.canvas), ink: Color(uiColor: theme.ink),
-                                     accent: Color(uiColor: theme.accent)))
-    }
-}
-
-/// Keep the native prominent button's interaction and shape, while pairing its
-/// filled background with the palette's foreground instead of inherited ink.
-struct ThemedProminentButtonStyle: PrimitiveButtonStyle {
-    @Environment(\.theme) private var theme
-    func makeBody(configuration: Configuration) -> some View {
-        SurfaceProminentButtonStyle(accent: Color(uiColor: theme.accent), onAccent: Color(uiColor: theme.onAccent))
-            .makeBody(configuration: configuration)
-    }
-}
-
-/// Use the native secondary control with the same sizing and shape rules as
-/// its prominent counterpart. Callers set controlSize on both actions together.
-struct ThemedSecondaryButtonStyle: PrimitiveButtonStyle {
-    @Environment(\.theme) private var theme
-    func makeBody(configuration: Configuration) -> some View {
-        Button(configuration)
-            .buttonStyle(.bordered)
-            .tint(Color(uiColor: theme.accent))
-    }
-}
-
-/// Bar utility, navigation and create glyphs (gear, ×, …, locate, +, compose) use the
-/// theme's ink. The root tint stays accent for state, focus and prominent commits;
-/// destructive items keep their role colour.
-struct ToolbarGlyph: ViewModifier {
-    @Environment(\.theme) private var theme
-    func body(content: Content) -> some View { content.tint(Color(uiColor: theme.ink)) }
-}
-
-struct ThemedDivider: View {
-    @Environment(\.theme) private var theme
-    var body: some View { SurfaceDivider(separator: Color(uiColor: theme.separator)) }
-}
-
-struct ThemedEmptyState: View {
-    let title: String
-    let symbol: String
-    @Environment(\.theme) private var theme
-    var body: some View {
-        ContentUnavailableView {
-            Label {
-                Text(title).foregroundStyle(Color(uiColor: theme.ink))
-            } icon: {
-                Image(systemName: symbol).foregroundStyle(Color(uiColor: theme.secondary))
-            }
-        }
-    }
-}
-
-extension View {
-    /// The UIKit scroll view keeps its content insets while its viewport reaches the bar.
-    func underNavigationBar(when enabled: Bool = true, onEarlierSystems: Bool = false) -> some View {
-        let extendsTop: Bool
-        if #available(iOS 26, *) {
-            extendsTop = enabled
-        } else {
-            extendsTop = enabled && onEarlierSystems
-        }
-        return ignoresSafeArea(.container, edges: extendsTop ? .top : [])
-    }
-
-    func themedPage() -> some View { modifier(ThemedPage()) }
-    func toolbarGlyph() -> some View { modifier(ToolbarGlyph()) }
-    func themeScope(_ theme: ThemeSurface) -> some View {
-        environment(\.theme, theme).environment(\.colorScheme, theme.scheme)
-            .foregroundStyle(Color(uiColor: theme.ink)).tint(Color(uiColor: theme.accent))
-    }
-}

@@ -1,3 +1,6 @@
+import MoonreadLibrary
+import MoonreadSearchText
+import MoonreadData
 import MoonreadDesign
 import MoonreadDataTypes
 import MoonreadCoreBindings
@@ -332,12 +335,12 @@ struct AppSearchView: View {
     }
 
     var body: some View {
-        LibraryCollection(model: model, host: host, sections: resultSections, matches: results.matches,
+        HostedLibraryCollection(model: model, host: host, sections: resultSections, matches: results.matches,
                           accessibilityID: "appSearchResults", isSearch: true, hasSearchDrawer: savedFilter == nil,
                           beforeOpen: dismissKeyboard)
         .themedPage()
         .navigationTitle(savedFilter.map { Text($0.name) } ?? Text("搜索")).navigationBarTitleDisplayMode(.inline)
-        .modifier(LibraryFileActivity(model: model))
+        .modifier(LibraryFileActivity(active: model.processingFiles))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 LibraryDisplayMenu(selection: $model.layout)
@@ -452,15 +455,6 @@ struct AppSearchView: View {
 
 }
 
-struct SearchKey: Hashable {
-    let term: String
-    var configuration = BookSearchConfiguration()
-    var virtualShelf = false
-    let revision: Int
-    let retry: Int
-    let aiAvailable: Bool
-}
-
 /// A snapshot of what matched when searched: the title and one line from the newest
 /// matching message. Live status belongs to the chat itself.
 private struct AIConversationSearchRow: View {
@@ -486,30 +480,10 @@ private struct AIConversationSearchRow: View {
     }
 }
 
-/// Owns publication independently of the SwiftUI task's cancellation timing.
-@MainActor @Observable final class AppSearchResults {
-    private(set) var entries: [LibraryEntry] = []
-    private(set) var matches: [String: LibraryQueryRules.SearchMatch] = [:]
-    private(set) var conversations: [AIConversationSearchHit] = []
-    private(set) var completedKey: SearchKey?
-    private(set) var unknownCount = 0
-    private(set) var error: String?
-    let loading = LoadingState()
-    private(set) var refreshing = false
-    private(set) var authorityRevision = 0
-    @ObservationIgnored private var generation = UUID()
-    @ObservationIgnored private var accountChange: AnyCancellable?
-
-    init(service: AppDataService = .shared) {
-        accountChange = MainActorNotifications.observe(.readingContinuationInvalidated, object: service) { [weak self] in
-            guard let self else { return }
-            generation = UUID(); reset(); authorityRevision &+= 1
-        }
-    }
-
-    private func reset() {
-        if let request = loading.request { loading.finish(request) }
-        completedKey = nil; error = nil; entries = []; matches = [:]; conversations = []; unknownCount = 0; refreshing = false
+extension AppSearchResults {
+    convenience init(service: AppDataService = .shared) {
+        self.init(observeAccount: { MainActorNotifications.observe(.readingContinuationInvalidated, object: service, using: $0) },
+                  describeError: { ReaderMessages.error($0) })
     }
 
     func observeLibrary(_ key: SearchKey, service: AppDataService, hasCriteria: Bool = true,
@@ -525,36 +499,5 @@ private struct AIConversationSearchRow: View {
         } conversations: {
             try await conversations()
         }
-    }
-
-    func observe(_ key: SearchKey, hasCriteria: Bool,
-                 invalidations: () async throws -> AsyncThrowingStream<Void, Error>,
-                 search: () async throws -> LibraryQueryRules.SearchOutcome,
-                 conversations: () async throws -> [AIConversationSearchHit]) async {
-        guard !Task.isCancelled else { return }
-        let token = UUID(); generation = token
-        guard hasCriteria else { reset(); return }
-        let request = loading.begin()
-        defer {
-            loading.finish(request)
-            if generation == token { refreshing = false }
-        }
-        do {
-            let stream = try await invalidations()
-            var talks: [AIConversationSearchHit]?
-            for try await _ in stream {
-                guard generation == token, !Task.isCancelled else { return }
-                refreshing = true
-                let books = try await search()
-                if talks == nil { talks = try await conversations() }
-                guard generation == token, !Task.isCancelled else { return }
-                entries = books.entries; unknownCount = books.unknownCount
-                matches = books.matches
-                self.conversations = talks ?? []
-                error = nil; completedKey = key; refreshing = false
-                loading.finish(request)
-            }
-        } catch is CancellationError { }
-        catch { if generation == token, !Task.isCancelled { self.error = ReaderMessages.error(error) } }
     }
 }

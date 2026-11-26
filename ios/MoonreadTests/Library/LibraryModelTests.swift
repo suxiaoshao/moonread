@@ -1,4 +1,5 @@
-import MoonreadLibrary
+@testable import MoonreadData
+@testable import MoonreadLibrary
 import MoonreadCoreBindings
 import GRDB
 import CryptoKit

@@ -1,3 +1,4 @@
+@testable import MoonreadData
 import MoonreadCoreBindings
 import Foundation
 import GRDB

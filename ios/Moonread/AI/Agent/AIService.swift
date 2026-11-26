@@ -1,3 +1,4 @@
+import MoonreadLibrary
 import MoonreadCoreBindings
 import MoonreadAI
 import Combine
@@ -119,29 +120,6 @@ struct AIActionNotice: Identifiable {
     let id = UUID()
     let sessionID: String?
     let message: String
-}
-
-struct AIConversationAnchor: Hashable {
-    let sequence: Int
-    let turn: String
-}
-
-struct AIConversationSearchHit: Identifiable {
-    let id: String
-    let title: String
-    /// One line around the newest matching message; nil when only the title matches.
-    let snippet: String?
-    let fromUser: Bool
-    let anchor: AIConversationAnchor?
-    static func snippet(_ text: String, term: String) -> String {
-        let line = text.split(whereSeparator: \.isNewline).map(String.init)
-            .first { $0.localizedStandardContains(term) } ?? text
-        let flat = line.trimmingCharacters(in: .whitespaces)
-        guard let range = flat.localizedStandardRange(of: term) else { return flat }
-        // Keep a little context before the match so the term stays on screen.
-        let start = flat.index(range.lowerBound, offsetBy: -12, limitedBy: flat.startIndex) ?? flat.startIndex
-        return (start > flat.startIndex ? "…" : "") + flat[start...]
-    }
 }
 
 struct AISessionSummary: Identifiable {

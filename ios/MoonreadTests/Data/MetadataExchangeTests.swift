@@ -1,4 +1,5 @@
-import MoonreadData
+@testable import MoonreadLibrary
+@testable import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation

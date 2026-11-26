@@ -1,21 +1,9 @@
+import MoonreadData
 import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import OSLog
-
-struct SourceDecodingValue: Codable, Sendable { let decoding: String }
-struct SourceDecodingSnapshot: Sendable {
-    struct Policy: Sendable { let updated: Int64; let token, decoding: String }
-    let values: [String: Policy]
-    let blocked: Set<String>
-    func resolve(rawSHA: String) throws -> String {
-        let key = "source-decoding/" + (try parseSha256(value: rawSHA))
-        guard !blocked.contains(key) else { throw UserSyncCompatibilityError() }
-        guard let stored = values[key] else { return "auto" }
-        return try normalizeSourceDecoding(decoding: stored.decoding)
-    }
-}
 
 struct RawSourceIdentity: Sendable {
     let sha: String

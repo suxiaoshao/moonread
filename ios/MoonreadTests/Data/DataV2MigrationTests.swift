@@ -1,4 +1,4 @@
-import MoonreadData
+@testable import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
@@ -752,7 +752,7 @@ struct DataV2MigrationTests {
         var config = Configuration()
         config.prepareDatabase { db in try db.execute(sql: "ATTACH DATABASE ? AS usr", arguments: [aFile.path]) }
         let writer = try DatabasePool(path: layout.index.path, configuration: config)
-        try DataV2Schema.prepare(writer, bundle: .main)
+        try DataV2Schema.prepare(writer)
         try await writer.writeWithoutTransaction { db in
             try LocalScopeImport.withSource(db, url: localFile, readOnly: true) {
                 try LocalScopeImport.copy(db, move: marker.id)

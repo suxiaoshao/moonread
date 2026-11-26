@@ -1,3 +1,5 @@
+import MoonreadLibrary
+import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
@@ -36,10 +38,6 @@ struct ReadingBackupReview: Sendable {
 struct ReadingBackupPreview: Sendable {
     let staging: BackupStaging
     let review: ReadingBackupReview
-}
-
-extension BackupCancellation {
-    func check() throws { if isCancelled() { throw CancellationError() } }
 }
 
 extension AppDataService {

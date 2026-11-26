@@ -57,9 +57,7 @@ extension AppDataService {
         try Task.checkCancellation()
         let index = try relationalUserIndex()
         guard admission == index.lease else { throw ReadingDataError.changed }
-        let reclaimed = try index.session.writeUsers(index.lease) {
-            try UserValueRows.putMetadata($0, [.init(plan: plan, cover: asset)], device: userDevice, now: userValueClock, scope: index.lease.scope)
-        }
+        let reclaimed = try index.commitBookMetadata([.init(plan: plan, cover: asset)], device: userDevice, now: { userValueClock })
         publishMetadataCommit([plan])
         await removeReclaimedCoverCopies(reclaimed, index: index)
     }
@@ -375,7 +373,7 @@ extension AppDataService {
 
     private func storedCoverBytes(_ cover: BookCoverAsset) throws -> Data? {
         let index = try relationalUserIndex()
-        return try index.session.readUsers(index.lease) { try UserValueRows.coverBytes($0, id: cover.id, sha: cover.sha256) }
+        return try index.coverBytes(cover)
     }
 
 }
@@ -633,11 +631,5 @@ struct BookCoverView: View {
                 if value > 0, pixels == nil { measuredPixels = value }
             }
             .onDisappear { subscription = nil }
-    }
-}
-
-extension BookReadingStatus {
-    var label: LocalizedStringKey {
-        switch self { case .unread: "未读"; case .reading: "阅读中"; case .finished: "读完"; case .paused: "暂搁"; case .other: "其他（当前版本不支持）" }
     }
 }

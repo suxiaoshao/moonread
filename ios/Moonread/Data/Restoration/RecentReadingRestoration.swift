@@ -1,3 +1,5 @@
+import MoonreadLibrary
+import MoonreadData
 import MoonreadCoreBindings
 import Foundation
 import CryptoKit

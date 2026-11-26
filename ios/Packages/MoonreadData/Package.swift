@@ -7,7 +7,8 @@ let package = Package(
     platforms: [.iOS(.v18)],
     products: [
         .library(name: "MoonreadData", targets: ["MoonreadData"]),
-        .library(name: "MoonreadDataTypes", targets: ["MoonreadDataTypes"])
+        .library(name: "MoonreadDataTypes", targets: ["MoonreadDataTypes"]),
+        .library(name: "MoonreadSearchText", targets: ["MoonreadSearchText"])
     ],
     dependencies: [
         .package(path: "../MoonreadCoreBindings"),
@@ -17,10 +18,12 @@ let package = Package(
     targets: [
         .target(name: "MoonreadData", dependencies: [
             "MoonreadDataTypes",
+            "MoonreadSearchText",
             .product(name: "MoonreadCoreBindings", package: "MoonreadCoreBindings"),
             .product(name: "MoonreadQueries", package: "MoonreadQueries"),
             .product(name: "GRDB", package: "GRDB.swift")
-        ]),
+        ], resources: [.process("Resources")]),
+        .target(name: "MoonreadSearchText"),
         .target(name: "MoonreadDataTypes", dependencies: [
             .product(name: "MoonreadCoreBindings", package: "MoonreadCoreBindings")
         ])

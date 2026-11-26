@@ -1,3 +1,4 @@
+import MoonreadData
 import MoonreadCoreBindings
 import Foundation
 
@@ -48,7 +49,7 @@ extension AppDataService {
             snapshot.preferences = try decodeThemePreferences(json: json)
         }
         let index = try relationalUserIndex()
-        let custom = try index.session.readUsers(index.lease) { try UserValueRows.palettes($0).filter(\.custom) }
+        let custom = try index.customPalettes()
         snapshot.palettes = defaultThemeSnapshot().palettes + custom
         // A remotely removed palette falls back to the existing device defaults.
         let defaults = defaultThemeSnapshot().preferences
@@ -80,9 +81,7 @@ extension AppDataService {
         let palette = try makeThemePalette(id: creating ? "custom-\(UUID().uuidString)" : value.id, name: value.name, appearance: value.appearance, colors: value.colors)
         let json = try encodeThemePalette(value: palette)
         let index = try relationalUserIndex()
-        try index.session.writeUsers(index.lease) {
-            try UserValueRows.put($0, key: .init("palette/" + palette.id), value: json, device: userDevice, now: userValueClock, scope: index.lease.scope)
-        }
+        try index.savePalette(id: palette.id, json: json, device: userDevice, now: { userValueClock })
         dataChanged(); return palette
     }
     func deletePalette(_ id: String) async throws -> ThemeSnapshot {
@@ -91,9 +90,7 @@ extension AppDataService {
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         guard try await themes().palettes.contains(where: { $0.custom && $0.id == id }) else { throw ReaderError.NotFound }
         let index = try relationalUserIndex()
-        try index.session.writeUsers(index.lease) {
-            try UserValueRows.put($0, key: .init("palette/" + id), value: "null", device: userDevice, now: userValueClock, scope: index.lease.scope)
-        }
+        try index.savePalette(id: id, json: "null", device: userDevice, now: { userValueClock })
         dataChanged(); return try await themes()
     }
 }

@@ -11,7 +11,7 @@ public struct DataOwnerState: Codable, Equatable, Sendable {
             self.target = target
         }
     }
-    var version = 1
+    public var version = 1
     public var current: DataScope = .local
     public var lastConfirmed: DataScope?
     public var ownedIndex = false

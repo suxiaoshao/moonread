@@ -1,24 +1,10 @@
+import MoonreadLibrary
 import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import OSLog
 import SwiftData
-
-extension PreparationState {
-    var isComplete: Bool { if case .complete = self { true } else { false } }
-    var isPaused: Bool { if case .paused = self { true } else { false } }
-    var isFailed: Bool { if case .failed = self { true } else { false } }
-    var isActive: Bool {
-        switch self {
-        case .preparing, .importing, .finalizing: true
-        case .complete, .paused, .failed: false
-        }
-    }
-    var failure: ReaderError? {
-        if case .failed(.reported(let error)) = self { error } else { nil }
-    }
-}
 
 /// Kept by the reader until all of its asynchronous work has released it.
 /// Merely hiding the view (for settings, for example) does not end this lease.
@@ -304,9 +290,7 @@ actor AppDataService {
                     // Seal only this installation's known active segments
                     // in the OLD file, after its reader/worker tasks finish.
                     let installation = try session.readingInstallationID()
-                    try session.writeUsers(old.lease) {
-                        try ReadingSegmentRows.sealOwned($0, owner: installation, scope: old.lease.scope)
-                    }
+                    try old.sealOwnedReadingSegments(installation: installation)
                     try cancellation.check()
                     userCloudConfigurationRevision = UUID()
                     resetUserScopeMemory()
@@ -385,9 +369,7 @@ actor AppDataService {
             try cancellation.check()
             let index = try relationalUserIndex()
             guard index.lease.scope == account.scope, account.scope != .local else { throw DataV2Error.leaseExpired }
-            let needsClear = try index.session.readUsers(index.lease) {
-                try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone).requiresLocalClear
-            }
+            let needsClear = try index.pendingCloudZoneClear()
             let finish = afterClear ?? finishUserScopePresentation
             let intent = cloudSyncIntent
             do {
@@ -618,14 +600,8 @@ actor AppDataService {
         try Task.checkCancellation()
         let index = try relationalUserIndex()
         guard admission == index.lease else { throw CancellationError() }
-        try index.session.writeUsers(index.lease) { db in
-            let body = try IndexedBookBody.fetch(db, id: id, scope: index.lease.scope.key)
-            guard (try? parseSha256(value: body.sha)) != nil else { throw ReaderError.ImportBusy }
-            try ReaderChapterRead.validateChapterCorrection(db, body: body, offset: offset)
-            let value = ChapterValue(content_key: body.sha, offset: offset, title: title.trimmingCharacters(in: .whitespaces), level: level, excluded: excluded)
-            try UserValueRows.put(db, key: .init("chapter/\(body.sha)/\(offset)"), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock,
-                                  scope: index.lease.scope)
-        }
+        try index.correctChapter(bookID: id, offset: offset, title: title, level: level, excluded: excluded,
+                                 device: userDevice, now: { userValueClock })
         dataChanged()
     }
     func restoreChapterCorrections(_ id: String) async throws {
@@ -634,10 +610,7 @@ actor AppDataService {
         try Task.checkCancellation()
         let index = try relationalUserIndex()
         guard admission == index.lease else { throw CancellationError() }
-        try index.session.writeUsers(index.lease) { db in
-            let body = try IndexedBookBody.fetch(db, id: id, scope: index.lease.scope.key)
-            try UserValueRows.retractChapters(db, book: body.sha, device: userDevice, now: userValueClock, scope: index.lease.scope)
-        }
+        try index.restoreChapterCorrections(bookID: id, device: userDevice, now: { userValueClock })
         dataChanged()
     }
     func rebuildChapters(_ id: String) throws -> ChapterRebuild { try indexStore().rebuildChapters(bookId: id) }
@@ -1044,14 +1017,6 @@ actor AppDataService {
     }
 
 
-}
-
-struct ImportSource: Codable, Equatable, Sendable {
-    let rootBookmark: Data
-    let relativePath: String
-    var encoding: String? = nil
-    var fileID: String? = nil
-    var expectedRawSHA: String? = nil
 }
 
 private enum SourceImportEvent: String, Sendable { case ready, failed, finished }

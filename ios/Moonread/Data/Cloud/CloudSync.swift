@@ -1,3 +1,4 @@
+import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import CloudKit
@@ -61,11 +62,6 @@ enum CloudSyncIssue: Equatable, Sendable {
         if (error as? CKError)?.code == .quotaExceeded { return .quota }
         return .unavailable
     }
-}
-
-struct CloudInitialUploadProgress: Equatable, Sendable {
-    let processed: Int
-    let total: Int
 }
 
 enum CloudSyncPhase: Equatable, Sendable {

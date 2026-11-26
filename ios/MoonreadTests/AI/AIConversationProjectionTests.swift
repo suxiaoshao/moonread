@@ -1,3 +1,4 @@
+import MoonreadLibrary
 @testable import MoonreadAI
 import MoonreadCoreBindings
 import AISDKProvider

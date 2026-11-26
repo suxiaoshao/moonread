@@ -1,3 +1,6 @@
+import MoonreadDesign
+import MoonreadSearchText
+import MoonreadData
 import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
@@ -48,7 +51,7 @@ struct StatisticsView: View {
             },
             bookContext: {
                 AnyView(Group {
-                    if let target { BookInformationSections(model: information, target: target, library: library, host: host) }
+                    if let target { HostedBookInformation(model: information, target: target, library: library, host: host) }
                 })
             },
             bookFooter: { AnyView(Group { fileInformation; deletionSection }) },
@@ -58,7 +61,18 @@ struct StatisticsView: View {
             if let target { await information.observe(target.informationTarget) }
         }
         .sheet(item: $information.draft) { draft in
-            BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "", service: library.service).themeScope(theme)
+            BookMetadataEditor(draft: draft, save: { try await library.service.saveMetadata(base: $0, edited: $1) },
+                               describeError: { ReaderMessages.error($0) }) { metadata in
+                BookCoverView(title: information.entry?.title ?? target?.title ?? "", cover: metadata.cover,
+                              contentSHA256: metadata.sha, author: metadata.author)
+            } tagPicker: { selection in
+                BookTagPicker(service: library.service, purpose: .metadata, selection: selection) {
+                    EmptyView()
+                } status: {
+                    EmptyView()
+                }
+            }
+                .themeScope(theme)
                 .readerToolPresentation()
         }
         .alert("下载小说后才能编辑信息", isPresented: $information.confirmDownload) {

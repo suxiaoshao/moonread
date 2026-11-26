@@ -1,26 +1,11 @@
+import MoonreadLibrary
+import MoonreadDesign
+import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import SwiftUI
 import UIKit
-
-/// Ephemeral read snapshot, never a new sync or backup format.
-struct NoteCandidates: Sendable {
-    let key: String
-    let groups: [String: [AnnotationCandidate]]
-    let blocked: Set<String>
-    var unknownMarks = false
-    var admission: DataSessionLease? = nil
-    func checked(_ ids: Set<String>?) throws -> [String: [AnnotationCandidate]] {
-        let unreadable = ids.map { blocked.intersection($0) } ?? blocked
-        guard unreadable.isEmpty, !unknownMarks else { throw NoteReadError(count: unreadable.count + (unknownMarks ? 1 : 0)) }
-        return groups.filter { ids?.contains($0.key) ?? true }
-    }
-}
-struct NoteReadError: LocalizedError {
-    let count: Int
-    var errorDescription: String? { String(localized: "有 \(count) 条记录无法读取，暂时无法完整分享或导出。请在数据管理中查看。") }
-}
 
 struct NoteDocument: Sendable {
     struct Record: Identifiable, Sendable {

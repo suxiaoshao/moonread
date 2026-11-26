@@ -1,3 +1,4 @@
+import MoonreadDesign
 import MoonreadLibrary
 import MoonreadData
 import MoonreadDataTypes
@@ -6,34 +7,12 @@ import SwiftUI
 
 struct RecentLibraryView: View {
     @Bindable var model: LibraryModel
-    @State private var recentUse: RecentReadingUse?
-    private var entries: [RecentReadingRead.Card] { model.recentReading.value?.recentReading ?? [] }
 
     var body: some View {
-        LibraryCollection(model: model, host: .main, sections: [
-            .init(id: .recent, content: .files(entries.compactMap { try? $0.libraryEntry() }, .recent))
-        ], hasTopAccessory: model.recentReading.failure != nil, onRefresh: {
-            await model.refresh(showIndicator: false, userInitiated: true)
-        })
-        .themedPage()
-        .navigationTitle("最近阅读")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                LibraryDisplayMenu(selection: $model.layout)
-            }
-        }
-        .overlay {
-            if model.recentReading.value == nil, model.recentReading.failure == nil {
-                ProgressView("正在加载")
-            }
-        }
-        .safeAreaInset(edge: .top) {
-            if let error = model.recentReading.failure {
-                RecentReadingRetry(message: error) { model.recentReading.retry() }
-            }
-        }
-        .task {
-            if recentUse == nil { recentUse = model.recentReading.use(limit: RecentReadingStore.fullLimit) }
+        RecentLibraryPage(store: model.recentReading, layout: $model.layout,
+                          refresh: { await model.refresh(showIndicator: false, userInitiated: true) }) { sections, hasTopAccessory, onRefresh in
+            HostedLibraryCollection(model: model, host: .main, sections: sections,
+                                    hasTopAccessory: hasTopAccessory, onRefresh: onRefresh)
         }
     }
 }
@@ -52,24 +31,6 @@ struct RecentBookActions: View {
     }
 }
 
-/// The last successful snapshot stays visible when its observation fails.
-struct RecentReadingRetry: View {
-    let message: String
-    let retry: () -> Void
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Label { Text(message) } icon: { Image(systemName: "exclamationmark.circle") }
-                .font(.footnote)
-                .foregroundStyle(Color(uiColor: theme.secondary))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button("重试", action: retry)
-        }
-        .padding(.horizontal, 16).padding(.vertical, 8)
-        .background(Color(uiColor: theme.canvas))
-    }
-}
 
 private struct RecentBookRow: View {
     let model: LibraryModel

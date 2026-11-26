@@ -482,9 +482,7 @@ extension AppDataService {
                     try Task.checkCancellation()
                     try validateMetadataScope(confirmed, indices: prepared.map(\.index))
                     let writer = try relationalUserIndex()
-                    let reclaimed = try writer.session.writeUsers(confirmed.lease) {
-                        try UserValueRows.putMetadata($0, entries, device: userDevice, now: userValueClock, scope: confirmed.lease.scope)
-                    }
+                    let reclaimed = try writer.commitBookMetadata(entries, admission: confirmed.lease, device: userDevice, now: { userValueClock })
                     // A successful save is a fact even when a stop raced the return.
                     checkpoint.committed += prepared.count
                     wroteThisRun = true

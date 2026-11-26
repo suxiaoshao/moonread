@@ -1,3 +1,4 @@
+import MoonreadData
 import SwiftUI
 
 struct StorageCategoryPage: View {

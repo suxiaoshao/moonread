@@ -14,9 +14,10 @@ let package = Package(
     targets: [
         .target(name: "MoonreadLibrary", dependencies: [
             .product(name: "MoonreadCoreBindings", package: "MoonreadCoreBindings"),
+            .product(name: "MoonreadSearchText", package: "MoonreadData"),
             .product(name: "MoonreadData", package: "MoonreadData"),
             .product(name: "MoonreadDataTypes", package: "MoonreadData"),
             .product(name: "MoonreadDesign", package: "MoonreadDesign")
-        ])
+        ], resources: [.process("Resources")])
     ]
 )

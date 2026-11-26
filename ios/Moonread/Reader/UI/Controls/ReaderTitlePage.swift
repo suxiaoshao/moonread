@@ -1,3 +1,4 @@
+import MoonreadDesign
 import SwiftUI
 
 /// The in-book title page shares the shelf's type and palette, with room to

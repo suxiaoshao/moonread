@@ -9,8 +9,8 @@ import struct MoonreadQueries.FolderPageQuery
 /// movement picker shares the activity/count rules but never hydrates cards.
 public enum FolderRead {
     public typealias Page = MoonreadQueries.FolderPageQuery.Data
-    typealias Entry = Page.FolderPage
-    typealias Preview = Entry.Folder.Preview
+    public typealias Entry = Page.FolderPage
+    public typealias Preview = Entry.Folder.Preview
     public typealias Destinations = MoonreadQueries.FolderDestinationsQuery.Data
 
     public static func page(_ db: Database, scope: DataScope, location: LibraryLocation) throws -> Page {
@@ -206,5 +206,15 @@ extension FolderRead {
                 folderDescendants: descendants, lastRead: entry.lastRead, modified: entry.modified)
         }
         return libraryDirectoryOrder(rows: rows, sort: sort).compactMap { byID[$0] }
+    }
+}
+
+extension ReaderIndex {
+    public func folderEntries(_ location: LibraryLocation, sort: LibrarySort) throws -> [LibraryEntry] {
+        try FolderRead.entries(session.readUsers(lease) { try FolderRead.page($0, scope: self.lease.scope, location: location) }, sort: sort)
+    }
+
+    public func folderDestinations(_ location: LibraryLocation) throws -> [LibraryEntry] {
+        try FolderRead.entries(session.readUsers(lease) { try FolderRead.destinations($0, scope: self.lease.scope, location: location) })
     }
 }

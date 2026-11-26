@@ -1,3 +1,5 @@
+import MoonreadLibrary
+import MoonreadDesign
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import TipKit
@@ -16,7 +18,7 @@ struct LibraryManagementView: View {
         .navigationTitle("书架管理").navigationBarTitleDisplayMode(.inline)
         .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.loading.request ?? model.refreshing.request ?? model.shelfScans.values.first ?? model.summaries.request,
                                      hasContent: !model.shelves.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh))
-        .modifier(LibraryFileActivity(model: model))
+        .modifier(LibraryFileActivity(active: model.processingFiles))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("添加书架", systemImage: "plus") { model.chooseFiles(.folder(nil)) }

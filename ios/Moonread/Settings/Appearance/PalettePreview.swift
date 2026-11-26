@@ -1,3 +1,4 @@
+import MoonreadDesign
 import SwiftUI
 
 struct PalettePreview: View {
