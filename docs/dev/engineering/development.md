@@ -23,7 +23,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 项目级 [SwiftUI Expert skill](../../../.agents/skills/swiftui-expert-skill/SKILL.md) 用于 SwiftUI 开发与审阅。来源为 [AvdLee/SwiftUI-Agent-Skill](https://github.com/AvdLee/SwiftUI-Agent-Skill)，固定 `4.2.0` / `9692ec5c3e78a0acc7757de2dbe8e64e519a72fb`，保留上游 [MIT 许可](../../../.agents/skills/swiftui-expert-skill/LICENSE)；更新时显式选择版本。
 
-固定查询的 schema／操作文档在 `ios/GraphQL/`。修改后在 `ios/` 用 Apollo iOS CLI 2.5.0 执行 `apollo-ios-cli generate`，将生成的 Swift 文件提交到 `ios/Packages/MoonreadQueries/Sources/MoonreadQueries/`。主 App 链接本地包 `MoonreadQueries`，该包只依赖 workspace 锁定的 `ApolloAPI` 2.5.0。主 App 的 `Data/Queries` 建立查询事务与观察，目录、书目、最近阅读和资料的固定读由 `MoonreadData` 实现。生成器只在开发时运行，查询不经过 GraphQL 服务。
+固定查询的 schema／操作文档在 `ios/GraphQL/`。修改后在 `ios/` 用 Apollo iOS CLI 2.5.0 执行 `apollo-ios-cli generate`，将生成的 Swift 文件提交到 `ios/Packages/MoonreadQueries/Sources/MoonreadQueries/`。主 App 链接本地包 `MoonreadQueries`，该包只依赖 workspace 锁定的 `ApolloAPI` 2.5.0。`MoonreadData` 实现固定查询和持久化事务。主 App 的 `Data/Queries` 把这些读与观察接到当前账户、App 舞台和统计／系统呈现。生成器只在开发时运行，查询不经过 GraphQL 服务。
 
 ## 本地化
 
@@ -66,8 +66,8 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - 主 App 另外链接 `libmoonread_ai_cover.a`，由同一个 Nix 构建阶段编译。封面 crate 含网页解析，C 接口不参与正文 UniFFI 生成。Swift 包通过 App 注入的封面适配调用该接口。
 - `ios/Packages/MoonreadAI` 是 iOS 18 / Swift 6 本地包。Swift AI SDK、Litext、MarkdownView 版本在其清单声明，由 Xcode workspace 同一 `Package.resolved` 锁定。模型快照和品牌资源随包资源复制，测试继续由 Moonread scheme 运行。
 - `MoonreadStatistics` 是 iOS 18 / Swift 6 本地包。主 App 注入统计读取与观察、书籍导航和展示附件。统计图表使用 `MoonreadDesign` 的共用样式，日界和格式由 `MoonreadStatisticsDates` 提供。统计仍查找 App 的 `Localizable.xcstrings`，保留与书籍详情及系统入口共用的翻译。
-- `MoonreadData` 包将固定读、账户目标决策和资料字段计算纳入同一数据层。轻量的 `MoonreadDataTypes` target 共享书键、来源和作用域；它依赖 UniFFI 类型，供统计和书架复用。
-- `MoonreadLibrary` 包负责目录、书目与最近阅读状态，书籍资料观察、草稿和文件协调。主 App 注入类型化的观察、资料命令与现有索引提交，并装配跨页路由与平台授权。书架与资料继续使用 App 的 `Localizable.xcstrings`。
+- `MoonreadData` 拥有当前作用域的 `DataSession`、GRDB 池、`ReaderIndex`、账户和同步引擎 lease，以及 SQL、候选结算和事务。SQL 资源由 SwiftPM 随包复制，使用 `Bundle.module`。轻量 `MoonreadDataTypes` 共享书键、来源和作用域。`MoonreadSearchText` 共享普通搜索和系统实体用的文字匹配，Widget 只需这个轻量产品。
+- `MoonreadLibrary` 保存书架首页、列表和网格、目录及最近阅读、文件任务界面、索引呈现、搜索和虚拟书架、书架管理、作者页、书籍资料及交换界面。App 注入具体服务、封面和跨页路由。共用的中文、繁中和英文仍来自 App 的本地化表，书架标签词表由 `MoonreadLibrary` 通过 `Bundle.module` 加载。
 - Rust 二进制输出位于仓库默认的 `target/`，构建产物不入库。模拟器使用 `aarch64-apple-ios-sim`（arm64）。`ios/Rust.xcconfig` 对模拟器 SDK 排除 x86_64，使 Xcode 在选择通用 iOS Simulator 目的地时也只链接 arm64。
 - Xcode 构建缓存只用两份：模拟器构建和测试统一 `-derivedDataPath build/DerivedData`，真机构建统一 `build/DeviceDerivedData`。不按任务另建缓存目录；任务的日志、截图等验证记录可以放在 `build/<任务名>/`，任务合并后删除。
 - 不使用 git worktree；在主目录切分支，共用 `target`、`build/DerivedData` 和 `build/DeviceDerivedData`。

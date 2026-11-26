@@ -9,7 +9,8 @@ let package = Package(
     dependencies: [
         .package(path: "../MoonreadCoreBindings"),
         .package(path: "../MoonreadData"),
-        .package(path: "../MoonreadDesign")
+        .package(path: "../MoonreadDesign"),
+        .package(path: "../MoonreadStatistics")
     ],
     targets: [
         .target(name: "MoonreadLibrary", dependencies: [
@@ -17,7 +18,9 @@ let package = Package(
             .product(name: "MoonreadSearchText", package: "MoonreadData"),
             .product(name: "MoonreadData", package: "MoonreadData"),
             .product(name: "MoonreadDataTypes", package: "MoonreadData"),
-            .product(name: "MoonreadDesign", package: "MoonreadDesign")
+            .product(name: "MoonreadDesign", package: "MoonreadDesign"),
+            .product(name: "MoonreadStatistics", package: "MoonreadStatistics"),
+            .product(name: "MoonreadStatisticsDates", package: "MoonreadStatistics")
         ], resources: [.process("Resources")])
     ]
 )
