@@ -197,7 +197,6 @@ struct MoonreadApp: App {
                     library.systemReading.receiveIntent(); library.systemReading.resume()
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-test-store-screenshots") {
-                        library.layout = .list
                         await themes.load()
                         await openPageShot()
                         return
@@ -332,8 +331,20 @@ struct MoonreadApp: App {
                     }
                 case .librarySearch:
                     let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
+                    library.layout = .list
                     library.shell.search.configuration = fixture.storeShotSearch
                     library.shell.selectedTab = .search
+                case .homeEditor:
+                    library.homeSections = .init(hidden: [LibraryHomeSection.saved.rawValue])
+                case .storageOverview:
+                    _ = try await library.service.exportReadingData()
+                    await library.shell.settingsNavigation.storage.loadOverview()
+                    library.shell.openSettings(target: .storage)
+                case .author:
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
+                    guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
+                        .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
+                    library.shell.libraryPath = [.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))]
                 case .backupReview:
                     let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                     library.shell.openSettings(target: .data)

@@ -8,6 +8,7 @@ enum StoreShotScene: String, CaseIterable {
     case search = "R09", backup = "R10", recap = "R11", mint = "R12", bamboo = "R13"
     case listening = "R15"
     case resumeHome = "R16", librarySearch = "R17", backupReview = "R19"
+    case homeEditor = "R20", storageOverview = "R21", author = "R22"
     static func scene(for capture: StoreShotCapture) -> Self? {
         switch capture.scene {
         case "M01", "M02": .backup
@@ -16,6 +17,13 @@ enum StoreShotScene: String, CaseIterable {
     }
     static var requested: Self? { StoreShotCapture.requested.flatMap(scene(for:)) }
     static let statisticsDate = Date(timeIntervalSince1970: 1_792_929_600) // 2026-10-25 12:00 UTC
+
+    var usesExpandedLibrary: Bool {
+        switch self {
+        case .shelf, .resumeHome, .storageOverview, .author: true
+        default: false
+        }
+    }
 }
 enum StoreShotPage: String, CaseIterable {
     case bookDetails = "book-details", readerSettings = "reader-settings"
@@ -47,7 +55,9 @@ struct StoreShotCapture: Codable {
     var fixtureVersion: String {
         switch StoreShotScene.scene(for: self) {
         case .listening: "StoreShotFixture/1.6-r15"
-        case .shelf, .resumeHome, .librarySearch: "StoreShotFixture/1.9-fixed-recency"
+        case .shelf, .resumeHome, .storageOverview, .author: "StoreShotFixture/1.9-expanded-library"
+        case .homeEditor: "StoreShotFixture/1.9-scenes"
+        case .librarySearch: "StoreShotFixture/1.9-fixed-recency"
         case .annotation, .backupReview: "StoreShotFixture/1.8"
         default: "StoreShotFixture/1.4-v1"
         }
@@ -65,6 +75,66 @@ struct StoreShotBook: Decodable { let title: String; let text: String }
 struct StoreShotFixture: Decodable {
     let language: String; let author: String; let folders: [String]; let books: [StoreShotBook]
     let notes: [[String]]; let bookmark: String; let progressChapters: [String]; let mainChapters: [String]
+
+    func books(for scene: StoreShotScene?) -> [StoreShotBook] {
+        guard let scene, scene.usesExpandedLibrary else { return books }
+        let sampleTitles: [(simplified: String, traditional: String, english: String)] = [
+            ("玻璃温室", "玻璃溫室", "The Glasshouse"),
+            ("河对岸的钟", "河對岸的鐘", "The Bell Across the River"),
+            ("候鸟邮局", "候鳥郵局", "The Migrant Birds' Post Office"),
+            ("借来的地图", "借來的地圖", "A Borrowed Map"),
+            ("凌晨的面包房", "凌晨的麵包房", "The Bakery Before Dawn"),
+            ("北窗的风", "北窗的風", "Wind at the North Window"),
+            ("第七把雨伞", "第七把雨傘", "The Seventh Umbrella"),
+            ("海岸公路", "海岸公路", "The Coast Road"),
+            ("晒蓝布的天台", "曬藍布的天台", "Blue Cloth on the Roof"),
+            ("一封迟到的回信", "一封遲到的回信", "A Late Reply"),
+            ("巷口唱片店", "巷口唱片店", "The Corner Record Shop"),
+            ("七月的旧码头", "七月的舊碼頭", "The Old Pier in July"),
+            ("银杏大道", "銀杏大道", "Ginkgo Avenue"),
+            ("末班渡船", "末班渡船", "The Last Ferry"),
+            ("去往盐湖", "去往鹽湖", "The Road to the Salt Lake"),
+            ("屋里的微光", "屋裡的微光", "A Light in the Room"),
+            ("星期三的花店", "星期三的花店", "The Florist on Wednesdays"),
+            ("山坡上的纸风车", "山坡上的紙風車", "Paper Pinwheels on the Hill"),
+        ]
+        let paragraphs: [String]
+        switch language {
+        case "en":
+            paragraphs = [
+                "The rain stopped before anyone thought to close the windows. Across the street, a delivery bicycle stood beneath a plane tree, with a sealed envelope tucked under its bell.",
+                "She turned the envelope over twice. The address led to a narrow room above the stairs, where someone had left two cups and a key beside the kettle.",
+                "Down at the crossing, the lamps came on one after the other. A bus let its last passenger off. She waited until he turned the corner before taking the long way home.",
+            ]
+        case "zh-Hant":
+            paragraphs = [
+                "還沒來得及關窗，雨就停了。街對面停著一輛送貨腳踏車，鈴鐺下壓著一封沒有拆開的信。樹葉上的水滴落在車座上，留下一圈深色的印子。",
+                "她把信翻過來看了兩次。信上的地址指向樓梯盡頭的一間小屋。屋裡還有人來過，熱水壺旁放著兩只杯子和一把鑰匙。",
+                "路口的燈一盞接一盞地亮了。公車放下最後一個乘客。她等他拐過街角，才沿著河邊繞路回家。",
+            ]
+        default:
+            paragraphs = [
+                "还没来得及关窗，雨就停了。街对面停着一辆送货自行车，铃铛下压着一封没有拆开的信。树叶上的水滴落在车座上，留下一圈深色的印子。",
+                "她把信翻过来看了两次。信上的地址指向楼梯尽头的一间小屋。屋里还有人来过，热水壶旁放着两只杯子和一把钥匙。",
+                "路口的灯一盏接一盏地亮了。公交车放下最后一个乘客。她等他拐过街角，才沿着河边绕路回家。",
+            ]
+        }
+        let additions = sampleTitles.enumerated().map { index, names in
+            let title = language == "en" ? names.english : language == "zh-Hant" ? names.traditional : names.simplified
+            let body = (0..<paragraphs.count).map { paragraphs[(index + $0) % paragraphs.count] }
+                .joined(separator: "\n\n")
+            // Seed actual chapter text for storage rather than altering the numbers in its overview.
+            let chapterCount = scene == .storageOverview ? 160 + (index % 4) * 32 : 2
+            let chapterBody = scene == .storageOverview ? String(repeating: body + "\n\n", count: 8) : body + "\n\n"
+            let chapters = (1...chapterCount).map { number in
+                let heading = language == "en" ? "Chapter \(number)" : "第\(number)章"
+                return heading + "\n\n" + chapterBody
+            }
+            return StoreShotBook(title: title, text: title + "\n\n" + chapters.joined())
+        }
+        return books + additions
+    }
+
     func listeningCue() throws -> (anchor: UInt64, sentence: Range<UInt64>) {
         guard let text = books.first?.text, let line = notes.first?.first, !line.isEmpty,
               let range = text.range(of: line) else { throw CocoaError(.fileReadCorruptFile) }

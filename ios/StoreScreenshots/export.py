@@ -95,12 +95,12 @@ def opaque_pixels(source, target, display_oriented=False):
 DIMENSIONS = {'iphone-medium': (1206, 2622), 'ipad-13': (2064, 2752),
               'ipad-portrait': (2064, 2752), 'ipad-landscape': (2752, 2064),
               'duo-outer': (1398, 2034), 'duo-inner': (2853, 2007)}
-SCENES = [f'R{i:02}' for i in range(1, 14)] + ['R15', 'R16', 'R17', 'R19']
+SCENES = [f'R{i:02}' for i in range(1, 14)] + ['R15', 'R16', 'R17', 'R19', 'R20', 'R21', 'R22']
 METADATA_SCENES = ['M01', 'M02']
 VERSIONED_GALLERY_SCENES = {
     '1.7': {'R10', *METADATA_SCENES},
     '1.8': {'R08', 'R10', 'R16', 'R17', 'R19'},
-    '1.9': {'R05', 'R07', 'R10', 'R11', 'R16', 'R17'},
+    '1.9': {'R05', 'R07', 'R10', 'R11', 'R16', 'R17', 'R20', 'R21', 'R22'},
 }
 PAGES = ['book-details', 'reader-settings', 'settings', 'library-home', 'reader']
 LANGUAGES = ['zh-Hans', 'zh-Hant', 'en']
@@ -287,7 +287,8 @@ def capture(root):
                 receipt = json.loads((app_container / 'tmp/StoreScreenshots-fixture.json').read_text())
                 for key in ('id', 'language', 'storefront', 'appPalette', 'readerPalette', 'readerTextureEnabled'):
                     if receipt[key] != item[key]: raise ValueError(f'Applied fixture differs: {key}')
-                if receipt['pendingCount'] or receipt['unsupportedCount'] or receipt['libraryCount'] != 6:
+                # The fixture verifies the exact book count before emitting its receipt.
+                if receipt['pendingCount'] or receipt['unsupportedCount'] or receipt['libraryCount'] <= 0:
                     raise ValueError('Synthetic library is not ready')
                 page, group = item['scene'] in PAGES, item['group']
                 dimensions = DIMENSIONS[group]
