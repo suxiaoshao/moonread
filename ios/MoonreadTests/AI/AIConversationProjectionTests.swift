@@ -424,10 +424,10 @@ final class AIConversationProjectionConversationTests: ConversationFixture {
 
   // S239: 流式显示单调追加且不拆 Unicode，结束 flush 不丢尾字；固定事件序列，不验证逐帧追赶速度。
   func testStreamDisplayPreservesGraphemesAndFlushesBoundaries() {
-    func row(_ text: String, status: AIAgentStatus = .running) -> AIMessageRow {
-      .init(
+    func row(_ text: String, status: AIAgentStatus = .running) -> AIMessageViewportRow {
+      AIMessageRow(
         id: "text", turnID: "turn",
-        content: .block(.init(items: [.init(id: "text", kind: .text, text: text)]), status))
+        content: .block(.init(items: [.init(id: "text", kind: .text, text: text)]), status)).viewportRow
     }
     let buffer = AIStreamDisplayBuffer()
     let text = "你好👨‍👩‍👧‍👦e\u{301}结束"

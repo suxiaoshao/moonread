@@ -55,8 +55,6 @@ private struct AIProcessLoading: View {
     }
 }
 
-typealias AIProcessExpansionHandler = @MainActor @Sendable (AIProcessExpansionID) -> Void
-
 private struct AIProcessBlockView: View {
     let block: AIProcessBlock
     let outcome: AIAgentStatus

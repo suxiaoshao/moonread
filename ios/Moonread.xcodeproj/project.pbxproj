@@ -68,10 +68,8 @@ AP1000000000000000000001 = {isa = PBXBuildFile; fileRef = AP20000000000000000000
 		F01700000000000000000005 /* TipJarTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01700000000000000000006 /* TipJarTestFixtures.swift */; };
         F01600000000000000000001 = {isa = PBXBuildFile; fileRef = F01600000000000000000002; };
 		AF1000000000000000000005 /* LibraryDropTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000005 /* LibraryDropTestFixtures.swift */; };
-FB1000000000000000000001 = {isa = PBXBuildFile; fileRef = FB2000000000000000000001; };
 
 FA1000000000000000000002 = {isa = PBXBuildFile; fileRef = FA2000000000000000000002; };
-FA1000000000000000000001 = {isa = PBXBuildFile; fileRef = FA2000000000000000000001; };
 4ECB33000000000000000001 = {isa = PBXBuildFile; fileRef = 4ECB33000000000000000002; };
 		C36600000000000000000002 /* AIToolRequestNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000001 /* AIToolRequestNames.swift */; };
 E71000000000000000000001 = {isa = PBXBuildFile; fileRef = E72000000000000000000001; };
@@ -413,9 +411,7 @@ AP2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.xml
         F01700000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text; path = Moonread/Settings/TipJar.storekit; sourceTree = SOURCE_ROOT; };
         F01600000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
 		AF2000000000000000000005 /* LibraryDropTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/LibraryDropTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
-FB2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AINativeMarkdown.swift"; sourceTree = "<group>"; };
 FA2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIMessageRow.swift"; sourceTree = "<group>"; };
-FA2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIMessageList.swift"; sourceTree = "<group>"; };
 4ECB33000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIToolResultDetails.swift"; sourceTree = "<group>"; };
 		C36600000000000000000001 /* AIToolRequestNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIToolRequestNames.swift; sourceTree = "<group>"; };
 E72000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AITurnView.swift"; sourceTree = "<group>"; };
@@ -1415,13 +1411,11 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				802F64D6FADEC829D9FABA3E /* AIComposer.swift */,
 				7A9A1F23534B032F5051C81C /* AIChatView.swift */,
 				D32000000000000000000005 /* AIConversationsView.swift */,
-				FA2000000000000000000001 /* AIMessageList.swift */,
 				E72000000000000000000001 /* AITurnView.swift */,
 				358000000000000000000003 /* AIBookListCard.swift */,
 				4ECB33000000000000000002 /* AIToolResultDetails.swift */,
 				C36600000000000000000001 /* AIToolRequestNames.swift */,
 
-				FB2000000000000000000001 /* AINativeMarkdown.swift */,
 				FC2100000000000000000001 /* AIReplyFeedback.swift */,
 			);
 			path = "Conversations";

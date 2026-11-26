@@ -43,9 +43,7 @@ typealias JSONValue = AISDKProvider.JSONValue
     @ObservationIgnored var messageTurnCache: [String: AIMessageTurnCache] = [:]
     @ObservationIgnored var messageVersions: [String: AIMessageRow] = [:]
     @ObservationIgnored var messageRevision = 0
-    @ObservationIgnored let streamDisplay = AIStreamDisplayBuffer()
-    @ObservationIgnored let nativeMarkdown = AINativeMarkdownCache()
-    @ObservationIgnored var messageHeights: [AIMessageHeightKey: CGFloat] = [:]
+    @ObservationIgnored let messagePresentation = AIMessagePresentation()
     var running = false
     /// The latest visible message, from the newest page that connecting already loads.
     var preview: String {
@@ -92,7 +90,7 @@ typealias JSONValue = AISDKProvider.JSONValue
     /// Replaces the loaded history with one contiguous page window.
     func showWindow(_ page: [AIAgentEntry], newestSequence: Int) {
         entries = []; entryResults = [:]
-        messageTurnCache = [:]; messageVersions = [:]; messageHeights = [:]; nativeMarkdown.reset()
+        messageTurnCache = [:]; messageVersions = [:]; messagePresentation.resetHistory()
         mergeEntries(page, updatingExisting: false)
         hasEarlier = (entries.first?.sequence ?? 0) > 0
         hasLater = (entries.last?.sequence ?? -1) < newestSequence

@@ -1,5 +1,4 @@
 import MoonreadDesign
-import MoonreadAI
 import MarkdownView
 import SwiftUI
 import UIKit
@@ -28,14 +27,6 @@ final class AINativeMarkdownCell: UITableViewCell {
         // A retained block may already belong to a newer cell when this one is reused.
         if markdown?.superview === contentView { markdown?.removeFromSuperview() }
         markdown = nil
-    }
-}
-
-extension AIMessageRow {
-    var nativeText: (text: String, streaming: Bool)? {
-        guard case .block(let block, let status, _) = content, block.isMessage,
-              let item = block.items.first, item.kind == .text else { return nil }
-        return (item.text, [.running, .compacting, .waitingConfirmation].contains(status))
     }
 }
 

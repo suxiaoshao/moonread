@@ -1,22 +1,25 @@
 import MoonreadDesign
-import MoonreadCoreBindings
 import Combine
 import SwiftUI
 import UIKit
 import MarkdownView
 
-typealias AIMessageRowRenderer = @MainActor (String, @escaping AIProcessExpansionHandler) -> AnyView
+public typealias AIMessageRowRenderer = @MainActor (String, @escaping AIProcessExpansionHandler) -> AnyView
 
-struct AIMessageListRequest: Equatable {
-    enum Target: Equatable { case bottom, preserve, row(String) }
+public struct AIMessageListRequest: Equatable {
+    public enum Target: Equatable { case bottom, preserve, row(String) }
     let id = UUID()
-    var target: Target = .bottom
+    let target: Target
+
+    public init(target: Target = .bottom) { self.target = target }
 }
 
 /// UIKit owns recycling, sizing and scroll timing. SwiftUI owns only each cell's contents.
-struct AIMessageList: UIViewControllerRepresentable {
-    let rows: [AIMessageRow]
-    let conversation: AIConversation
+public struct AIMessageList: UIViewControllerRepresentable {
+    let rows: [AIMessageViewportRow]
+    let presentation: AIMessagePresentation
+    let toggleProcess: AIProcessExpansionHandler
+    let replyFeedback: (String) -> (text: String, present: (UIViewController, ThemeSurface) -> Void)?
     let background: UIColor
     let bottomInset: CGFloat
     let request: AIMessageListRequest
@@ -24,15 +27,34 @@ struct AIMessageList: UIViewControllerRepresentable {
     @Binding var atBottom: Bool
     let dismissKeyboard: () -> Void
     let content: AIMessageRowRenderer
-    @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.moonreadReduceMotion) private var reduceMotion
 
-    func makeUIViewController(context: Context) -> AIMessageListController { AIMessageListController() }
-    func updateUIViewController(_ controller: AIMessageListController, context: Context) {
-        controller.conversation = conversation
-        controller.replyFeedback = { row in AIReplyFeedback(row: row, conversation: conversation, connections: ai.providers.connections) }
+    public init(rows: [AIMessageViewportRow], presentation: AIMessagePresentation, background: UIColor,
+                bottomInset: CGFloat, request: AIMessageListRequest, highlightedTurn: String?, atBottom: Binding<Bool>,
+                dismissKeyboard: @escaping () -> Void, toggleProcess: @escaping AIProcessExpansionHandler,
+                replyFeedback: @escaping (String) -> (text: String, present: (UIViewController, ThemeSurface) -> Void)?,
+                content: @escaping AIMessageRowRenderer) {
+        self.rows = rows
+        self.presentation = presentation
+        self.background = background
+        self.bottomInset = bottomInset
+        self.request = request
+        self.highlightedTurn = highlightedTurn
+        _atBottom = atBottom
+        self.dismissKeyboard = dismissKeyboard
+        self.toggleProcess = toggleProcess
+        self.replyFeedback = replyFeedback
+        self.content = content
+    }
+
+    public func makeUIViewController(context: Context) -> UIViewController { AIMessageListController() }
+    public func updateUIViewController(_ viewController: UIViewController, context: Context) {
+        guard let controller = viewController as? AIMessageListController else { return }
+        controller.presentation = presentation
+        controller.toggleProcess = toggleProcess
+        controller.replyFeedback = replyFeedback
         controller.reportBottom = { atBottom = $0 }
         controller.dismissKeyboard = dismissKeyboard
         controller.update(rows: rows, render: content, background: background, bottomInset: bottomInset,
@@ -113,13 +135,13 @@ private final class AIHostedMessageCell: UITableViewCell {
 final class AIMessageListController: UITableViewController, UIGestureRecognizerDelegate {
     private struct Anchor { let id: String; let offset: CGFloat }
     private var render: AIMessageRowRenderer?
-    weak var conversation: AIConversation?
-    var replyFeedback: ((AIMessageRow) -> AIReplyFeedback?)?
-    private let feedbackPresenter = AIReplyFeedbackPresenter()
+    weak var presentation: AIMessagePresentation?
+    var toggleProcess: AIProcessExpansionHandler?
+    var replyFeedback: ((String) -> (text: String, present: (UIViewController, ThemeSurface) -> Void)?)?
     var reportBottom: ((Bool) -> Void)?
     var dismissKeyboard: (() -> Void)?
     private(set) var following = true
-    private var rows: [String: AIMessageRow] = [:]
+    private var rows: [String: AIMessageViewportRow] = [:]
     private var source: UITableViewDiffableDataSource<Int, String>!
     private var appearance: AIMessageListAppearance?
     private var appliedRequest: UUID?
@@ -154,8 +176,8 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         super.viewWillDisappear(animated); finishStreamPresentation()
     }
     private func finishStreamPresentation() {
-        streamVisible = false; conversation?.streamDisplay.flush(); replayDisplay?()
-        stopStreamClock(); conversation?.streamDisplay.reset()
+        streamVisible = false; presentation?.streamDisplay.flush(); replayDisplay?()
+        stopStreamClock(); presentation?.streamDisplay.reset()
     }
     private var lifecycleNotifications: [AnyCancellable] = []
     private func streamBackgrounded() { finishStreamPresentation() }
@@ -172,7 +194,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     }
     fileprivate func streamFrame(_ link: CADisplayLink) {
         let now = link.timestamp
-        if conversation?.streamDisplay.advance(now: now) == true { replayDisplay?() }
+        if presentation?.streamDisplay.advance(now: now) == true { replayDisplay?() }
         if following && smoothFollowing && !reducedMotion && !animatingExpansion {
             let dt = max(0, min(0.05, now - scrollTime))
             let current = tableView.contentOffset.y
@@ -193,7 +215,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             publishBottom()
         }
         scrollTime = now
-        if conversation?.streamDisplay.pending != true && (!following || !smoothFollowing || bottomGap <= 0.25) {
+        if presentation?.streamDisplay.pending != true && (!following || !smoothFollowing || bottomGap <= 0.25) {
             stopStreamClock()
         }
     }
@@ -206,8 +228,8 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     private var anchoredTable: AIAnchoredTableView { tableView as! AIAnchoredTableView }
 
     override func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
-        guard let id = source.itemIdentifier(for: indexPath), let row = rows[id],
-              let feedback = replyFeedback?(row), let appearance, let window = tableView.window else { return nil }
+        guard let id = source.itemIdentifier(for: indexPath),
+              let feedback = replyFeedback?(id), let appearance, let window = tableView.window else { return nil }
         let theme = appearance.theme
         let traits = traitCollection
         let markdown = appearance.markdownTheme(traits: traits)
@@ -222,7 +244,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
                 UIAction(title: String(localized: "复制回复"), image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = feedback.text },
                 UIAction(title: String(localized: "反馈这条回复"), image: UIImage(systemName: "envelope")) { [weak self] _ in
                     guard let self else { return }
-                    self.feedbackPresenter.present(feedback, from: self, theme: theme)
+                    feedback.present(self, theme)
                 }
             ])
         }
@@ -251,9 +273,9 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         tableView.register(AIHostedMessageCell.self, forCellReuseIdentifier: "message")
         tableView.register(AINativeMarkdownCell.self, forCellReuseIdentifier: "markdown")
         source = UITableViewDiffableDataSource(tableView: tableView) { [weak self] table, path, id in
-            if let self, let row = rows[id], let text = row.nativeText, let appearance, let conversation {
+            if let self, let row = rows[id], let text = row.nativeText, let appearance, let presentation {
                 let cell = table.dequeueReusableCell(withIdentifier: "markdown", for: path) as! AINativeMarkdownCell
-                let view = conversation.nativeMarkdown.view(id: id, text: text.text, streaming: text.streaming,
+                let view = presentation.nativeMarkdown.view(id: id, text: text.text, streaming: text.streaming,
                                                             theme: appearance.markdownTheme(traits: traitCollection))
                 view.trackedScrollView = table
                 cell.mount(view)
@@ -295,7 +317,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             .environment(\.moonreadReduceMotion, reducedMotion)
         // Result cards can resize without a new row version. Only the displayed
         // content observes those changes; the offscreen sizer uses sizeThatFits.
-        guard observingResultHeight, let row = rows[id], case .result = row.content else { return AnyView(content) }
+        guard observingResultHeight, let row = rows[id], case .result = row.kind else { return AnyView(content) }
         let version = row.version
         return AnyView(content.onGeometryChange(for: CGSize.self, of: { $0.size }) { [weak self] size in
             DispatchQueue.main.async { [weak self] in
@@ -314,23 +336,23 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         rowSizer!.rootView = content
         return ceil(rowSizer!.sizeThatFits(in: CGSize(width: tableView.bounds.width, height: .greatestFiniteMagnitude)).height)
     }
-    private func hostedHeight(_ row: AIMessageRow) -> CGFloat {
+    private func hostedHeight(_ row: AIMessageViewportRow) -> CGFloat {
         let key = heightKey(row)
-        if let cached = conversation?.messageHeights[key] { return cached }
+        if let cached = presentation?.messageHeights[key] { return cached }
         let height = measureHosted(hostedContent(row.id))
         if !animatingExpansion { storeMeasuredHeight(height, for: key) }
         return height
     }
     /// Re-measures a visible row whose content grew or shrank without a new row version.
     func hostedContentResized(_ id: String, height: CGFloat) {
-        guard let row = rows[id], case .result = row.content else { return }
+        guard let row = rows[id], case .result = row.kind else { return }
         // A process expansion owns its geometry. Keep the latest result-card
         // measurement until it finishes; SwiftUI may never send it again.
         guard !animatingExpansion, !expansionAnimationPending, !applying, expansionHeights.isEmpty else {
             pendingResizes.record(id: id, version: row.version, height: Double(height)); return
         }
         let key = heightKey(row), height = ceil(height)
-        guard let cached = conversation?.messageHeights[key], abs(cached - height) > 0.5 else { return }
+        guard let cached = presentation?.messageHeights[key], abs(cached - height) > 0.5 else { return }
         storeMeasuredHeight(height, for: key)
         guard let path = source.indexPath(for: id), let cell = tableView.cellForRow(at: path) as? AIHostedMessageCell else { return }
         cell.resize(height)
@@ -346,10 +368,10 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         tableView.indexPathForRow(at: touch.location(in: tableView)) == nil
     }
 
-    func update(rows nextRows: [AIMessageRow], render: @escaping AIMessageRowRenderer, background: UIColor,
+    func update(rows nextRows: [AIMessageViewportRow], render: @escaping AIMessageRowRenderer, background: UIColor,
                 bottomInset: CGFloat, request: AIMessageListRequest, appearance nextAppearance: AIMessageListAppearance) {
         loadViewIfNeeded()
-        let buffer = conversation?.streamDisplay
+        let buffer = presentation?.streamDisplay
         buffer?.receive(nextRows, enabled: streamVisible && !nextAppearance.reduceMotion && !UIAccessibility.isReduceMotionEnabled, now: CACurrentMediaTime())
         replayDisplay = { [weak self] in
             guard let self else { return }
@@ -359,7 +381,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         replayDisplay?()
         if buffer?.pending == true { startStreamClock() }
     }
-    private func applyDisplay(rows nextRows: [AIMessageRow], render: @escaping AIMessageRowRenderer, background: UIColor,
+    private func applyDisplay(rows nextRows: [AIMessageViewportRow], render: @escaping AIMessageRowRenderer, background: UIColor,
                               bottomInset: CGFloat, request: AIMessageListRequest, appearance nextAppearance: AIMessageListAppearance) {
         if applying {
             pendingUpdate = { [weak self] in
@@ -391,7 +413,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         let force = appearance != nextAppearance
         if force { streamLineHeight = nextAppearance.markdownTheme(traits: traitCollection).fonts.body.lineHeight }
         if appearance?.theme != nextAppearance.theme || appearance?.typeSize != nextAppearance.typeSize {
-            conversation?.messageHeights.removeAll()
+            presentation?.messageHeights.removeAll()
         }
         appearance = nextAppearance; self.render = render
         rows = Dictionary(uniqueKeysWithValues: nextRows.map { ($0.id, $0) })
@@ -415,7 +437,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         if following && smoothFollowing && streamVisible && !reducedMotion && previous != ids {
             // A completed turn can insert its process control above visible prose.
             let completedTurns = Set(nextRows.compactMap { row -> String? in
-                guard !existing.contains(row.id), case .processToggle = row.content else { return nil }
+                guard !existing.contains(row.id), case .processToggle = row.kind else { return nil }
                 return row.turnID
             })
             if !completedTurns.isEmpty {
@@ -430,7 +452,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             guard existing.contains(id) else { return false }
             // Authority can advance while the displayed prefix has not. Do not
             // reconfigure the same Markdown twice at that publication boundary.
-            if rows[id]?.nativeText != nil { return force || old[id]?.content != rows[id]?.content }
+            if let text = rows[id]?.nativeText { return force || old[id]?.nativeText != text }
             return force || old[id] != rows[id]
         }
         if expansionAnimationPending, previous == ids, let anchor = expansionAnchor, changed == [anchor.id],
@@ -522,13 +544,13 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     }
 
     func toggleProcessItem(rowID: String, item: AIProcessExpansionID) {
-        guard let path = source.indexPath(for: rowID), let conversation else { return }
+        guard let path = source.indexPath(for: rowID), let toggleProcess else { return }
         following = false; scrollVelocity = 0; searchTarget = nil
         let anchor = Anchor(id: rowID, offset: tableView.rectForRow(at: path).minY - tableView.adjustedContentInset.top - tableView.contentOffset.y)
         expansionAnchor = anchor; stableAnchor = anchor; layoutAnchor = anchor
         expansionAnimationPending = true
         tableView.selfSizingInvalidation = .disabled
-        conversation.toggleProcessItem(item)
+        toggleProcess(item)
     }
 
     private var minimumOffset: CGFloat { -tableView.adjustedContentInset.top }
@@ -601,27 +623,27 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         let environment = "\(tableView.bounds.width.rounded())/\(String(describing: appearance?.typeSize))"
-        if sizingEnvironment != environment { conversation?.messageHeights.removeAll(); sizingEnvironment = environment }
+        if sizingEnvironment != environment { presentation?.messageHeights.removeAll(); sizingEnvironment = environment }
         settle(anchor: stableAnchor)
     }
-    private func heightKey(_ row: AIMessageRow) -> AIMessageHeightKey {
+    private func heightKey(_ row: AIMessageViewportRow) -> AIMessageHeightKey {
         .init(id: row.id, version: row.version, width: tableView.bounds.width.rounded(), typeSize: String(describing: appearance?.typeSize))
     }
     private func storeMeasuredHeight(_ height: CGFloat, for key: AIMessageHeightKey) {
-        guard let conversation else { return }
-        for old in conversation.messageHeights.keys where old.id == key.id && old != key {
-            conversation.messageHeights.removeValue(forKey: old)
+        guard let presentation else { return }
+        for old in presentation.messageHeights.keys where old.id == key.id && old != key {
+            presentation.messageHeights.removeValue(forKey: old)
         }
-        conversation.messageHeights[key] = height
+        presentation.messageHeights[key] = height
     }
     override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         if let id = source.itemIdentifier(for: indexPath), let height = expansionHeights[id] { return height }
         if let id = source.itemIdentifier(for: indexPath), let row = rows[id], row.nativeText == nil { return hostedHeight(row) }
         guard let id = source.itemIdentifier(for: indexPath), let row = rows[id], let text = row.nativeText,
-              let appearance, let conversation else { return UITableView.automaticDimension }
+              let appearance, let presentation else { return UITableView.automaticDimension }
         let key = heightKey(row)
-        if let cached = conversation.messageHeights[key] { return cached }
-        let height = conversation.nativeMarkdown.height(id: id, text: text.text, streaming: text.streaming,
+        if let cached = presentation.messageHeights[key] { return cached }
+        let height = presentation.nativeMarkdown.height(id: id, text: text.text, streaming: text.streaming,
                                                        theme: appearance.markdownTheme(traits: traitCollection),
                                                        width: tableView.bounds.width - 2 * LayoutTokens.content) + 2 * LayoutTokens.compact
         storeMeasuredHeight(height, for: key)
@@ -630,14 +652,13 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     override func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
         if let id = source.itemIdentifier(for: indexPath), let height = expansionHeights[id] { return height }
         guard let id = source.itemIdentifier(for: indexPath), let row = rows[id] else { return 80 }
-        if let cached = conversation?.messageHeights[heightKey(row)] { return cached }
+        if let cached = presentation?.messageHeights[heightKey(row)] { return cached }
         let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
         let characters = max(8, (tableView.bounds.width - 2 * LayoutTokens.content) / font.pointSize)
-        switch row.content {
-        case .block(let block, _, _): return block.isMessage ? max(44, ceil(CGFloat(block.items[0].text.count) / characters) * font.lineHeight + 16) : 48
-        case .user(let entry): return max(52, ceil(CGFloat((entry.userText ?? "").count) / characters) * font.lineHeight + 32)
-        case .queued(let input): return max(52, ceil(CGFloat(input.text.count) / characters) * font.lineHeight + 32)
-        case .image(let image): return min(320, max(80, (tableView.bounds.width - 32) * CGFloat(image.height) / CGFloat(max(1, image.width)))) + 16
+        switch row.kind {
+        case .block(let message): return message.map { max(44, ceil(CGFloat($0.count) / characters) * font.lineHeight + 16) } ?? 48
+        case .input(let text): return max(52, ceil(CGFloat(text.count) / characters) * font.lineHeight + 32)
+        case .image(let width, let height): return min(320, max(80, (tableView.bounds.width - 32) * height / max(1, width))) + 16
         case .confirmation, .result: return 160
         case .header: return 100
         default: return 48

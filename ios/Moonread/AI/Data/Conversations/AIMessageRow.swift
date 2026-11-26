@@ -6,7 +6,6 @@ import Observation
 import AISDKProvider
 import AISDKProviderUtils
 
-enum AIProcessExpansionID: Hashable { case group(String), reasoning(String) }
 struct AIProcessExpansionState: Equatable {
     var group = false
     var reasoning = Set<String>()
@@ -100,13 +99,6 @@ struct AIMessageRow: Identifiable, Equatable {
     }
 }
 
-struct AIMessageHeightKey: Hashable {
-    let id: String
-    let version: Int
-    let width: CGFloat
-    let typeSize: String
-}
-
 struct AIMessageTurnCache {
     let turn: AIConversationTurn
     let active: Bool
@@ -172,81 +164,29 @@ extension AIConversation {
     }
 }
 
-/// Presentation-only progress. Authority and persisted parts are never truncated.
-@MainActor final class AIStreamDisplayBuffer {
-    private(set) var id: String?
-    private(set) var target = ""
-    private(set) var displayed = ""
-    private var characters: [Character] = []
-    private var boundaries: [Int] = []
-    private var progress = 0.0
-    private var shownCount = 0
-    private var deadline = 0.0
-    private var lastTime = 0.0
-    private var arrivals: [(deadline: Double, count: Int)] = []
-    private var revision = 0
-    private var initialized = false
-    var pending: Bool { displayed != target }
-
-    func receive(_ rows: [AIMessageRow], enabled: Bool, now: Double) {
-        let blocks = rows.filter { if case .block = $0.content { true } else { false } }
-        let last = blocks.last
-        let eligible = last.flatMap { row -> AIMessageRow? in
-            guard let text = row.nativeText, text.streaming,
-                  !rows.contains(where: { if case .confirmation = $0.content { true } else { false } }) else { return nil }
-            return row
+extension AIMessageRow {
+    var viewportRow: AIMessageViewportRow {
+        let kind: AIMessageViewportRow.Kind
+        switch content {
+        case .block(let block, _, _): kind = .block(message: block.isMessage ? block.items[0].text : nil)
+        case .user(let entry): kind = .input(text: entry.userText ?? "")
+        case .queued(let input): kind = .input(text: input.text)
+        case .image(let image): kind = .image(width: Double(image.width), height: Double(image.height))
+        case .confirmation: kind = .confirmation
+        case .result: kind = .result
+        case .header: kind = .header
+        case .processToggle: kind = .processToggle
+        default: kind = .other
         }
-        guard enabled, initialized else {
-            initialized = true; id = eligible?.id; target = eligible?.nativeText?.text ?? ""; flush(); return
-        }
-        guard let row = eligible, let text = row.nativeText?.text else { flush(); id = nil; return }
-        if id != row.id { flush(); id = row.id; target = ""; displayed = ""; progress = 0; shownCount = 0 }
-        guard target != text else { return }
-        let append = text.hasPrefix(target)
-        target = text; characters = Array(text)
-        arrivals.append((now + 0.25, characters.count))
-        boundaries = characters.indices.compactMap { index in
-            let c = characters[index]
-            return c.isWhitespace || !c.isASCII ? index + 1 : nil
-        }
-        if !append { flush(); return }
-        deadline = now + 0.2; lastTime = now
-    }
-    @discardableResult func advance(now: Double) -> Bool {
-        guard pending else { return false }
-        let remaining = max(0, deadline - lastTime)
-        let dt = max(0, now - lastTime); lastTime = now
-        progress = min(Double(characters.count), progress + max(1, (Double(characters.count) - progress) * dt / max(dt, remaining)))
-        // An unbroken URL/identifier must not starve while more ASCII arrives.
-        let due = arrivals.last(where: { $0.deadline <= now })?.count ?? 0
-        let minimum = due == 0 ? 0 : boundaries.first(where: { $0 >= due }) ?? characters.count
-        let count = now >= deadline ? characters.count : max(shownCount, minimum, boundaries.last(where: { $0 <= Int(progress) }) ?? 0)
-        let next = String(characters.prefix(count))
-        guard next != displayed else { return false }
-        displayed = next; shownCount = count; progress = max(progress, Double(count)); arrivals.removeAll { $0.count <= count }; revision += 1; return true
-    }
-    func flush() {
-        displayed = target; characters = Array(target); shownCount = characters.count; progress = Double(characters.count); arrivals = []; revision += 1
-    }
-    func reset() { flush(); initialized = false; id = nil }
-    func project(_ rows: [AIMessageRow]) -> [AIMessageRow] {
-        rows.map { row in
-            guard row.id == id, pending, case .block(let block, let status, let expansion) = row.content else { return row }
-            var item = block.items[0]; item.text = displayed
-            return .init(id: row.id, turnID: row.turnID, version: -revision - 1,
-                         content: .block(.init(items: [item]), status, expansion))
-        }
+        return .init(id: id, turnID: turnID, version: version, kind: kind,
+                     nativeText: nativeText.map { .init(text: $0.text, streaming: $0.streaming) })
     }
 }
 
-/// Snapshot-bound measurements; obsolete callbacks cannot resize a replacement row.
-struct DeferredRowMeasurements {
-    private var pending: [String: (version: Int, height: Double)] = [:]
-    mutating func record(id: String, version: Int, height: Double) { pending[id] = (version, height) }
-    mutating func drain(versions: [String: Int]) -> [(String, Double)] {
-        defer { pending.removeAll() }
-        return pending.sorted { $0.key < $1.key }.compactMap { id, value in
-            versions[id] == value.version ? (id, value.height) : nil
-        }
+extension AIMessageRow {
+    var nativeText: (text: String, streaming: Bool)? {
+        guard case .block(let block, let status, _) = content, block.isMessage,
+              let item = block.items.first, item.kind == .text else { return nil }
+        return (item.text, [.running, .compacting, .waitingConfirmation].contains(status))
     }
 }
