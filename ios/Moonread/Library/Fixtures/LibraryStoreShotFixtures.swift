@@ -30,7 +30,6 @@ extension AppDataService {
         for file in files {
             let path = root.appendingPathComponent(file.relativePath)
             let title = path.deletingPathExtension().lastPathComponent
-            if StoreShotScene.requested == .resumeHome { try registerStoreShotIdentity(file, root: root, core: core) }
             let entry = try await libraryEntry(file.id)
             let prepared = try await aiPrepare(entry.source)
             let book = try await snapshot(prepared.id).book
@@ -97,6 +96,11 @@ extension AppDataService {
                 }
             }
         }
+        // Use the final decoding after preparation for the fixture shelf's identity index.
+        for file in try core.sourceFileSnapshots(fileId: nil).filter({ $0.shelfId == "builtin" }) {
+            try registerStoreShotIdentity(file, root: root, core: core)
+        }
+        guard try core.libraryIdentityInventory(shelfId: "builtin").pending.isEmpty else { throw ReaderError.InvalidRange }
         let inventory = try await readingDataInventory()
         guard inventory.items.count == 6, inventory.pending == 0, inventory.unsupported == 0,
               try core.libraryShelves().count == 1 else { throw ReaderError.InvalidRange }

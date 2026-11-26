@@ -97,7 +97,11 @@ DIMENSIONS = {'iphone-medium': (1206, 2622), 'ipad-13': (2064, 2752),
               'duo-outer': (1398, 2034), 'duo-inner': (2853, 2007)}
 SCENES = [f'R{i:02}' for i in range(1, 14)] + ['R15', 'R16', 'R17', 'R19']
 METADATA_SCENES = ['M01', 'M02']
-RELEASE_18_SCENES = {'R08', 'R10', 'R16', 'R17', 'R19'}
+VERSIONED_GALLERY_SCENES = {
+    '1.7': {'R10', *METADATA_SCENES},
+    '1.8': {'R08', 'R10', 'R16', 'R17', 'R19'},
+    '1.9': {'R05', 'R07', 'R10', 'R11', 'R16', 'R17'},
+}
 PAGES = ['book-details', 'reader-settings', 'settings', 'library-home', 'reader']
 LANGUAGES = ['zh-Hans', 'zh-Hant', 'en']
 GALLERY = Path('build/Release/1.4-screenshots')
@@ -290,11 +294,10 @@ def capture(root):
                 short, long = sorted(dimensions)
                 orientation = item['orientation']
                 expected = (long, short) if orientation == 'landscape' else (short, long) if orientation == 'portrait' else dimensions
-                release_17 = config['version'] == '1.7' and item['scene'] in ['R10', *METADATA_SCENES]
-                release_18 = config['version'] == '1.8' and item['scene'] in RELEASE_18_SCENES
-                base = root / GALLERY if release_17 or release_18 or item['scene'] == 'R15' else root / 'build/Release' / (config['version'] + '-screenshots')
+                versioned = item['scene'] in VERSIONED_GALLERY_SCENES.get(config['version'], ())
+                base = root / GALLERY if versioned or item['scene'] == 'R15' else root / 'build/Release' / (config['version'] + '-screenshots')
                 relative = Path(raw_path(item))
-                if release_17 or release_18:
+                if versioned:
                     relative = Path('raw') / config['version'] / relative.relative_to('raw')
                 target = (root / 'build/PageShots' / group / (item['scene'] + '-' + ('浅' if item['appearance'] == 'light' else '深') + '.png')) if page else base / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -312,7 +315,7 @@ def capture(root):
                 raw.unlink()
                 if not page:
                     manifest = (base / 'raw' / config['version'] / 'capture-manifest.json'
-                                if release_17 or release_18 else base / 'raw/manifest.json')
+                                if versioned else base / 'raw/manifest.json')
                     values = json.loads(manifest.read_text()) if manifest.exists() else {}
                     plan_row = next(r for r in config['plan'] if r['id'] == item['id'])
                     values[item['id']] = dict(plan_row, rawPath=str(relative), state='captured-unreviewed', fixtureVersion=receipt['fixtureVersion'], applied=receipt, source_commit=config['source_commit'],

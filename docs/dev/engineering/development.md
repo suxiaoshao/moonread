@@ -160,9 +160,9 @@ R15 使用隔离合成书库，在正文就绪后以生产播放条和高亮显�
 /usr/bin/python3 ios/StoreScreenshots/export.py sync-sources --root "$PWD"
 ```
 
-R15 原图写到 `build/Release/1.4-screenshots/raw/1.6/<语言>/<设备组>/<light|dark>/R15.png`，按 `R15-<F|P|L|O|I>-<语言>-<明暗>` 更新同集 `raw/manifest.json`；`sources.json` 可列待拍项，文件和 manifest 才证明已经拍摄。其他场景仍写 `build/Release/<工程MARKETING_VERSION>-screenshots/raw/<语言>/<设备组>/<light|dark>/<场景>.png`。Manifest 记录来源提交与 dirty 摘要、设备/运行时、像素、方向、请求配置、App 实际 receipt 和 PNG SHA。旧图保留原来源与哈希，不随索引改写；同一张原图重拍后再重新派生各用途。
+R15 原图写到 `build/Release/1.4-screenshots/raw/1.6/<语言>/<设备组>/<light|dark>/R15.png`，按 `R15-<F|P|L|O|I>-<语言>-<明暗>` 更新同集 `raw/manifest.json`；`sources.json` 可列待拍项，文件和 manifest 才证明已经拍摄。Manifest 记录来源提交与 dirty 摘要、设备/运行时、像素、方向、请求配置、App 实际 receipt 和 PNG SHA。旧图保留原来源与哈希，不随索引改写；同一张原图重拍后再重新派生各用途。
 
-1.8 的 R08、R10、R16、R17、R19 由同一导出器直写长期集的 `raw/1.8/<语言>/<设备组>/<light|dark>/<场景>.png`。当轮凭证写 `raw/1.8/capture-manifest.json`，逐张核对后再更新长期集的 `sources.json` 和 `raw/manifest.json`。
+[导出脚本](../../../ios/StoreScreenshots/export.py)的 `VERSIONED_GALLERY_SCENES` 表列出各版本直写长期集的场景。命中表的原图写到 `raw/<版本>/<语言>/<设备组>/<light|dark>/<场景>.png`，当轮凭证写到 `raw/<版本>/capture-manifest.json`。逐张核对后再更新长期集的 `sources.json` 和 `raw/manifest.json`，旧图留在原版本目录。其余商店场景写到 `build/Release/<工程MARKETING_VERSION>-screenshots/raw/<语言>/<设备组>/<light|dark>/<场景>.png`，R15 按上面的路径处理。
 
 只导出原生 PNG，不缩放、不叠标题；按 RGB 排除黑图，去掉误导方向的 EXIF，核对尺寸/姿态。manifest 的像素检查不代替人工审图，默认 `review=pending-visual-review`。错误写入 `build/StoreScreenshots/export.log` 并使当前用例失败。中断后保留已有原图与证据，继续时只补缺项，不要求清理模拟器或重拍已完成且画面未变的页面。
 
