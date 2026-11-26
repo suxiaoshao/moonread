@@ -1,3 +1,4 @@
+import MoonreadSettings
 import MoonreadDataTypes
 import MoonreadLibrary
 import MoonreadDesign
@@ -16,59 +17,23 @@ struct DataManagementView: View {
     @State private var showingBackupExport = false
     @State private var showingReadingDeletion = false
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
-                MetadataTasksSection(task: .shared, loadShelves: { try await AppDataService.shared.shelves() })
-                    .metadataCoverPresentation()
-                VStack(alignment: .leading, spacing: 16) {
-                    Label { Text("阅读数据备份", tableName: "MetadataExchange") } icon: { Image(systemName: "externaldrive") }.font(.headline)
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("备份进度、书签、笔记等阅读数据，与小说信息分开。", tableName: "MetadataExchange").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                        ViewThatFits(in: .horizontal) {
-                            HStack { backupButtons }
-                            VStack { backupButtons }
-                        }
-                        backupImportStatus
-                        backupExportStatus
-                        if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
-                        if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("readingDataError") }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }
-                if let issueCount = model.issueCount, issueCount > 0 {
-                    HStack(alignment: .top) {
-                        Image(systemName: "exclamationmark.circle")
-                        Text("\(issueCount) 项需要处理", tableName: "DataManagement")
-                        Spacer()
-                        NavigationLink { ReadingDataIssuesView(model: model) } label: { Text("查看", tableName: "DataManagement") }
-                            .accessibilityIdentifier("readingDataIssues")
-                    }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
-                } else if model.issueCount == nil {
-                    NavigationLink { ReadingDataIssuesView(model: model) } label: {
-                        HStack {
-                            Label { Text("需要处理", tableName: "DataManagement") } icon: { Image(systemName: "exclamationmark.circle") }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.caption)
-                        }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
-                    }.buttonStyle(.plain).accessibilityIdentifier("readingDataIssues")
-                }
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("阅读数据", tableName: "DataManagement").font(.headline)
-                    NavigationLink { ReadingDataListView(model: model) } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("查看与删除", tableName: "MetadataExchange").font(.body.weight(.medium))
-                                Text("管理保存在月读的阅读记录", tableName: "MetadataExchange").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.footnote)
-                        }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
-                    }.accessibilityIdentifier("readingDataList")
-                    ReadingDeletionSummary(task: model.readingDeletion) { showingReadingDeletion = true }
-                }
-            }.padding(20).frame(maxWidth: 690, alignment: .leading).frame(maxWidth: .infinity)
+        DataManagementPage(issueCount: model.issueCount, message: model.message, error: model.error) {
+            MetadataTasksSection(task: .shared, loadShelves: { try await AppDataService.shared.shelves() })
+                .metadataCoverPresentation()
+        } backup: {
+            ViewThatFits(in: .horizontal) {
+                HStack { backupButtons }
+                VStack { backupButtons }
+            }
+            backupImportStatus
+            backupExportStatus
+        } issues: {
+            ReadingDataIssuesView(model: model)
+        } records: {
+            ReadingDataListView(model: model)
+        } deletion: {
+            ReadingDeletionSummary(task: model.readingDeletion) { showingReadingDeletion = true }
         }
-        .themedPage().navigationTitle(Text("数据管理", tableName: "DataManagement"))
-        .navigationBarTitleDisplayMode(.inline)
         .modifier(ReadingDataWorking(model: model))
         .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged)
             .merge(with: NotificationCenter.default.publisher(for: .cloudStatusChanged),

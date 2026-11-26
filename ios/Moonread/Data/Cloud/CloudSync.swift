@@ -52,9 +52,7 @@ enum CloudActivation: Sendable {
     case unavailable(CloudSyncIssue)
 }
 
-enum CloudSyncIssue: Equatable, Sendable {
-    case offline, quota, unavailable, restricted, unsupportedBuild, paused, incomplete
-
+extension CloudSyncIssue {
     static func connection(_ error: any Error) -> Self {
         if (error as? CKError)?.code == .networkUnavailable
             || (error as? URLError)?.code == .notConnectedToInternet { return .offline }

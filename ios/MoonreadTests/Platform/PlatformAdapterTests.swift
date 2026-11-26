@@ -1,3 +1,4 @@
+@testable import MoonreadSettings
 @testable import MoonreadAI
 import MoonreadCoreBindings
 import AISDKProvider

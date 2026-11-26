@@ -1,3 +1,4 @@
+import MoonreadSettings
 import MoonreadCoreBindings
 import MoonreadDesign
 import SwiftUI

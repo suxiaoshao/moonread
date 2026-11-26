@@ -1,9 +1,21 @@
 import MoonreadDesign
 import SwiftUI
 
-struct AboutView: View {
+public struct AboutView: View {
+    private let privacy: URL
+    private let support: URL
+    private let contact: URL?
+    private let supportEmail: String
+
+    public init(privacy: URL, support: URL, contact: URL?, supportEmail: String) {
+        self.privacy = privacy
+        self.support = support
+        self.contact = contact
+        self.supportEmail = supportEmail
+    }
+
     @Environment(\.theme) private var theme
-    var body: some View {
+    public var body: some View {
         List {
             Section {
                 VStack(spacing: 16) {
@@ -13,13 +25,13 @@ struct AboutView: View {
                 }.frame(maxWidth: .infinity).padding(.vertical, 24)
             }.listRowBackground(Color.clear)
             Section {
-                Link("隐私政策", destination: AppLinks.privacy()).accessibilityIdentifier("privacyPolicyLink")
-                Link("帮助与支持", destination: AppLinks.support()).accessibilityIdentifier("helpSupportLink")
-                if let contact = AppLinks.contact {
+                Link("隐私政策", destination: privacy).accessibilityIdentifier("privacyPolicyLink")
+                Link("帮助与支持", destination: support).accessibilityIdentifier("helpSupportLink")
+                if let contact = contact {
                     Link(destination: contact) {
                         VStack(alignment: .leading) {
                             Text("联系开发者")
-                            Text(verbatim: AppLinks.supportEmail).font(.caption)
+                            Text(verbatim: supportEmail).font(.caption)
                         }
                     }.accessibilityIdentifier("contactDeveloperLink")
                 }

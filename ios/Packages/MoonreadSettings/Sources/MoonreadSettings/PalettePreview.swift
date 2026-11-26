@@ -1,9 +1,11 @@
 import MoonreadDesign
 import SwiftUI
 
-struct PalettePreview: View {
+public struct PalettePreview: View {
     let theme: ThemeSurface
-    var body: some View {
+    public init(theme: ThemeSurface) { self.theme = theme }
+
+    public var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { MoonView(size: 32); Text("月光入窗").font(.headline); Spacer(); Image(systemName: "bookmark") }
             VStack(alignment: .leading, spacing: 12) {

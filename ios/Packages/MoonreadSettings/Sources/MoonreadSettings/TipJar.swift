@@ -1,6 +1,5 @@
 import MoonreadDesign
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 import StoreKit
 
@@ -18,6 +17,8 @@ struct TipTransaction: Sendable {
     var revoked = false
     var verified = true
 }
+private enum TipPurchaseError: Error { case invalidResponse }
+
 enum TipPurchaseResult: Sendable { case success(TipTransaction), pending, userCancelled }
 
 @MainActor protocol PurchaseGateway: AnyObject {
@@ -49,13 +50,13 @@ enum TipPurchaseResult: Sendable { case success(TipTransaction), pending, userCa
                               revoked: transaction.revocationDate != nil, verified: verified)
     }
     func purchase(_ id: String) async throws -> TipPurchaseResult {
-        guard let product = catalog[id] else { throw AIError.invalidResponse }
+        guard let product = catalog[id] else { throw TipPurchaseError.invalidResponse }
         do {
             switch try await product.purchase() {
             case .success(let value): return .success(adapt(value))
             case .pending: return .pending
             case .userCancelled: return .userCancelled
-            @unknown default: throw AIError.invalidResponse
+            @unknown default: throw TipPurchaseError.invalidResponse
             }
         } catch StoreKitError.userCancelled { return .userCancelled }
     }
@@ -83,7 +84,7 @@ enum TipPurchaseResult: Sendable { case success(TipTransaction), pending, userCa
     }
 }
 
-@MainActor @Observable final class TipJar {
+@MainActor @Observable public final class TipJar {
     static let productIDs = ["dev.moonread.tip.star", "dev.moonread.tip.tea", "dev.moonread.tip.snack", "dev.moonread.tip.book"]
     enum Catalog { case idle, loading, ready, unavailable }
     private(set) var catalog = Catalog.idle
@@ -100,7 +101,9 @@ enum TipPurchaseResult: Sendable { case success(TipTransaction), pending, userCa
     private var handledTransactions: Set<UInt64> = []
     private var pendingGeneration = UUID()
     private var listening = false
-    init(gateway: (any PurchaseGateway)? = nil,
+    public convenience init() { self.init(gateway: nil) }
+
+    init(gateway: (any PurchaseGateway)?,
          thanksDelay: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(4)) }) {
         self.gateway = gateway ?? StoreKitPurchaseGateway(); self.thanksDelay = thanksDelay
     }
@@ -119,7 +122,7 @@ enum TipPurchaseResult: Sendable { case success(TipTransaction), pending, userCa
         }
         loadTask = task; await task.value
     }
-    func listenForTransactions() async {
+    public func listenForTransactions() async {
         guard !listening else { return }
         listening = true; defer { listening = false }
         for await result in gateway.transactions() {
@@ -159,11 +162,13 @@ enum TipPurchaseResult: Sendable { case success(TipTransaction), pending, userCa
     }
 }
 
-struct TipJarView: View {
+public struct TipJarView: View {
+    public init() {}
+
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(TipJar.self) private var store
     @Environment(\.theme) private var theme
-    var body: some View {
+    public var body: some View {
         ScrollView {
             VStack(spacing: LayoutTokens.section) {
                 AIMoonMark(pose: store.thanked ? .done : .idle).scaleEffect(1.5)

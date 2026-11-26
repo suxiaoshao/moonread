@@ -1,14 +1,9 @@
+import MoonreadSettings
 import MoonreadDataTypes
 import MoonreadData
 import SwiftUI
 
-/// A projection of the current coordinator status, with account state first.
-enum CloudSyncCard: Equatable {
-    case off, checking, confirmAccount, signedOut
-    case unavailable(CloudSyncIssue), error(CloudSyncIssue)
-    case syncing, firstUpload(CloudInitialUploadProgress?), firstDownload(Int?), finishing
-    case waitingForDevice, waiting, synced(Date)
-
+extension CloudSyncCard {
     init(_ status: CloudSyncStatus) {
         guard status.requested else { self = .off; return }
         switch status.activation {
