@@ -1,3 +1,5 @@
+import MoonreadStatisticsDates
+import MoonreadStatistics
 import MoonreadAI
 import SwiftUI
 
@@ -135,7 +137,7 @@ extension AIQuickTaskRequest {
     @MainActor static func statistics(window: StatisticsWindow, target: StatisticsRoute?, information: BookInformationModel) -> AIQuickTaskRequest? {
         let sha = target.flatMap { information.contentSHA(for: $0) }
         guard target == nil || sha != nil else { return nil }
-        let bounds = window.bounds()
+        let bounds = window.bounds(today: StatisticsDates.day(StatisticsClock.now))
         let from = AIQuickTaskDates.iso(bounds.lowerBound), to = AIQuickTaskDates.iso(bounds.upperBound)
         let range = "\(StatisticsDates.dateLabel(bounds.lowerBound, full: true)) – \(StatisticsDates.dateLabel(bounds.upperBound, full: true))"
         return AIQuickTaskRequest(family: .statistics, origin: AITaskOrigin(from: from, to: to, bookSHA: sha),

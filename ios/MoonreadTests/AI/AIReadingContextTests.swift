@@ -1,3 +1,4 @@
+import MoonreadStatistics
 import AISDKProvider
 import AISDKProviderUtils
 import SwiftData
@@ -26,7 +27,7 @@ final class AIReadingContextTests: BookAIFixture {
         }
         return (nil, .identified(identity: identity, details: details))
       }, readChapters: { _ in [] })
-    var window = StatisticsWindow()
+    var window: StatisticsWindow = .recent
     XCTAssertNil(AIQuickTaskRequest.statistics(window: window, target: current, information: model))
     let overview = try XCTUnwrap(
       AIQuickTaskRequest.statistics(window: window, target: nil, information: model))

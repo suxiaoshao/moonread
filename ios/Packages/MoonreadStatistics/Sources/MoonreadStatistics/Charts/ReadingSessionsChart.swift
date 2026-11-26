@@ -1,18 +1,19 @@
 import SwiftUI
 import Charts
+import MoonreadStatisticsDates
 
 struct ReadingSessionsChart: View {
     let spans: [StatisticsSpan]
     let singleBook: Bool
+    let theme: StatisticsAppearance
     @State private var selectedHour: Double?
-    @Environment(\.theme) private var theme
-    private func row(_ value: StatisticsSpan) -> String { singleBook ? String(value.day) : value.key.storageKey }
+    private func row(_ value: StatisticsSpan) -> String { singleBook ? String(value.day) : value.key }
     private func rowLabel(_ key: String) -> String {
         guard let span = spans.first(where: { row($0) == key }) else { return key }
         return singleBook ? StatisticsDates.dateLabel(span.day) : span.title
     }
     private var rows: [String] { spans.reduce(into: []) { if !$0.contains(row($1)) { $0.append(row($1)) } } }
-    private var keys: [String] { Array(Set(spans.map { $0.key.storageKey })).sorted() }
+    private var keys: [String] { Array(Set(spans.map { $0.key })).sorted() }
     private var domain: ClosedRange<Double> {
         let low = max(0, floor(spans.map(\.startClock).min() ?? 0))
         return low...min(24, max(low + 1, ceil(spans.map(\.endClock).max() ?? 24)))
@@ -23,7 +24,7 @@ struct ReadingSessionsChart: View {
                 ForEach(spans) { span in
                     BarMark(xStart: .value(String(localized: "开始钟点"), span.startClock), xEnd: .value(String(localized: "结束钟点"), span.endClock),
                             y: .value(singleBook ? String(localized: "阅读日期") : String(localized: "书籍"), row(span)), height: .ratio(0.45))
-                        .foregroundStyle(by: .value(String(localized: "书籍"), span.key.storageKey))
+                        .foregroundStyle(by: .value(String(localized: "书籍"), span.key))
                         .accessibilityLabel("\(span.title)，\(StatisticsDates.dateLabel(span.day))，\(span.time)")
                         .accessibilityValue(StatisticsDates.duration(span.milliseconds))
                 }
@@ -61,7 +62,9 @@ struct ReadingSessionRow: View {
     let span: StatisticsSpan
     let showBook: Bool
     var compact = false
-    @Environment(\.theme) private var theme
+    let theme: StatisticsAppearance
+    let delete: @MainActor (String, String?) async throws -> Void
+    let errorMessage: @MainActor (Error) -> String
     @State private var confirmDelete = false
     @State private var error: String?
     var body: some View {
@@ -80,7 +83,7 @@ struct ReadingSessionRow: View {
         }.padding(.vertical, 4)
             .contextMenu { Button("删除本次阅读记录", systemImage: "trash", role: .destructive) { confirmDelete = true } }
             .alert("删除本次阅读记录？", isPresented: $confirmDelete) {
-                Button("删除记录", role: .destructive) { Task { do { try await AppDataService.shared.deleteStatistics(book: span.key.storageKey, session: span.sessionID) } catch { self.error = ReaderMessages.error(error) } } }
+                Button("删除记录", role: .destructive) { Task { do { try await delete(span.key, span.sessionID) } catch { self.error = errorMessage(error) } } }
                 Button("取消", role: .cancel) {}
             } message: { Text("删除这次开书产生的统计片段，正文和续读位置会保留。") }
             .alert("暂时无法完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("知道了", role: .cancel) { error = nil } } message: { Text(error ?? "") }

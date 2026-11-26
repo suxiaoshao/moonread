@@ -1,18 +1,19 @@
 import Foundation
 import GRDB
+import MoonreadStatistics
 import Synchronization
 import struct MoonreadQueries.StatisticsActivitiesQuery
 import struct MoonreadQueries.StatisticsOverviewQuery
 import struct MoonreadQueries.StatisticsWidgetQuery
 
-extension Sequence where Element == StatisticsDay {
-    var activeDayCount: Int {
-        Set(lazy.filter { $0.durationMs > 0 }.map(\.day)).count
-    }
+extension StatisticsDay: StatisticsDayValue {}
+
+extension StatisticsBook: StatisticsBookValue {
+    public var statisticsKey: String { contentKey.storageKey }
 }
 
-extension StatisticsOverview {
-    var activeDayCount: Int { days.activeDayCount }
+extension StatisticsOverview: StatisticsOverviewValue {
+    public var statisticsEnabled: Bool { preferences.enabled }
 }
 
 enum HistoryCompatibility {
@@ -378,7 +379,7 @@ enum StatisticsHistoryRead {
 
 struct StatisticsTimelineRow: Identifiable, Equatable, Sendable {
     struct ID: Hashable, Sendable {
-        enum Kind: String, Sendable { case fact, segment }
+        typealias Kind = StatisticsSpan.ID.Kind
         let kind: Kind
         let recordID: String
 
@@ -409,6 +410,17 @@ struct StatisticsTimelineRow: Identifiable, Equatable, Sendable {
     }
 }
 
+
+extension StatisticsSpan {
+    static func merge(_ rows: [StatisticsTimelineRow]) throws -> StatisticsTimeline {
+        try merge(rows.lazy.map { row in
+            Self(id: .init(kind: row.id.kind, recordID: row.id.recordID), sessionID: row.sessionId,
+                 key: row.contentKey.storageKey, title: row.title, day: row.localDay,
+                 offset: row.utcOffsetSeconds, preview: row.preview, start: row.startedMs,
+                 end: row.endedMs, milliseconds: row.durationMs)
+        }, sum: { try ReadingDayRows.sumMilliseconds($0) })
+    }
+}
 
 /// Coalesce signaled commits without doing query work on the writer. Readers
 /// test the stamp again after suspension, before publishing an older result.
@@ -485,7 +497,7 @@ extension AppDataService {
 
     struct StatisticsDetails: Sendable {
         let cumulative: StatisticsBook?
-        let timeline: StatisticsSpan.Timeline
+        let timeline: StatisticsTimeline
     }
 
     private nonisolated static func statisticsNotice(_ incomplete: Bool) -> String? {
@@ -540,7 +552,7 @@ extension AppDataService {
         try await readStatisticsActivities(first: first, last: last, target: statisticsTarget(book: book)) { $0 }.requireReady()
     }
 
-    func statisticsTimelineRead(first: Int64, last: Int64, target: StatisticsTarget) async throws -> StatisticsResult<StatisticsSpan.Timeline> {
+    func statisticsTimelineRead(first: Int64, last: Int64, target: StatisticsTarget) async throws -> StatisticsResult<StatisticsTimeline> {
         try await readStatisticsActivities(first: first, last: last, target: target, project: StatisticsSpan.merge)
     }
 

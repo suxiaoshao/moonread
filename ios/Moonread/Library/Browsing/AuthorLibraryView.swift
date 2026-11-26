@@ -1,3 +1,5 @@
+import MoonreadStatisticsDates
+import MoonreadStatistics
 import SwiftUI
 import Combine
 
@@ -31,9 +33,10 @@ struct AuthorLibraryView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var search: AppSearch
     @State private var results: AppSearchResults
-    @State private var statistics: StatisticsModel
+    private typealias ReadingSummary = StatisticsOverviewObserver<StatisticsTarget, StatisticsOverview>
+    @State private var statistics: ReadingSummary
     @State private var retry = 0
-    @State private var today = StatisticsDates.day(StatisticsWindow.currentDate)
+    @State private var today = StatisticsDates.day(StatisticsClock.now)
 
     init(model: LibraryModel, credit: AuthorCredit, host: LibraryBrowsingHost) {
         self.model = model
@@ -41,28 +44,29 @@ struct AuthorLibraryView: View {
         self.host = host
         _search = State(initialValue: AppSearch(seeds: [.author(credit.name)]))
         _results = State(initialValue: AppSearchResults(service: model.service))
-        _statistics = State(initialValue: StatisticsModel(service: model.service))
+        _statistics = State(initialValue: ReadingSummary(source: model.service.statisticsDataSource()))
     }
 
     private var searchKey: SearchKey {
         .init(term: "", configuration: search.configuration, revision: results.authorityRevision, retry: retry, aiAvailable: false)
     }
     private var works: [LibraryEntry] { results.entries }
-    private var statisticsScope: StatisticsModel.Scope? {
+    private var statisticsRequest: StatisticsRequest {
         let keys = Set(works.compactMap { $0.readingIdentity?.formalSHA256 })
-        guard !keys.isEmpty else { return nil }
-        return .init(bounds: StatisticsWindow.all.bounds(today: today), target: .books(keys), cumulativeLast: nil)
+        return .init(bounds: StatisticsWindow.all.bounds(today: today), target: keys.isEmpty ? nil : .books(keys), revision: statistics.revision)
     }
 
     private struct StatisticsRequest: Hashable {
-        let scope: StatisticsModel.Scope?
+        let bounds: ClosedRange<Int64>
+        let target: StatisticsTarget?
         let revision: UInt64
     }
 
     private var sections: [LibraryCollectionSection] {
         var rows: [LibraryCollectionSection.Row] = []
-        if let scope = statisticsScope {
-            let state = statistics.state(scope)
+        let request = statisticsRequest
+        if let target = request.target {
+            let state = statistics.snapshot(bounds: request.bounds, target: target)
             if state.overview?.books.isEmpty == false || state.error != nil || state.compatibilityNotice != nil {
                 rows.append(.init("statistics") { summary(state) })
             }
@@ -92,7 +96,7 @@ struct AuthorLibraryView: View {
 
     var body: some View {
         let key = searchKey
-        let request = StatisticsRequest(scope: statisticsScope, revision: statistics.dataRevision)
+        let request = statisticsRequest
         LibraryCollection(model: model, host: host, sections: sections, accessibilityID: "authorWorks")
             .themedPage()
             .navigationTitle(Text(verbatim: credit.name))
@@ -127,16 +131,16 @@ struct AuthorLibraryView: View {
             .modifier(PageLoadingOverlay(request: results.loading.request, hasContent: results.completedKey != nil, label: "正在搜索"))
             .task(id: key) { await results.observeLibrary(key, service: model.service) }
             .task(id: request) {
-                if let scope = request.scope { await statistics.observe(scope) }
+                if let target = request.target { await statistics.observe(bounds: request.bounds, target: target) }
             }
             .onChange(of: scenePhase) { _, phase in if phase == .active { refreshToday() } }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in refreshToday() }
             .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange).receive(on: DispatchQueue.main)) { _ in refreshToday() }
     }
 
-    private func refreshToday() { today = StatisticsDates.day(StatisticsWindow.currentDate) }
+    private func refreshToday() { today = StatisticsDates.day(StatisticsClock.now) }
 
-    private func summary(_ state: StatisticsModel.State) -> some View {
+    private func summary(_ state: ReadingSummary.Snapshot) -> some View {
         VStack(alignment: .leading) {
             if let overview = state.overview, !overview.books.isEmpty {
                 readingCard(overview)
@@ -144,7 +148,7 @@ struct AuthorLibraryView: View {
             if let notice = state.compatibilityNotice { Text(notice).font(.footnote) }
             if let error = state.error {
                 Label(error, systemImage: "exclamationmark.circle").font(.footnote)
-                Button("重试") { statistics.restartObservation() }
+                Button("重试") { statistics.retry() }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

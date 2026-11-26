@@ -1,16 +1,28 @@
 import SwiftUI
-import Charts
+import MoonreadStatisticsDates
 
 /// One local calendar day: its clock-hour timeline and exact sessions.
-struct StatisticsDayView: View {
+struct StatisticsDayView<Target: Hashable & Sendable, Overview: StatisticsOverviewValue>: View {
     let route: StatisticsDayRoute
-    @Environment(\.theme) private var theme
-    @State private var model = StatisticsModel()
-    private var scope: StatisticsModel.Scope {
-        .init(bounds: route.day...route.day, target: route.book.flatMap { try? parseReadingKey(value: $0) }.map { .book(.record(key: $0)) } ?? .all,
+    let theme: StatisticsAppearance
+    let source: StatisticsDataSource<Target, Overview>
+    let loading: (CGFloat, Bool) -> AnyView
+    @State private var model: StatisticsModel<Target, Overview>
+
+    init(route: StatisticsDayRoute, theme: StatisticsAppearance, source: StatisticsDataSource<Target, Overview>,
+         loading: @escaping (CGFloat, Bool) -> AnyView) {
+        self.route = route
+        self.theme = theme
+        self.source = source
+        self.loading = loading
+        _model = State(initialValue: StatisticsModel(source: source))
+    }
+
+    private var scope: StatisticsModel<Target, Overview>.Scope {
+        .init(bounds: route.day...route.day, target: route.book.flatMap { source.targetForKey($0) },
               cumulativeLast: nil, purpose: .activities)
     }
-    private var state: StatisticsModel.State { model.state(scope) }
+    private var state: StatisticsModel<Target, Overview>.State { model.state(scope) }
     private var spans: [StatisticsSpan] { state.spans }
     private var compatibilityNotice: String? { state.compatibilityNotice }
     private var loaded: Bool { state.content != nil }
@@ -35,7 +47,7 @@ struct StatisticsDayView: View {
                 }.padding([.horizontal, .top], 20).padding(.bottom).frame(maxWidth: 1200).frame(maxWidth: .infinity)
             }
         }
-        .themedPage()
+        .modifier(theme.page)
         .navigationTitle(StatisticsDates.dateLabel(route.day, full: true)).navigationBarTitleDisplayMode(.inline)
         .overlay {
             if spans.isEmpty {
@@ -43,9 +55,9 @@ struct StatisticsDayView: View {
                     ContentUnavailableView {
                         Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
                     } description: { Text(error).foregroundStyle(Color(uiColor: theme.secondary)) } actions: {
-                        Button("重试") { model.restartObservation() }.buttonStyle(ThemedProminentButtonStyle())
+                        Button("重试") { model.restartObservation() }.buttonStyle(theme.prominentButton)
                     }
-                } else if !loaded { LoadingActivity(fullPage: true, waitingLabel: "正在读取统计") }
+                } else if !loaded { loading(24, true) }
                 else {
                     ContentUnavailableView {
                         Label(compatibilityNotice == nil ? "这天没有阅读记录" : "部分统计暂不可用", systemImage: "book.closed")
@@ -67,7 +79,7 @@ struct StatisticsDayView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("当天累计").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
             Text(StatisticsDates.duration(total)).font(.largeTitle.weight(.semibold)).monospacedDigit()
-            ReadingSessionsChart(spans: spans, singleBook: false)
+            ReadingSessionsChart(spans: spans, singleBook: false, theme: theme)
         }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
     }
@@ -76,8 +88,8 @@ struct StatisticsDayView: View {
             Text("阅读时段").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
             VStack(spacing: 0) {
                 ForEach(spans.reversed()) { span in
-                    ReadingSessionRow(span: span, showBook: route.book == nil).padding(16)
-                    if span.id != spans.first?.id { ThemedDivider() }
+                    ReadingSessionRow(span: span, showBook: route.book == nil, theme: theme, delete: source.delete, errorMessage: { source.describeError($0).message }).padding(16)
+                    if span.id != spans.first?.id { theme.divider }
                 }
             }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
             if let compatibilityNotice { Text(compatibilityNotice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }

@@ -1,3 +1,4 @@
+import MoonreadDesign
 import SwiftUI
 
 func paletteDisplayName(_ value: ThemePalette) -> String {

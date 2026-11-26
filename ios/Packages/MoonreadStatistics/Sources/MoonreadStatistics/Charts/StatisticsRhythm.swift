@@ -1,23 +1,25 @@
 import SwiftUI
 import Charts
+import MoonreadStatisticsDates
 
 /// The selected range's day-level rhythm: seven daily bars, a month calendar,
 /// a year's monthly bars, or all-time monthly or yearly bars.
-struct StatisticsRhythm: View {
+struct StatisticsRhythm<Day: StatisticsDayValue>: View {
     let period: StatisticsPeriod
     let bounds: ClosedRange<Int64>
-    let days: [StatisticsDay]
+    let days: [Day]
     let today: Int64
     let book: String?
+    let theme: StatisticsAppearance
     let open: (StatisticsDayRoute) -> Void
     private let buckets: [StatisticsBucket]
     private let allByMonth: Bool
     @State private var selectedBucket: Int64?
 
-    init(period: StatisticsPeriod, bounds: ClosedRange<Int64>, days: [StatisticsDay], today: Int64,
-         book: String?, open: @escaping (StatisticsDayRoute) -> Void) {
+    init(period: StatisticsPeriod, bounds: ClosedRange<Int64>, days: [Day], today: Int64,
+         book: String?, theme: StatisticsAppearance, open: @escaping (StatisticsDayRoute) -> Void) {
         self.period = period; self.bounds = bounds; self.days = days
-        self.today = today; self.book = book; self.open = open
+        self.today = today; self.book = book; self.theme = theme; self.open = open
         let years = period == .all ? StatisticsBuckets.years(days, today: today) : []
         allByMonth = years.count == 1
         switch period {
@@ -39,13 +41,13 @@ struct StatisticsRhythm: View {
     @ViewBuilder private var chart: some View {
         switch period {
         case .recent:
-            StatisticsBarChart(buckets: buckets, label: { $0.first == today ? String(localized: "今天") : StatisticsDates.format($0.first, template: "EE") },
+            StatisticsBarChart(buckets: buckets, today: today, theme: theme, label: { $0.first == today ? String(localized: "今天") : StatisticsDates.format($0.first, template: "EE") },
                                accessibilityLabel: { StatisticsDates.dateLabel($0.first, full: true) },
                                open: { bucket in if bucket.durationMs > 0 { open(StatisticsDayRoute(day: bucket.first, book: book)) } })
         case .month:
-            ReadingCalendarChart(days: days, month: bounds, today: today) { open(StatisticsDayRoute(day: $0, book: book)) }
+            ReadingCalendarChart(days: days, month: bounds, today: today, theme: theme) { open(StatisticsDayRoute(day: $0, book: book)) }
         case .year:
-            StatisticsBarChart(buckets: buckets, slots: 12, label: { StatisticsDates.format($0.first, template: "MMM") },
+            StatisticsBarChart(buckets: buckets, today: today, theme: theme, slots: 12, label: { StatisticsDates.format($0.first, template: "MMM") },
                                accessibilityLabel: { StatisticsDates.format($0.first, template: "yMMMM") })
         case .all:
             VStack(alignment: .leading, spacing: 12) {
@@ -56,7 +58,7 @@ struct StatisticsRhythm: View {
                 } else {
                     Text("各年阅读时长")
                 }
-                StatisticsBarChart(buckets: buckets, slots: allByMonth ? 12 : nil,
+                StatisticsBarChart(buckets: buckets, today: today, theme: theme, slots: allByMonth ? 12 : nil,
                                    label: { StatisticsDates.format($0.first, template: allByMonth ? "MMM" : "y") },
                                    accessibilityLabel: bucketDate, selectable: true, selected: selectedBucket,
                                    open: { selectedBucket = selectedBucket == $0.first ? nil : $0.first })
@@ -72,13 +74,14 @@ struct StatisticsRhythm: View {
 /// short axis, and VoiceOver reads each bucket's exact duration.
 private struct StatisticsBarChart: View {
     let buckets: [StatisticsBucket]
+    let today: Int64
+    let theme: StatisticsAppearance
     var slots: Int? = nil
     let label: (StatisticsBucket) -> String
     let accessibilityLabel: (StatisticsBucket) -> String
     var selectable = false
     var selected: Int64?
     var open: ((StatisticsBucket) -> Void)? = nil
-    @Environment(\.theme) private var theme
     private var maximum: Double { max(1, buckets.map { Double($0.durationMs) / 60_000 }.max() ?? 1) }
     /// Categorical slots; a year keeps twelve so months that have not begun hold their place.
     private var keys: [String] { buckets.map { String($0.first) } + (buckets.count..<max(buckets.count, slots ?? 0)).map { "slot-\($0)" } }
@@ -87,7 +90,7 @@ private struct StatisticsBarChart: View {
         Chart(buckets) { bucket in
             BarMark(x: .value(String(localized: "日期"), String(bucket.first)), y: .value(String(localized: "阅读分钟"), Double(bucket.durationMs) / 60_000), width: .ratio(0.6))
                 .foregroundStyle(Color(uiColor: theme.accent).opacity(
-                    (selectable ? bucket.first == selected : bucket.last == StatisticsDates.day(StatisticsWindow.currentDate)) ? 1 : 0.18
+                    (selectable ? bucket.first == selected : bucket.last == today) ? 1 : 0.18
                 ))
                 .cornerRadius(5)
         }
@@ -143,12 +146,12 @@ private struct StatisticsBarChart: View {
 
 /// A weekday-aligned month. Days that have not happened are outlined, not zero;
 /// tapping a day with reading opens that day.
-private struct ReadingCalendarChart: View {
-    let days: [StatisticsDay]
+private struct ReadingCalendarChart<Day: StatisticsDayValue>: View {
+    let days: [Day]
     let month: ClosedRange<Int64>
     let today: Int64
+    let theme: StatisticsAppearance
     let open: (Int64) -> Void
-    @Environment(\.theme) private var theme
     private var first: Int64 { month.lowerBound }
     private var shift: Int {
         let weekday = StatisticsDates.civilCalendar.component(.weekday, from: StatisticsDates.date(first))

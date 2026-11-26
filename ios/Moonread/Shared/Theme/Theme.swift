@@ -1,13 +1,14 @@
+import MoonreadDesign
 import SwiftUI
 import UIKit
 
 enum LayoutTokens {
     static let compact: CGFloat = 8
-    static let control: CGFloat = 12
+    static let control = ControlMetrics.spacing
     static let content: CGFloat = 16
     static let page: CGFloat = 20
     static let section: CGFloat = 24
-    static let hit: CGFloat = 44
+    static let hit = ControlMetrics.hitSize
     static let inputRadius: CGFloat = 16
     static let floatingRadius: CGFloat = 20
     static let border: CGFloat = 1
@@ -85,16 +86,6 @@ struct ThemeSurface: Equatable {
     var success: UIColor { ui(\.success, system: .systemGreen) }
     var moon: UIColor { ui(\.moon, system: .tertiaryLabel) }
     var maria: UIColor { ui(\.maria, system: .secondaryLabel) }
-    /// Statistics categorical colors, shared by every palette of one appearance.
-    /// A stable key hash keeps a book's color across charts; collisions are
-    /// allowed, so charts keep book titles beside their marks.
-    private static let lightStatistics: [UInt32] = [0xB86652, 0xA27825, 0x539156, 0x009494, 0x4984BF, 0x996BAD]
-    private static let darkStatistics: [UInt32] = [0xF0A08C, 0xD9B06B, 0x8FC990, 0x5ECBCB, 0x85BCF5, 0xD0A4E4]
-    func statisticsColor(_ key: String) -> Color {
-        let colors = scheme == .dark ? Self.darkStatistics : Self.lightStatistics
-        let hash = key.utf8.reduce(UInt64(14695981039346656037)) { ($0 ^ UInt64($1)) &* 1099511628211 }
-        return Color(uiColor: UIColor(rgb: colors[Int(hash % UInt64(colors.count))]))
-    }
     func floatingBackground(_ material: Material = .regularMaterial) -> AnyShapeStyle {
         // System colors keep native material; a chosen palette owns the whole
         // custom surface, including its background rather than just the text.
@@ -200,10 +191,6 @@ final class PreparedReadingPaper {
 }
 
 extension UIColor {
-    convenience init(rgb: UInt32) {
-        self.init(red: CGFloat((rgb >> 16) & 255) / 255,
-                  green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)
-    }
     var opaqueRGB: UInt32 {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         if let space = CGColorSpace(name: CGColorSpace.sRGB),
@@ -351,10 +338,8 @@ struct NativeThemeHost<Content: View>: UIViewControllerRepresentable {
 struct ThemedPage: ViewModifier {
     @Environment(\.theme) private var theme
     func body(content: Content) -> some View {
-        content.scrollContentBackground(.hidden)
-            .background(Color(uiColor: theme.canvas))
-            .foregroundStyle(Color(uiColor: theme.ink))
-            .tint(Color(uiColor: theme.accent))
+        content.modifier(SurfacePage(canvas: Color(uiColor: theme.canvas), ink: Color(uiColor: theme.ink),
+                                     accent: Color(uiColor: theme.accent)))
     }
 }
 
@@ -363,10 +348,8 @@ struct ThemedPage: ViewModifier {
 struct ThemedProminentButtonStyle: PrimitiveButtonStyle {
     @Environment(\.theme) private var theme
     func makeBody(configuration: Configuration) -> some View {
-        Button(configuration)
-            .buttonStyle(.borderedProminent)
-            .tint(Color(uiColor: theme.accent))
-            .foregroundStyle(Color(uiColor: theme.onAccent))
+        SurfaceProminentButtonStyle(accent: Color(uiColor: theme.accent), onAccent: Color(uiColor: theme.onAccent))
+            .makeBody(configuration: configuration)
     }
 }
 
@@ -391,7 +374,7 @@ struct ToolbarGlyph: ViewModifier {
 
 struct ThemedDivider: View {
     @Environment(\.theme) private var theme
-    var body: some View { Divider().overlay(Color(uiColor: theme.separator)) }
+    var body: some View { SurfaceDivider(separator: Color(uiColor: theme.separator)) }
 }
 
 struct ThemedEmptyState: View {
