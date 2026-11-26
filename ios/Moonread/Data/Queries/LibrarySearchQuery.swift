@@ -1,4 +1,6 @@
 import GRDB
+import struct MoonreadQueries.BookFilterOptionsQuery
+import struct MoonreadQueries.SearchCandidatesQuery
 
 struct LibraryMetadataOptions: Sendable {
     struct Tag: Sendable {

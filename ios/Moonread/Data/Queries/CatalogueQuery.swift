@@ -1,4 +1,7 @@
 import GRDB
+import struct MoonreadQueries.ShelfBookCardsQuery
+import struct MoonreadQueries.ShelfTagGroupsQuery
+import enum MoonreadQueries.ShelfTagKind
 
 /// The fixed book-card selection is shared by both grouping modes. Tag
 /// mode adds one narrow read of visible members within the same snapshot.

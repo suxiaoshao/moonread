@@ -1,5 +1,7 @@
 import Foundation
 import GRDB
+import struct MoonreadQueries.ChapterAtQuery
+import struct MoonreadQueries.ChapterStructureQuery
 
 /// Both point and directory reads join only the already settled correction.
 enum ReaderChapterRead {

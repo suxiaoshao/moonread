@@ -55,7 +55,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 书架同步描述、本机授权绑定和扫描后准入 | Swift `ShelfRecovery.swift`、`UserSyncJSON.swift`、`FullIndex.swift` | 用户库裁决同步描述，local_shelf_recovery 按账户保存本机绑定；平台扫描成功范围限制自动任务，不复制 Rust 查询 | 平台边界 |
 | SHA 格式 | Rust `identity/content.rs::parse_sha256` | 身份及资产校验共享严格语法，语义字段仍区分 | 单源 |
 | 最近阅读与首页继续阅读 | Swift `RecentReadingRead` 固定查询 / `RecentReadingStore`；Apollo 只生成结果类型 | 同一 main＋usr 快照先读 current、已验证别名和本机偏好并定副本，再读入选书的卡片与章名；首页与完整列表共享观察，页面持有期间保留上一结果，最后一个释放时停读；首页按钮直接打开卡片显示的来源 | 移除最近阅读旧投影入口；单书正文与章节路径另行切换 |
-| 页面查询输入与失效 | Swift `Data/Queries` 固定查询、`DataSession` 同池观察 | 读入口明确声明所需列和书键。领域写者在同一事务结算 current；页面按账户和参数持有观察、拒绝迟到的结果，不再拼接 SwiftData 投影或用 TEMP 做候选裁决 | 旧 SwiftData 仅由只读迁入打开 |
+| 页面查询输入与失效 | Swift `Data/Queries` 固定查询、`DataSession` 同池观察；本地包 `MoonreadQueries` 提供 Apollo 生成类型 | 读入口明确声明所需列和书键。领域写者在同一事务结算 current；页面按账户和参数持有观察、拒绝迟到的结果，不再拼接 SwiftData 投影或用 TEMP 做候选裁决 | 旧 SwiftData 仅由只读迁入打开 |
 | 明确书目标后的正文首帧、当前位置标题与章结构 | Swift `Data/Queries/ReaderOpeningQuery.swift`、`ReaderWindowRead.swift`、`ReaderChapterQuery.swift`；Rust `reading/window_payload.rs` 和 `reading/layout.rs` 做显示计算 | 同一索引/用户快照内按已确定书 ID、当前位置引用、已发布正文与章修正读取；标题、目录与最近卡片共用章修正组合。Swift 只取有界正文和已证实空白，Rust 切片、标记段落，不开库。结构与覆盖分开；覆盖在第 5 步另接 | 阅读会话持有窗口，工具页持有目录结果 |
 | 最近打开与后台恢复 | Swift `ReaderSession.bodyDidDisplay`、`ReadingPositionRows`、`RecentReadingRestoration` | 正文真正显示后记录 opened，和位置独立；最近排序与副本归 `RecentReadingRead`。后台只按同一用户库里已提交的正式位置取恢复限额，隐藏在排名前排除，文件准备后复核旧票据；恢复不写 opened/位置或计时 | 同一用户数据权威 |
 | 封面资源与静默替换 | Swift `Books/BookMetadata.swift` 的 `CoverResourceLoader`、`CoverImageLoader`、`BookCoverDisplay` | 独立资源 actor 统一 UI/Widget/Spotlight I/O 与派生；按作用域/资源/尺寸合并并有界缓存，ready 不随订阅销毁。同书旧图等新图成功，删除/换书/换账号立即清；系统文字更新复用图像输入版本 | 单一资源 owner |

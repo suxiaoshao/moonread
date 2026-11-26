@@ -1,4 +1,5 @@
 import GRDB
+import struct MoonreadQueries.ReaderOpeningQuery
 
 enum ReaderOpeningRead {
     typealias Output = MoonreadQueries.ReaderOpeningQuery.Data

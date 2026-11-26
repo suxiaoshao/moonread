@@ -1,4 +1,6 @@
 import GRDB
+import struct MoonreadQueries.FolderDestinationsQuery
+import struct MoonreadQueries.FolderPageQuery
 
 /// A folder's direct children plus only the selected preview rows. The
 /// movement picker shares the activity/count rules but never hydrates cards.

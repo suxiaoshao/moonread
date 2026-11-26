@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import struct MoonreadQueries.RecentReadingQuery
 
 /// The fixed implementation of the generated RecentReading operation.
 enum RecentReadingRead {

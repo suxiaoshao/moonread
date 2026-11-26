@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 import Synchronization
+import struct MoonreadQueries.SystemCatalogueQuery
 
 /// The system file carries projected cards, never source URLs, chapters'
 /// contents, book synopses or reading facts. Opening uses a separate point read.

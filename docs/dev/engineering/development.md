@@ -23,7 +23,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 项目级 [SwiftUI Expert skill](../../../.agents/skills/swiftui-expert-skill/SKILL.md) 用于 SwiftUI 开发与审阅。来源为 [AvdLee/SwiftUI-Agent-Skill](https://github.com/AvdLee/SwiftUI-Agent-Skill)，固定 `4.2.0` / `9692ec5c3e78a0acc7757de2dbe8e64e519a72fb`，保留上游 [MIT 许可](../../../.agents/skills/swiftui-expert-skill/LICENSE)；更新时显式选择版本。
 
-固定查询的 schema／操作文档在 `ios/GraphQL/`。修改后在 `ios/` 用 Apollo iOS CLI 2.5.0 执行 `apollo-ios-cli generate`；生成的 Swift 文件提交到 `Moonread/Data/Queries/Generated/`，新增文件加入 App 的 Sources。App 只链接 `ApolloAPI`，查询由 Swift 执行，不在构建时下载生成工具或启动 GraphQL 服务。
+固定查询的 schema／操作文档在 `ios/GraphQL/`。修改后在 `ios/` 用 Apollo iOS CLI 2.5.0 执行 `apollo-ios-cli generate`，将生成的 Swift 文件提交到 `ios/Packages/MoonreadQueries/Sources/MoonreadQueries/`。主 App 链接本地包 `MoonreadQueries`，该包只依赖 workspace 锁定的 `ApolloAPI` 2.5.0。查询和观察仍由主 App 的 `Data/Queries` 执行。生成器只在开发时运行，查询不经过 GraphQL 服务。
 
 ## 本地化
 

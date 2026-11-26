@@ -7,8 +7,8 @@
   "output": {
     "testMocks": { "none": {} },
     "schemaTypes": {
-      "path": "Moonread/Data/Queries/Generated",
-      "moduleType": { "embeddedInTarget": { "name": "Moonread" } }
+      "path": "Packages/MoonreadQueries/Sources/MoonreadQueries",
+      "moduleType": { "other": {} }
     },
     "operations": { "inSchemaModule": {} }
   },

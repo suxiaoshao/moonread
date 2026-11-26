@@ -1,5 +1,7 @@
 import Foundation
 import GRDB
+import enum MoonreadQueries.BookInformationKind
+import struct MoonreadQueries.BookInformationQuery
 
 /// Only the selected identity's metadata and body summary, plus the
 /// file action envelope if the route calls for one.

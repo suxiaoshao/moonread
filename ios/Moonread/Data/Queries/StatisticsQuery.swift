@@ -1,6 +1,9 @@
 import Foundation
 import GRDB
 import Synchronization
+import struct MoonreadQueries.StatisticsActivitiesQuery
+import struct MoonreadQueries.StatisticsOverviewQuery
+import struct MoonreadQueries.StatisticsWidgetQuery
 
 extension Sequence where Element == StatisticsDay {
     var activeDayCount: Int {
