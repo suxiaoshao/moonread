@@ -459,6 +459,7 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		A37602000000000000000007 /* MoonreadStatisticsDates in Frameworks */ = {isa = PBXBuildFile; productRef = A37602000000000000000004; };
 		A37602000000000000000008 /* MoonreadDesign in Frameworks */ = {isa = PBXBuildFile; productRef = A37602000000000000000005; };
 		A37603000000000000000003 /* MoonreadCoreBindings in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000002; };
+		A37603000000000000000013 /* MoonreadDataTypes in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000012; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -935,6 +936,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 270E40000000000000000003,
 				A37602000000000000000008 /* MoonreadDesign in Frameworks */,
 				A37603000000000000000003 /* MoonreadCoreBindings in Frameworks */,
+				A37603000000000000000013 /* MoonreadDataTypes in Frameworks */,
 				A37602000000000000000007 /* MoonreadStatisticsDates in Frameworks */,
 				A37602000000000000000006 /* MoonreadStatistics in Frameworks */,
 
@@ -1951,7 +1953,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 F1C19004BB32432C8F23B23B,
                 24EC65B9F10B59B19FF49005,
 			);
-			packageProductDependencies = (A1A276000000000000000002,270D00000000000000000042,270E40000000000000000002,A37602000000000000000003,A37602000000000000000004,A37602000000000000000005,A37603000000000000000002);
+			packageProductDependencies = (A1A276000000000000000002,270D00000000000000000042,270E40000000000000000002,A37602000000000000000003,A37602000000000000000004,A37602000000000000000005,A37603000000000000000002,A37603000000000000000012);
 			name = Moonread;
 			productName = Moonread;
 			productReference = A2000000000000000000000A /* Moonread.app */;
@@ -2043,7 +2045,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			productRefGroup = A50000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-            packageReferences = (A1A276000000000000000003,270D00000000000000000041,270E40000000000000000001,A37602000000000000000001,A37602000000000000000002,A37603000000000000000001);
+            packageReferences = (A1A276000000000000000003,270D00000000000000000041,270E40000000000000000001,A37602000000000000000001,A37602000000000000000002,A37603000000000000000001,A37603000000000000000011);
 			targets = (
                 AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */,
                 04C2476D974D589BB2C7513F,
@@ -2586,6 +2588,7 @@ F01900000000000000000001,
 		A37602000000000000000001 /* MoonreadStatistics */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadStatistics; };
 		A37602000000000000000002 /* MoonreadDesign */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadDesign; };
 		A37603000000000000000001 /* MoonreadCoreBindings */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadCoreBindings; };
+		A37603000000000000000011 /* MoonreadData */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadData; };
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -2603,6 +2606,7 @@ F01900000000000000000001,
 		A37602000000000000000004 /* MoonreadStatisticsDates */ = {isa = XCSwiftPackageProductDependency; package = A37602000000000000000001; productName = MoonreadStatisticsDates; };
 		A37602000000000000000005 /* MoonreadDesign */ = {isa = XCSwiftPackageProductDependency; package = A37602000000000000000002; productName = MoonreadDesign; };
 		A37603000000000000000002 /* MoonreadCoreBindings */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000001; productName = MoonreadCoreBindings; };
+		A37603000000000000000012 /* MoonreadDataTypes */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000011; productName = MoonreadDataTypes; };
 /* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */

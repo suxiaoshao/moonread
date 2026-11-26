@@ -1,18 +1,20 @@
+import MoonreadCoreBindings
+import MoonreadDataTypes
 import Combine
 import MoonreadStatisticsDates
 import SwiftUI
 
 @MainActor @Observable
-final class StatisticsModel<Target: Hashable & Sendable, Overview: StatisticsOverviewValue> {
+final class StatisticsModel {
     struct Scope: Hashable, Sendable {
         enum Purpose: Hashable, Sendable { case overview, activities }
         let bounds: ClosedRange<Int64>
-        let target: Target?
+        let target: StatisticsTarget?
         let cumulativeLast: Int64?
         var purpose: Purpose = .overview
     }
     struct DetailContent: Equatable {
-        let cumulative: Overview.Book?
+        let cumulative: StatisticsBook?
         let spans: [StatisticsSpan]
     }
     enum DetailLoad: Equatable {
@@ -29,16 +31,16 @@ final class StatisticsModel<Target: Hashable & Sendable, Overview: StatisticsOve
         }
     }
     enum Payload: Equatable {
-        case overview(Overview, DetailLoad), activities(StatisticsTimeline), identityPending(fileID: String)
+        case overview(StatisticsOverview, DetailLoad), activities(StatisticsTimeline), identityPending(fileID: String)
     }
     struct Content: Equatable {
         var payload: Payload
-        var readingKey: String? = nil
+        var readingKey: ReadingKey? = nil
         var compatibilityNotice: String? = nil
 
-        var overview: Overview? { if case .overview(let value, _) = payload { return value }; return nil }
+        var overview: StatisticsOverview? { if case .overview(let value, _) = payload { return value }; return nil }
         var details: DetailLoad? { if case .overview(_, let value) = payload { return value }; return nil }
-        var cumulative: Overview.Book? { details?.content?.cumulative }
+        var cumulative: StatisticsBook? { details?.content?.cumulative }
         var spans: [StatisticsSpan] {
             if case .activities(let timeline) = payload { return timeline.spans }
             return details?.content?.spans ?? []
@@ -63,10 +65,10 @@ final class StatisticsModel<Target: Hashable & Sendable, Overview: StatisticsOve
         var loading: Bool { if case .loading = self { return true }; return false }
         var stale: Bool { if case .ready(_, .current) = self { return false }; return true }
         var error: String? { if case .failed(let message, _) = self { return message }; return nil }
-        var overview: Overview? { content?.overview }
-        var cumulative: Overview.Book? { content?.cumulative }
+        var overview: StatisticsOverview? { content?.overview }
+        var cumulative: StatisticsBook? { content?.cumulative }
         var spans: [StatisticsSpan] { content?.spans ?? [] }
-        var key: String? { content?.readingKey }
+        var key: ReadingKey? { content?.readingKey }
         var compatibilityNotice: String? { content?.compatibilityNotice }
     }
     typealias Fetch = @MainActor (Scope) async throws -> Content
@@ -77,9 +79,9 @@ final class StatisticsModel<Target: Hashable & Sendable, Overview: StatisticsOve
     @ObservationIgnored private var observationID: UUID?
     @ObservationIgnored private var observations: [AnyCancellable] = []
     @ObservationIgnored private let fetch: Fetch
-    @ObservationIgnored private let source: StatisticsDataSource<Target, Overview>
+    @ObservationIgnored private let source: StatisticsDataSource
 
-    init(source: StatisticsDataSource<Target, Overview>, fetch: Fetch? = nil) {
+    init(source: StatisticsDataSource, fetch: Fetch? = nil) {
         self.source = source
         self.fetch = fetch ?? { try await Self.read($0, source: source) }
         observations = source.invalidations { [weak self] in
@@ -87,14 +89,14 @@ final class StatisticsModel<Target: Hashable & Sendable, Overview: StatisticsOve
         }
     }
 
-    func scope(_ window: StatisticsWindow, target: Target?,
+    func scope(_ window: StatisticsWindow, target: StatisticsTarget?,
                today: Int64 = StatisticsDates.day(Date()), calendar: Calendar = .current) -> Scope {
         Scope(bounds: window.bounds(today: today, calendar: calendar), target: target,
               cumulativeLast: target == nil ? nil : today)
     }
-    func state(_ window: StatisticsWindow, target: Target?) -> State { state(scope(window, target: target)) }
+    func state(_ window: StatisticsWindow, target: StatisticsTarget?) -> State { state(scope(window, target: target)) }
     func state(_ scope: Scope) -> State { states[scope] ?? .idle }
-    @discardableResult func request(_ window: StatisticsWindow, target: Target?) -> Task<Void, Never>? {
+    @discardableResult func request(_ window: StatisticsWindow, target: StatisticsTarget?) -> Task<Void, Never>? {
         request(scope(window, target: target))
     }
     @discardableResult func request(_ scope: Scope) -> Task<Void, Never>? {
@@ -166,7 +168,7 @@ final class StatisticsModel<Target: Hashable & Sendable, Overview: StatisticsOve
         publish(.failed(message, previous: content), for: scope)
     }
 
-    func load(_ window: StatisticsWindow, target: Target?) async { await request(window, target: target)?.value }
+    func load(_ window: StatisticsWindow, target: StatisticsTarget?) async { await request(window, target: target)?.value }
     func load(_ scope: Scope) async { await request(scope)?.value }
 
     func restartObservation(reset: Bool = false) {
@@ -228,7 +230,7 @@ final class StatisticsModel<Target: Hashable & Sendable, Overview: StatisticsOve
     func clearError(_ scope: Scope) {
         if case .failed = states[scope] { markStale(scope) }
     }
-    private static func read(_ scope: Scope, source: StatisticsDataSource<Target, Overview>) async throws -> Content {
+    private static func read(_ scope: Scope, source: StatisticsDataSource) async throws -> Content {
         if scope.purpose == .activities {
             switch try await source.timeline(scope.bounds, scope.target) {
             case .identityPending(let file): return .init(payload: .identityPending(fileID: file))
@@ -255,33 +257,33 @@ final class StatisticsModel<Target: Hashable & Sendable, Overview: StatisticsOve
 
 /// A day opened from a rhythm chart, optionally limited to one book.
 struct StatisticsDayRoute: Hashable, Identifiable {
-    var id: String { "\(day)-\(book ?? "")" }
+    var id: String { "\(day)-\(book.map { serializeReadingKey(key: $0) } ?? "")" }
     let day: Int64
-    var book: String?
+    var book: ReadingKey?
 }
 
 /// A host summary can observe the same overview without owning page navigation or read state.
-@MainActor public struct StatisticsOverviewObserver<Target: Hashable & Sendable, Overview: StatisticsOverviewValue> {
-    private let model: StatisticsModel<Target, Overview>
+@MainActor public struct StatisticsOverviewObserver {
+    private let model: StatisticsModel
 
-    public init(source: StatisticsDataSource<Target, Overview>) {
+    public init(source: StatisticsDataSource) {
         model = StatisticsModel(source: source)
     }
 
     public var revision: UInt64 { model.dataRevision }
 
     public struct Snapshot {
-        public let overview: Overview?
+        public let overview: StatisticsOverview?
         public let compatibilityNotice: String?
         public let error: String?
     }
 
-    public func snapshot(bounds: ClosedRange<Int64>, target: Target) -> Snapshot {
+    public func snapshot(bounds: ClosedRange<Int64>, target: StatisticsTarget) -> Snapshot {
         let state = model.state(.init(bounds: bounds, target: target, cumulativeLast: nil))
         return .init(overview: state.overview, compatibilityNotice: state.compatibilityNotice, error: state.error)
     }
 
-    public func observe(bounds: ClosedRange<Int64>, target: Target) async {
+    public func observe(bounds: ClosedRange<Int64>, target: StatisticsTarget) async {
         await model.observe(.init(bounds: bounds, target: target, cumulativeLast: nil))
     }
 

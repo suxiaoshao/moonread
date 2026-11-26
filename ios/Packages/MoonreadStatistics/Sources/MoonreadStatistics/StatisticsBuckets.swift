@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 import MoonreadStatisticsDates
 
@@ -10,16 +11,16 @@ struct StatisticsBucket: Identifiable, Equatable {
 }
 
 enum StatisticsBuckets {
-    private static func amounts(_ days: [some StatisticsDayValue]) -> [Int64: UInt64] {
+    private static func amounts(_ days: [StatisticsDay]) -> [Int64: UInt64] {
         Dictionary(days.map { ($0.day, $0.durationMs) }, uniquingKeysWith: +)
     }
     /// Every day in the range, including days without reading.
-    static func days(_ days: [some StatisticsDayValue], range: ClosedRange<Int64>) -> [StatisticsBucket] {
+    static func days(_ days: [StatisticsDay], range: ClosedRange<Int64>) -> [StatisticsBucket] {
         let values = amounts(days)
         return range.map { StatisticsBucket(first: $0, last: $0, durationMs: values[$0] ?? 0) }
     }
     /// Calendar months of one year that have begun by today; later months are not zeros, they have not happened.
-    static func months(_ days: [some StatisticsDayValue], year range: ClosedRange<Int64>, today: Int64) -> [StatisticsBucket] {
+    static func months(_ days: [StatisticsDay], year range: ClosedRange<Int64>, today: Int64) -> [StatisticsBucket] {
         let calendar = StatisticsDates.civilCalendar
         let year = calendar.component(.year, from: StatisticsDates.date(range.lowerBound))
         return (1...12).compactMap { month in
@@ -32,7 +33,7 @@ enum StatisticsBuckets {
         }
     }
     /// Calendar years from the first recorded reading through the current year.
-    static func years(_ days: [some StatisticsDayValue], today: Int64) -> [StatisticsBucket] {
+    static func years(_ days: [StatisticsDay], today: Int64) -> [StatisticsBucket] {
         let calendar = StatisticsDates.civilCalendar
         guard let earliest = days.filter({ $0.durationMs > 0 }).map(\.day).min() else { return [] }
         let firstYear = calendar.component(.year, from: StatisticsDates.date(earliest))

@@ -1,3 +1,4 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import MoonreadStatisticsDates
 import MoonreadStatistics
@@ -34,7 +35,7 @@ struct AuthorLibraryView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var search: AppSearch
     @State private var results: AppSearchResults
-    private typealias ReadingSummary = StatisticsOverviewObserver<StatisticsTarget, StatisticsOverview>
+    private typealias ReadingSummary = StatisticsOverviewObserver
     @State private var statistics: ReadingSummary
     @State private var retry = 0
     @State private var today = StatisticsDates.day(StatisticsClock.now)

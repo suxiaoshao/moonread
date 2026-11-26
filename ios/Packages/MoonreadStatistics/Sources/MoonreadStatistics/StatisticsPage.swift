@@ -1,19 +1,21 @@
+import MoonreadCoreBindings
+import MoonreadDataTypes
 import MoonreadDesign
 import MoonreadStatisticsDates
 import SwiftUI
 
-public struct StatisticsPage<Target: Hashable & Sendable, Overview: StatisticsOverviewValue, Route: Hashable>: View {
-    private typealias Model = StatisticsModel<Target, Overview>
-    private let target: Target?
+public struct StatisticsPage<Route: Hashable>: View {
+    private typealias Model = StatisticsModel
+    private let target: StatisticsTarget?
     private let theme: StatisticsAppearance
-    private let source: StatisticsDataSource<Target, Overview>
+    private let source: StatisticsDataSource
     private let now: () -> Date
     private let jumpToReading: Bool
     private let writerError: String?
     private let openSettings: () -> Void
     private let refreshBook: () async -> Void
-    private let routeForBook: (Overview.Book, StatisticsWindow) -> Route
-    private let cover: (Overview.Book) -> AnyView
+    private let routeForBook: (StatisticsBook, StatisticsWindow) -> Route
+    private let cover: (StatisticsBook) -> AnyView
     private let titleMatches: (String, String) -> Bool
     private let loading: (CGFloat, Bool) -> AnyView
     private let bookContext: () -> AnyView
@@ -31,12 +33,12 @@ public struct StatisticsPage<Target: Hashable & Sendable, Overview: StatisticsOv
     @State private var deleteBook = false
     @State private var positionedAtReading = false
 
-    public init(target: Target?, initialWindow: StatisticsWindow, theme: StatisticsAppearance,
-                source: StatisticsDataSource<Target, Overview>, now: @escaping () -> Date,
+    public init(target: StatisticsTarget?, initialWindow: StatisticsWindow, theme: StatisticsAppearance,
+                source: StatisticsDataSource, now: @escaping () -> Date,
                 jumpToReading: Bool, writerError: String?, openSettings: @escaping () -> Void,
                 refreshBook: @escaping () async -> Void,
-                routeForBook: @escaping (Overview.Book, StatisticsWindow) -> Route,
-                cover: @escaping (Overview.Book) -> AnyView,
+                routeForBook: @escaping (StatisticsBook, StatisticsWindow) -> Route,
+                cover: @escaping (StatisticsBook) -> AnyView,
                 titleMatches: @escaping (String, String) -> Bool,
                 loading: @escaping (CGFloat, Bool) -> AnyView,
                 bookContext: @escaping () -> AnyView, bookFooter: @escaping () -> AnyView,
@@ -86,12 +88,12 @@ public struct StatisticsPage<Target: Hashable & Sendable, Overview: StatisticsOv
     private var readingState: Model.State { model.state(requestedRange.scope) }
     private var statisticsState: Model.State { model.state(displayedRange.scope) }
     private var showingPreviousRange: Bool { displayedRange.scope != requestedRange.scope }
-    private var orderedBooks: [Overview.Book] {
+    private var orderedBooks: [StatisticsBook] {
         let books = statisticsState.overview?.books ?? []
         return sortByDuration ? books.sorted {
             if $0.durationMs != $1.durationMs { return $0.durationMs > $1.durationMs }
             if $0.lastFormalMs != $1.lastFormalMs { return $0.lastFormalMs > $1.lastFormalMs }
-            return $0.statisticsKey < $1.statisticsKey
+            return serializeReadingKey(key: $0.contentKey) < serializeReadingKey(key: $1.contentKey)
         } : books
     }
     private var total: UInt64 { statisticsState.overview?.totalDurationMs ?? 0 }
@@ -229,7 +231,7 @@ public struct StatisticsPage<Target: Hashable & Sendable, Overview: StatisticsOv
                     ContentUnavailableView {
                         Label("暂无阅读记录", systemImage: "book.closed")
                     } description: {
-                        Text(overview.statisticsEnabled ? String(localized: "开始阅读后，这里会显示书籍、阅读时段和时长。") : String(localized: "开启阅读统计后记录新的阅读活动。"))
+                        Text(overview.preferences.enabled ? String(localized: "开始阅读后，这里会显示书籍、阅读时段和时长。") : String(localized: "开启阅读统计后记录新的阅读活动。"))
                     }.frame(maxWidth: .infinity, minHeight: 230)
                         .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
                         .accessibilityIdentifier("statisticsEmpty")
@@ -259,10 +261,10 @@ public struct StatisticsPage<Target: Hashable & Sendable, Overview: StatisticsOv
 
     @ViewBuilder private var statisticsStatus: some View {
         if let overview = statisticsState.overview,
-           !overview.statisticsEnabled || statisticsState.compatibilityNotice != nil || writerError != nil {
+           !overview.preferences.enabled || statisticsState.compatibilityNotice != nil || writerError != nil {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    if !overview.statisticsEnabled { Label("阅读统计已暂停", systemImage: "pause.circle") }
+                    if !overview.preferences.enabled { Label("阅读统计已暂停", systemImage: "pause.circle") }
                     Spacer()
                     Button("统计设置") { openSettings() }
                 }
@@ -327,7 +329,7 @@ public struct StatisticsPage<Target: Hashable & Sendable, Overview: StatisticsOv
             loading(24, false)
         }
     }
-    private func periodSummary(_ overview: Overview) -> some View {
+    private func periodSummary(_ overview: StatisticsOverview) -> some View {
         let range = displayedRange
         let rhythm = StatisticsRhythm(period: range.window.period, bounds: range.scope.bounds, days: overview.days,
                                       today: range.today, book: target == nil ? nil : statisticsState.key, theme: theme) { openedDay = $0 }
@@ -405,10 +407,10 @@ public struct StatisticsPage<Target: Hashable & Sendable, Overview: StatisticsOv
                 } label: { Label(sortByDuration ? String(localized: "阅读时长") : String(localized: "最近阅读"), systemImage: "arrow.up.arrow.down").font(.subheadline) }
             }
             VStack(spacing: 0) {
-                ForEach(Array(orderedBooks.prefix(5)), id: \.statisticsKey) { book in
+                ForEach(Array(orderedBooks.prefix(5)), id: \.contentKey) { book in
                     StatisticsBookRow(book: book, maximum: orderedBooks.map(\.durationMs).max() ?? 1, route: routeForBook(book, displayedRange.window), theme: theme, cover: cover)
                         .buttonStyle(.plain).padding(16)
-                    if book.statisticsKey != orderedBooks.prefix(5).last?.statisticsKey { theme.divider }
+                    if book.contentKey != orderedBooks.prefix(5).last?.contentKey { theme.divider }
                 }
                 if orderedBooks.count > 5 {
                     theme.divider

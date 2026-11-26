@@ -1,44 +1,22 @@
+import MoonreadCoreBindings
+import MoonreadDataTypes
 import Combine
 import Foundation
 
-public protocol StatisticsDayValue: Sendable {
-    var day: Int64 { get }
-    var durationMs: UInt64 { get }
-}
-
-public extension Sequence where Element: StatisticsDayValue {
+public extension Sequence where Element == StatisticsDay {
     var activeDayCount: Int { Set(lazy.filter { $0.durationMs > 0 }.map(\.day)).count }
 }
 
-public protocol StatisticsBookValue: Equatable, Sendable {
-    var statisticsKey: String { get }
-    var title: String { get }
-    var durationMs: UInt64 { get }
-    var firstReadMs: Int64 { get }
-    var lastReadMs: Int64 { get }
-    var lastFormalMs: Int64 { get }
-    var readingDays: UInt64 { get }
-}
-
-public protocol StatisticsOverviewValue: Equatable, Sendable {
-    associatedtype Book: StatisticsBookValue
-    associatedtype Day: StatisticsDayValue
-    var totalDurationMs: UInt64 { get }
-    var books: [Book] { get }
-    var days: [Day] { get }
-    var statisticsEnabled: Bool { get }
-}
-
-public extension StatisticsOverviewValue {
+public extension StatisticsOverview {
     var activeDayCount: Int { days.activeDayCount }
 }
 
 public struct StatisticsSnapshot<Value: Sendable>: Sendable {
     public let value: Value
-    public let key: String?
+    public let key: ReadingKey?
     public let compatibilityNotice: String?
 
-    public init(value: Value, key: String?, compatibilityNotice: String?) {
+    public init(value: Value, key: ReadingKey?, compatibilityNotice: String?) {
         self.value = value
         self.key = key
         self.compatibilityNotice = compatibilityNotice
@@ -61,26 +39,24 @@ public struct StatisticsObservation: Sendable {
 }
 
 /// Reads and mutations stay with the host. The feature owns their presentation and lifetime.
-@MainActor public struct StatisticsDataSource<Target: Hashable & Sendable, Overview: StatisticsOverviewValue> {
+@MainActor public struct StatisticsDataSource {
     public typealias Invalidation = @MainActor @Sendable () -> Void
-    let overview: @MainActor (ClosedRange<Int64>, Target?) async throws -> StatisticsRead<Overview>
-    let timeline: @MainActor (ClosedRange<Int64>, Target?) async throws -> StatisticsRead<StatisticsTimeline>
-    let details: @MainActor (ClosedRange<Int64>, Int64, Target?, StatisticsSnapshot<Overview>) async throws -> (cumulative: Overview.Book?, timeline: StatisticsTimeline)?
+    let overview: @MainActor (ClosedRange<Int64>, StatisticsTarget?) async throws -> StatisticsRead<StatisticsOverview>
+    let timeline: @MainActor (ClosedRange<Int64>, StatisticsTarget?) async throws -> StatisticsRead<StatisticsTimeline>
+    let details: @MainActor (ClosedRange<Int64>, Int64, StatisticsTarget?, StatisticsSnapshot<StatisticsOverview>) async throws -> (cumulative: StatisticsBook?, timeline: StatisticsTimeline)?
     let changes: @MainActor (Bool) async throws -> StatisticsObservation
     let invalidations: @MainActor (@escaping Invalidation) -> [AnyCancellable]
     let describeError: @MainActor (Error) -> (message: String, discardPrevious: Bool)
-    let targetForKey: @MainActor (String) -> Target?
-    let delete: @MainActor (String, String?) async throws -> Void
+    let delete: @MainActor (ReadingKey, String?) async throws -> Void
 
     public init(
-        overview: @escaping @MainActor (ClosedRange<Int64>, Target?) async throws -> StatisticsRead<Overview>,
-        timeline: @escaping @MainActor (ClosedRange<Int64>, Target?) async throws -> StatisticsRead<StatisticsTimeline>,
-        details: @escaping @MainActor (ClosedRange<Int64>, Int64, Target?, StatisticsSnapshot<Overview>) async throws -> (cumulative: Overview.Book?, timeline: StatisticsTimeline)?,
+        overview: @escaping @MainActor (ClosedRange<Int64>, StatisticsTarget?) async throws -> StatisticsRead<StatisticsOverview>,
+        timeline: @escaping @MainActor (ClosedRange<Int64>, StatisticsTarget?) async throws -> StatisticsRead<StatisticsTimeline>,
+        details: @escaping @MainActor (ClosedRange<Int64>, Int64, StatisticsTarget?, StatisticsSnapshot<StatisticsOverview>) async throws -> (cumulative: StatisticsBook?, timeline: StatisticsTimeline)?,
         changes: @escaping @MainActor (Bool) async throws -> StatisticsObservation,
         invalidations: @escaping @MainActor (@escaping Invalidation) -> [AnyCancellable],
         describeError: @escaping @MainActor (Error) -> (message: String, discardPrevious: Bool),
-        targetForKey: @escaping @MainActor (String) -> Target?,
-        delete: @escaping @MainActor (String, String?) async throws -> Void
+        delete: @escaping @MainActor (ReadingKey, String?) async throws -> Void
     ) {
         self.overview = overview
         self.timeline = timeline
@@ -88,7 +64,6 @@ public struct StatisticsObservation: Sendable {
         self.changes = changes
         self.invalidations = invalidations
         self.describeError = describeError
-        self.targetForKey = targetForKey
         self.delete = delete
     }
 }

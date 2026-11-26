@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import SwiftUI
 import Charts
 import MoonreadStatisticsDates
@@ -7,13 +8,13 @@ struct ReadingSessionsChart: View {
     let singleBook: Bool
     let theme: StatisticsAppearance
     @State private var selectedHour: Double?
-    private func row(_ value: StatisticsSpan) -> String { singleBook ? String(value.day) : value.key }
+    private func row(_ value: StatisticsSpan) -> String { singleBook ? String(value.day) : serializeReadingKey(key: value.key) }
     private func rowLabel(_ key: String) -> String {
         guard let span = spans.first(where: { row($0) == key }) else { return key }
         return singleBook ? StatisticsDates.dateLabel(span.day) : span.title
     }
     private var rows: [String] { spans.reduce(into: []) { if !$0.contains(row($1)) { $0.append(row($1)) } } }
-    private var keys: [String] { Array(Set(spans.map { $0.key })).sorted() }
+    private var keys: [String] { Array(Set(spans.map { serializeReadingKey(key: $0.key) })).sorted() }
     private var domain: ClosedRange<Double> {
         let low = max(0, floor(spans.map(\.startClock).min() ?? 0))
         return low...min(24, max(low + 1, ceil(spans.map(\.endClock).max() ?? 24)))
@@ -24,7 +25,7 @@ struct ReadingSessionsChart: View {
                 ForEach(spans) { span in
                     BarMark(xStart: .value(String(localized: "开始钟点"), span.startClock), xEnd: .value(String(localized: "结束钟点"), span.endClock),
                             y: .value(singleBook ? String(localized: "阅读日期") : String(localized: "书籍"), row(span)), height: .ratio(0.45))
-                        .foregroundStyle(by: .value(String(localized: "书籍"), span.key))
+                        .foregroundStyle(by: .value(String(localized: "书籍"), serializeReadingKey(key: span.key)))
                         .accessibilityLabel("\(span.title)，\(StatisticsDates.dateLabel(span.day))，\(span.time)")
                         .accessibilityValue(StatisticsDates.duration(span.milliseconds))
                 }
@@ -63,7 +64,7 @@ struct ReadingSessionRow: View {
     let showBook: Bool
     var compact = false
     let theme: StatisticsAppearance
-    let delete: @MainActor (String, String?) async throws -> Void
+    let delete: @MainActor (ReadingKey, String?) async throws -> Void
     let errorMessage: @MainActor (Error) -> String
     @State private var confirmDelete = false
     @State private var error: String?

@@ -11,8 +11,6 @@ import XCTest
 @testable import Moonread
 @testable import MoonreadStatistics
 
-private typealias AppStatisticsModel = StatisticsModel<StatisticsTarget, StatisticsOverview>
-
 final class StatisticsPresentationTests: ReaderIntegrationFixture {
 
   func testActiveDayCountIgnoresZeroDurationAndDeduplicatesLocalDays() {
@@ -38,7 +36,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     XCTAssertNil(entry.readingKey)
     XCTAssertNil(entry.bookId)
     let information = BookInformationModel(service: service)
-    let model = AppStatisticsModel(source: service.statisticsDataSource())
+    let model = StatisticsModel(source: service.statisticsDataSource())
     let month = StatisticsWindow(period: .month, date: Date(timeIntervalSince1970: 1_800_000_000))
     await information.load(route)
     XCTAssertNil(information.error)
@@ -60,7 +58,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     XCTAssertEqual(model.scope(month, target: .book(route.target)), scope, "Preparation does not replace the original file target")
     XCTAssertNotNil(model.state(month, target: .book(route.target)).overview)
     XCTAssertNil(model.state(month, target: .book(route.target)).error)
-    XCTAssertEqual(model.state(month, target: .book(route.target)).key, sha)
+    XCTAssertEqual(model.state(month, target: .book(route.target)).key, .formal(sha256: sha))
     let year = StatisticsWindow(period: .year, date: month.date)
     await model.load(year, target: .book(route.target))
     XCTAssertNotNil(model.state(year, target: .book(route.target)).overview)
@@ -69,7 +67,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     await information.finishPreparationForDataDeletion()
   }
   @MainActor
-  private func rangeContent(_ total: UInt64) -> AppStatisticsModel.Content {
+  private func rangeContent(_ total: UInt64) -> StatisticsModel.Content {
     .init(payload: .overview(.init(totalDurationMs: total, books: [], days: [], preferences: .init(enabled: true, generation: 0)), .notRequested))
   }
 
@@ -79,8 +77,8 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     started.expectedFulfillmentCount = 2
     let restarted = expectation(description: "invalidated range restarted")
     var reads = 0
-    var gates: [AppStatisticsModel.Scope: [CheckedContinuation<AppStatisticsModel.Content, Error>]] = [:]
-    let model = AppStatisticsModel(source: AppDataService.shared.statisticsDataSource(notifications: NotificationCenter()), fetch: { scope in
+    var gates: [StatisticsModel.Scope: [CheckedContinuation<StatisticsModel.Content, Error>]] = [:]
+    let model = StatisticsModel(source: AppDataService.shared.statisticsDataSource(notifications: NotificationCenter()), fetch: { scope in
       reads += 1
       return try await withCheckedThrowingContinuation { continuation in
         gates[scope, default: []].append(continuation)

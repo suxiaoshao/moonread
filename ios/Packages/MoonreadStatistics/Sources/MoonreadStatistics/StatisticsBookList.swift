@@ -1,22 +1,23 @@
+import MoonreadCoreBindings
 import SwiftUI
 import MoonreadDesign
 import MoonreadStatisticsDates
 
 /// A book's time in the range. The bar is scaled to the range's longest book and
 /// ends at its written duration, so it reads as a comparison, never as progress.
-struct StatisticsBookRow<Book: StatisticsBookValue, Route: Hashable>: View {
-    let book: Book
+struct StatisticsBookRow<Route: Hashable>: View {
+    let book: StatisticsBook
     let maximum: UInt64
     let route: Route
     let theme: StatisticsAppearance
-    let cover: (Book) -> AnyView
+    let cover: (StatisticsBook) -> AnyView
     var body: some View {
         NavigationLink(value: route) {
             HStack(spacing: ControlMetrics.spacing) {
                 cover(book).frame(width: 30, height: 42).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(verbatim: book.title).lineLimit(1)
-                    StatisticsDurationBar(fraction: Double(book.durationMs) / Double(max(1, maximum)), color: theme.statisticsColor(book.statisticsKey)) {
+                    StatisticsDurationBar(fraction: Double(book.durationMs) / Double(max(1, maximum)), color: theme.statisticsColor(serializeReadingKey(key: book.contentKey))) {
                         Text(StatisticsDates.duration(book.durationMs)).font(.caption).monospacedDigit()
                             .foregroundStyle(Color(uiColor: theme.secondary))
                     }
@@ -26,21 +27,21 @@ struct StatisticsBookRow<Book: StatisticsBookValue, Route: Hashable>: View {
                     } else { Text("仅查阅").font(.caption2).foregroundStyle(Color(uiColor: theme.secondary)) }
                 }
             }.padding(.vertical, 3)
-        }.accessibilityIdentifier("statistics-book-\(book.statisticsKey)")
+        }.accessibilityIdentifier("statistics-book-\(serializeReadingKey(key: book.contentKey))")
     }
 }
 
-struct StatisticsBookList<Book: StatisticsBookValue, Route: Hashable>: View {
-    let books: [Book]
+struct StatisticsBookList<Route: Hashable>: View {
+    let books: [StatisticsBook]
     let maximum: UInt64
     let window: StatisticsWindow
     let theme: StatisticsAppearance
-    let routeForBook: (Book, StatisticsWindow) -> Route
-    let cover: (Book) -> AnyView
+    let routeForBook: (StatisticsBook, StatisticsWindow) -> Route
+    let cover: (StatisticsBook) -> AnyView
     let titleMatches: (String, String) -> Bool
     @State private var query = ""
     var body: some View {
-        List(books.filter { titleMatches($0.title, query) }, id: \.statisticsKey) {
+        List(books.filter { titleMatches($0.title, query) }, id: \.contentKey) {
             StatisticsBookRow(book: $0, maximum: maximum, route: routeForBook($0, window), theme: theme, cover: cover).listRowBackground(Color(uiColor: theme.surface))
         }.modifier(theme.page).navigationTitle("读过的书").searchable(text: $query, prompt: "搜索书名")
     }

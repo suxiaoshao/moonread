@@ -2,11 +2,6 @@ import MoonreadCoreBindings
 import Foundation
 import MoonreadStatistics
 
-enum StatisticsTarget: Hashable, Sendable {
-    case all, book(BookTarget)
-    case books(Set<String>)
-}
-
 struct StatisticsRoute: Hashable {
     enum Origin: Hashable { case library, reader(fileID: String? = nil) }
 
@@ -38,11 +33,11 @@ extension AppDataService {
         switch read {
         case .identityPending(let fileID): .identityPending(fileID: fileID)
         case .ready(let read):
-            .ready(.init(value: read.value, key: read.key?.storageKey, compatibilityNotice: read.compatibilityNotice))
+            .ready(.init(value: read.value, key: read.key, compatibilityNotice: read.compatibilityNotice))
         }
     }
 
-    @MainActor func statisticsDataSource(notifications: NotificationCenter = .default) -> StatisticsDataSource<StatisticsTarget, StatisticsOverview> {
+    @MainActor func statisticsDataSource(notifications: NotificationCenter = .default) -> StatisticsDataSource {
         .init(
             overview: { bounds, target in
                 try Self.presentation(await self.statisticsRead(first: bounds.lowerBound, last: bounds.upperBound,
@@ -53,7 +48,7 @@ extension AppDataService {
                                                                         target: target ?? .all))
             },
             details: { bounds, last, target, snapshot in
-                let expected = StatisticsRead(value: snapshot.value, key: try snapshot.key.map { try parseReadingKey(value: $0) },
+                let expected = StatisticsRead(value: snapshot.value, key: snapshot.key,
                                               compatibilityNotice: snapshot.compatibilityNotice)
                 guard let result = try await self.statisticsDetails(first: bounds.lowerBound, last: bounds.upperBound,
                     cumulativeLast: last, target: target ?? .all, matching: expected)
@@ -71,8 +66,7 @@ extension AppDataService {
                 ]
             },
             describeError: { (ReaderMessages.error($0), $0 is UserSyncCompatibilityError) },
-            targetForKey: { (try? parseReadingKey(value: $0)).map { .book(.record(key: $0)) } },
-            delete: { try await self.deleteStatistics(book: $0, session: $1) }
+            delete: { try await self.deleteStatistics(book: serializeReadingKey(key: $0), session: $1) }
         )
     }
 }

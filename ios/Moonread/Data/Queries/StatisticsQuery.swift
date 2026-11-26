@@ -1,3 +1,4 @@
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 import GRDB
@@ -6,16 +7,6 @@ import Synchronization
 import struct MoonreadQueries.StatisticsActivitiesQuery
 import struct MoonreadQueries.StatisticsOverviewQuery
 import struct MoonreadQueries.StatisticsWidgetQuery
-
-extension StatisticsDay: StatisticsDayValue {}
-
-extension StatisticsBook: StatisticsBookValue {
-    public var statisticsKey: String { contentKey.storageKey }
-}
-
-extension StatisticsOverview: StatisticsOverviewValue {
-    public var statisticsEnabled: Bool { preferences.enabled }
-}
 
 enum HistoryCompatibility {
     static func incomplete(_ db: Database, encodedKeys: String?) throws -> Bool {
@@ -416,7 +407,7 @@ extension StatisticsSpan {
     static func merge(_ rows: [StatisticsTimelineRow]) throws -> StatisticsTimeline {
         try merge(rows.lazy.map { row in
             Self(id: .init(kind: row.id.kind, recordID: row.id.recordID), sessionID: row.sessionId,
-                 key: row.contentKey.storageKey, title: row.title, day: row.localDay,
+                 key: row.contentKey, title: row.title, day: row.localDay,
                  offset: row.utcOffsetSeconds, preview: row.preview, start: row.startedMs,
                  end: row.endedMs, milliseconds: row.durationMs)
         }, sum: { try ReadingDayRows.sumMilliseconds($0) })

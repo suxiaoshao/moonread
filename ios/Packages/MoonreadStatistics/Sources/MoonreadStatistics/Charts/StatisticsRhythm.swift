@@ -1,23 +1,24 @@
+import MoonreadCoreBindings
 import SwiftUI
 import Charts
 import MoonreadStatisticsDates
 
 /// The selected range's day-level rhythm: seven daily bars, a month calendar,
 /// a year's monthly bars, or all-time monthly or yearly bars.
-struct StatisticsRhythm<Day: StatisticsDayValue>: View {
+struct StatisticsRhythm: View {
     let period: StatisticsPeriod
     let bounds: ClosedRange<Int64>
-    let days: [Day]
+    let days: [StatisticsDay]
     let today: Int64
-    let book: String?
+    let book: ReadingKey?
     let theme: StatisticsAppearance
     let open: (StatisticsDayRoute) -> Void
     private let buckets: [StatisticsBucket]
     private let allByMonth: Bool
     @State private var selectedBucket: Int64?
 
-    init(period: StatisticsPeriod, bounds: ClosedRange<Int64>, days: [Day], today: Int64,
-         book: String?, theme: StatisticsAppearance, open: @escaping (StatisticsDayRoute) -> Void) {
+    init(period: StatisticsPeriod, bounds: ClosedRange<Int64>, days: [StatisticsDay], today: Int64,
+         book: ReadingKey?, theme: StatisticsAppearance, open: @escaping (StatisticsDayRoute) -> Void) {
         self.period = period; self.bounds = bounds; self.days = days
         self.today = today; self.book = book; self.theme = theme; self.open = open
         let years = period == .all ? StatisticsBuckets.years(days, today: today) : []
@@ -146,8 +147,8 @@ private struct StatisticsBarChart: View {
 
 /// A weekday-aligned month. Days that have not happened are outlined, not zero;
 /// tapping a day with reading opens that day.
-private struct ReadingCalendarChart<Day: StatisticsDayValue>: View {
-    let days: [Day]
+private struct ReadingCalendarChart: View {
+    let days: [StatisticsDay]
     let month: ClosedRange<Int64>
     let today: Int64
     let theme: StatisticsAppearance

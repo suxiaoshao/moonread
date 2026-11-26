@@ -6,6 +6,7 @@ DerivedData/
 build/
 docs/site/public/
 .build/
+ios/Packages/*/Package.resolved
 xcuserdata/
 *.xcuserstate
 ios/LocalSigning.xcconfig

@@ -1,10 +1,11 @@
+import MoonreadCoreBindings
 import SwiftUI
 
 /// The existing all-sessions destination, with the selected book/range already applied.
 struct StatisticsSessionsView: View {
     let spans: [StatisticsSpan]
     let theme: StatisticsAppearance
-    let delete: @MainActor (String, String?) async throws -> Void
+    let delete: @MainActor (ReadingKey, String?) async throws -> Void
     let errorMessage: @MainActor (Error) -> String
     var body: some View {
         List {

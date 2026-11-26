@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import MoonreadStatisticsDates
 
 public struct StatisticsSpan: Identifiable, Equatable, Sendable {
@@ -15,7 +16,7 @@ public struct StatisticsSpan: Identifiable, Equatable, Sendable {
 
     public let id: ID
     let sessionID: String
-    let key: String
+    let key: ReadingKey
     let title: String
     let day: Int64
     let offset: Int32
@@ -24,7 +25,7 @@ public struct StatisticsSpan: Identifiable, Equatable, Sendable {
     private(set) var end: Int64
     private(set) var milliseconds: UInt64
 
-    public init(id: ID, sessionID: String, key: String, title: String, day: Int64,
+    public init(id: ID, sessionID: String, key: ReadingKey, title: String, day: Int64,
                 offset: Int32, preview: Bool, start: Int64, end: Int64, milliseconds: UInt64) {
         self.id = id
         self.sessionID = sessionID

@@ -2,14 +2,14 @@ import SwiftUI
 import MoonreadStatisticsDates
 
 /// One local calendar day: its clock-hour timeline and exact sessions.
-struct StatisticsDayView<Target: Hashable & Sendable, Overview: StatisticsOverviewValue>: View {
+struct StatisticsDayView: View {
     let route: StatisticsDayRoute
     let theme: StatisticsAppearance
-    let source: StatisticsDataSource<Target, Overview>
+    let source: StatisticsDataSource
     let loading: (CGFloat, Bool) -> AnyView
-    @State private var model: StatisticsModel<Target, Overview>
+    @State private var model: StatisticsModel
 
-    init(route: StatisticsDayRoute, theme: StatisticsAppearance, source: StatisticsDataSource<Target, Overview>,
+    init(route: StatisticsDayRoute, theme: StatisticsAppearance, source: StatisticsDataSource,
          loading: @escaping (CGFloat, Bool) -> AnyView) {
         self.route = route
         self.theme = theme
@@ -18,11 +18,11 @@ struct StatisticsDayView<Target: Hashable & Sendable, Overview: StatisticsOvervi
         _model = State(initialValue: StatisticsModel(source: source))
     }
 
-    private var scope: StatisticsModel<Target, Overview>.Scope {
-        .init(bounds: route.day...route.day, target: route.book.flatMap { source.targetForKey($0) },
+    private var scope: StatisticsModel.Scope {
+        .init(bounds: route.day...route.day, target: route.book.map { .book(.record(key: $0)) },
               cumulativeLast: nil, purpose: .activities)
     }
-    private var state: StatisticsModel<Target, Overview>.State { model.state(scope) }
+    private var state: StatisticsModel.State { model.state(scope) }
     private var spans: [StatisticsSpan] { state.spans }
     private var compatibilityNotice: String? { state.compatibilityNotice }
     private var loaded: Bool { state.content != nil }
