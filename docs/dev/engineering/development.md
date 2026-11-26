@@ -39,7 +39,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - App Store 发布后，`release/x.y` 通过 PR 以普通 **merge commit** 合回 `main`，保留版本开发历史；发布回合使用普通 merge，不 squash 发布分支；下述已上线 hotfix 回合也使用普通 merge。
 - 线上问题从 `main` 建立 `hotfix/x.y.z`，在该分支修复、打包并提审；App Store 上线后才通过 PR 以普通 merge 回 `main` 并打补丁 tag（如 `v1.1.1`），随后把 `main` 合进当前 `release/x.y`。补丁审核及等待上线期间不提前合回 main，确保 main 的 App 代码始终对应线上版本。
 - PR 合入 `release/x.y` 或 `hotfix` 分支时，GitHub 不会根据 `Closes` 自动关闭 issue。合并后需手动关闭对应 issue，评论注明合入的分支与提交，并把看板状态改为「完成」。
-- `main` 与 `release/**` 必须经过 PR 并满足目标分支的[必需检查](repository.md#仓库设置)，解决所有讨论，禁止强推和删除；维护者决定何时合并，不由工具自动合并。
+- [「版本分支保护」规则集](repository.md#仓库设置)统一覆盖 `main`、`release/*` 和 `hotfix/*`。合入须走 PR，通过 `Rust and iOS tests` 并解决所有讨论。规则集禁止强推和删除，合并时机由维护者决定。
 
 发版清单（分支）：
 
@@ -48,7 +48,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让常规依赖版本更新 PR 指向当前版本分支。
 - Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 PR 的 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 `hotfix/x.y.z` 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。
-- 当前开发分支为 `release/1.9`，已发布版本见[开发文档入口](../README.md)。常规依赖更新目标以 [Dependabot 配置](../../../.github/dependabot.yml) 为准，新版本分支切换后需核对实际配置。
+- 当前开发分支为 `release/1.10`。1.9 已提审，正在等待审核。`main` 对应已发布的 1.8，见[开发文档入口](../README.md)。常规依赖更新目标以 [Dependabot 配置](../../../.github/dependabot.yml) 为准，新版本分支切换后需核对实际配置。
 
 签名配置、小说原件、构建产物与凭据不随代码推送。CI、仓库保护、模板及依赖更新见[仓库与持续集成](repository.md)，测试范围与推送前要求见[测试原则](verification.md#测试原则)。
 
