@@ -2,7 +2,6 @@ import MoonreadSearchText
 import MoonreadData
 import MoonreadCoreBindings
 import CoreSpotlight
-import GRDB
 import Foundation
 import UniformTypeIdentifiers
 import SwiftUI
@@ -101,50 +100,6 @@ private final class SystemSpotlightAcknowledgement: @unchecked Sendable {
         })
     }
 }
-struct SystemSubmissionState: Sendable {
-    var scope: String
-    var contentVersion = 0
-    var ids: [String] = []
-}
-
-extension ReaderIndex {
-    func systemSubmission(_ kind: String) throws -> SystemSubmissionState {
-        try read { db in
-            guard let row = try Row.fetchOne(db, sql: """
-                SELECT scope,format FROM main.system_submission_state WHERE kind=?
-                """, arguments: [kind]) else { return .init(scope: "") }
-            let ids = try String.fetchAll(db, sql: """
-                SELECT item_id FROM main.system_submission_item WHERE kind=? ORDER BY item_id
-                """, arguments: [kind])
-            return .init(scope: row["scope"], contentVersion: row["format"], ids: ids)
-        }
-    }
-
-    func saveSystemSubmission(_ kind: String, state: SystemSubmissionState) throws {
-        try write { db in
-            try db.execute(sql: """
-                INSERT INTO main.system_submission_state VALUES(?,?,?)
-                ON CONFLICT(kind) DO UPDATE SET scope=excluded.scope, format=excluded.format
-                """, arguments: [kind,state.scope,state.contentVersion])
-            try db.execute(sql: "DELETE FROM main.system_submission_item WHERE kind=?", arguments: [kind])
-            for id in state.ids {
-                try db.execute(sql: "INSERT INTO main.system_submission_item VALUES(?,?)", arguments: [kind,id])
-            }
-        }
-    }
-
-    func systemCatalogScope() throws -> String {
-        try write { db in
-            if let scope = try String.fetchOne(db, sql: "SELECT scope FROM main.system_catalog_state") { return scope }
-            let scope = UUID().uuidString
-            try db.execute(sql: "INSERT INTO main.system_catalog_state VALUES(1,?)", arguments: [scope])
-            return scope
-        }
-    }
-
-
-}
-
 extension AppDataService {
     func clearLegacySpotlight() async throws {
         let native = await SystemSpotlightNative(reindex: {}, thumbnail: { _ in nil })

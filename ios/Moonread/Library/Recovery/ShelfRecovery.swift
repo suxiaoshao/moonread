@@ -4,7 +4,6 @@ import MoonreadLibrary
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
-import GRDB
 import SwiftUI
 
 struct ShelfRecoverySnapshot: Sendable, Equatable {

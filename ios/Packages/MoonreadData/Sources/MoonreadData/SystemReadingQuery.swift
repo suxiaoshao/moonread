@@ -234,3 +234,10 @@ extension ReaderIndex {
         try await session.readUsersForPublication(lease) { try SystemReadingRead.catalogue($0, scope: self.lease.scope) }
     }
 }
+
+extension ReaderIndex {
+    public func systemBookSources(sha: String) throws -> [SystemReadingRead.Source] {
+        let scope = lease.scope
+        return try session.readUsers(lease) { try SystemReadingRead.sources($0, scope: scope, sha: sha) }
+    }
+}

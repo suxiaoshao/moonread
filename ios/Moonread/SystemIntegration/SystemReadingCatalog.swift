@@ -382,11 +382,7 @@ extension AppDataService {
         NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
     }
     func resolveSystemReadingBook(_ id: SystemReadingBookID, automatic: Bool = false) async throws -> LibraryEntry {
-        let sources = try await fixedReaderRead { index in
-            try index.session.readUsers(index.lease) {
-                try SystemReadingRead.sources($0, scope: index.lease.scope, sha: id.sha)
-            }
-        }
+        let sources = try await fixedReaderRead { try $0.systemBookSources(sha: id.sha) }
         guard !sources.isEmpty else { throw SystemReadingRouteError.unavailable }
         if automatic {
             let policy = systemExposurePolicy()
