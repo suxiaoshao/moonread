@@ -185,7 +185,7 @@ extension AppDataService {
         dataChanged()
     }
 
-    func writePosition(_ id: String, offset: UInt64, expectedConfiguration: UUID? = nil,
+    func writePosition(_ id: String, offset: UInt64, at now: Int64? = nil, expectedConfiguration: UUID? = nil,
                        admission offered: DataSessionLease? = nil) async throws {
         let admission = try offered ?? indexStore().lease
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
@@ -195,7 +195,7 @@ extension AppDataService {
         guard admission == index.lease else { throw CancellationError() }
         try promoteUserDataLocked(id, index: index)
         try index.writeReadingPosition(bookID: id, offset: offset, hint: positionSourceHint(id), file: readingSourceIDs[id],
-                                       device: userDevice, now: readingClock, token: UUID().uuidString)
+                                       device: userDevice, now: now ?? readingClock, token: UUID().uuidString)
         dataChanged()
     }
 
