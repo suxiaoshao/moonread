@@ -82,9 +82,10 @@ extension AppDataService {
         let documents = try manager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
         let share = appGroup?.appending(path: "ShareInbox", directoryHint: .isDirectory)
         let work = ["MetadataImport", "ReadingBackups"].map { support.appending(path: $0, directoryHint: .isDirectory) }
-        let tempWork = ["Moonread-MetadataImports", support.lastPathComponent + "-CoverDrafts",
-                        "Moonread-Exports", "Moonread-Drops", "Moonread-Cloud-Handoff"]
-            .map { temp.appending(path: $0, directoryHint: .isDirectory) }
+        let tempWork = [MetadataTemporaryFiles.importRoot,
+                        MetadataTemporaryFiles.coverDraftRoot(dataDirectoryName: support.lastPathComponent)]
+            + ["Moonread-Exports", "Moonread-Drops", "Moonread-Cloud-Handoff"]
+                .map { temp.appending(path: $0, directoryHint: .isDirectory) }
         var result = StorageOverview(), seen: [UInt64: Set<UInt64>] = [:]
         let legacyFiles = ["reader.sqlite3", "user-data.store", "pending-users.store"]
 
@@ -142,7 +143,7 @@ extension AppDataService {
         let index = try indexStore()
         let packages = try index.session.obsoleteMetadataPackages(index.lease,
             directory: index.session.layout.applicationSupport.appending(path: "MetadataImport", directoryHint: .isDirectory))
-        let temporary = try MetadataTemporaryFiles.stale(MetadataTemporaryFiles.root("Moonread-MetadataImports"))
+        let temporary = try MetadataTemporaryFiles.stale(MetadataTemporaryFiles.importRoot)
             + MetadataTemporaryFiles.stale(coverDraftRoot())
         return .init(temporary: temporary, packages: packages)
     }
@@ -152,7 +153,7 @@ extension AppDataService {
         let result = try index.session.obsoleteMetadataPackages(index.lease,
             directory: index.session.layout.applicationSupport.appending(path: "MetadataImport", directoryHint: .isDirectory),
             remove: inventory.packages.obsolete)
-        let roots = [MetadataTemporaryFiles.root("Moonread-MetadataImports"), coverDraftRoot()]
+        let roots = [MetadataTemporaryFiles.importRoot, coverDraftRoot()]
         let stale = Set(try roots.flatMap { try MetadataTemporaryFiles.stale($0).map(\.url) })
         return inventory.temporary.filter { stale.contains($0.url) }
             .reduce(result.removed) { $0 + ((try? $1.removeIfUnchanged()) ?? 0) }

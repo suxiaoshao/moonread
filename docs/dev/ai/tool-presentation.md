@@ -15,6 +15,7 @@
 | 书库与资料 | ls | 浏览书架 | folder | 书架/文件夹名 |
 | 搜索 | search_books | 查找书籍 | magnifyingglass | 查询词/筛选条件 |
 | 书库与资料 | get_book | 查看书籍资料 | book.closed | 书名 |
+| 搜索 | list_filter_options | 查找筛选选项 | magnifyingglass | 候选字段与查询词 |
 | 搜索 | query_books_by_filter | 按条件查找小说 | line.3.horizontal.decrease.circle | 条件、总命中数与资料不足数 |
 | 书库与资料 | show_book_list | 展示书单 | books.vertical | 书名或实际本数与首项 |
 | 正文与目录 | get_chapters | 查看目录 | list.bullet | 书名 |
@@ -32,9 +33,10 @@
 | 工具 | 动作名称 | 建议 SF Symbol |
 | --- | --- | --- |
 | web_search | 搜索网页 | globe |
-| find_cover | 查找封面 | photo.on.rectangle |
+| find_cover | 查找封面 | photo.on.rectangle.angled |
 | generate_image | 生成图片 | photo.badge.plus |
-| propose_book_metadata | 建议更新资料 | square.and.pencil |
+| propose_book_metadata | 资料建议 | text.badge.checkmark |
+| propose_book_filter | 建议书架筛选 | line.3.horizontal.decrease.circle |
 | propose_note | 建议添加/编辑批注 | highlighter |
 | propose_bookmark | 建议添加书签 | bookmark |
 | propose_cover | 建议替换封面 | photo |
@@ -44,19 +46,7 @@
 
 ## 调用行与执行状态
 
-一行内容：左侧语义图标，中间“动作 + 对象”，右侧状态/展开入口。默认收起；点开看简洁参数与结果，原始 JSON 不作为默认正文。状态独立：
-
-- 排队：静态等待提示。
-- 执行中：保留语义图标，另显示小型进度指示，不让书/文件夹持续旋转。
-- 等待确认：静态问号标记，展开提供确认/拒绝；不等同于模型思考。
-- 成功：保留原图标，能展示结果数量时显示数量，无需每条永久绿色勾。
-- 部分结果：明确显示“部分结果”，不标为失败，也不写成检索全书。
-- 失败：感叹号与简短错误，使用主题危险色；原工具语义仍可识别。
-- 停止/拒绝：分别显示“已停止”及具体动作状态（例如“未准备”），使用次要色，不算执行故障。
-
-每轮运行时展开一层过程，当前页完成时保持展开，重开时已完成轮次折叠为“查看过程”；最终回复身份保持，手动展开可看历史活动。稳定行与跟随规则见[消息呈现](rendering.md)。连续推理/工具按两段回复之间分组折叠，工具参数与结果在详情 sheet 展示。请求失败与正文准备确认的布局、动作及实现边界见[对话错误与单次操作确认](rendering.md)。
-
-同一 callID 的开始、进度、结果更新同一调用条目，不产生三条重复消息。重复调用保留独立身份；连续活动按回复边界聚合展示，组身份取首条活动 ID，不随新增事件或文本增量改变。图标/动作命名在调用行、展开详情和任务活动栏复用；月亮只投影本次开书所选对话；多个并行工具时按固定优先级显示一个工具族姿态（见[阅读月亮入口](../design/ai.md#阅读月亮入口)），数量由无障碍活动标题（“正在执行 N 项操作”）读出，不以最后到达的事件反复闪换图标。
+过程行显示工具标题与调用摘要。请求和已保存的结果可在详情中查看；成功且已有对应回复结果卡或图片时，由回复中的入口负责打开。过程分组、运行状态、稳定身份及详情导航见[每轮回复的展示](rendering.md#每轮回复的展示)。
 
 正文准备是工具内部阶段：资料查询仍归 get_book，等待下载可在状态位置显示 arrow.down.circle，不伪造额外模型工具调用。压缩是运行器活动，用 archivebox；推理是模型事件，用 sparkles，仅有真实推理事件时显示；它们不计入基础读取工具。
 

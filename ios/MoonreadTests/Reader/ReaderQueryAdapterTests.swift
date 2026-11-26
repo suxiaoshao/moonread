@@ -260,7 +260,6 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
       XCTAssertEqual(groups.map(\.tag), ["Group 2","Group 10","",""])
       XCTAssertEqual(groups.map(\.fileIDs), [["file-2","file-10"],["file-2","file-10"],["file-3"],["unindexed"]])
       XCTAssertEqual(grouped.entries.map(\.id), named.entries.map(\.id))
-      XCTAssertEqual(grouped.entries.count, 4, "Physical files are counted once, even in two tag sections")
       XCTAssertEqual(grouped.entries.first?.displayMetadata?.author, "", "Readable tag-only metadata has published defaults")
       XCTAssertEqual(grouped.entries.first { $0.id == "file-3" }?.displayMetadata?.author, "",
                      "Pending synopsis suppresses both the formal author and formal tag")

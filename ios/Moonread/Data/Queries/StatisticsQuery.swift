@@ -302,10 +302,6 @@ enum StatisticsHistoryRead {
         try selected(db, scope: scope, target: .all) { try buckets(db, window: window, selection: $0) }
     }
 
-    static func compatibility(_ db: Database, scope: DataScope, target: StatisticsTarget) throws -> Result<Void> {
-        try selected(db, scope: scope, target: target) { _ in () }
-    }
-
     static func summarizeDays(_ buckets: [Bucket]) throws -> [StatisticsDay] {
         try dayTotals(buckets).sorted { $0.key < $1.key }.map { day, value in
             .init(day: day, durationMs: value.duration, bookCount: UInt64(value.books.count))
@@ -554,17 +550,6 @@ extension AppDataService {
             guard case let .value(buckets,_,incomplete) = input else { throw ReaderError.InvalidRange }
             return try .init(value: StatisticsHistoryRead.summarizeDays(buckets), key: nil,
                              compatibilityNotice: Self.statisticsNotice(incomplete))
-        }
-    }
-
-    func statisticsCompatibilityNotice(book: String? = nil) async throws -> String? {
-        let target = try statisticsTarget(book: book)
-        return try await fixedReaderRead { index in
-            let input = try index.session.readUsers(index.lease) {
-                try StatisticsHistoryRead.compatibility($0, scope: index.lease.scope, target: target)
-            }
-            guard case let .value(_,_,incomplete) = input else { throw ReaderError.ImportBusy }
-            return Self.statisticsNotice(incomplete)
         }
     }
 

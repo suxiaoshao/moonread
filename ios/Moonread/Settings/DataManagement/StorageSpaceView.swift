@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-private extension StorageCategory {
+extension StorageCategory {
     var title: LocalizedStringResource {
         switch self {
         case .books: .init("正文与封面", table: "Storage")
@@ -25,7 +25,7 @@ private extension StorageCategory {
     }
 }
 
-private extension StorageOther {
+extension StorageOther {
     var title: LocalizedStringResource {
         switch self {
         case .shelf: .init("本机书架文件", table: "Storage")
@@ -124,282 +124,7 @@ struct StorageSpaceView: View {
     }
 }
 
-private struct StorageCategoryPage: View {
-    let category: StorageCategory
-    let model: StorageSpaceModel
-    let data: DataManagementModel
-
-    var body: some View {
-        if category == .database {
-            StorageDatabasePage(model: model, data: data)
-        } else {
-            StoragePage(title: category.title) {
-                content
-            }
-            .task { if needsLoad { await model.load(category) } }
-            .refreshable { await model.loadOverview(); await model.load(category) }
-        }
-    }
-
-    private var needsLoad: Bool {
-        switch category {
-        case .books: model.bodies == nil
-        case .work: model.work == nil
-        case .old: model.legacy == nil
-        default: false
-        }
-    }
-
-    @ViewBuilder private var content: some View {
-        if let error = model.errors[category] {
-            StorageErrorRow(message: error) { await model.load(category) }
-        } else if needsLoad {
-            ProgressView().frame(maxWidth: .infinity)
-        } else {
-            switch category {
-            case .books:
-                if let bodies = model.bodies {
-                    StorageGroup("可管理内容") {
-                        link(.cache)
-                    }
-                    if !bodies.held.isEmpty {
-                        StorageGroup("暂时保留") {
-                            StorageRow(title: .init("任务使用的正文", table: "Storage"),
-                                       detail: .init("\(bodies.held.count) 本等待继续导入", table: "Storage"),
-                                       bytes: bodies.held.reduce(0) { $0 + $1.bytes })
-                        }
-                    }
-                    StorageHint("正文保存在索引库内，清理后空闲空间可继续使用。")
-                }
-            case .work:
-                if let work = model.work {
-                    if work.removableBytes > 0 {
-                        StorageGroup("可清理") { link(.imports) }
-                    }
-                    let total = model.overview?.sizes[.work, default: 0] ?? 0
-                    let accounted = work.removableBytes + work.packages.retained
-                    if work.packages.retained > 0 || total > accounted {
-                        StorageGroup("暂时保留") {
-                            if work.packages.retained > 0 {
-                                StorageRow(title: .init("导入任务的原包", table: "Storage"),
-                                           detail: work.packages.unverified
-                                               ? .init("暂时无法核对原包归属", table: "Storage")
-                                               : nil,
-                                           bytes: work.packages.retained)
-                            }
-                            if total > accounted {
-                                StorageRow(title: .init("其余任务与临时文件", table: "Storage"), bytes: total - accounted)
-                            }
-                        }
-                    } else if work.removableBytes == 0 {
-                        StorageHint("暂无可清理项目")
-                    }
-                }
-            case .old:
-                StorageGroup("可清理") { link(.legacy) }
-                let total = model.overview?.sizes[.old, default: 0] ?? 0
-                let eligible = model.bytes(for: .legacy)
-                if total > eligible {
-                    StorageGroup("暂时保留") {
-                        StorageRow(title: .init("旧版阅读数据", table: "Storage"),
-                                   detail: .init("尚未确认完整迁入", table: "Storage"), bytes: total - eligible)
-                    }
-                }
-            case .other:
-                if let overview = model.overview {
-                    StorageGroup("仅查看") {
-                        ForEach(StorageOther.allCases, id: \.self) { item in
-                            if let bytes = overview.other[item], bytes > 0 { StorageRow(title: item.title, bytes: bytes) }
-                        }
-                    }
-                }
-            case .database, .app: EmptyView()
-            }
-        }
-    }
-
-    @ViewBuilder private func link(_ kind: StorageCleanupKind) -> some View {
-        let bytes = model.bytes(for: kind)
-        if bytes > 0 {
-            NavigationLink {
-                StorageSelectionPage(model: model, preselectedKind: kind)
-            } label: {
-                StorageRow(title: kind.title, bytes: bytes, navigates: true)
-            }.buttonStyle(.plain)
-        } else {
-            StorageRow(title: kind.title, bytes: 0)
-        }
-    }
-}
-
-private struct StorageSelectionPage: View {
-    let model: StorageSpaceModel
-    let preselectedKind: StorageCleanupKind?
-    @Environment(LibraryModel.self) private var library
-    @Environment(\.theme) private var theme
-    @State private var selectedKinds = Set<StorageCleanupKind>()
-    @State private var request: StorageCleanupRequest?
-
-    private var selection: StorageCleanupRequest {
-        model.confirmation(kinds: selectedKinds, shell: library.shell)
-    }
-
-    var body: some View {
-        StoragePage(title: .init("选择清理项目", table: "Storage")) {
-            if model.available.isEmpty {
-                StorageHint("暂无可清理项目")
-            } else {
-                StorageGroup("选择要清理的内容") {
-                    ForEach(model.available) { kind in
-                        let picked = selectedKinds.contains(kind)
-                        Button {
-                            if !selectedKinds.insert(kind).inserted { selectedKinds.remove(kind) }
-                        } label: {
-                            StorageRow(title: kind.title, bytes: model.bytes(for: kind), picked: picked)
-                        }.buttonStyle(.plain).accessibilityAddTraits(picked ? .isSelected : [])
-                    }
-                }
-            }
-            if !selection.readerTitles.isEmpty {
-                Text("将关闭的阅读页：\(selection.readerTitles.formatted(.list(type: .and)))", tableName: "Storage")
-                    .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-            }
-            StorageAction(title: selectionTitle, progress: cleanupProgress, disabled: selection.bytes == 0 || model.busy) {
-                request = selection
-            }.accessibilityIdentifier("clearRebuildableCaches")
-            if let message = model.cleanupMessage { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
-        }
-        .disabled(model.busy)
-        .toolbar {
-            if cleanupProgress != nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("取消", action: model.cancelCleanup)
-                        .toolbarGlyph()
-                        .disabled(model.operation == .cancelling)
-                        .accessibilityIdentifier("cancelStorageCleanup")
-                }
-            }
-        }
-        .onAppear {
-            if selectedKinds.isEmpty {
-                selectedKinds = preselectedKind.map { [$0] } ?? Set(model.available)
-            }
-        }
-        .refreshable { if !model.busy { await model.refresh() } }
-        .alert(Text(alertTitle), isPresented: Binding(get: { request != nil }, set: { if !$0 { request = nil } }),
-               presenting: request) { confirmed in
-            Button(role: .destructive) {
-                model.clean(confirmed, shell: library.shell)
-            } label: { Text(actionTitle(confirmed)) }
-            Button("取消", role: .cancel) {}
-        } message: { confirmed in
-            Text(verbatim: confirmationMessage(confirmed))
-        }
-    }
-
-    private func confirmationMessage(_ confirmed: StorageCleanupRequest) -> String {
-        let size = StorageSpaceModel.formatted(confirmed.bytes)
-        let kinds = confirmed.kinds.map { String(localized: $0.title) }.formatted(.list(type: .and))
-        var message = [String(localized: "将清理\(kinds)，约 \(size)。", table: "Storage")]
-        if !confirmed.bodies.isEmpty {
-            message.append(String(localized: "再次阅读需要原文件。进度、书签、批注和统计会保留。", table: "Storage"))
-        }
-        if !confirmed.readerTitles.isEmpty {
-            let titles = confirmed.readerTitles.formatted(.list(type: .and))
-            message.append(String(localized: "将保存进度并关闭\(titles)。听书和自动阅读也会停止。", table: "Storage"))
-        }
-        return message.joined(separator: "\n\n")
-    }
-
-    private var cleanupProgress: LocalizedStringResource? {
-        switch model.operation {
-        case .cleaning: .init("正在清理…", table: "Storage")
-        case .cancelling: .init("正在取消…", table: "Storage")
-        default: nil
-        }
-    }
-
-    private var selectionTitle: LocalizedStringResource {
-        if selection.bytes == 0 { return .init("清理所选项目", table: "Storage") }
-        return .init("清理 \(StorageSpaceModel.formatted(selection.bytes))", table: "Storage")
-    }
-
-    private var alertTitle: LocalizedStringResource {
-        if request?.readers.isEmpty == false { return .init("关闭阅读页并清理？", table: "Storage") }
-        return .init("清理所选项目？", table: "Storage")
-    }
-
-    private func actionTitle(_ confirmed: StorageCleanupRequest) -> LocalizedStringResource {
-        return confirmed.readers.isEmpty ? .init("清理", table: "Storage") : .init("关闭并清理", table: "Storage")
-    }
-}
-
-private struct StorageDatabasePage: View {
-    let model: StorageSpaceModel
-    let data: DataManagementModel
-    @Environment(CloudStore.self) private var cloud
-    @State private var confirmation = false
-
-    private var unavailable: Bool {
-        if cloud.status.syncing || data.busy || MetadataExchangeModel.shared.saving || MetadataExchangeModel.shared.loading { return true }
-        if case .working = data.backupImport.phase { return true }
-        if case .running = data.backupExport.phase { return true }
-        return false
-    }
-
-    var body: some View {
-        StoragePage(title: .init("阅读数据库", table: "Storage")) {
-            if let inventory = model.database {
-                StorageGroup("当前阅读数据库") {
-                    StorageRow(title: .init("可复用的空闲空间", table: "Storage"), bytes: inventory.freeBytes)
-                    StorageRow(title: .init("未使用的封面", table: "Storage"),
-                               detail: .init("\(inventory.orphanCount) 个", table: "Storage"), bytes: inventory.orphanBytes)
-                }
-                if let overview = model.overview, overview.sizes[.database, default: 0] > overview.activeDatabase {
-                    StorageGroup("仅查看") {
-                        StorageRow(title: .init("其他阅读数据库", table: "Storage"),
-                                   bytes: overview.sizes[.database, default: 0] - overview.activeDatabase)
-                    }
-                }
-                StorageHint("整理会移除无引用的封面并收回数据库空闲空间。")
-                let organizing = model.operation == .organizing
-                StorageAction(title: .init("整理数据库", table: "Storage"),
-                              progress: organizing ? .init("正在整理…", table: "Storage") : nil,
-                              disabled: !inventory.canOrganize || unavailable || model.busy) { confirmation = true }
-                if organizing {
-                    StorageHint("整理开始后无法取消。")
-                } else if unavailable {
-                    StorageHint("请在阅读数据同步或其他任务结束后再整理。")
-                }
-            } else if model.errors[.database] == nil {
-                ProgressView().frame(maxWidth: .infinity)
-            }
-            if let error = model.errors[.database] { StorageErrorRow(message: error) { await model.load(.database) } }
-            if let result = model.databaseResult {
-                Text(result.incomplete ? .init("已清除未使用的封面，数据库尚未整理。", table: "Storage")
-                                       : .init("数据库已整理", table: "Storage")).font(.headline)
-                StorageGroup("整理结果") {
-                    StorageRow(title: .init("清除未使用的封面", table: "Storage"),
-                               detail: .init("\(result.coversRemoved) 个", table: "Storage"))
-                    if !result.incomplete {
-                        StorageRow(title: .init("数据库文件减少", table: "Storage"), bytes: result.bytesRecovered)
-                    }
-                }
-            }
-        }
-        .task { await model.load(.database) }
-        .refreshable { if !model.busy { await model.loadOverview(); await model.load(.database) } }
-        .alert(Text("整理当前账户的阅读数据库？", tableName: "Storage"), isPresented: $confirmation, presenting: model.database) { value in
-            Button { Task { if !unavailable { await model.organize(value) } } } label: { Text("整理", tableName: "Storage") }
-            Button("取消", role: .cancel) {}
-        } message: { value in
-            if value.orphanCount > 0 { Text("将清除 \(value.orphanCount) 个未使用的封面。", tableName: "Storage") }
-            Text("将收回空闲空间。进度、批注和正在使用的封面会保留。", tableName: "Storage")
-        }
-    }
-}
-
-private struct StorageAction: View {
+struct StorageAction: View {
     @Environment(\.theme) private var theme
     let title: LocalizedStringResource
     let progress: LocalizedStringResource?
@@ -427,7 +152,7 @@ private struct StorageAction: View {
     }
 }
 
-private struct StoragePage<Content: View>: View {
+struct StoragePage<Content: View>: View {
     let title: LocalizedStringResource
     @ViewBuilder let content: () -> Content
 
@@ -440,7 +165,7 @@ private struct StoragePage<Content: View>: View {
     }
 }
 
-private struct StorageGroup<Content: View>: View {
+struct StorageGroup<Content: View>: View {
     @Environment(\.theme) private var theme
     let title: String.LocalizationValue
     @ViewBuilder let content: () -> Content
@@ -466,7 +191,7 @@ private struct StorageGroup<Content: View>: View {
     }
 }
 
-private struct StorageRow: View {
+struct StorageRow: View {
     @Environment(\.theme) private var theme
     let title: LocalizedStringResource
     var detail: LocalizedStringResource? = nil
@@ -500,7 +225,7 @@ private struct StorageRow: View {
     }
 }
 
-private struct StorageAmount: View {
+struct StorageAmount: View {
     let bytes: UInt64?
 
     var body: some View {
@@ -512,7 +237,7 @@ private struct StorageAmount: View {
     }
 }
 
-private struct StorageHint: View {
+struct StorageHint: View {
     @Environment(\.theme) private var theme
     let text: String.LocalizationValue
     init(_ text: String.LocalizationValue) { self.text = text }
@@ -521,7 +246,7 @@ private struct StorageHint: View {
     }
 }
 
-private struct StorageErrorRow: View {
+struct StorageErrorRow: View {
     @Environment(\.theme) private var theme
     let message: String
     let retry: () async -> Void
