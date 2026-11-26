@@ -47,7 +47,8 @@ struct StoreShotCapture: Codable {
     var fixtureVersion: String {
         switch StoreShotScene.scene(for: self) {
         case .listening: "StoreShotFixture/1.6-r15"
-        case .annotation, .resumeHome, .librarySearch, .backupReview: "StoreShotFixture/1.8"
+        case .shelf, .resumeHome, .librarySearch: "StoreShotFixture/1.9-fixed-recency"
+        case .annotation, .backupReview: "StoreShotFixture/1.8"
         default: "StoreShotFixture/1.4-v1"
         }
     }

@@ -22,7 +22,14 @@ extension AppDataService {
         for folder in f.folders { try FileManager.default.createDirectory(at: root.appendingPathComponent(folder), withIntermediateDirectories: true) }
         for (index,book) in f.books.enumerated() {
             let parent = index == 3 || index == 4 ? root.appendingPathComponent(f.folders[0]) : (index == 5 ? root.appendingPathComponent(f.folders[1]) : root)
-            try book.text.write(to: parent.appendingPathComponent(book.title + ".txt"), atomically: true, encoding: .utf8)
+            let url = parent.appendingPathComponent(book.title + ".txt")
+            try book.text.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.modificationDate: Self.storeShotDate(rank: index)], ofItemAtPath: url.path)
+        }
+        // Unread directories fall back to modification time. Set it after writing their files.
+        for (index, folder) in f.folders.enumerated() {
+            try FileManager.default.setAttributes([.modificationDate: Self.storeShotDate(rank: f.books.count + index)],
+                                                  ofItemAtPath: root.appendingPathComponent(folder).path)
         }
         try refreshLibraryShelf("builtin")
         let core = try indexStore()
@@ -30,15 +37,16 @@ extension AppDataService {
         for file in files {
             let path = root.appendingPathComponent(file.relativePath)
             let title = path.deletingPathExtension().lastPathComponent
-            if StoreShotScene.requested == .resumeHome { try registerStoreShotIdentity(file, root: root, core: core) }
             let entry = try await libraryEntry(file.id)
             let prepared = try await aiPrepare(entry.source)
             let book = try await snapshot(prepared.id).book
             defer { withExtendedLifetime(prepared) {} }
-            if let index = [f.books[1].title, f.books[2].title].firstIndex(of: title) {
-                guard let range = f.books[index + 1].text.range(of: f.progressChapters[index]) else { throw ReaderError.InvalidRange }
-                let offset = UInt64(f.books[index + 1].text[..<range.lowerBound].utf8.count)
-                try await savePosition(bookID: book.id, offset: offset)
+            guard let index = f.books.firstIndex(where: { $0.title == title }) else { throw ReaderError.InvalidRange }
+            if (1...2).contains(index) {
+                let text = f.books[index].text
+                guard let range = text.range(of: f.progressChapters[index - 1]) else { throw ReaderError.InvalidRange }
+                let offset = UInt64(text[..<range.lowerBound].utf8.count)
+                try await savePosition(bookID: book.id, offset: offset, at: Self.storeShotMilliseconds(rank: index))
             }
             let metadata = try await details(bookID: book.id).metadata
             var edited = metadata; edited.author = f.author; edited.tags = [title == f.books[3].title || title == f.books[5].title ? f.folders[1] : f.folders[0]]
@@ -54,7 +62,8 @@ extension AppDataService {
                 guard let range = original.range(of: f.bookmark) else { throw ReaderError.InvalidRange }
                 _ = try await ensureBookmark(book.id, at: UInt64(original[..<range.lowerBound].utf8.count))
                 if StoreShotPage.requested != nil {
-                    try await savePosition(bookID: book.id, offset: UInt64(original[..<range.lowerBound].utf8.count))
+                    try await savePosition(bookID: book.id, offset: UInt64(original[..<range.lowerBound].utf8.count),
+                                           at: Self.storeShotMilliseconds(rank: index))
                     var display = edited
                     display.synopsis = original.components(separatedBy: "\n\n").first(where: { $0.count > 45 }) ?? ""
                     try await saveMetadata(base: edited, edited: display)
@@ -79,7 +88,7 @@ extension AppDataService {
                         while String.Index(point, within: original) == nil { point = original.utf8.index(before: point) }
                         offset = UInt64(original.utf8.distance(from: original.utf8.startIndex, to: point))
                     }
-                    try await savePosition(bookID: book.id, offset: offset)
+                    try await savePosition(bookID: book.id, offset: offset, at: Self.storeShotMilliseconds(rank: index))
                     if scene == .continuation {
                         let ahead = original.range(of: f.mainChapters[2])!.lowerBound
                         let winner = PositionValue(content_key: book.readingKey.storageKey,
@@ -97,12 +106,17 @@ extension AppDataService {
                 }
             }
         }
+        // Use the final decoding after preparation for the fixture shelf's identity index.
+        for file in try core.sourceFileSnapshots(fileId: nil).filter({ $0.shelfId == "builtin" }) {
+            try registerStoreShotIdentity(file, root: root, core: core)
+        }
+        guard try core.libraryIdentityInventory(shelfId: "builtin").pending.isEmpty else { throw ReaderError.InvalidRange }
         let inventory = try await readingDataInventory()
         guard inventory.items.count == 6, inventory.pending == 0, inventory.unsupported == 0,
               try core.libraryShelves().count == 1 else { throw ReaderError.InvalidRange }
         if StoreShotScene.requested == .resumeHome,
            let id = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == f.books[0].title + ".txt" })?.bookId {
-            try await recordBookOpened(id, at: Int64(Date.now.timeIntervalSince1970 * 1000))
+            try await recordBookOpened(id, at: Self.storeShotMilliseconds(rank: 0))
         }
         if StoreShotPage.requested != nil,
            let id = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == f.books[0].title + ".txt" })?.bookId {
@@ -123,6 +137,14 @@ extension AppDataService {
             "appBuild": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""]
         try JSONSerialization.data(withJSONObject: receipt, options: [.sortedKeys]).write(to: FileManager.default.temporaryDirectory.appendingPathComponent("StoreScreenshots-fixture.json"), options: .atomic)
         sourceDefaults.set(true, forKey: "StoreShots.seeded")
+    }
+
+    private static func storeShotDate(rank: Int) -> Date {
+        StoreShotScene.statisticsDate.addingTimeInterval(-Double(rank) * 3_600)
+    }
+
+    private static func storeShotMilliseconds(rank: Int) -> Int64 {
+        Int64(storeShotDate(rank: rank).timeIntervalSince1970 * 1_000)
     }
 
     func makeStoreShotBackupReview(_ fixture: StoreShotFixture) async throws -> URL {
