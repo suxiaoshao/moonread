@@ -4,6 +4,47 @@ import MoonreadDesign
 import MoonreadCoreBindings
 import SwiftUI
 
+@MainActor public struct StorageInventoryActions {
+    let overview: () async throws -> StorageOverview
+    let bodies: () async throws -> BodyCacheInventory
+    let work: () async throws -> StorageWorkInventory
+    let legacy: () async throws -> [StorageFile]
+    let database: () async throws -> StorageDatabaseInventory
+    let organize: (StorageDatabaseInventory) async throws -> StorageDatabaseResult
+
+    public init(
+        overview: @escaping () async throws -> StorageOverview,
+        bodies: @escaping () async throws -> BodyCacheInventory,
+        work: @escaping () async throws -> StorageWorkInventory,
+        legacy: @escaping () async throws -> [StorageFile],
+        database: @escaping () async throws -> StorageDatabaseInventory,
+        organize: @escaping (StorageDatabaseInventory) async throws -> StorageDatabaseResult
+    ) {
+        self.overview = overview
+        self.bodies = bodies
+        self.work = work
+        self.legacy = legacy
+        self.database = database
+        self.organize = organize
+    }
+}
+
+@MainActor public struct StoragePageActions {
+    let activeReaders: (Set<String>) -> [UUID: String]
+    let clean: (StorageCleanupRequest) async -> (removed: UInt64, skipped: Bool)
+    let databaseBusy: () -> Bool
+
+    public init(
+        activeReaders: @escaping (Set<String>) -> [UUID: String],
+        clean: @escaping (StorageCleanupRequest) async -> (removed: UInt64, skipped: Bool),
+        databaseBusy: @escaping () -> Bool
+    ) {
+        self.activeReaders = activeReaders
+        self.clean = clean
+        self.databaseBusy = databaseBusy
+    }
+}
+
 enum StorageCleanupKind: String, CaseIterable, Identifiable {
     case cache, imports, legacy
     var id: String { rawValue }
@@ -16,14 +57,14 @@ enum StorageCleanupKind: String, CaseIterable, Identifiable {
     }
 }
 
-struct StorageCleanupRequest {
+public struct StorageCleanupRequest: Sendable {
     let kinds: [StorageCleanupKind]
-    let bodies: [CachedBody]
-    let covers: [StorageFile]
-    let work: StorageWorkInventory?
-    let legacy: [StorageFile]
-    let readers: [UUID: String]
-    let bodyLease: DataSessionLease?
+    public let bodies: [CachedBody]
+    public let covers: [StorageFile]
+    public let work: StorageWorkInventory?
+    public let legacy: [StorageFile]
+    public let readers: [UUID: String]
+    public let bodyLease: DataSessionLease?
 
     var bytes: UInt64 {
         bodies.reduce(0) { $0 + $1.bytes } + covers.reduce(0) { $0 + $1.bytes }
@@ -36,11 +77,11 @@ struct StorageCleanupRequest {
     }
 }
 
-@MainActor @Observable final class StorageSpaceModel {
+@MainActor @Observable public final class StorageSpaceModel {
     enum Operation { case cleaning, cancelling, organizing }
 
-    let service: AppDataService
-    private(set) var overview: StorageOverview?
+    private let inventoryActions: StorageInventoryActions
+    public private(set) var overview: StorageOverview?
     private(set) var bodies: BodyCacheInventory?
     private(set) var work: StorageWorkInventory?
     private(set) var legacy: [StorageFile]?
@@ -55,7 +96,7 @@ struct StorageCleanupRequest {
     private let overviewLoad = LoadingState()
     private var loadingChoices = false
 
-    init(service: AppDataService) { self.service = service }
+    public init(inventory: StorageInventoryActions) { inventoryActions = inventory }
 
     func loadForPresentation() async {
         if !overviewLoad.active { await loadOverview() }
@@ -67,11 +108,11 @@ struct StorageCleanupRequest {
         await loadChoices()
     }
 
-    func loadOverview() async {
+    public func loadOverview() async {
         let request = overviewLoad.begin()
         defer { overviewLoad.finish(request) }
         do {
-            let updated = try await service.storageOverview()
+            let updated = try await inventoryActions.overview()
             guard overviewLoad.request == request else { return }
             overview = updated
             overviewError = nil
@@ -96,10 +137,10 @@ struct StorageCleanupRequest {
     func load(_ category: StorageCategory) async {
         do {
             switch category {
-            case .books: bodies = try await service.bodyCacheInventory()
-            case .work: work = try await service.storageWorkInventory()
-            case .old: legacy = try await service.storageOldIndex()
-            case .database: database = try await service.storageDatabaseInventory()
+            case .books: bodies = try await inventoryActions.bodies()
+            case .work: work = try await inventoryActions.work()
+            case .old: legacy = try await inventoryActions.legacy()
+            case .database: database = try await inventoryActions.database()
             case .other, .app: break
             }
             errors[category] = nil
@@ -126,23 +167,23 @@ struct StorageCleanupRequest {
 
     var available: [StorageCleanupKind] { StorageCleanupKind.allCases.filter { bytes(for: $0) > 0 } }
 
-    func confirmation(kinds: Set<StorageCleanupKind>, shell: AppShellModel) -> StorageCleanupRequest {
+    func confirmation(kinds: Set<StorageCleanupKind>, activeReaders: (Set<String>) -> [UUID: String]) -> StorageCleanupRequest {
         let kinds = available.filter(kinds.contains)
         let targets = kinds.contains(.cache) ? bodies?.clearable ?? [] : []
         let ids = Set(targets.map(\.bookId))
-        let readers = shell.storageReaders.filter { ids.contains($0.value.bookID) && shell.containsReaderDestination($0.key) }
         return .init(kinds: kinds, bodies: targets, covers: kinds.contains(.cache) ? bodies?.coverFiles ?? [] : [],
                      work: kinds.contains(.imports) ? work : nil, legacy: kinds.contains(.legacy) ? legacy ?? [] : [],
-                     readers: readers.mapValues(\.bookID), bodyLease: bodies?.lease)
+                     readers: activeReaders(ids), bodyLease: bodies?.lease)
     }
 
-    func clean(_ request: StorageCleanupRequest, shell: AppShellModel) {
+    func clean(_ request: StorageCleanupRequest,
+               cleanup: @escaping (StorageCleanupRequest) async -> (removed: UInt64, skipped: Bool)) {
         guard !busy else { return }
         operation = .cleaning
         cleanupMessage = nil
         cleanupTask = Task {
             defer { cleanupTask = nil; operation = nil }
-            await performCleanup(request, shell: shell)
+            await performCleanup(request, cleanup: cleanup)
         }
     }
 
@@ -152,42 +193,9 @@ struct StorageCleanupRequest {
         cleanupTask?.cancel()
     }
 
-    private func performCleanup(_ request: StorageCleanupRequest, shell: AppShellModel) async {
-        var removed: UInt64 = 0
-        var skipped = false
-        var blocked = Set<String>()
-        for (id, book) in request.readers {
-            guard !Task.isCancelled else { break }
-            guard let lease = request.bodyLease, let body = request.bodies.first(where: { $0.bookId == book }),
-                  (try? await service.storageBodyCanClose(body, lease: lease)) == true else {
-                blocked.insert(book)
-                continue
-            }
-            guard let reader = shell.storageReaders[id], reader.bookID == book else { continue }
-            if await !reader.close() { blocked.insert(book) }
-        }
-        for body in request.bodies {
-            guard !Task.isCancelled else { break }
-            do {
-                if let lease = request.bodyLease, !blocked.contains(body.bookId),
-                   try await service.evictStorageBody(body, lease: lease) {
-                    removed += body.bytes
-                } else { skipped = true }
-            } catch { skipped = true }
-        }
-        if !Task.isCancelled, let lease = request.bodyLease, !request.covers.isEmpty {
-            do { removed += try await service.clearStorageCoverCaches(request.covers, lease: lease) }
-            catch { skipped = true }
-        }
-        if !Task.isCancelled, let work = request.work {
-            do { removed += try await service.clearStorageWork(work) }
-            catch { skipped = true }
-        }
-        if !Task.isCancelled, !request.legacy.isEmpty {
-            do { removed += try await service.clearStorageOldIndex(request.legacy) }
-            catch { skipped = true }
-        }
-        if request.bodies.count > 0 { NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil) }
+    private func performCleanup(_ request: StorageCleanupRequest,
+                                cleanup: (StorageCleanupRequest) async -> (removed: UInt64, skipped: Bool)) async {
+        let (removed, skipped) = await cleanup(request)
         // A cancelled task may already have removed files. A fresh read must
         // finish before the action becomes available again.
         await Task {
@@ -212,7 +220,7 @@ struct StorageCleanupRequest {
         defer { operation = nil }
         databaseResult = nil
         let result: StorageDatabaseResult
-        do { result = try await service.organizeStorageDatabase(inventory) }
+        do { result = try await inventoryActions.organize(inventory) }
         catch is StorageMaintenanceError {
             errors[.database] = String(localized: "请在阅读数据同步或其他任务结束后再整理。", table: "Storage")
             return
@@ -225,5 +233,5 @@ struct StorageCleanupRequest {
         databaseResult = result
     }
 
-    static func formatted(_ bytes: UInt64) -> String { ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file) }
+    public static func formatted(_ bytes: UInt64) -> String { ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file) }
 }

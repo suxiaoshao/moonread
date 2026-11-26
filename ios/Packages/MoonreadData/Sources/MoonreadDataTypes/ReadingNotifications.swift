@@ -6,4 +6,7 @@ extension Notification.Name {
     public static let bookMetadataChanged = Notification.Name("Moonread.bookMetadataChanged")
     public static let cloudReadingPositionsReceived = Notification.Name("Moonread.cloudReadingPositionsReceived")
     public static let readingContinuationInvalidated = Notification.Name("Moonread.readingContinuationInvalidated")
+    public static let readingDataChanged = Notification.Name("Moonread.readingDataChanged")
+    public static let cloudStatusChanged = Notification.Name("Moonread.cloudStatusChanged")
+    public static let libraryIndexScanCommitted = Notification.Name("Moonread.libraryIndexScanCommitted")
 }

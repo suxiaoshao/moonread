@@ -1,9 +1,8 @@
-import MoonreadSettings
 import MoonreadCoreBindings
 import MoonreadDesign
 import SwiftUI
 
-func paletteDisplayName(_ value: ThemePalette) -> String {
+public func paletteDisplayName(_ value: ThemePalette) -> String {
     if value.custom { return value.name }
     switch value.id.split(separator: "-").first {
     case "apricot": return String(localized: "纸色")
@@ -16,19 +15,48 @@ func paletteDisplayName(_ value: ThemePalette) -> String {
     }
 }
 
-struct PalettePicker: View {
+public struct PalettePickerPage<Editor: View>: View {
     let reader: Bool
     let appearance: ThemeAppearance
-    var embedded = false
-    var bottomContentInset: CGFloat = 0
-    var editPalette: ((PaletteDraft) -> Void)?
-    @Environment(ThemeStore.self) private var themes
+    let embedded: Bool
+    let bottomContentInset: CGFloat
+    let editPalette: ((PaletteDraft) -> Void)?
+    let snapshot: ThemeSnapshot
+    let system: ThemeAppearance
+    let highContrast: Bool
+    let saving: Bool
+    let creationIssue: String?
+    let update: ((inout ThemePreferences) -> Void) -> Void
+    let delete: (String) async -> Void
+    let deletionMessage: (String) -> String?
+    let editor: (PaletteDraft) -> Editor
+
+    public init(reader: Bool, appearance: ThemeAppearance, embedded: Bool, bottomContentInset: CGFloat,
+                editPalette: ((PaletteDraft) -> Void)?, snapshot: ThemeSnapshot, system: ThemeAppearance,
+                highContrast: Bool, saving: Bool, creationIssue: String?,
+                update: @escaping ((inout ThemePreferences) -> Void) -> Void, delete: @escaping (String) async -> Void,
+                deletionMessage: @escaping (String) -> String?, @ViewBuilder editor: @escaping (PaletteDraft) -> Editor) {
+        self.reader = reader
+        self.appearance = appearance
+        self.embedded = embedded
+        self.bottomContentInset = bottomContentInset
+        self.editPalette = editPalette
+        self.snapshot = snapshot
+        self.system = system
+        self.highContrast = highContrast
+        self.saving = saving
+        self.creationIssue = creationIssue
+        self.update = update
+        self.delete = delete
+        self.deletionMessage = deletionMessage
+        self.editor = editor
+    }
     @Environment(\.theme) private var theme
     @State private var draft: PaletteDraft?
     @State private var deleting: ThemePalette?
-    private var palettes: [ThemePalette] { themes.snapshot.palettes.filter { $0.appearance == appearance } }
+    private var palettes: [ThemePalette] { snapshot.palettes.filter { $0.appearance == appearance } }
     private var selected: String {
-        let p = themes.snapshot.preferences
+        let p = snapshot.preferences
         if reader {
             switch appearance == .light ? p.readerLight : p.readerDark {
             case .app: return "app"
@@ -42,13 +70,13 @@ struct PalettePicker: View {
         }
     }
     private var previewTheme: ThemeSurface {
-        var value = themes.snapshot
+        var value = snapshot
         if reader { value.preferences.readerMode = appearance == .light ? .light : .dark }
         else { value.preferences.appMode = appearance == .light ? .light : .dark }
-        guard let plan = try? resolveThemes(value: value, system: themes.system, highContrast: themes.highContrast) else { return theme }
+        guard let plan = try? resolveThemes(value: value, system: system, highContrast: highContrast) else { return theme }
         return ThemeSurface(plan: reader ? plan.reader : plan.app, readerTexture: reader ? plan.readerTexture : nil)
     }
-    var body: some View {
+    public var body: some View {
         Group {
             if embedded { paletteList }
             else {
@@ -56,15 +84,15 @@ struct PalettePicker: View {
                     .navigationBarTitleDisplayMode(.inline)
             }
         }
-        .sheet(item: $draft) { value in PaletteEditor(draft: value) }
+        .sheet(item: $draft) { value in editor(value) }
         .alert(Text("删除配色“\(deleting?.name ?? "")”？"), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting) { palette in
             Button("删除", role: .destructive) {
-                Task { await themes.deletePalette(palette.id) }
+                Task { await delete(palette.id) }
                 deleting = nil
             }
             Button("取消", role: .cancel) { deleting = nil }
         } message: { palette in
-            if let message = themes.paletteDeletionImpact(palette.id).message { Text(message) }
+            if let message = deletionMessage(palette.id) { Text(message) }
         }
     }
     private var paletteList: some View {
@@ -72,7 +100,7 @@ struct PalettePicker: View {
                           topInset: embedded ? LayoutTokens.compact : LayoutTokens.content,
                           bottomInset: bottomContentInset)
             .underNavigationBar(when: !embedded)
-            .disabled(themes.saving).themedPage().accessibilityIdentifier("paletteOptions")
+            .disabled(saving).themedPage().accessibilityIdentifier("paletteOptions")
     }
     private var paletteSections: [ThemedGroupedList.Section] {
         var result: [ThemedGroupedList.Section] = []
@@ -85,40 +113,39 @@ struct PalettePicker: View {
                 .init("readerPaletteTexture") {
                     Toggle(isOn: Binding(get: { previewTheme.readerTexture?.enabled == true }, set: { enabled in
                         let id = previewTheme.plan.paletteId
-                        themes.update { value in
+                        update { value in
                             if let updated = try? setReaderPaletteTexture(preferences: value, paletteId: id, enabled: enabled) { value = updated }
                         }
                     })) {
-                        let name = themes.snapshot.palettes.first { $0.id == previewTheme.plan.paletteId }.map(paletteDisplayName) ?? ""
+                        let name = snapshot.palettes.first { $0.id == previewTheme.plan.paletteId }.map(paletteDisplayName) ?? ""
                         Text("显示\(name)纹理")
-                    }.accessibilityIdentifier("readerPaletteTexture").disabled(themes.saving)
+                    }.accessibilityIdentifier("readerPaletteTexture").disabled(saving)
                 }
             ]))
         }
         var sources: [ThemedGroupedList.Row] = []
-        if reader { sources.append(.init("app", action: themes.saving ? nil : { choose("app") }) { sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right") }) }
-        sources.append(.init("system", action: themes.saving ? nil : { choose("system") }) { sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled") })
+        if reader { sources.append(.init("app", action: saving ? nil : { choose("app") }) { sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right") }) }
+        sources.append(.init("system", action: saving ? nil : { choose("system") }) { sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled") })
         result.append(.init(id: "sources", rows: sources))
         result.append(.init(id: "presets", title: String(localized: "预设"), rows: palettes.filter { !$0.custom }.map(nativePaletteRow)))
         var custom = palettes.filter(\.custom).map(nativePaletteRow)
-        let creationIssue = themes.paletteCreationIssue
-        custom.append(ThemedGroupedList.Row("createPalette", action: themes.saving || creationIssue != nil ? nil : { createPalette() }) {
+        custom.append(ThemedGroupedList.Row("createPalette", action: saving || creationIssue != nil ? nil : { createPalette() }) {
             Label("新建配色", systemImage: "plus")
-                .foregroundStyle(Color(uiColor: themes.saving || creationIssue != nil ? theme.secondary : theme.accent))
-                .disabled(themes.saving || creationIssue != nil)
+                .foregroundStyle(Color(uiColor: saving || creationIssue != nil ? theme.secondary : theme.accent))
+                .disabled(saving || creationIssue != nil)
         })
-        result.append(.init(id: "custom", title: String(localized: "自定义"), footer: creationIssue?.errorDescription, rows: custom))
+        result.append(.init(id: "custom", title: String(localized: "自定义"), footer: creationIssue, rows: custom))
         return result
     }
     private func nativePaletteRow(_ palette: ThemePalette) -> ThemedGroupedList.Row {
-        let actions: [ThemedGroupedList.Action] = palette.custom && !themes.saving ? [
+        let actions: [ThemedGroupedList.Action] = palette.custom && !saving ? [
             .init(title: String(localized: "删除"), symbol: "trash", destructive: true, perform: { deleting = palette }),
             .init(title: String(localized: "编辑"), symbol: "pencil", perform: { edit(PaletteDraft(palette: palette, creating: false)) })
         ] : []
-        return .init("palette-" + palette.id, action: themes.saving ? nil : { choose(palette.id) }, actions: actions) {
-            paletteRow(palette).disabled(themes.saving)
+        return .init("palette-" + palette.id, action: saving ? nil : { choose(palette.id) }, actions: actions) {
+            paletteRow(palette).disabled(saving)
                 .contextMenu {
-                    if palette.custom && !themes.saving {
+                    if palette.custom && !saving {
                         Button("编辑", systemImage: "pencil") { edit(PaletteDraft(palette: palette, creating: false)) }
                         Button("删除", systemImage: "trash", role: .destructive) { deleting = palette }
                     }
@@ -127,16 +154,16 @@ struct PalettePicker: View {
     }
     private func sourceRow(_ title: LocalizedStringKey, id: String, icon: String) -> some View {
         HStack { Label(title, systemImage: icon); Spacer(); check(id) }
-            .foregroundStyle(Color(uiColor: themes.saving ? theme.secondary : theme.ink)).disabled(themes.saving)
+            .foregroundStyle(Color(uiColor: saving ? theme.secondary : theme.ink)).disabled(saving)
     }
     private func createPalette() {
-        guard !themes.saving, themes.paletteCreationIssue == nil,
+        guard !saving, creationIssue == nil,
               var base = palettes.first(where: { $0.id == selected }) ?? palettes.first else { return }
         base.name = ""; base.custom = true
         edit(PaletteDraft(palette: base, creating: true))
     }
     private func edit(_ value: PaletteDraft) {
-        guard !themes.saving else { return }
+        guard !saving else { return }
         if let editPalette { editPalette(value) } else { draft = value }
     }
     private func paletteRow(_ value: ThemePalette) -> some View {
@@ -156,8 +183,8 @@ struct PalettePicker: View {
         if selected == id { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)).accessibilityLabel("已选择") }
     }
     private func choose(_ id: String) {
-        guard !themes.saving else { return }
-        themes.update { p in
+        guard !saving else { return }
+        update { p in
             if reader {
                 let value: ReaderPaletteSource = id == "app" ? .app : id == "system" ? .system : .palette(id: id)
                 if appearance == .light { p.readerLight = value } else { p.readerDark = value }

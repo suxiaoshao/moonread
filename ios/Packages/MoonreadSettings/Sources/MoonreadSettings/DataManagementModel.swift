@@ -1,14 +1,57 @@
 import MoonreadDesign
 import MoonreadDataTypes
-import MoonreadLibrary
 import MoonreadSearchText
 import MoonreadData
 import MoonreadCoreBindings
-import BackgroundTasks
 import SwiftUI
 
-@MainActor @Observable final class DataManagementModel {
-    let service: AppDataService
+@MainActor public struct ReadingDataActions {
+    let inventory: () async throws -> ReadingDataInventory
+    let promote: (String) async throws -> Void
+    let continuePending: (String) async throws -> Void
+    let exportBackup: () async throws -> URL
+    let share: (URL) async throws -> ShareFiles
+    let delete: (Set<String>, UUID) async throws -> Bool
+
+    public init(
+        inventory: @escaping () async throws -> ReadingDataInventory,
+        promote: @escaping (String) async throws -> Void,
+        continuePending: @escaping (String) async throws -> Void,
+        exportBackup: @escaping () async throws -> URL,
+        share: @escaping (URL) async throws -> ShareFiles,
+        delete: @escaping (Set<String>, UUID) async throws -> Bool
+    ) {
+        self.inventory = inventory
+        self.promote = promote
+        self.continuePending = continuePending
+        self.exportBackup = exportBackup
+        self.share = share
+        self.delete = delete
+    }
+}
+
+@MainActor public struct BackupImportActions {
+    let authorize: (URL) -> ProtectedFileAccess.Source
+    let stage: (ProtectedFileAccess.Source) async throws -> BackupStaging
+    let preview: (BackupStaging) async throws -> ReadingBackupPreview
+    let restore: (ReadingBackupPreview) async throws -> Void
+
+    public init(
+        authorize: @escaping (URL) -> ProtectedFileAccess.Source,
+        stage: @escaping (ProtectedFileAccess.Source) async throws -> BackupStaging,
+        preview: @escaping (BackupStaging) async throws -> ReadingBackupPreview,
+        restore: @escaping (ReadingBackupPreview) async throws -> Void
+    ) {
+        self.authorize = authorize
+        self.stage = stage
+        self.preview = preview
+        self.restore = restore
+    }
+}
+
+@MainActor @Observable public final class DataManagementModel {
+    private let actions: ReadingDataActions
+    private let deletionExecution: DataExchangeExecution?
     let backupExport: DataExchangeTask<Void, URL>
     let backupImport: BackupImportTask
     @ObservationIgnored private(set) lazy var readingDeletion = makeReadingDeletionTask()
@@ -59,22 +102,22 @@ import SwiftUI
     private var dataOperation = DataOperation.idle
     var inventory: ReadingDataInventory { dataLoad.result?.inventory ?? .init(items: [], pending: 0, unsupported: 0) }
     private(set) var issueCount: Int?
-    var busy: Bool { working != nil || readingDeletion.phase == .running }
+    public var busy: Bool { working != nil || readingDeletion.phase == .running }
     var loading: Bool { if case .loading = dataLoad { true } else { false } }
     var loaded: Bool { dataLoad.result != nil }
     private var inventoryLoad: Task<Void, Never>?
     private var inventoryRefreshRequested = false
     var working: String? { dataOperation.working }
-    var error: String? {
+    public var error: String? {
         if case .failed(let message) = dataOperation { return message }
         if case .finished(.failed(let message, _)) = dataLoad { return message }
         return nil
     }
-    var message: String? {
+    public var message: String? {
         if case .completed(let message) = dataOperation { message } else { nil }
     }
     func showError(_ message: String) { dataOperation = .failed(message) }
-    func clearError() {
+    public func clearError() {
         if case .failed = dataOperation { dataOperation = .idle }
         if case .finished(.failed(_, let previous)) = dataLoad { dataLoad = previous.map { .finished(.ready($0)) } ?? .idle }
     }
@@ -92,14 +135,16 @@ import SwiftUI
     private(set) var duplicateNames: [String: (index: Int, count: Int)] = [:]
     private var nameOrder: [String] = []
     private var recentOrder: [String] = []
-    init(service: AppDataService = .shared) {
-        self.service = service
-        backupExport = DataExchangeTask(describeError: { ReaderMessages.error($0) }, usesSystemExecution: service === AppDataService.shared,
+    public init(actions: ReadingDataActions, backupImport: BackupImportTask,
+                exportExecution: DataExchangeExecution?, deletionExecution: DataExchangeExecution?) {
+        self.actions = actions
+        self.backupImport = backupImport
+        self.deletionExecution = deletionExecution
+        backupExport = DataExchangeTask(describeError: { ReaderMessages.error($0) }, execution: exportExecution,
                                   kind: "reading-backup", title: String(localized: "导出备份", table: "MetadataExchange"),
                                   subtitle: String(localized: "正在生成备份…", table: "DataManagement")) { _, _ in
-            try await service.exportReadingData()
+            try await actions.exportBackup()
         }
-        backupImport = BackupImportTask(service: service)
     }
     var visible: [ReadingDataItem] {
         let items = Dictionary(uniqueKeysWithValues: inventory.items.map { ($0.id, $0) })
@@ -107,7 +152,7 @@ import SwiftUI
             (!unlinkedOnly || !$0.linked) && (query.isEmpty || ([$0.title, $0.author] + $0.tags).contains { LibraryQueryRules.selectionMatches($0, query: query) })
         }
     }
-    func load() async {
+    public func load() async {
         if let inventoryLoad {
             inventoryRefreshRequested = true
             await inventoryLoad.value
@@ -120,7 +165,7 @@ import SwiftUI
                 inventoryRefreshRequested = false
                 dataLoad = .loading(previous: dataLoad.result)
                 do {
-                    let value = try await service.readingDataInventory()
+                    let value = try await actions.inventory()
                     updateOrder(value)
                     dataLoad = .finished(.ready(value))
                     issueCount = value.diagnostics.count
@@ -162,7 +207,7 @@ import SwiftUI
         defer { dataOperation = .idle }
         // One attempt per completed task when this page is entered.
         for item in inventory.pendingItems where item.readable && item.phase == .complete {
-            do { try await service.promoteUserData(item.bookID, retry: true); issueErrors[item.id] = nil }
+            do { try await actions.promote(item.bookID); issueErrors[item.id] = nil }
             catch { issueErrors[item.id] = ReaderMessages.error(error) }
         }
         await load()
@@ -171,34 +216,34 @@ import SwiftUI
         guard !busy else { return }
         dataOperation = .preparingPending
         defer { dataOperation = .idle }
-        do { try await service.continuePendingReadingData(item.id); issueErrors[item.id] = nil }
+        do { try await actions.continuePending(item.id); issueErrors[item.id] = nil }
         catch { issueErrors[item.id] = ReaderMessages.error(error) }
         await load()
     }
     func shareBackup() async throws -> ShareFiles {
         guard let exported = backupExport.output else { throw ReadingDataError.invalid }
-        return try await service.readingBackupShareCopy(exported)
+        return try await actions.share(exported)
     }
-    func receiveBackup(_ url: URL) {
+    public func receiveBackup(_ url: URL) {
         clearError()
         backupImport.receive(url)
         showingBackupImport = true
     }
-    func sceneDidEnterBackground() {
+    public func sceneDidEnterBackground() {
         backupImport.sceneDidEnterBackground()
         backupExport.sceneDidEnterBackground()
         readingDeletion.sceneDidEnterBackground()
     }
-    func requestDelete(_ keys: Set<String>) {
+    public func requestDelete(_ keys: Set<String>) {
         guard !busy, !keys.isEmpty else { return }
         guard let configuration = inventory.configuration else { showError(ReadingDataError.changed.localizedDescription); return }
         deleting = .init(keys: keys, configuration: configuration)
     }
     private func makeReadingDeletionTask() -> DataExchangeTask<DeletionRequest, Bool> {
-        DataExchangeTask(describeError: { ReaderMessages.error($0) }, usesSystemExecution: service === AppDataService.shared,
+        DataExchangeTask(describeError: { ReaderMessages.error($0) }, execution: deletionExecution,
                          kind: "reading-delete", title: String(localized: "清除阅读数据", table: "DataManagement"),
-                         subtitle: String(localized: "正在清除…", table: "DataManagement"), commitsChanges: true) { [weak self, service] request, _ in
-            let cleaned = try await service.deleteReadingData(request.keys, configuration: request.configuration)
+                         subtitle: String(localized: "正在清除…", table: "DataManagement"), commitsChanges: true) { [weak self, actions] request, _ in
+            let cleaned = try await actions.delete(request.keys, request.configuration)
             await self?.load()
             return cleaned
         }
@@ -217,22 +262,16 @@ import SwiftUI
         deleting = nil
         dataOperation = .deleting(keys)
         do {
-            let cleaned = try await service.deleteReadingData(keys, configuration: request.configuration)
+            let cleaned = try await actions.delete(keys, request.configuration)
             selected.subtract(keys)
             if loaded { await load() }
             dataOperation = .completed(Self.deletionMessage(cacheCleaned: cleaned))
         } catch { dataOperation = .failed(ReaderMessages.error(error)) }
     }
-    func chooseBackup() -> URL? {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") { return backupExport.output }
-        #endif
-        return nil
-    }
 }
 
 
-@MainActor @Observable final class BackupImportTask {
+@MainActor @Observable public final class BackupImportTask {
     enum Operation { case checking, importing }
     enum Phase {
         case idle
@@ -253,20 +292,23 @@ import SwiftUI
         var operation: Operation { if case .restore = self { .importing } else { .checking } }
     }
 
-    private let service: AppDataService
-    @ObservationIgnored private let systemExecution = DataExchangeSystemExecution()
+    private let actions: BackupImportActions
+    @ObservationIgnored private let systemExecution: DataExchangeExecution?
     @ObservationIgnored private var work: Task<Void, Never>?
     private var retryStep: Step?
-    private var interruption: DataExchangeSystemExecution.PauseReason?
+    private var interruption: DataExchangeExecution.PauseReason?
     private(set) var phase = Phase.idle
     private(set) var stopping = false
     var canRetry: Bool { retryStep != nil }
 
-    init(service: AppDataService) { self.service = service }
+    public init(actions: BackupImportActions, execution: DataExchangeExecution?) {
+        self.actions = actions
+        systemExecution = execution
+    }
 
     func receive(_ url: URL) {
         guard !phase.isActive else { return }
-        start(.check(ProtectedFileAccess.Source(selectedFile: url)))
+        start(.check(actions.authorize(url)))
     }
 
     func confirm() {
@@ -290,7 +332,7 @@ import SwiftUI
         phase = .idle
     }
 
-    func sceneDidEnterBackground() { systemExecution.sceneDidEnterBackground() }
+    func sceneDidEnterBackground() { systemExecution?.enterBackground() }
     func waitForStop() async { await work?.value }
 
     private func start(_ step: Step) {
@@ -299,44 +341,43 @@ import SwiftUI
         phase = .working(operation)
         retryStep = nil
         interruption = nil
-        if service === AppDataService.shared {
-            systemExecution.begin(kind: "reading-backup-import",
-                                  title: String(localized: "导入阅读数据备份", table: "DataManagement"),
-                                  subtitle: operation == .checking
-                                    ? String(localized: "正在检查备份…", table: "DataManagement")
-                                    : String(localized: "正在导入", table: "MetadataExchange"),
-                                  canAttach: { [weak self] in self?.stopping == false },
-                                  didAttach: { [weak self] in
-                                      if #available(iOS 26, *), let task = self?.systemExecution.background as? BGContinuedProcessingTask {
-                                          task.progress.totalUnitCount = 1
-                                      }
-                                  }, didExpire: { [weak self] reason in
-                                      guard let self, !self.stopping else { return }
-                                      self.interruption = reason
-                                      self.stop()
-                                  })
+        if let systemExecution {
+            systemExecution.begin(
+                "reading-backup-import",
+                String(localized: "导入阅读数据备份", table: "DataManagement"),
+                operation == .checking
+                    ? String(localized: "正在检查备份…", table: "DataManagement")
+                    : String(localized: "正在导入", table: "MetadataExchange"),
+                { [weak self] in self?.stopping == false },
+                { [weak self] in self?.systemExecution?.progress(0, 1, nil) },
+                { [weak self] reason in
+                    guard let self, !self.stopping else { return }
+                    self.interruption = reason
+                    self.stop()
+                }
+            )
         }
         work = Task {
             var retry = step
             var succeeded = false
             defer {
-                systemExecution.finish(success: succeeded)
+                systemExecution?.finish(succeeded)
                 work = nil
                 stopping = false
             }
             do {
                 try Task.checkCancellation()
                 if case .check(let source) = step {
-                    retry = .compare(try await service.stageReadingBackup(source))
+                    retry = .compare(try await actions.stage(source))
                 }
                 switch retry {
                 case .check: preconditionFailure("The backup source is staged before comparison.")
                 case .compare(let staging):
-                    let preview = try await service.previewReadingBackup(staging)
+                    let preview = try await actions.preview(staging)
                     try Task.checkCancellation()
                     phase = preview.review.needsRestore ? .review(preview) : .unchanged(preview.review)
                 case .restore(let preview):
-                    try await service.importReadingBackup(preview)
+                    try await actions.restore(preview)
                     // Once the write transaction commits, stopping cannot undo it.
                     phase = .completed
                 }

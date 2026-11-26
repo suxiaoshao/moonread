@@ -1,4 +1,3 @@
-import MoonreadDesign
 import SwiftUI
 
 public struct LibraryFileActivity: ViewModifier {

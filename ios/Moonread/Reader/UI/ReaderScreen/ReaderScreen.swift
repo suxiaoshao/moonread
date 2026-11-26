@@ -1,3 +1,4 @@
+import MoonreadSettings
 import MoonreadAI
 import MoonreadCoreBindings
 import MoonreadDesign

@@ -1,5 +1,4 @@
 import MoonreadDataTypes
-import MoonreadLibrary
 import MoonreadDesign
 import MoonreadData
 import MoonreadCoreBindings
@@ -7,8 +6,9 @@ import SwiftUI
 
 struct ReadingDataIssuesView: View {
     @Environment(\.theme) private var theme
-    @Environment(LibraryModel.self) private var library
     @Bindable var model: DataManagementModel
+    let processingFiles: Bool
+    let reconnectShelf: (String) -> Void
     @State private var discarding: DataManagementModel.DeletionRequest?
     private var pending: [PendingReadingData] { model.inventory.pendingItems.filter(\.readable) }
     private var unreadable: [ReadingDataDiagnostic] { model.inventory.diagnostics.filter { $0.reason != .pending } }
@@ -53,7 +53,7 @@ struct ReadingDataIssuesView: View {
                 }
             }
         }.themedPage().navigationTitle(Text("需要处理", tableName: "DataManagement"))
-        .modifier(LibraryFileActivity(active: library.processingFiles))
+        .modifier(LibraryFileActivity(active: processingFiles))
         .task { await model.prepareIssues() }
         .refreshable { await model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in Task { await model.load() } }
@@ -86,7 +86,7 @@ struct ReadingDataIssuesView: View {
                                 Button { Task { await model.continuePending(item) } } label: { Text("继续准备", tableName: "DataManagement") }
                                     .buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("resumePending-" + item.id)
                             } else if item.phase != .complete, item.sourceState == .reconnect, let shelf = item.shelfID {
-                                Button { library.chooseFiles(.folder(shelf)) } label: { Text("重新连接书架", tableName: "DataManagement") }
+                                Button { reconnectShelf(shelf) } label: { Text("重新连接书架", tableName: "DataManagement") }
                                     .buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("reconnectPending-" + item.id)
                             }
                             Spacer(minLength: 8)

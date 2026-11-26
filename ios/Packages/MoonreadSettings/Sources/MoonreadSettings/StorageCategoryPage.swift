@@ -1,3 +1,4 @@
+import MoonreadDataTypes
 import MoonreadData
 import SwiftUI
 
@@ -5,10 +6,11 @@ struct StorageCategoryPage: View {
     let category: StorageCategory
     let model: StorageSpaceModel
     let data: DataManagementModel
+    let actions: StoragePageActions
 
     var body: some View {
         if category == .database {
-            StorageDatabasePage(model: model, data: data)
+            StorageDatabasePage(model: model, data: data, databaseBusy: actions.databaseBusy)
         } else {
             StoragePage(title: category.title) {
                 content
@@ -99,7 +101,7 @@ struct StorageCategoryPage: View {
         let bytes = model.bytes(for: kind)
         if bytes > 0 {
             NavigationLink {
-                StorageSelectionPage(model: model, preselectedKind: kind)
+                StorageSelectionPage(model: model, preselectedKind: kind, actions: actions)
             } label: {
                 StorageRow(title: kind.title, bytes: bytes, navigates: true)
             }.buttonStyle(.plain)

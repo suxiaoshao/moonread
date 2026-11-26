@@ -1,44 +1,38 @@
-import MoonreadSettings
-import MoonreadDataTypes
-import MoonreadReader
 import MoonreadCoreBindings
+import MoonreadDataTypes
 import MoonreadDesign
 import SwiftUI
 
-struct PaletteEditor: View {
-    @Environment(ThemeStore.self) private var themes
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.theme) private var theme
-    @Bindable var draft: PaletteDraft
-    let showsAppPreview: Bool
-    init(draft: PaletteDraft, showsAppPreview: Bool = true) { self.draft = draft; self.showsAppPreview = showsAppPreview }
-    var body: some View {
-        NavigationStack {
-            PaletteEditorContent(draft: draft, showsAppPreview: showsAppPreview, close: { dismiss() })
-        }
-        .modifier(SystemReadingConfirmation(editor: true))
-        .interactiveDismissDisabled(themes.saving || draft.saving).preferredColorScheme(theme.scheme)
-    }
-}
-
-struct PaletteEditorContent: View {
-    @Environment(ThemeStore.self) private var themes
+public struct PaletteEditorContent: View {
     @Environment(\.theme) private var theme
     @Bindable var draft: PaletteDraft
     let showsAppPreview: Bool
     let close: () -> Void
+    let highContrast: Bool
+    let saving: Bool
+    let save: (ThemePalette, Bool) async throws -> Void
+
+    public init(draft: PaletteDraft, showsAppPreview: Bool, highContrast: Bool, saving: Bool,
+                save: @escaping (ThemePalette, Bool) async throws -> Void, close: @escaping () -> Void) {
+        self.draft = draft
+        self.showsAppPreview = showsAppPreview
+        self.highContrast = highContrast
+        self.saving = saving
+        self.save = save
+        self.close = close
+    }
     @FocusState private var nameFocused: Bool
     @State private var validatesName = false
     private var creating: Bool { draft.creating }
     private var palette: ThemePalette { draft.palette }
     private var previewTheme: ThemeSurface {
-        ThemeSurface(plan: ResolvedTheme(highContrast: themes.highContrast, surface: .palette(appearance: palette.appearance, id: palette.id, colors: palette.colors)))
+        ThemeSurface(plan: ResolvedTheme(highContrast: highContrast, surface: .palette(appearance: palette.appearance, id: palette.id, colors: palette.colors)))
     }
     private var title: LocalizedStringKey { creating ? "新建配色" : "编辑配色" }
     private var fields: some View {
         PaletteFields(palette: $draft.palette, nameFocused: $nameFocused, appPreview: showsAppPreview ? previewTheme : nil,
                       nameIssue: nameIssue, saving: draft.saving)
-            .disabled(draft.saving || themes.saving)
+            .disabled(draft.saving || saving)
             .dismissKeyboardOnOutsideTap($nameFocused)
     }
     private var nameIssue: String? {
@@ -49,7 +43,7 @@ struct PaletteEditorContent: View {
         case .invalidColors: return nil
         }
     }
-    var body: some View {
+    public var body: some View {
         ScrollViewReader { scroll in
             fields
                 .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
@@ -65,11 +59,11 @@ struct PaletteEditorContent: View {
     private var cancelButton: some View {
         SystemToolbarButton("取消", role: .cancel) { close() }
             .tint(Color(uiColor: theme.ink))
-            .disabled(themes.saving || draft.saving).accessibilityIdentifier("cancelPalette")
+            .disabled(saving || draft.saving).accessibilityIdentifier("cancelPalette")
     }
     private func saveButton(scroll: ScrollViewProxy) -> some View {
         SystemToolbarButton("保存配色", role: .confirm) {
-            guard !draft.saving, !themes.saving else { return }
+            guard !draft.saving, !saving else { return }
             if let issue = validateThemePaletteDraft(name: palette.name, colors: palette.colors) {
                 switch issue {
                 case .missingName, .nameTooLong:
@@ -82,11 +76,11 @@ struct PaletteEditorContent: View {
             }
             draft.saving = true
             Task { defer { draft.saving = false }
-                do { try await themes.savePalette(palette, creating: creating); draft.markSaved(); close() }
+                do { try await save(palette, creating); draft.markSaved(); close() }
                 catch { draft.error = ReaderMessages.error(error) }
             }
         }
-        .disabled(themes.saving || draft.saving).accessibilityIdentifier("savePalette")
+        .disabled(saving || draft.saving).accessibilityIdentifier("savePalette")
     }
 }
 

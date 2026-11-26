@@ -151,7 +151,6 @@ struct LibraryIndexScan: Sendable {
     let revision: UUID
     let files: Set<String>
 }
-extension Notification.Name { static let libraryIndexScanCommitted = Notification.Name("Moonread.libraryIndexScanCommitted") }
 
 struct ShelfIndexSummary: Equatable {
     let pending: Int

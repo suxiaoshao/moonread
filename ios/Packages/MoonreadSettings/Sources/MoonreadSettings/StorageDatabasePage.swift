@@ -1,15 +1,15 @@
-import MoonreadLibrary
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import SwiftUI
 
 struct StorageDatabasePage: View {
     let model: StorageSpaceModel
     let data: DataManagementModel
-    @Environment(CloudStore.self) private var cloud
+    let databaseBusy: () -> Bool
     @State private var confirmation = false
 
     private var unavailable: Bool {
-        if cloud.status.syncing || data.busy || MetadataExchangeModel.shared.saving || MetadataExchangeModel.shared.loading { return true }
+        if databaseBusy() || data.busy { return true }
         if case .working = data.backupImport.phase { return true }
         if case .running = data.backupExport.phase { return true }
         return false

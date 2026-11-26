@@ -3,17 +3,6 @@ import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 
-struct BodyCacheInventory: Sendable {
-    let lease: DataSessionLease
-    let clearable: [CachedBody]
-    let held: [CachedBody]
-    let coverFiles: [StorageFile]
-
-    var clearableBytes: UInt64 {
-        clearable.reduce(0) { $0 + $1.bytes } + coverFiles.reduce(0) { $0 + $1.bytes }
-    }
-}
-
 extension AppDataService {
     func bodyCacheInventory() async throws -> BodyCacheInventory {
         try Task.checkCancellation()

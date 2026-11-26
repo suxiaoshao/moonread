@@ -33,8 +33,7 @@
 		6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */; };
 		FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */; };
 		CE9F8CE75AFE42C28ECC1229 /* AppThemePreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */; };
-		BA82A3CBA86846ECB5AE63D2 /* PalettePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2FC43F5CF31408684F519A8 /* PalettePicker.swift */; };
-		F587C1E1155B48F9AEAC88ED /* PaletteEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */; };
+		A37606000000000000000012 /* SettingsPaletteHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37606000000000000000002; };
 		5D04F75C81604F72B1B2B5D7 /* StatisticsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */; };
 		BC404FD2C78B4E67B20B56A2 /* StatisticsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */; };
 
@@ -111,6 +110,7 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         E28400000000000000000001 /* DeveloperMetadataCleanupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28400000000000000000002; };
         E28400000000000000000003 /* DeveloperTools.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E28400000000000000000004; };
         AC1000000000000000000002 = {isa = PBXBuildFile; fileRef = AC2000000000000000000002; };
+		A37606000000000000000011 /* SettingsDataHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37606000000000000000001; };
         AC1000000000000000000004 = {isa = PBXBuildFile; fileRef = AC2000000000000000000004; };
 		A10000000000000000000001 /* MoonreadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MoonreadApp.swift */; };
 		A37603000000000000000017 /* AppDataServiceFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37603000000000000000016 /* AppDataServiceFactory.swift */; };
@@ -221,7 +221,6 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
         D50610000000000000000002 /* ReadingDataManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000002; };
         D50610000000000000000003 /* CacheManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000003; };
         A36101000000000000000002 /* StorageManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000002 /* StorageManagement.swift */; };
-        D50610000000000000000004 /* DataManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000004; };
         D50610000000000000000005 /* DataManagement.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000005; };
         A36101000000000000000005 /* Storage.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000005 /* Storage.xcstrings */; };
         D50610000000000000000006 /* DataManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000006; };
@@ -303,14 +302,6 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		FBEC3350F1726A8D25FE408B /* AIChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9A1F23534B032F5051C81C /* AIChatView.swift */; };
 		F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802F64D6FADEC829D9FABA3E /* AIComposer.swift */; };
 		88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */; };
-		90709A613E0B26BF14B9F308 /* DataManagementModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */; };
-		A36101000000000000000004 /* StorageSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000004 /* StorageSpaceView.swift */; };
-		C36600000000000000000008 /* StorageDatabasePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000007 /* StorageDatabasePage.swift */; };
-		C36600000000000000000006 /* StorageSelectionPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000005 /* StorageSelectionPage.swift */; };
-		C36600000000000000000004 /* StorageCategoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000003 /* StorageCategoryPage.swift */; };
-		A36101000000000000000003 /* StorageSpaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000003 /* StorageSpaceModel.swift */; };
-		4E5986F68A44B334B7F8643D /* ReadingDataListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */; };
-		42F0869878D5AA951138E187 /* ReadingDataIssuesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */; };
 		2D2BA9F36327CC9404EEC2D1 /* AIModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */; };
 		EC01BD4B8052624B73BD6031 /* LibraryDirectoryObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = F54437FA5E94BE01B694DE2D /* LibraryDirectoryObserver.swift */; };
 		BD8D1CFA6FD24E97B0C90D6A /* ListeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A18BA5D42144A6CAF36FCB2; };
@@ -374,8 +365,7 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SourceDecodingTests.swift"; sourceTree = "<group>"; };
 		2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SourceDecodingPreferences.swift"; sourceTree = "<group>"; };
 		FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppThemePreferencesView.swift"; sourceTree = "<group>"; };
-		D2FC43F5CF31408684F519A8 /* PalettePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PalettePicker.swift"; sourceTree = "<group>"; };
-		CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PaletteEditor.swift"; sourceTree = "<group>"; };
+		A37606000000000000000002 /* SettingsPaletteHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsPaletteHost.swift"; sourceTree = "<group>"; };
 		843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsModels.swift"; sourceTree = "<group>"; };
 		0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsSettingsView.swift"; sourceTree = "<group>"; };
 
@@ -453,6 +443,7 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         E28400000000000000000002 /* DeveloperMetadataCleanupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperMetadataCleanupView.swift; sourceTree = "<group>"; };
         E28400000000000000000004 /* DeveloperTools.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = DeveloperTools.xcstrings; sourceTree = "<group>"; };
         AC2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A37606000000000000000001 /* SettingsDataHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsDataHost.swift"; sourceTree = "<group>"; };
         AC2000000000000000000077 /* MoonCharacter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonCharacter.swift; sourceTree = "<group>"; };
         AC2000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000000000000000000001 /* MoonreadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadApp.swift; sourceTree = "<group>"; };
@@ -563,7 +554,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
         D50620000000000000000002 /* ReadingDataManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingDataManagement.swift"; sourceTree = "<group>"; };
         D50620000000000000000003 /* CacheManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CacheManagement.swift"; sourceTree = "<group>"; };
         A36102000000000000000002 /* StorageManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageManagement.swift; sourceTree = "<group>"; };
-        D50620000000000000000004 /* DataManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementView.swift; sourceTree = "<group>"; };
         D50620000000000000000005 /* DataManagement.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = DataManagement.xcstrings; sourceTree = "<group>"; };
         A36102000000000000000005 /* Storage.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Storage.xcstrings; sourceTree = "<group>"; };
         D50620000000000000000006 /* DataManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DataManagementTests.swift"; sourceTree = "<group>"; };
@@ -637,14 +627,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		7A9A1F23534B032F5051C81C /* AIChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatView.swift; sourceTree = "<group>"; };
 		802F64D6FADEC829D9FABA3E /* AIComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIComposer.swift; sourceTree = "<group>"; };
 		3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIReadingAttachmentPreview.swift; sourceTree = "<group>"; };
-		C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementModel.swift; sourceTree = "<group>"; };
-		A36102000000000000000004 /* StorageSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSpaceView.swift; sourceTree = "<group>"; };
-		C36600000000000000000007 /* StorageDatabasePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageDatabasePage.swift; sourceTree = "<group>"; };
-		C36600000000000000000005 /* StorageSelectionPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSelectionPage.swift; sourceTree = "<group>"; };
-		C36600000000000000000003 /* StorageCategoryPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageCategoryPage.swift; sourceTree = "<group>"; };
-		A36102000000000000000003 /* StorageSpaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSpaceModel.swift; sourceTree = "<group>"; };
-		B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataListView.swift; sourceTree = "<group>"; };
-		B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataIssuesView.swift; sourceTree = "<group>"; };
 		36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModelDetailView.swift; sourceTree = "<group>"; };
 		F54437FA5E94BE01B694DE2D /* LibraryDirectoryObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDirectoryObserver.swift; sourceTree = "<group>"; };
 		6A18BA5D42144A6CAF36FCB2 /* ListeningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ListeningTests.swift"; sourceTree = "<group>"; };
@@ -925,10 +907,10 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			children = (
 				D50620000000000000000005 /* DataManagement.xcstrings */,
 				A36102000000000000000005 /* Storage.xcstrings */,
-				C77FEFA6FC6D2D5785EE3779 /* DataManagement */,
                 E28400000000000000000002 /* DeveloperMetadataCleanupView.swift */,
                 E28400000000000000000004 /* DeveloperTools.xcstrings */,
 				AC2000000000000000000002 /* SettingsView.swift */,
+				A37606000000000000000001 /* SettingsDataHost.swift */,
 				F01600000000000000000002 /* Onboarding.swift */,
 				F01700000000000000000004 /* TipJar.storekit */,
 				860C2D48823202EF975F1A45 /* Reading */,
@@ -1316,8 +1298,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
 				FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */,
-				CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */,
-				D2FC43F5CF31408684F519A8 /* PalettePicker.swift */,
+				A37606000000000000000002 /* SettingsPaletteHost.swift */,
 			);
 			path = "Appearance";
 			sourceTree = "<group>";
@@ -1537,22 +1518,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			2359B9413943919B9286CDF7 /* MetadataExchangeModel.swift */,
 			201974DC4BBF9AC197832880 /* MetadataExchangeService.swift */,
 		); path = MetadataExchange; sourceTree = "<group>"; };
-		C77FEFA6FC6D2D5785EE3779 /* DataManagement */ = {
-			isa = PBXGroup;
-			children = (
-				D50620000000000000000004 /* DataManagementView.swift */,
-				C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */,
-				A36102000000000000000004 /* StorageSpaceView.swift */,
-				C36600000000000000000007 /* StorageDatabasePage.swift */,
-				C36600000000000000000005 /* StorageSelectionPage.swift */,
-				C36600000000000000000003 /* StorageCategoryPage.swift */,
-				A36102000000000000000003 /* StorageSpaceModel.swift */,
-				B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */,
-				B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */,
-			);
-			path = DataManagement;
-			sourceTree = "<group>";
-		};
+
 		98265A1B27CF4EA8806DAB39 /* Listening */ = {isa = PBXGroup; children = (
 			); path = "Listening"; sourceTree = "<group>"; };
 		26591D9AEDAC45B48997D4C9 /* Listening */ = {isa = PBXGroup; children = (
@@ -1792,14 +1758,6 @@ OS1000000000000000000001,
 				FBEC3350F1726A8D25FE408B /* AIChatView.swift in Sources */,
 				F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */,
 				88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */,
-				90709A613E0B26BF14B9F308 /* DataManagementModel.swift in Sources */,
-				A36101000000000000000004 /* StorageSpaceView.swift in Sources */,
-				C36600000000000000000008 /* StorageDatabasePage.swift in Sources */,
-				C36600000000000000000006 /* StorageSelectionPage.swift in Sources */,
-				C36600000000000000000004 /* StorageCategoryPage.swift in Sources */,
-				A36101000000000000000003 /* StorageSpaceModel.swift in Sources */,
-				4E5986F68A44B334B7F8643D /* ReadingDataListView.swift in Sources */,
-				42F0869878D5AA951138E187 /* ReadingDataIssuesView.swift in Sources */,
 
 				2D2BA9F36327CC9404EEC2D1 /* AIModelDetailView.swift in Sources */,
 				EC01BD4B8052624B73BD6031 /* LibraryDirectoryObserver.swift in Sources */,
@@ -1845,7 +1803,6 @@ OS1000000000000000000001,
 				7C27F97BAC8E4D479B8F5F0C /* SystemReadingRouter.swift in Sources */,
 				D96AA4CE1D4740298CEB37E3 /* SystemReadingCatalog.swift in Sources */,
 				7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */,
-                D50610000000000000000004 /* DataManagementView.swift in Sources */,
                 D50610000000000000000003 /* CacheManagement.swift in Sources */,
                 A36101000000000000000002 /* StorageManagement.swift in Sources */,
                 D50610000000000000000002 /* ReadingDataManagement.swift in Sources */,
@@ -1914,8 +1871,8 @@ F01900000000000000000001,
 				CD0100000000000000000003,
 				D14015000000000000000001 /* NoteDocument.swift in Sources */,
 				CE9F8CE75AFE42C28ECC1229 /* AppThemePreferencesView.swift in Sources */,
-				BA82A3CBA86846ECB5AE63D2 /* PalettePicker.swift in Sources */,
-				F587C1E1155B48F9AEAC88ED /* PaletteEditor.swift in Sources */,
+				A37606000000000000000012 /* SettingsPaletteHost.swift in Sources */,
+				A37606000000000000000011 /* SettingsDataHost.swift in Sources */,
 				5D04F75C81604F72B1B2B5D7 /* StatisticsModels.swift in Sources */,
 				BC404FD2C78B4E67B20B56A2 /* StatisticsSettingsView.swift in Sources */,
 				A10000000000000000000001 /* MoonreadApp.swift in Sources */,

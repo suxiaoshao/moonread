@@ -6,42 +6,6 @@ import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
 
-final class BackupStaging: Sendable {
-    let directory: URL
-    let manifest: BackupManifest
-    let configuration: UUID
-    let ownedRoot: URL
-    init(directory: URL, manifest: BackupManifest, configuration: UUID, ownedRoot: URL? = nil) { self.directory = directory; self.manifest = manifest; self.configuration = configuration; self.ownedRoot = ownedRoot ?? directory }
-    deinit { let directory = ownedRoot; Task.detached { try? FileManager.default.removeItem(at: directory) } }
-}
-struct ReadingBackupReview: Sendable {
-    struct Book: Identifiable, Sendable {
-        let id: String
-        let title: String?
-        let linked: Bool
-        let changes: Set<BackupChange>
-        var disposition: BackupDisposition {
-            changes.map(\.disposition).max { $0.rawValue < $1.rawValue } ?? .same
-        }
-    }
-
-    let books: [Book]
-    let global: Set<BackupChange>
-
-    var updates: Int { books.count(where: { $0.disposition == .restore }) }
-    var same: Int { books.count(where: { $0.disposition == .same }) }
-    var kept: Int { books.count - updates - same }
-    var hasGlobalChanges: Bool { global.contains { $0.disposition == .restore } }
-    var needsRestore: Bool { updates > 0 || hasGlobalChanges }
-    var isEmpty: Bool { books.isEmpty && global.isEmpty }
-    var keepsLocal: Bool { kept > 0 || global.contains { $0.disposition == .keepLocal } }
-}
-
-struct ReadingBackupPreview: Sendable {
-    let staging: BackupStaging
-    let review: ReadingBackupReview
-}
-
 extension AppDataService {
     /// Serializes only local writes/pending transfer/deletion across actor awaits.
     func acquireUserDataOperation() async {

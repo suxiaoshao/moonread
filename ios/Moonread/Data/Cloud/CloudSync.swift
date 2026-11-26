@@ -39,8 +39,6 @@ enum CloudConfiguration {
     }
 }
 extension Notification.Name {
-    static let readingDataChanged = Notification.Name("Moonread.readingDataChanged")
-    static let cloudStatusChanged = Notification.Name("Moonread.cloudStatusChanged")
     static let readingCloudStatusChanged = Notification.Name("Moonread.readingCloudStatusChanged")
 }
 enum CloudActivation: Sendable {

@@ -1,6 +1,4 @@
-import MoonreadSettings
 import MoonreadDataTypes
-import MoonreadLibrary
 import MoonreadDesign
 import MoonreadData
 import MoonreadCoreBindings
@@ -8,18 +6,31 @@ import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
-extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.backup", conformingTo: .zip) }
+public extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.backup", conformingTo: .zip) }
 
-struct DataManagementView: View {
+public struct DataManagementView<Metadata: View>: View {
     @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
+    private let processingFiles: Bool
+    private let reconnectShelf: (String) -> Void
+    private let chooseBackup: (URL?) -> URL?
+    private let metadata: () -> Metadata
+
+    public init(model: DataManagementModel, processingFiles: Bool, reconnectShelf: @escaping (String) -> Void,
+                chooseBackup: @escaping (URL?) -> URL?, @ViewBuilder metadata: @escaping () -> Metadata) {
+        self.model = model
+        self.processingFiles = processingFiles
+        self.reconnectShelf = reconnectShelf
+        self.chooseBackup = chooseBackup
+        self.metadata = metadata
+    }
+
     @State private var picker = false
     @State private var showingBackupExport = false
     @State private var showingReadingDeletion = false
-    var body: some View {
+    public var body: some View {
         DataManagementPage(issueCount: model.issueCount, message: model.message, error: model.error) {
-            MetadataTasksSection(task: .shared, loadShelves: { try await AppDataService.shared.shelves() })
-                .metadataCoverPresentation()
+            metadata()
         } backup: {
             ViewThatFits(in: .horizontal) {
                 HStack { backupButtons }
@@ -28,7 +39,7 @@ struct DataManagementView: View {
             backupImportStatus
             backupExportStatus
         } issues: {
-            ReadingDataIssuesView(model: model)
+            ReadingDataIssuesView(model: model, processingFiles: processingFiles, reconnectShelf: reconnectShelf)
         } records: {
             ReadingDataListView(model: model)
         } deletion: {
@@ -55,7 +66,7 @@ struct DataManagementView: View {
     @ViewBuilder private var backupButtons: some View {
         Button {
             if model.backupImport.phase.isActive { model.showingBackupImport = true }
-            else if let url = model.chooseBackup() { model.receiveBackup(url) }
+            else if let url = chooseBackup(model.backupExport.output) { model.receiveBackup(url) }
             else { picker = true }
         } label: {
             Label { Text("导入备份", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
@@ -197,10 +208,16 @@ struct ReadingDataWorking: ViewModifier {
         }
     }
 }
-struct ReadingDataDeletionPrompt: ViewModifier {
+public struct ReadingDataDeletionPrompt: ViewModifier {
     @Bindable var model: DataManagementModel
     var startTask: ((DataManagementModel.DeletionRequest) -> Void)?
-    func body(content: Content) -> some View {
+    public init(model: DataManagementModel) { self.model = model; startTask = nil }
+
+    init(model: DataManagementModel, startTask: @escaping (DataManagementModel.DeletionRequest) -> Void) {
+        self.model = model; self.startTask = startTask
+    }
+
+    public func body(content: Content) -> some View {
         content.alert(Text("清除这 \(model.deleting?.keys.count ?? 0) 本小说的阅读数据？", tableName: "DataManagement"), isPresented: Binding(get: { model.deleting != nil }, set: { if !$0 { model.deleting = nil } })) {
             if let request = model.deleting {
                 Button(role: .destructive) {

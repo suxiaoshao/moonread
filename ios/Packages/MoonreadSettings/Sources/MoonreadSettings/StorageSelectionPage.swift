@@ -1,3 +1,4 @@
+import MoonreadDataTypes
 import MoonreadDesign
 import MoonreadCoreBindings
 import SwiftUI
@@ -5,13 +6,13 @@ import SwiftUI
 struct StorageSelectionPage: View {
     let model: StorageSpaceModel
     let preselectedKind: StorageCleanupKind?
-    @Environment(LibraryModel.self) private var library
+    let actions: StoragePageActions
     @Environment(\.theme) private var theme
     @State private var selectedKinds = Set<StorageCleanupKind>()
     @State private var request: StorageCleanupRequest?
 
     private var selection: StorageCleanupRequest {
-        model.confirmation(kinds: selectedKinds, shell: library.shell)
+        model.confirmation(kinds: selectedKinds, activeReaders: actions.activeReaders)
     }
 
     var body: some View {
@@ -59,7 +60,7 @@ struct StorageSelectionPage: View {
         .alert(Text(alertTitle), isPresented: Binding(get: { request != nil }, set: { if !$0 { request = nil } }),
                presenting: request) { confirmed in
             Button(role: .destructive) {
-                model.clean(confirmed, shell: library.shell)
+                model.clean(confirmed, cleanup: actions.clean)
             } label: { Text(actionTitle(confirmed)) }
             Button("取消", role: .cancel) {}
         } message: { confirmed in

@@ -1,3 +1,4 @@
+import MoonreadDataTypes
 import MoonreadDesign
 import MoonreadData
 import Charts
@@ -40,14 +41,21 @@ extension StorageOther {
     }
 }
 
-struct StorageSpaceView: View {
+public struct StorageSpaceView: View {
     let data: DataManagementModel
     let model: StorageSpaceModel
+    let actions: StoragePageActions
+
+    public init(data: DataManagementModel, model: StorageSpaceModel, actions: StoragePageActions) {
+        self.data = data
+        self.model = model
+        self.actions = actions
+    }
     @Environment(\.theme) private var theme
     private let storageBarHeight: CGFloat = 14
     private let storageBarShape = RoundedRectangle(cornerRadius: 5, style: .circular)
 
-    var body: some View {
+    public var body: some View {
         StoragePage(title: .init("存储空间", table: "Storage")) {
             if let error = model.overviewError {
                 StorageErrorRow(message: error) { await model.refresh() }
@@ -62,7 +70,7 @@ struct StorageSpaceView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if model.overview != nil, !model.available.isEmpty {
                     NavigationLink {
-                        StorageSelectionPage(model: model, preselectedKind: nil)
+                        StorageSelectionPage(model: model, preselectedKind: nil, actions: actions)
                     } label: { Text("清理", tableName: "Storage") }
                     .accessibilityIdentifier("storageCleanup")
                 }
@@ -96,7 +104,7 @@ struct StorageSpaceView: View {
                 if category == .app { row }
                 else {
                     NavigationLink {
-                        StorageCategoryPage(category: category, model: model, data: data)
+                        StorageCategoryPage(category: category, model: model, data: data, actions: actions)
                     } label: { row }
                     .buttonStyle(.plain).disabled(overview == nil)
                     .accessibilityIdentifier("storageCategory-\(category.rawValue)")
