@@ -365,3 +365,24 @@ extension ReaderIndex {
         return stream
     }
 }
+
+
+extension ReaderIndex {
+    public func untaggedBookCount() throws -> Int {
+        let rule = BookSearchNode(kind: .rule(.untagged))
+        let root = BookSearchNode(kind: .group(.all, [rule]))
+        let spec = LibraryQueryRules.SearchSpec(profile: .library, configuration: .init(root: root))
+        let inputs = try session.readUsers(lease) {
+            try LibrarySearchRead.matches($0, scope: self.lease.scope, catalogue: .all, spec: spec)
+        }
+        let candidates = try LibrarySearchRead.candidates(inputs, profile: spec.profile)
+        return LibraryQueryRules.searchOutcome(candidates, spec: spec).entries.count
+    }
+
+    public func metadataOptions(shelfID: String?) throws -> LibraryMetadataOptions {
+        try session.readUsers(lease) { db in
+            let options = try LibrarySearchRead.options(db, scope: self.lease.scope, shelfID: shelfID)
+            return LibrarySearchRead.optionValues(options)
+        }
+    }
+}

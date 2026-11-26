@@ -381,3 +381,40 @@ public enum ChapterCoverageRead {
         return stream
     }
 }
+
+
+extension ReaderIndex {
+    public func noteLocationDetails(_ id: String, offsets: [UInt64]) throws -> [UInt64: (ChapterInfo?, Double?)] {
+        try session.readUsers(lease) { db in
+            let body = try IndexedBookBody.fetch(db, id: id, scope: self.lease.scope.key)
+            let total = try ReaderIndex.normalizedLength(db, sha: body.sha)
+            let headings = try ReaderChapterRead.inRange(db, body: body, range: .init(startUtf8: 0, endUtf8: Int64.max.magnitude))
+            var i = 0
+            return Dictionary(uniqueKeysWithValues: Set(offsets).sorted().map { offset in
+                while i < headings.count, headings[i].startUtf8 <= offset { i += 1 }
+                return (offset, (i == 0 ? nil : headings[i - 1], total.map { ReadingProgress.percentage(offset, of: $0) }))
+            })
+        }
+    }
+}
+
+extension ReaderIndex {
+    public func chapterCoverageStamp(_ id: String) async throws -> ChapterCoverageRead.Stamp {
+        try await session.readUsersForPublication(lease) { try ChapterCoverageRead.stamp($0, id: id, scope: self.lease.scope) }
+    }
+
+    public func chapterCoverageExposures(_ id: String, matching stamp: ChapterCoverageRead.Stamp) async throws -> [CoverageExposureText]? {
+        try await session.readUsersForPublication(lease) { db in
+            guard try ChapterCoverageRead.stamp(db, id: id, scope: self.lease.scope) == stamp else { return nil }
+            return try ChapterCoverageRead.exposures(db, stamp: stamp)
+        }
+    }
+
+    public func chapterCoverageChunks(_ id: String, matching stamp: ChapterCoverageRead.Stamp,
+                                      ranges: [SourceSpan]) async throws -> [CoveragePrefixChunk]? {
+        try await session.readUsersForPublication(lease) { db in
+            guard try ChapterCoverageRead.stamp(db, id: id, scope: self.lease.scope) == stamp else { return nil }
+            return try ChapterCoverageRead.chunks(db, body: stamp.body, ranges: ranges)
+        }
+    }
+}

@@ -241,7 +241,7 @@ extension ReaderIndex {
         }
     }
 
-    public static func preparation(_ row: Row?, task: ImportTask?) throws -> PreparationState {
+    static func preparation(_ row: Row?, task: ImportTask?) throws -> PreparationState {
         let storedPhase: String? = row?["phase"]
         let generation: Int64? = row?["generation"]
         let preparation: PreparationState

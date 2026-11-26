@@ -82,7 +82,7 @@ final class SourceDecodingRead: @unchecked Sendable {
 extension AppDataService {
     func currentSourceDecodings() throws -> SourceDecodingSnapshot {
         let index = try relationalUserIndex()
-        return try index.session.readUsers(index.lease) { try UserValueRows.sourceDecodings($0) }
+        return try index.sourceDecodings()
     }
 
     func resolveSourceDecoding(rawSHA: String) async throws -> String {
@@ -115,16 +115,12 @@ extension AppDataService {
         let pending = try core.sourceDecodingMigrations()
         for old in pending {
             guard old.rawSha256 == raw.sha else { continue }
-            try mergeSourceDecodingEpoch(rawSHA: raw.sha, decoding: old.decoding, index: core)
+            try core.mergeSourceDecodingEpoch(rawSHA: raw.sha, decoding: old.decoding)
             guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
             try core.finishSourceDecodingMigration(fileId: old.fileId)
         }
         if let selection {
-            let sha = try parseSha256(value: raw.sha), canonical = try normalizeSourceDecoding(decoding: selection)
-            let value = try UserSyncJSON.encode(SourceDecodingValue(decoding: canonical))
-            try core.session.writeUsers(core.lease) {
-                try UserValueRows.put($0, key: .init("source-decoding/" + sha), value: value, device: userDevice, now: userValueClock, scope: core.lease.scope)
-            }
+            try core.saveSourceDecoding(rawSHA: raw.sha, selection: selection, device: userDevice, now: { userValueClock })
             dataChanged()
         }
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
@@ -140,7 +136,7 @@ extension AppDataService {
         for row in try core.sourceDecodingMigrations() {
             guard let raw = row.rawSha256 else { continue }
             do {
-                try mergeSourceDecodingEpoch(rawSHA: raw, decoding: row.decoding, index: core)
+                try core.mergeSourceDecodingEpoch(rawSHA: raw, decoding: row.decoding)
                 guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
                 try core.finishSourceDecodingMigration(fileId: row.fileId)
             } catch is CancellationError { throw CancellationError() }
@@ -148,30 +144,6 @@ extension AppDataService {
         }
     }
 
-    private func mergeSourceDecodingEpoch(rawSHA: String, decoding: String, index: ReaderIndex) throws {
-        try Task.checkCancellation()
-        try index.session.writeUsers(index.lease) { db in
-            // A choice with a raw identity verified by the released index is
-            // legacy seed data, never a later local edit.
-            guard try UpgradeOrigins.phase(db) != nil, try !ReadingCloudInitialization.isRecovering(db) else { return }
-            let input = try sourceDecodingEpoch(rawSHA: rawSHA, decoding: decoding)
-            let key = try UserValueRows.Key(input.key)
-            let device = "source-decoding-v23"
-            guard try UserValueRows.merge(db, key: key, head: input.value, device: device) else { return }
-            let id = UserValueRows.recordID(logical: key.logical, device: device)
-            // The same released raw SHA and normalized encoding keep their
-            // seed identity if interrupted between usr commit and index cleanup.
-            let batch = DataIdentity.id("legacy-index-v23-decoding", [input.value.token])
-            try UpgradeOrigins.record(db, .init(partition: 0, domain: .decoding, id: id), as: .seed(batch: batch))
-        }
-    }
-}
-
-private func sourceDecodingEpoch(rawSHA: String, decoding: String) throws -> (key: String, value: StoredValue) {
-    try Task.checkCancellation()
-    let sha = try parseSha256(value: rawSHA), canonical = try normalizeSourceDecoding(decoding: decoding)
-    let value = try UserSyncJSON.encode(SourceDecodingValue(decoding: canonical))
-    return ("source-decoding/" + sha, .init(updated: 0, token: "source-decoding-v23/" + sha + "/" + canonical, value: value))
 }
 
 extension UserDataStore {

@@ -391,16 +391,9 @@ actor AppDataService {
                         throw ReaderError.CloudAccountChanged
                     }
                     try cancellation.check()
-                    result = try index.session.writeCloudRecovery(index.lease) { db in
+                    result = try index.recoverCloudZone(presence: presence, scope: account.scope, preparedToClear: needsClear) {
                         try cancellation.check()
                         guard intent.requested else { throw CancellationError() }
-                        // Read the evidence again inside the recovery writer.
-                        let stage = try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone)
-                        guard !stage.requiresLocalClear || needsClear else { return .awaitingEvidence }
-                        let applied = try CloudAccountZoneRecovery.applyPending(db, presence: presence, scope: account.scope)
-                        try cancellation.check()
-                        guard intent.requested else { throw CancellationError() }
-                        return applied
                     }
                 }
                 if needsClear {
@@ -524,9 +517,7 @@ actor AppDataService {
     // queries below; index tasks never build shared user projections.
     func persistSystemCatalogScope(_ scope: String) throws {
         guard let dataSession else { throw DataV2Error.migrationNotVerified }
-        try dataSession.writeDeviceTask {
-            try $0.execute(sql: "UPDATE main.system_catalog_state SET scope=? WHERE id=1", arguments: [scope])
-        }
+        try dataSession.updateSystemCatalogueScope(scope)
     }
 
     func legacyProductionDefaults() -> [String: Any] {

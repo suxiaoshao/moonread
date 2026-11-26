@@ -264,14 +264,14 @@ public final class DataSession: @unchecked Sendable {
     }
 
     /// Device tasks use only main, which is shared by every scope in this environment.
-    public func readDeviceTask<T: Sendable>(_ body: @Sendable (Database) throws -> T) throws -> T {
+    func readDeviceTask<T: Sendable>(_ body: @Sendable (Database) throws -> T) throws -> T {
         try lifecycle.withLock {
             guard let pool, indexReady else { throw DataV2Error.migrationNotVerified }
             return try pool.read(body)
         }
     }
 
-    public func writeDeviceTask(_ body: (Database) throws -> Void) throws {
+    func writeDeviceTask(_ body: (Database) throws -> Void) throws {
         try lifecycle.withLock {
             guard let pool, indexReady else { throw DataV2Error.migrationNotVerified }
             try pool.write(body)
@@ -657,6 +657,15 @@ extension DataSession {
     public func deleteMetadataImportTaskRecord(id: UUID) throws {
         try writeDeviceTask { db in
             try db.execute(sql: "DELETE FROM main.metadata_import_task WHERE task_id=?", arguments: [id.uuidString])
+        }
+    }
+}
+
+
+extension DataSession {
+    public func updateSystemCatalogueScope(_ scope: String) throws {
+        try writeDeviceTask {
+            try $0.execute(sql: "UPDATE main.system_catalog_state SET scope=? WHERE id=1", arguments: [scope])
         }
     }
 }

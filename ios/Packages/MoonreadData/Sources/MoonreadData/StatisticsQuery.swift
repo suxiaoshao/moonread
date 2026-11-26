@@ -455,3 +455,33 @@ extension ReaderIndex {
         return .init(events: events, stamp: stamp)
     }
 }
+
+extension ReaderIndex {
+    public func statisticsOverview(window: StatisticsHistoryRead.Window, target: StatisticsTarget) throws
+        -> StatisticsHistoryRead.Result<StatisticsHistoryRead.OverviewInput> {
+        try session.readUsers(lease) { try StatisticsHistoryRead.overview($0, scope: self.lease.scope, window: window, target: target) }
+    }
+
+    public func statisticsActivities(window: StatisticsHistoryRead.Window, target: StatisticsTarget) throws
+        -> StatisticsHistoryRead.Result<[StatisticsHistoryRead.Activity]> {
+        try session.readUsers(lease) { try StatisticsHistoryRead.activities($0, scope: self.lease.scope, window: window, target: target) }
+    }
+
+    public func statisticsDayRows(window: StatisticsHistoryRead.Window) throws
+        -> StatisticsHistoryRead.Result<[StatisticsHistoryRead.Bucket]> {
+        try session.readUsers(lease) { try StatisticsHistoryRead.dayRows($0, scope: self.lease.scope, window: window) }
+    }
+
+    public func statisticsDetails(window: StatisticsHistoryRead.Window, cumulative: StatisticsHistoryRead.Window,
+                                  target: StatisticsTarget) throws -> StatisticsHistoryRead.Result<StatisticsHistoryRead.DetailsInput> {
+        try session.readUsers(lease) {
+            try StatisticsHistoryRead.details($0, scope: self.lease.scope, window: window, cumulative: cumulative, target: target)
+        }
+    }
+
+    public func widgetStatisticsInput(today: Int64, weekStart: Int64) async throws -> StatisticsHistoryRead.WidgetInput? {
+        try await session.readUsersForPublication(lease) {
+            try StatisticsHistoryRead.widget($0, scope: self.lease.scope, today: today, weekStart: weekStart)
+        }
+    }
+}

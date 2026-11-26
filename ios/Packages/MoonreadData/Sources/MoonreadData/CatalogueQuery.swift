@@ -156,3 +156,20 @@ extension ReaderIndex {
         return try CatalogueRead.order(snapshot)
     }
 }
+
+extension ReaderIndex {
+    public func catalogueUpdates<Snapshot: Sendable>(_ shelfID: String, grouping: LibraryGrouping,
+        snapshot: @escaping @Sendable (CatalogueRead.Ordered) throws -> Snapshot) throws -> AsyncThrowingStream<Snapshot, Error> {
+        try Task.checkCancellation()
+        let scope = lease.scope
+        let (stream, sink) = AsyncThrowingStream.makeStream(of: Snapshot.self, bufferingPolicy: .bufferingNewest(1))
+        let observation = ValueObservation.tracking { try CatalogueRead.fetch($0, scope: scope, shelfID: shelfID, grouping: grouping) }
+            .removeDuplicates()
+        let token = try session.observeUsers(lease, observation) { result in
+            do { sink.yield(try snapshot(CatalogueRead.order(result.get()))) }
+            catch { sink.finish(throwing: error) }
+        }
+        sink.onTermination = { _ in token.cancel() }
+        return stream
+    }
+}

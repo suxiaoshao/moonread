@@ -83,7 +83,7 @@ extension AppDataService {
     func readingDataInventory() async throws -> ReadingDataInventory {
         let configuration = userCloudConfigurationRevision
         let core = try relationalUserIndex()
-        var value = try await core.session.readUsersForPublication(core.lease) { try RelationalReadingData.inventory($0) }
+        var value = try await core.readingDataInventory()
         for i in value.items.indices {
             let key = value.items[i].id
             do {
@@ -182,7 +182,7 @@ extension AppDataService {
     func continuePendingReadingData(_ key: String) async throws {
         let item = try pendingReadingData(key)
         let index = try relationalUserIndex()
-        try index.session.readUsers(index.lease) { try RelationalReadingData.requirePendingReadable($0, key: key) }
+        try index.requirePendingReadable(key)
         guard item.canResume else { throw ReadingDataError.changed }
         try resumeImport(item.bookID)
     }
@@ -239,9 +239,7 @@ extension AppDataService {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         let index = try relationalUserIndex()
-        return try await index.session.readUsersForPublication(index.lease) {
-            try RelationalReadingData.export($0, directory: directory, writerVersion: writerVersion)
-        }
+        return try await index.exportReadingDataSnapshot(directory: directory, writerVersion: writerVersion)
     }
     func readingBackupShareCopy(_ url: URL) async throws -> LibraryExport {
         let source = url.deletingLastPathComponent()
@@ -314,7 +312,7 @@ extension AppDataService {
             guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
             let plan = try UserBackupRestore(directory: staging.directory, manifest: staging.manifest, cancellation: cancellation)
             let core = try relationalUserIndex()
-            let review = try core.session.readUsers(core.lease) { try plan.preview($0, scope: core.lease.scope, cancellation: cancellation) }
+            let review = try core.previewReadingBackup(plan, cancellation: cancellation)
             try cancellation.check()
             let sources = try core.firstSources(forSHAs: Set(review.books.keys))
             var books = [ReadingBackupReview.Book]()
@@ -347,9 +345,7 @@ extension AppDataService {
             guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
             let index = try relationalUserIndex()
             guard index.lease == lease else { throw ReadingDataError.changed }
-            let reclaimed = try index.session.writeUsers(index.lease) {
-                try plan.merge($0, scope: index.lease.scope, syncRequested: cloudSyncIntent.requested, cancellation: cancellation)
-            }
+            let reclaimed = try index.restoreReadingBackup(plan, syncRequested: { cloudSyncIntent.requested }, cancellation: cancellation)
             await removeReclaimedCoverCopies(reclaimed, index: index)
         } onCancel: { cancellation.cancel() }
         dataChanged()

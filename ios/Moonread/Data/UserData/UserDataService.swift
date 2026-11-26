@@ -162,10 +162,7 @@ extension AppDataService {
     func readingCompatibilityNotice(_ id: String) async throws -> String? {
         let identity = try userKey(id)
         let index = try relationalUserIndex()
-        let keys = try UserSyncJSON.encode([identity.storageKey, ReadingKey.pending(bookId: id).storageKey])
-        let blocked = try index.session.readUsers(index.lease) { db in
-            try RelationalReadingData.requiresReaderNotice(db, keys: keys)
-        }
+        let blocked = try index.hasReaderCompatibilityBarrier(keys: [identity.storageKey, ReadingKey.pending(bookId: id).storageKey])
         return blocked ? UserSyncCompatibilityError().localizedDescription : nil
     }
     /// Separate LWW fact: never manufactures a reading position or activity.

@@ -378,7 +378,7 @@ public enum UserValueRows {
             self.init(id: String(name.prefix(36)), sha256: String(name.suffix(64)))
         }
 
-        public init?(_ row: Row) {
+        init?(_ row: Row) {
             guard let id: String = row["legacy_cover_id"], let sha: String = row["expected_sha"] else { return nil }
             self.init(id: id, sha256: sha)
         }

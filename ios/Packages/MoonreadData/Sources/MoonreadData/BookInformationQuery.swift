@@ -319,3 +319,46 @@ extension ReaderIndex {
         return try BookInformationRead.update(snapshot, target: target)
     }
 }
+
+
+extension ReaderIndex {
+    public func bookInformationUpdates(_ target: BookTarget, fileID: String?, includeRecordSource: Bool) throws
+        -> AsyncThrowingStream<BookInformationRead.Update, Error> {
+        try Task.checkCancellation()
+        let scope = lease.scope
+        let (stream, sink) = AsyncThrowingStream.makeStream(of: BookInformationRead.Update.self, bufferingPolicy: .bufferingNewest(1))
+        let observation = ValueObservation.tracking {
+            try BookInformationRead.fetch($0, scope: scope, target: target, fileID: fileID, includeRecordSource: includeRecordSource)
+        }.removeDuplicates()
+        let token = try session.observeUsers(lease, observation) { result in
+            // Isolation or a missing explicit source is a domain result. Do
+            // not terminate the watch; a subsequent commit may restore it.
+            do { sink.yield(try BookInformationRead.update(result.get(), target: target)) }
+            catch { sink.finish(throwing: error) }
+        }
+        sink.onTermination = { _ in token.cancel() }
+        return stream
+    }
+
+    public func metadataExchangeInputs(_ request: MetadataExchangeRequest) throws -> MetadataExchangeRows.Result {
+        let scope = lease.scope.key
+        return try session.readUsers(lease) { try MetadataExchangeRows.read($0, request: request, scope: scope) }
+    }
+
+    public func metadataExchangeSnapshot(_ request: MetadataExchangeRequest) async throws -> MetadataExchangeRows.Result {
+        let scope = lease.scope.key
+        return try await session.readUsersForPublication(lease) { try MetadataExchangeRows.read($0, request: request, scope: scope) }
+    }
+
+    public func commitMetadataCleanup(shas: [String], device: String, now: Int64,
+                                      makePlans: (MetadataExchangeRows.Result) throws -> [BookMetadataEditPlan]) throws
+        -> ([BookMetadataEditPlan], [UserValueRows.CoverCopy]) {
+        try session.writeUsers(lease) { db in
+            let inputs = try MetadataExchangeRows.read(db, request: .import(shas: shas), scope: lease.scope.key)
+            let plans = try makePlans(inputs)
+            let reclaimed = try UserValueRows.putMetadata(db, plans.map { .init(plan: $0, cover: nil) },
+                                                          device: device, now: now, scope: lease.scope)
+            return (plans, reclaimed)
+        }
+    }
+}

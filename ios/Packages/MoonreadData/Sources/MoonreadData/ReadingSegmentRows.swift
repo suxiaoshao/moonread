@@ -22,7 +22,7 @@ public enum ReadingSegmentRows {
         public let value: ReadingSegment
         let localOwner: String?
 
-        public init(_ row: Row) throws {
+        init(_ row: Row) throws {
             guard let revision = UInt64(row["revision"] as String),
                   let first = UInt64(row["first_exposure_start"] as String) else {
                 throw DataV2Error.incompatibleSource("segment columns")

@@ -218,3 +218,23 @@ extension ReaderIndex {
         try FolderRead.entries(session.readUsers(lease) { try FolderRead.destinations($0, scope: self.lease.scope, location: location) })
     }
 }
+
+extension ReaderIndex {
+    public func folderUpdates(_ location: LibraryLocation, sort: LibrarySort) throws -> AsyncThrowingStream<[LibraryEntry], Error> {
+        try Task.checkCancellation()
+        let scope = lease.scope
+        let (stream, sink) = AsyncThrowingStream.makeStream(of: [LibraryEntry].self, bufferingPolicy: .bufferingNewest(1))
+        let observation = ValueObservation.tracking { try FolderRead.page($0, scope: scope, location: location) }
+            .removeDuplicates()
+        let token = try session.observeUsers(lease, observation) { result in
+            do {
+                // The observation receiver runs outside the database writer.
+                sink.yield(try FolderRead.entries(result.get(), sort: sort))
+            } catch {
+                sink.finish(throwing: error)
+            }
+        }
+        sink.onTermination = { _ in token.cancel() }
+        return stream
+    }
+}

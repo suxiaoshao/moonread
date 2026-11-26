@@ -3,7 +3,6 @@ import MoonreadLibrary
 import MoonreadCoreBindings
 import Combine
 import Foundation
-import GRDB
 import CryptoKit
 
 struct CloudDocumentItem: Sendable, Equatable {
@@ -93,39 +92,6 @@ struct CloudDocumentSnapshot: Sendable {
 struct CloudLibraryConflict: Error, Sendable, Identifiable {
     let path: String
     var id: String { path }
-}
-
-struct HandoffAssociation: Codable, Sendable {
-    let fileID: String
-    let bookID: String?
-    let decoding: String
-}
-
-struct CloudHandoffReceipt: Codable, Sendable {
-    enum Stage: String, Codable, Sendable { case intent, copied, published }
-    private(set) var stage: Stage
-    let bytesHash: String
-    var association: HandoffAssociation?
-    var copied: Bool { stage == .copied || stage == .published }
-    var published: Bool { stage == .published }
-
-    init(bytesHash: String, association: HandoffAssociation? = nil) {
-        stage = .intent; self.bytesHash = bytesHash; self.association = association
-    }
-    mutating func recordCopy() throws {
-        switch stage {
-        case .intent: stage = .copied
-        case .copied, .published: break
-        }
-    }
-    mutating func recordPublication() throws {
-        switch stage {
-        case .copied: stage = .published
-        case .published: break
-        case .intent: throw ReaderError.SourceChanged
-        }
-    }
-
 }
 
 /// Durable evidence belongs to this one-time handoff, not a folder mirror.
@@ -309,28 +275,6 @@ enum CloudDocumentHandoff {
             if let error { throw error }; guard let result else { throw CocoaError(.fileWriteUnknown) }; try result.get()
         }
         receipts = [:]; try persist(receipts)
-    }
-}
-
-extension ReaderIndex {
-    func cloudHandoffReceipts(owner: String) throws -> [String: CloudHandoffReceipt] {
-        try read { db in
-            Dictionary(uniqueKeysWithValues: try Row.fetchAll(db, sql: """
-                SELECT relative_path,receipt FROM main.cloud_file_handoff WHERE owner=?
-                """, arguments: [owner]).map {
-                    ($0["relative_path"], try JSONDecoder().decode(CloudHandoffReceipt.self, from: $0["receipt"]))
-                })
-        }
-    }
-
-    func saveCloudHandoffReceipts(_ receipts: [String: CloudHandoffReceipt], owner: String) throws {
-        try write { db in
-            try db.execute(sql: "DELETE FROM main.cloud_file_handoff WHERE owner=?", arguments: [owner])
-            for (path, receipt) in receipts {
-                try db.execute(sql: "INSERT INTO main.cloud_file_handoff VALUES(?,?,?)",
-                               arguments: [owner,path,try JSONEncoder().encode(receipt)])
-            }
-        }
     }
 }
 

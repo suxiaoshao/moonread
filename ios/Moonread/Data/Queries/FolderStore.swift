@@ -4,7 +4,6 @@ import MoonreadDataTypes
 import MoonreadCoreBindings
 import Combine
 import Foundation
-import GRDB
 import Observation
 
 extension AppDataService {
@@ -21,21 +20,7 @@ extension AppDataService {
     func folderUpdates(_ location: LibraryLocation, sort: LibrarySort) throws -> AsyncThrowingStream<[LibraryEntry], Error> {
         try Task.checkCancellation()
         try validateFolderRead(location)
-        let index = try relationalUserIndex()
-        let scope = index.lease.scope
-        let (stream, sink) = AsyncThrowingStream.makeStream(of: [LibraryEntry].self, bufferingPolicy: .bufferingNewest(1))
-        let observation = ValueObservation.tracking { try FolderRead.page($0, scope: scope, location: location) }
-            .removeDuplicates()
-        let token = try index.session.observeUsers(index.lease, observation) { result in
-            do {
-                // The observation receiver runs outside the database writer.
-                sink.yield(try FolderRead.entries(result.get(), sort: sort))
-            } catch {
-                sink.finish(throwing: error)
-            }
-        }
-        sink.onTermination = { _ in token.cancel() }
-        return stream
+        return try relationalUserIndex().folderUpdates(location, sort: sort)
     }
 
     private func validateFolderRead(_ location: LibraryLocation) throws {

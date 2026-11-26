@@ -124,13 +124,7 @@ extension AppDataService {
     }
 
     func storageDatabaseInventory() throws -> StorageDatabaseInventory {
-        let index = try relationalUserIndex()
-        return try index.session.readUsers(index.lease) { db in
-            let page = try UInt64.fetchOne(db, sql: "PRAGMA usr.page_size") ?? 0
-            let free = try UInt64.fetchOne(db, sql: "PRAGMA usr.freelist_count") ?? 0
-            let orphans = try UserValueRows.unreferencedCovers(db)
-            return .init(freeBytes: page * free, orphanBytes: orphans.bytes, orphanCount: orphans.count, lease: index.lease)
-        }
+        try relationalUserIndex().databaseInventory()
     }
 
     func organizeStorageDatabase(_ value: StorageDatabaseInventory, coordinator: CloudSyncCoordinator = .shared) async throws -> StorageDatabaseResult {

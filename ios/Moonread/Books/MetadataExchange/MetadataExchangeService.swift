@@ -78,9 +78,7 @@ extension AppDataService {
     func metadataCleanupInventory() async throws -> MetadataCleanupInventory {
         let index = try relationalUserIndex()
         let lease = index.lease, configuration = userCloudConfigurationRevision
-        let inputs = try await index.session.readUsersForPublication(lease) {
-            try MetadataExchangeRows.read($0, request: .export(shelfId: nil), scope: lease.scope.key)
-        }
+        let inputs = try await index.metadataExchangeSnapshot(.export(shelfId: nil))
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         let counts = Dictionary(uniqueKeysWithValues: inputs.read.books.map { ($0.metadata.sha, $0.sourceCount) })
         var seen = Set<String>()
@@ -101,19 +99,15 @@ extension AppDataService {
         guard confirmation.configuration == userCloudConfigurationRevision,
               confirmation.lease == lease else { throw ReadingDataError.changed }
         let device = userDevice, now = userValueClock
-        let (plans, reclaimed) = try index.session.writeUsers(lease) { db in
-            let inputs = try MetadataExchangeRows.read(db, request: .import(shas: confirmation.selected.sorted()),
-                                                       scope: lease.scope.key)
+        let (plans, reclaimed) = try index.commitMetadataCleanup(shas: confirmation.selected.sorted(),
+                                                                  device: device, now: now) { inputs in
             let current = try MetadataCleanupInventory.selectedValues(from: inputs, selected: confirmation.selected,
                                                                       fields: confirmation.fields)
             guard current == confirmation.values else { throw ReadingDataError.changed }
             let fields = Set(confirmation.fields.map(\.metadataKey))
-            let plans = try confirmation.changes.map { base in
+            return try confirmation.changes.map { base in
                 try BookMetadataEditPlan.make(base: base, edited: MetadataCleanupInventory.empty(sha: base.sha), fields: fields)
             }
-            let reclaimed = try UserValueRows.putMetadata(db, plans.map { .init(plan: $0, cover: nil) },
-                                                          device: device, now: now, scope: lease.scope)
-            return (plans, reclaimed)
         }
         publishMetadataCommit(plans)
         await removeReclaimedCoverCopies(reclaimed, index: index)

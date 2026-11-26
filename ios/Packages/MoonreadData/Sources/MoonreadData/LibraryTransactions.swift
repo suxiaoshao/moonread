@@ -50,7 +50,27 @@ extension ReaderIndex {
         try session.writeUsers(lease) { try ReadingSegmentRows.sealOwned($0, owner: installation, scope: lease.scope) }
     }
 
+    public func recoverCloudZone(presence: CloudAccountZoneRecovery.Presence?, scope: DataScope, preparedToClear: Bool,
+                                 validate: () throws -> Void) throws -> CloudAccountZoneRecovery.Outcome {
+        try session.writeCloudRecovery(lease) { db in
+            try validate()
+            let stage = try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone)
+            guard !stage.requiresLocalClear || preparedToClear else { return .awaitingEvidence }
+            let applied = try CloudAccountZoneRecovery.applyPending(db, presence: presence, scope: scope)
+            try validate()
+            return applied
+        }
+    }
+
     public func pendingCloudZoneClear() throws -> Bool {
         try session.readUsers(lease) { try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone).requiresLocalClear }
+    }
+
+    public func requireOpenCloudZone() throws {
+        try session.readUsers(lease) {
+            if try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone) == .reset {
+                throw CloudZoneRecoverySignal.resetComplete
+            }
+        }
     }
 }

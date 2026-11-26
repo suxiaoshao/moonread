@@ -157,3 +157,21 @@ extension RecentReadingRead.Card {
                 chapterTitle: chapterTitle, preferred: preferred, metadata: nil, cardMetadata: card)))
     }
 }
+
+extension ReaderIndex {
+    public func recentReadingUpdates(limit: UInt32) throws -> AsyncThrowingStream<RecentReadingRead.Output, Error> {
+        try Task.checkCancellation()
+        let (stream, sink) = AsyncThrowingStream.makeStream(of: RecentReadingRead.Output.self, bufferingPolicy: .bufferingNewest(1))
+        let scope = lease.scope
+        let observation = ValueObservation.tracking { try RecentReadingRead.fetch($0, scope: scope, limit: limit) }
+            .removeDuplicates()
+        let token = try session.observeUsers(lease, observation) { result in
+            switch result {
+            case .success(let value): sink.yield(value)
+            case .failure(let error): sink.finish(throwing: error)
+            }
+        }
+        sink.onTermination = { _ in token.cancel() }
+        return stream
+    }
+}

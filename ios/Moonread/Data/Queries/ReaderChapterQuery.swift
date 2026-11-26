@@ -2,15 +2,14 @@ import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
-import GRDB
 
 extension AppDataService {
     /// Run all SQL on the existing pool and compute only after the SQLite
     /// reader has returned. A new commit can be observed while Rust runs.
-    private func coverageRead<T: Sendable>(_ index: ReaderIndex, _ configuration: UUID,
-        _ read: @escaping @Sendable (Database) throws -> T) async throws -> T {
+    private func coverageRead<T: Sendable>(_ configuration: UUID,
+        _ read: () async throws -> T) async throws -> T {
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
-        let value = try await index.session.readUsersForPublication(index.lease, read)
+        let value = try await read()
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         return value
     }
@@ -29,11 +28,8 @@ extension AppDataService {
     // loading endpoint text. Outer nil means the captured request is stale.
     private func coverageRanges(_ id: String, stamp: ChapterCoverageRead.Stamp, index: ReaderIndex,
         configuration: UUID) async throws -> [SourceSpan]?? {
-        let scope = index.lease.scope
-        guard let rows = try await coverageRead(index, configuration, { db -> [CoverageExposureText]? in
-            guard try ChapterCoverageRead.stamp(db, id: id, scope: scope) == stamp else { return nil }
-            return try ChapterCoverageRead.exposures(db, stamp: stamp)
-        }) else { return nil }
+        let rows = try await coverageRead(configuration) { try await index.chapterCoverageExposures(id, matching: stamp) }
+        guard let rows else { return nil }
         return try await Self.coverageCPU { .some(try visibleDwellFromText(rows: rows)) }
     }
 
@@ -41,27 +37,26 @@ extension AppDataService {
         configuration: UUID) async throws -> ChapterOutline? {
         guard !stamp.unknownClear, !stamp.incomplete else { throw UserSyncCompatibilityError(statistics: true) }
         guard !stamp.outline.items.isEmpty else { return stamp.outline }
-        let scope = index.lease.scope
         guard let ranges = try await coverageRanges(id, stamp: stamp, index: index, configuration: configuration)
         else { return nil }
         let result: ChapterOutline
         if let ranges {
-            guard let chunks = try await coverageRead(index, configuration, { db -> [CoveragePrefixChunk]? in
-                guard try ChapterCoverageRead.stamp(db, id: id, scope: scope) == stamp else { return nil }
-                return try ChapterCoverageRead.chunks(db, body: stamp.body, ranges: ranges)
-            }) else { return nil }
+            let chunks = try await coverageRead(configuration) {
+                try await index.chapterCoverageChunks(id, matching: stamp, ranges: ranges)
+            }
+            guard let chunks else { return nil }
             result = try await Self.coverageCPU {
                 let counts = try chapterCoverageCounts(chunks: chunks, chapters: stamp.bounds)
                 return ChapterCoverageRead.outline(stamp, counts: counts)
             }
         } else { result = stamp.outline }
-        let latest = try await coverageRead(index, configuration) { try ChapterCoverageRead.stamp($0, id: id, scope: scope) }
+        let latest = try await coverageRead(configuration) { try await index.chapterCoverageStamp(id) }
         return latest == stamp ? result : nil
     }
 
     func chapters(_ id: String) async throws -> ChapterOutline {
-        let index = try relationalUserIndex(), configuration = userCloudConfigurationRevision, scope = index.lease.scope
-        let stamp = try await coverageRead(index, configuration) { try ChapterCoverageRead.stamp($0, id: id, scope: scope) }
+        let index = try relationalUserIndex(), configuration = userCloudConfigurationRevision
+        let stamp = try await coverageRead(configuration) { try await index.chapterCoverageStamp(id) }
         guard let value = try await makeCoverage(id, stamp: stamp, index: index, configuration: configuration)
         else { throw ReaderError.SourceChanged }
         return value
@@ -71,11 +66,11 @@ extension AppDataService {
     /// only a wakeup: unchanged selected-book inputs don't restart Rust work.
     func observeChapterCoverage(_ id: String,
         receive: @escaping @MainActor @Sendable (Result<ChapterOutline?, Error>) -> Void) async throws {
-        let index = try relationalUserIndex(), configuration = userCloudConfigurationRevision, scope = index.lease.scope
+        let index = try relationalUserIndex(), configuration = userCloudConfigurationRevision
         let events = try ChapterCoverageRead.events(index)
         var last: ChapterCoverageRead.Stamp?
         for try await _ in events {
-            let current = try await coverageRead(index, configuration) { try ChapterCoverageRead.stamp($0, id: id, scope: scope) }
+            let current = try await coverageRead(configuration) { try await index.chapterCoverageStamp(id) }
             guard last != current else { continue }
             last = current
             await receive(.success(nil))
@@ -90,17 +85,6 @@ extension AppDataService {
 
 extension AppDataService {
     func noteLocationDetails(_ id: String, offsets: [UInt64]) async throws -> [UInt64: (ChapterInfo?, Double?)] {
-        try await fixedReaderRead { index in
-            try index.session.readUsers(index.lease) { db in
-                let body = try IndexedBookBody.fetch(db, id: id, scope: index.lease.scope.key)
-                let total = try ReaderIndex.normalizedLength(db, sha: body.sha)
-                let headings = try ReaderChapterRead.inRange(db, body: body, range: .init(startUtf8: 0, endUtf8: Int64.max.magnitude))
-                var i = 0
-                return Dictionary(uniqueKeysWithValues: Set(offsets).sorted().map { offset in
-                    while i < headings.count, headings[i].startUtf8 <= offset { i += 1 }
-                    return (offset, (i == 0 ? nil : headings[i - 1], total.map { ReadingProgress.percentage(offset, of: $0) }))
-                })
-            }
-        }
+        try await fixedReaderRead { try $0.noteLocationDetails(id, offsets: offsets) }
     }
 }

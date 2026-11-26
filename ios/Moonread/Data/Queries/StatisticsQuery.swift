@@ -2,7 +2,6 @@ import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
 import Foundation
-import GRDB
 import MoonreadStatistics
 import Synchronization
 import struct MoonreadQueries.StatisticsActivitiesQuery
@@ -56,9 +55,7 @@ extension AppDataService {
         let window = try StatisticsHistoryRead.Window(first,last)
         let preferences = statisticsPreferences()
         return try await fixedReaderRead { index in
-            let input = try index.session.readUsers(index.lease) {
-                try StatisticsHistoryRead.overview($0, scope: index.lease.scope, window: window, target: target)
-            }
+            let input = try index.statisticsOverview(window: window, target: target)
             switch input {
             case .identityPending(let file): return .identityPending(fileID: file)
             case let .value(overview,key,incomplete):
@@ -80,9 +77,7 @@ extension AppDataService {
         project: @escaping @Sendable ([StatisticsTimelineRow]) throws -> Value) async throws -> StatisticsResult<Value> {
         let window = try StatisticsHistoryRead.Window(first,last)
         return try await fixedReaderRead { index in
-            let input = try index.session.readUsers(index.lease) {
-                try StatisticsHistoryRead.activities($0, scope: index.lease.scope, window: window, target: target)
-            }
+            let input = try index.statisticsActivities(window: window, target: target)
             switch input {
             case .identityPending(let file): return .identityPending(fileID: file)
             case let .value(rows,key,incomplete):
@@ -103,9 +98,7 @@ extension AppDataService {
     func statisticsDayRead(first: Int64, last: Int64) async throws -> StatisticsRead<[StatisticsDay]> {
         let window = try StatisticsHistoryRead.Window(first,last)
         return try await fixedReaderRead { index in
-            let input = try index.session.readUsers(index.lease) {
-                try StatisticsHistoryRead.dayRows($0, scope: index.lease.scope, window: window)
-            }
+            let input = try index.statisticsDayRows(window: window)
             guard case let .value(buckets,_,incomplete) = input else { throw ReaderError.InvalidRange }
             return try .init(value: StatisticsHistoryRead.summarizeDays(buckets), key: nil,
                              compatibilityNotice: Self.statisticsNotice(incomplete))
@@ -118,9 +111,7 @@ extension AppDataService {
         let window = try StatisticsHistoryRead.Window(first,last)
         let cumulative = try StatisticsHistoryRead.Window(0,cumulativeLast)
         return try await fixedReaderRead { index in
-            let result = try index.session.readUsers(index.lease) {
-                try StatisticsHistoryRead.details($0, scope: index.lease.scope, window: window, cumulative: cumulative, target: target)
-            }
+            let result = try index.statisticsDetails(window: window, cumulative: cumulative, target: target)
             guard case let .value(snapshot,key,incomplete) = result, key == expected.key,
                   Self.statisticsNotice(incomplete) == expected.compatibilityNotice else { return nil }
             let current = try StatisticsHistoryRead.mapOverview(StatisticsHistoryRead.summarize(snapshot.period),
@@ -141,8 +132,8 @@ extension AppDataService {
     /// Widget statistics do not depend on the system book catalogue or on
     /// streaming fact preparation. The publisher still owns its schedule.
     func fixedWidgetStatistics(today: Int64, weekStart: Int64) async throws -> StatisticsWidgetSummary? {
-        try await fixedPublicationRead({ db, scope in
-            try StatisticsHistoryRead.widget(db, scope: scope, today: today, weekStart: weekStart)
+        try await fixedPublicationRead({ index in
+            try await index.widgetStatisticsInput(today: today, weekStart: weekStart)
         }, project: { input in
             guard let input else { return nil }
             let value = try StatisticsHistoryRead.summarizeWidget(input, today: today, weekStart: weekStart)

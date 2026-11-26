@@ -228,3 +228,9 @@ public enum SystemReadingRead {
         return .init(events: stream, commits: commits)
     }
 }
+
+extension ReaderIndex {
+    public func systemCatalogueInputs() async throws -> SystemReadingRead.Inputs {
+        try await session.readUsersForPublication(lease) { try SystemReadingRead.catalogue($0, scope: self.lease.scope) }
+    }
+}

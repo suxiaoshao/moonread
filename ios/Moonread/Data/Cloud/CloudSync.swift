@@ -195,11 +195,7 @@ actor CloudSyncCoordinator {
                   }, open: { account in
                       let bound = try await service.relationalUserIndex()
                       guard bound.lease.scope == account.scope else { throw DataV2Error.leaseExpired }
-                      try bound.session.readUsers(bound.lease) {
-                          if try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone) == .reset {
-                              throw CloudZoneRecoverySignal.resetComplete
-                          }
-                      }
+                      try bound.requireOpenCloudZone()
                       return try await open(account, bound)
                   }, zoneRecovery: recovery)
         }
