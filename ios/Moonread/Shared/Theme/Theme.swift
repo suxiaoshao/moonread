@@ -1,4 +1,4 @@
-import MoonreadReader
+import MoonreadDataTypes
 import MoonreadCoreBindings
 import MoonreadDesign
 import SwiftUI

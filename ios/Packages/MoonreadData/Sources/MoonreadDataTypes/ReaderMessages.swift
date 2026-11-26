@@ -1,6 +1,5 @@
 import MoonreadCoreBindings
-import SwiftUI
-import UIKit
+import Foundation
 
 public enum ReaderMessages {
     public static func error(_ error: Error, bundle: Bundle = .main) -> String {

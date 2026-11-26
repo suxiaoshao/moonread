@@ -1,3 +1,4 @@
+import MoonreadDataTypes
 @testable import MoonreadReader
 import MoonreadCoreBindings
 import CryptoKit

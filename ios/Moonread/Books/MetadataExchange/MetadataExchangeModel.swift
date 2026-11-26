@@ -1,4 +1,4 @@
-import MoonreadReader
+import MoonreadDataTypes
 import Foundation
 import MoonreadLibrary
 import MoonreadCoreBindings

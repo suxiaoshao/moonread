@@ -1,4 +1,4 @@
-import MoonreadReader
+import MoonreadDataTypes
 import MoonreadLibrary
 import MoonreadDesign
 import MoonreadData

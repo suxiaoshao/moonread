@@ -194,7 +194,7 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 
 `MoonreadLibrary` 包含目录及最近阅读、书架首页、列表和网格、文件任务界面、索引面板、搜索和虚拟书架、书架管理、作者页、书籍详情及资料交换。App 注入账户变化、文件授权、覆盖读取、封面与跨功能导航。索引队列和资料交换记录由 `MoonreadData` 持久化。
 
-`MoonreadReader` 持有阅读会话、开书进度、正文窗口与视口、UIKit 阅读控件、工具页、听书和自动阅读、阅读活动采样，以及排版预览、字体和快捷设置。App 通过 `ReaderDataAccess` 注入原 `AppDataService`。位置、批注、章节与阅读段仍走现有账户作用域、写入事务和 lease 释放顺序。App 负责来源栈、系统开书确认、完整设置、统计与 AI 对话的目的地装配。Widget 通过无正文依赖的 `MoonreadInstalledFonts` 复用系统字体可用性检查。
+`MoonreadReader` 持有阅读会话、开书进度、正文窗口与视口、UIKit 阅读控件、工具页、听书和自动阅读、阅读活动采样，以及排版预览、字体和快捷设置。App 通过 `ReaderDataAccess` 注入原 `AppDataService`。位置、批注、章节与阅读段仍走现有账户作用域、写入事务和 lease 释放顺序。App 负责来源栈、系统开书确认、完整设置、统计与 AI 对话的目的地装配。同一数据错误的显示文案与跨功能通知名称在 `MoonreadDataTypes` 定义。Widget 通过无正文依赖的 `MoonreadInstalledFonts` 复用系统字体可用性检查。
 
 `AppDataService` 当前协调小说来源、Swift 索引与 Rust 正文计算、用户阅读数据、配色与同步，不仅服务阅读页；`ReaderSession` 才是阅读会话状态 owner。其扩展已随领域位于 Library、Books、Statistics 和 AI，Data 保存用户事实、备份/缓存及同步协调。`MoonreadData` 内的 `UserBackupRestore` 负责预览与还原，`RelationalReadingData` 负责清单与导出。`DataExchangeTask` 承载小说信息和阅读数据共用的后台任务执行。名称仍为 `AppDataService`，领域扩展共用同一 actor 的串行边界；文件目录不改变数据权威和存储归属。
 

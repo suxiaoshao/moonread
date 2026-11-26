@@ -24,8 +24,3 @@ public struct ReadingResumeContext: Sendable {
         self.candidate = candidate
     }
 }
-
-extension Notification.Name {
-    public static let cloudReadingPositionsReceived = Notification.Name("Moonread.cloudReadingPositionsReceived")
-    public static let readingContinuationInvalidated = Notification.Name("Moonread.readingContinuationInvalidated")
-}
