@@ -289,14 +289,16 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
                 view.trackedScrollView = table
                 cell.mount(view)
                 cell.selectionStyle = .none
-                cell.backgroundColor = row.turnID == appearance.highlightedTurn ? appearance.theme.accent.withAlphaComponent(0.12) : .clear
+                cell.backgroundColor = table.backgroundColor
+                cell.contentView.backgroundColor = appearance.highlightedTurn != nil && row.turnID == appearance.highlightedTurn
+                    ? appearance.theme.accent.withAlphaComponent(0.12) : .clear
                 return cell
             }
             let cell = table.dequeueReusableCell(withIdentifier: "message", for: path) as! AIHostedMessageCell
             if let self, let row = rows[id] {
                 cell.configure(hostedContent(id, displayedIn: cell), row: row, height: hostedHeight(row), parent: self)
             }
-            cell.selectionStyle = .none; cell.backgroundColor = .clear
+            cell.selectionStyle = .none; cell.backgroundColor = table.backgroundColor
             return cell
         }
         source.defaultRowAnimation = .top
@@ -452,7 +454,8 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             smoothFollowing = true
         }
         if nextAppearance.reduceMotion { smoothFollowing = false; scrollVelocity = 0 }
-        let force = appearance != nextAppearance
+        let backgroundChanged = tableView.backgroundColor != background
+        let force = appearance != nextAppearance || backgroundChanged
         if force { streamLineHeight = nextAppearance.markdownTheme(traits: traitCollection).fonts.body.lineHeight }
         if appearance?.theme != nextAppearance.theme || appearance?.typeSize != nextAppearance.typeSize {
             pendingResizes = .init()
@@ -460,7 +463,11 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         }
         appearance = nextAppearance; self.render = render
         rows = Dictionary(uniqueKeysWithValues: nextRows.map { ($0.id, $0) })
-        tableView.backgroundColor = background
+        if backgroundChanged {
+            tableView.backgroundColor = background
+            // Keep the table and its currently displayed rows in the same palette.
+            for cell in tableView.visibleCells { cell.backgroundColor = background }
+        }
         if appliedRequest != request.id {
             appliedRequest = request.id
             expansionAnchor = nil
