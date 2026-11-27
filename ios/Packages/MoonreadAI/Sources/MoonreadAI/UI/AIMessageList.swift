@@ -103,9 +103,7 @@ private final class AIHostedMessageCell: UITableViewCell {
             contentView.addSubview(host.view)
             self.host = host
         }
-        // The compact toggle borrows 2pt of the following row's top spacing.
-        if case .processToggle = row.kind { contentView.clipsToBounds = false }
-        else { contentView.clipsToBounds = true }
+        contentView.clipsToBounds = true
         attachHost()
         setNeedsLayout(); layoutIfNeeded()
     }
@@ -328,8 +326,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         }).id(id)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(.horizontal, LayoutTokens.content).padding(.top, LayoutTokens.compact)
-            .padding(.bottom, processToggle ? AIProcessToggleHitShape.replyGap - LayoutTokens.compact : LayoutTokens.compact)
+            .padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
             .environment(\.moonreadReduceMotion, reducedMotion)
         if processToggle, let cell {
             return AnyView(content.coordinateSpace(.named(AIProcessToggleHitShape.rowSpace))
@@ -761,7 +758,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         case .header: return 100
         case .processToggle:
             let font = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
-            return ceil(font.lineHeight + AIProcessToggleHitShape.replyGap)
+            return ceil(font.lineHeight + 2 * LayoutTokens.compact)
         default: return 48
         }
     }

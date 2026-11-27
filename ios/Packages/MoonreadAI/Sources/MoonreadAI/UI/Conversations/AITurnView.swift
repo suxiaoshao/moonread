@@ -383,12 +383,12 @@ private struct AIGeneratedImageView: View {
 }
 
 struct AIProcessToggleHitShape: Shape {
-    static let replyGap: CGFloat = 6
     static let rowSpace = "aiProcessToggleRow"
 
     static func target(for label: CGRect) -> CGRect {
         let extra = max(0, LayoutTokens.hit - label.height)
-        let below = min(replyGap, extra / 2)
+        // Keep the touch extension biased away from the reply.
+        let below = min(6, extra / 2)
         return CGRect(x: label.minX, y: label.minY - (extra - below),
                       width: label.width, height: label.height + extra)
     }
