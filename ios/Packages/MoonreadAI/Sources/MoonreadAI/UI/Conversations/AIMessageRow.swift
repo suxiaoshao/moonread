@@ -185,7 +185,9 @@ extension AIMessageRow {
     var viewportRow: AIMessageViewportRow {
         let kind: AIMessageViewportRow.Kind
         switch content {
-        case .block(let block, _, _): kind = .block(message: block.isMessage ? block.items[0].text : nil)
+        case .block(let block, _, let expansion):
+            kind = .block(message: block.isMessage ? block.items[0].text : nil,
+                          toolGroupExpanded: block.items.count > 1 ? expansion.group : nil)
         case .user(let entry): kind = .input(text: entry.userText ?? "")
         case .queued(let input): kind = .input(text: input.text)
         case .image(let image): kind = .image(width: Double(image.width), height: Double(image.height))

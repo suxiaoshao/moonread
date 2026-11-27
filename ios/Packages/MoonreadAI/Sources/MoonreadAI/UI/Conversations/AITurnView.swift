@@ -60,6 +60,7 @@ private struct AIProcessBlockView: View {
     let conversationID: String
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
+    @Environment(\.aiRetainsCollapsingToolGroup) private var retainsCollapsingToolGroup
     @ScaledMetric(relativeTo: .subheadline) private var groupIconWidth: CGFloat = 16
     let expansion: AIProcessExpansionState
     let toggle: AIProcessExpansionHandler
@@ -96,7 +97,7 @@ private struct AIProcessBlockView: View {
                     .accessibilityValue(expansion.group ? String(localized: "已展开") : String(localized: "已收起"))
                     .accessibilityIdentifier("aiProcessGroup-\(block.id)")
                     .aiProcessHeaderGeometry("group-" + block.id)
-                if expansion.group {
+                if expansion.group || retainsCollapsingToolGroup {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(block.items) { processRow($0) }
                     }
@@ -106,6 +107,8 @@ private struct AIProcessBlockView: View {
                             .accessibilityHidden(true)
                     }
                     .padding(.leading, (groupIconWidth - 2) / 2)
+                    .allowsHitTesting(expansion.group)
+                    .accessibilityHidden(!expansion.group)
                 }
             }.accessibilityElement(children: .contain)
         }
@@ -402,6 +405,7 @@ struct AIProcessToggleHitShape: Shape {
 
 extension EnvironmentValues {
     @Entry var aiProcessToggleLabelFrame: (CGRect) -> Void = { _ in }
+    @Entry var aiRetainsCollapsingToolGroup = false
 }
 
 private struct AIProcessToggle: View {

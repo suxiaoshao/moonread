@@ -88,12 +88,15 @@ private final class AIAnchoredTableView: UITableView {
 /// Explicit safe-area policy prevents scrolling from changing a row's intrinsic height.
 private final class AIHostedMessageCell: UITableViewCell {
     private var host: UIHostingController<AnyView>?
-    private var height: CGFloat = 0
+    private(set) var height: CGFloat = 0
     private weak var parentController: UIViewController?
     private(set) var rowID: String?
+    private(set) var retainsToolGroupChildren = false
     var processToggleLabelFrame: CGRect?
-    func configure(_ content: AnyView, row: AIMessageViewportRow, height: CGFloat, parent: UIViewController) {
+    func configure(_ content: AnyView, row: AIMessageViewportRow, height: CGFloat, parent: UIViewController,
+                   retainingToolGroupChildren: Bool = false) {
         if rowID != row.id { processToggleLabelFrame = nil; rowID = row.id }
+        retainsToolGroupChildren = retainingToolGroupChildren
         self.height = height; parentController = parent
         if let host { host.rootView = content }
         else {
@@ -106,6 +109,10 @@ private final class AIHostedMessageCell: UITableViewCell {
         contentView.clipsToBounds = true
         attachHost()
         setNeedsLayout(); layoutIfNeeded()
+    }
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        retainsToolGroupChildren = false
     }
     @discardableResult func resize(_ height: CGFloat) -> Bool {
         guard abs(self.height - height) > 0.5 else { return false }
@@ -160,6 +167,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     private var applying = false
     private var expansionAnimationPending = false
     private var animatingExpansion = false
+    private var collapsingToolGroup: (id: String, reopened: Bool)?
     private var animatingProcessRows = false
     private var expansionHeights: [String: CGFloat] = [:]
     private var pendingResizes = DeferredRowMeasurements()
@@ -320,7 +328,8 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         tap.cancelsTouchesInView = false; tap.delegate = self
         tableView.addGestureRecognizer(tap)
     }
-    private func hostedContent(_ id: String, displayedIn cell: AIHostedMessageCell? = nil) -> AnyView {
+    private func hostedContent(_ id: String, displayedIn cell: AIHostedMessageCell? = nil,
+                               retainingToolGroupChildren: Bool = false) -> AnyView {
         let processToggle: Bool
         if case .processToggle? = rows[id]?.kind { processToggle = true } else { processToggle = false }
         let content = render?(id, { [weak self] item in
@@ -330,6 +339,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
             .environment(\.moonreadReduceMotion, reducedMotion)
+            .environment(\.aiRetainsCollapsingToolGroup, retainingToolGroupChildren)
         if processToggle, let cell {
             return AnyView(content.coordinateSpace(.named(AIProcessToggleHitShape.rowSpace))
                 .environment(\.aiProcessToggleLabelFrame, { [weak cell] frame in
@@ -513,7 +523,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             return force || old[id] != rows[id]
         }
         if expansionAnimationPending, previous == ids, let anchor = expansionAnchor, changed == [anchor.id], let row = rows[anchor.id],
-           let path = source.indexPath(for: anchor.id), let cell = tableView.cellForRow(at: path) {
+           let path = source.indexPath(for: anchor.id), let cell = tableView.cellForRow(at: path) as? AIHostedMessageCell {
             expansionAnimationPending = false
             applying = true; animatingExpansion = true
             let viewport = tableView.superview!
@@ -525,10 +535,13 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             let height = measureHosted(content)
             storeMeasuredHeight(height, for: heightKey(row))
             let oldHeight = tableView.rectForRow(at: path).height
+            let oldHostHeight = cell.height
+            let collapsingGroup = old[anchor.id]?.toolGroupExpanded == true && row.toolGroupExpanded == false
+                && height < oldHeight && !reducedMotion
             expansionHeights = [anchor.id: oldHeight]
             CATransaction.begin()
             UIView.performWithoutAnimation {
-                (cell as? AIHostedMessageCell)?.configure(content, row: row, height: height, parent: self)
+                if !collapsingGroup { cell.configure(content, row: row, height: height, parent: self) }
                 tableView.performBatchUpdates { expansionHeights[anchor.id] = height }
                 expansionHeights = [:]
                 tableView.layoutIfNeeded()
@@ -537,7 +550,44 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             }
             let actual = Anchor(id: anchor.id, offset: tableView.rectForRow(at: path).minY - tableView.adjustedContentInset.top - tableView.contentOffset.y)
             let clamped = abs(actual.offset - anchor.offset) > 0.5
-            let duration = nextAppearance.reduceMotion || UIAccessibility.isReduceMotionEnabled || clamped ? 0.0 : 0.25
+            let duration = reducedMotion || clamped ? 0.0 : 0.25
+            if collapsingGroup, cell.rowID == row.id, tableView.cellForRow(at: path) === cell {
+                // The table already has the target height. Keep the expanded host
+                // drawing behind the shrinking contentView until the animation ends.
+                UIView.performWithoutAnimation {
+                    if duration > 0 {
+                        collapsingToolGroup = (row.id, false)
+                        cell.configure(hostedContent(row.id, retainingToolGroupChildren: true),
+                                       row: row, height: oldHostHeight, parent: self, retainingToolGroupChildren: true)
+                    } else { cell.configure(content, row: row, height: height, parent: self) }
+                }
+            }
+            let targetVersion = row.version
+            let finish: @Sendable () -> Void = { [weak self, weak cell] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let collapse = self.collapsingToolGroup
+                    self.collapsingToolGroup = nil
+                    if let collapse, !collapse.reopened, let cell, cell.retainsToolGroupChildren,
+                       cell.rowID == collapse.id, let current = self.rows[collapse.id],
+                       current.version == targetVersion, current.toolGroupExpanded == false,
+                       let currentPath = self.source.indexPath(for: collapse.id),
+                       self.tableView.cellForRow(at: currentPath) === cell {
+                        UIView.performWithoutAnimation {
+                            cell.configure(self.hostedContent(collapse.id), row: current, height: height, parent: self)
+                        }
+                    }
+                    self.animatingExpansion = false; self.applying = false
+                    self.tableView.selfSizingInvalidation = .enabledIncludingConstraints
+                    if self.expansionAnchor?.id == anchor.id { self.expansionAnchor = actual; self.stableAnchor = actual }
+                    else { self.stableAnchor = self.expansionAnchor ?? self.captureAnchor() }
+                    self.replayPendingResizes(); self.publishBottom()
+                    let next = self.pendingUpdate; self.pendingUpdate = nil; next?()
+                }
+            }
+            // Register before adding the tool group's animations so its retained children
+            // stay mounted until Core Animation has removed the presentation layers.
+            if row.toolGroupExpanded != nil { CATransaction.setCompletionBlock(finish) }
             // UIKit resolves final row geometry once. One explicit layer transaction animates
             // from the previous visible frames, avoiding UIKit's spring/estimate corrections.
             if duration > 0 {
@@ -560,17 +610,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
                     animate(cell.contentView.layer, key: "position", from: CGPoint(x: cell.contentView.layer.position.x, y: old.height / 2), to: cell.contentView.layer.position)
                 }
             }
-            CATransaction.setCompletionBlock { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.animatingExpansion = false; self.applying = false
-                    self.tableView.selfSizingInvalidation = .enabledIncludingConstraints
-                    if self.expansionAnchor?.id == anchor.id { self.expansionAnchor = actual; self.stableAnchor = actual }
-                    else { self.stableAnchor = self.expansionAnchor ?? self.captureAnchor() }
-                    self.replayPendingResizes(); self.publishBottom()
-                    let next = self.pendingUpdate; self.pendingUpdate = nil; next?()
-                }
-            }
+            if row.toolGroupExpanded == nil { CATransaction.setCompletionBlock(finish) }
             CATransaction.commit()
             return
         }
@@ -631,6 +671,10 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         guard let path = source.indexPath(for: rowID), let toggleProcess else { return }
         let anchor = Anchor(id: rowID, offset: tableView.rectForRow(at: path).minY - tableView.adjustedContentInset.top - tableView.contentOffset.y)
         pinExpansion(to: anchor)
+        if case .group(let id) = item, collapsingToolGroup?.id == id {
+            // SwiftUI may publish the replacement row after the old completion.
+            collapsingToolGroup?.reopened.toggle()
+        }
         switch item {
         case .turn: break
         case .group, .reasoning:
@@ -758,7 +802,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
         let characters = max(8, (tableView.bounds.width - 2 * LayoutTokens.content) / font.pointSize)
         switch row.kind {
-        case .block(let message): return message.map { max(44, ceil(CGFloat($0.count) / characters) * font.lineHeight + 16) } ?? 48
+        case .block(let message, _): return message.map { max(44, ceil(CGFloat($0.count) / characters) * font.lineHeight + 16) } ?? 48
         case .input(let text): return max(52, ceil(CGFloat(text.count) / characters) * font.lineHeight + 32)
         case .image(let width, let height): return min(320, max(80, (tableView.bounds.width - 32) * height / max(1, width))) + 16
         case .confirmation, .result: return 160

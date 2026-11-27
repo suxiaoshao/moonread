@@ -19,7 +19,8 @@ public typealias AIProcessExpansionHandler = @MainActor @Sendable (AIProcessExpa
 
 public struct AIMessageViewportRow: Identifiable, Equatable {
     public enum Kind: Equatable {
-        case block(message: String?), input(text: String), image(width: Double, height: Double)
+        case block(message: String?, toolGroupExpanded: Bool? = nil)
+        case input(text: String), image(width: Double, height: Double)
         case processToggle(expanded: Bool, completed: Bool)
         case confirmation, result, header, other
     }
@@ -39,6 +40,10 @@ public struct AIMessageViewportRow: Identifiable, Equatable {
     var version: Int
     var kind: Kind
     var nativeText: NativeText?
+    var toolGroupExpanded: Bool? {
+        if case .block(_, let expanded) = kind { return expanded }
+        return nil
+    }
 
     public init(id: String, turnID: String?, version: Int, kind: Kind, nativeText: NativeText?) {
         self.id = id
