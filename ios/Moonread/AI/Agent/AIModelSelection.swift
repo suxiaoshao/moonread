@@ -1,20 +1,4 @@
 import MoonreadAI
-import Foundation
-
-struct AIModelSelection: Equatable {
-    var connectionID: String
-    var modelID: String
-    var thinking: String?
-    static func defaultThinking(_ model: AIModelOption) -> String? {
-        model.defaultThinking.flatMap { model.thinking.contains($0) ? $0 : nil }
-    }
-    mutating func select(_ model: AIModelOption, connection: AIConnection) {
-        if connectionID != connection.id || modelID != model.id {
-            connectionID = connection.id; modelID = model.id; thinking = Self.defaultThinking(model)
-        } else { thinking = thinking.flatMap { model.thinking.contains($0) ? $0 : nil } ?? Self.defaultThinking(model) }
-    }
-}
-enum AIModelSelectionTarget: Equatable { case conversation(String), session(String), defaults }
 
 extension AIService {
     func modelSelection(for target: AIModelSelectionTarget) -> AIModelSelection? {
@@ -51,8 +35,4 @@ extension AIService {
             } catch { return false }
         }
     }
-}
-
-extension AIModelSelectionTarget {
-    var isDefault: Bool { if case .defaults = self { true } else { false } }
 }
