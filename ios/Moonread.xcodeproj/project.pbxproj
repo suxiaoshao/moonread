@@ -237,6 +237,7 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		010EFBB7F2A045A3A50FBC84 /* SystemReading.xcstrings */ = {isa = PBXBuildFile; fileRef = 5F785348B3B2446E889C0D8F; };
 		F02F8D5E092D48BEBAF2CBBB /* Localizable.xcstrings */ = {isa = PBXBuildFile; fileRef = 751125BDDAAA459CA29C7F1D; };
 		1B506102BF4B408999F282DE /* SystemReadingIntents.swift */ = {isa = PBXBuildFile; fileRef = F756EB1D8CB74351A3734567; };
+		A391000000000000000000B1 /* SystemReadingDataIntents.swift */ = {isa = PBXBuildFile; fileRef = A391000000000000000000F1; };
 		3A970D96D5C34B91AD51685B /* SystemReadingDonations.swift */ = {isa = PBXBuildFile; fileRef = 85EA54F55F414881875C8E6B; };
 		005AC664DBAF46D4BDDD504A /* AppShortcuts.xcstrings */ = {isa = PBXBuildFile; fileRef = E82B5CEE6CCE405993FF6B63; };
 		637E8D49F3D84FECA7E48556 /* SystemSpotlightIndexer.swift */ = {isa = PBXBuildFile; fileRef = 6F59DF87BB644F99AE184A7C; };
@@ -569,6 +570,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		D7ABB22416B94A80A0741820 /* SystemReadingEntities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingEntities.swift"; sourceTree = "<group>"; };
 		751125BDDAAA459CA29C7F1D /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "Localizable.xcstrings"; sourceTree = "<group>"; };
 		F756EB1D8CB74351A3734567 /* SystemReadingIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingIntents.swift"; sourceTree = "<group>"; };
+		A391000000000000000000F1 /* SystemReadingDataIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingDataIntents.swift"; sourceTree = "<group>"; };
 		85EA54F55F414881875C8E6B /* SystemReadingDonations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingDonations.swift"; sourceTree = "<group>"; };
 		E82B5CEE6CCE405993FF6B63 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "AppShortcuts.xcstrings"; sourceTree = "<group>"; };
 		6F59DF87BB644F99AE184A7C /* SystemSpotlightIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemSpotlightIndexer.swift"; sourceTree = "<group>"; };
@@ -986,6 +988,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 E82B5CEE6CCE405993FF6B63 /* AppShortcuts.xcstrings */,
                 85EA54F55F414881875C8E6B /* SystemReadingDonations.swift */,
                 F756EB1D8CB74351A3734567 /* SystemReadingIntents.swift */,
+                A391000000000000000000F1 /* SystemReadingDataIntents.swift */,
 				21B61C6DDA05486692B7E164 /* SystemReadingCatalog.swift */,
 				CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */,
 			); path = Moonread/SystemIntegration; sourceTree = "<group>"; };
@@ -1799,6 +1802,7 @@ OS1000000000000000000001,
                 637E8D49F3D84FECA7E48556 /* SystemSpotlightIndexer.swift */,
                 3A970D96D5C34B91AD51685B /* SystemReadingDonations.swift */,
                 1B506102BF4B408999F282DE /* SystemReadingIntents.swift */,
+                A391000000000000000000B1 /* SystemReadingDataIntents.swift */,
                 DD96C5C6D7644E1BA3EC0764 /* SystemReadingEntities.swift */,
 				7C27F97BAC8E4D479B8F5F0C /* SystemReadingRouter.swift in Sources */,
 				D96AA4CE1D4740298CEB37E3 /* SystemReadingCatalog.swift in Sources */,
