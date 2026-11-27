@@ -355,6 +355,43 @@ final class AIProposalTests: BookAIFixture {
     XCTAssertEqual(AINoteReviewCounts([savedReview]).selected, 0)
   }
 
+  func testAppendedNoteSuggestionLoadsWithoutResettingExistingReview() async throws {
+    let (root, reader, book, _, _) = try await fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = UUID().uuidString
+    let registry = AIProposalRegistry(reader: reader)
+    registry.canEdit = { $0 == owner }
+    let bookRef = AIReadingTools.bookRef(book.fixtureSHA256)
+    func suggestion(_ proposal: AINoteProposal, sequence: Int) -> AINoteSuggestion {
+      let id = proposal.proposalRef
+      let result = AIResultValue(
+        id: id, sessionID: owner, entryID: id, callID: id, turn: "same-turn",
+        sequence: sequence, body: .note(proposal))
+      return .init(result: result, proposal: proposal)
+    }
+    let first = suggestion(.init(
+      proposalRef: "note", bookRef: bookRef, kind: .note,
+      startUtf8: 0, endUtf8: 9, note: "Original suggestion"), sequence: 0)
+    let second = suggestion(.init(
+      proposalRef: "bookmark", bookRef: bookRef, kind: .bookmark,
+      startUtf8: 15, endUtf8: 15, note: ""), sequence: 1)
+
+    await registry.openNewNoteReviews([first])
+    registry.editNote(first.id, text: "Edited draft", selected: false)
+    XCTAssertNil(registry.review(second.id))
+    await registry.openNewNoteReviews([first, second])
+
+    guard case .note(let original) = registry.review(first.id)?.body,
+          case .note(let appended) = registry.review(second.id)?.body else {
+      return XCTFail("Missing note reviews")
+    }
+    XCTAssertEqual(original.draft, "Edited draft")
+    XCTAssertFalse(original.selected)
+    let counts = AINoteReviewCounts([original, appended])
+    XCTAssertEqual(counts.pending, 2)
+    XCTAssertEqual(counts.selected, 1)
+  }
+
   func testLegacyNotePreviewUsesSuggestionChapterInsteadOfReadingPosition() async throws {
     let firstHeading = "第一章 月\n\n"
     let firstChapter = firstHeading + "甲乙丙丁。\n\n"

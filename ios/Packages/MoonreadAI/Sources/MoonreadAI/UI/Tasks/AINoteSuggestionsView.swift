@@ -77,6 +77,7 @@ private struct AINoteSuggestionsReview: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @State private var loaded = false
+    @State private var seenNoteIDs: Set<String> = []
     @State private var source: AINoteSuggestion?
     @State private var editor: AINoteEditorRequest?
     @State private var editorQueue: [AINoteEditorRequest] = []
@@ -88,6 +89,7 @@ private struct AINoteSuggestionsReview: View {
     private var busy: Bool { saveRequest != nil || editor != nil || !editorQueue.isEmpty }
 
     var body: some View {
+        let noteIDs = notes.map(\.id)
         NavigationStack {
             ScrollView {
                 if loaded {
@@ -128,11 +130,10 @@ private struct AINoteSuggestionsReview: View {
                 }
             }
         }
-        .task {
-            for suggestion in notes {
-                guard !Task.isCancelled else { return }
-                await registry.openResult(suggestion.result)
-            }
+        .task(id: noteIDs) {
+            guard !Task.isCancelled else { return }
+            seenNoteIDs.formUnion(noteIDs)
+            await registry.openNewNoteReviews(notes)
             guard !Task.isCancelled else { return }
             loaded = true
         }
@@ -143,7 +144,7 @@ private struct AINoteSuggestionsReview: View {
         .onDisappear {
             saveRequest = nil
             editorQueue.removeAll()
-            for suggestion in notes { registry.closeResult(suggestion.id) }
+            for id in seenNoteIDs { registry.closeResult(id) }
         }
     }
 

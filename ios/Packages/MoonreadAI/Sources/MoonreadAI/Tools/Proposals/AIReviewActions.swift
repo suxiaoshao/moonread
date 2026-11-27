@@ -12,6 +12,13 @@ public struct AINoteEditorRequest: Identifiable, Sendable {
 
 
 extension AIProposalRegistry {
+    func openNewNoteReviews(_ suggestions: [AINoteSuggestion]) async {
+        for suggestion in suggestions where reviews[suggestion.id] == nil {
+            guard !Task.isCancelled else { return }
+            await openResult(suggestion.result)
+        }
+    }
+
     public func editMetadata(_ id: String, kind: AIMetadataFieldKind, text: String? = nil, selected: Bool? = nil, tag: String? = nil) {
         guard var value = review(id), canEdit(value.sessionID), !inFlight.contains(id), case .metadata(var body) = value.body,
               let i = body.fields.firstIndex(where: { $0.kind == kind }) else { return }
