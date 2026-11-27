@@ -334,6 +334,3 @@ enum AIResolvedSource: Sendable, Identifiable {
         ]
     }
 }
-extension AIReadingTools {
-    static func scopeRef(shelfID: String, path: String) -> String { path.isEmpty ? ref("s", shelfID) : ref("d", shelfID + "/" + path) }
-}

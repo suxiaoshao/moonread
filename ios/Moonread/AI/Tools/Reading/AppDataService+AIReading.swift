@@ -111,3 +111,69 @@ extension AppDataService {
     }
   }
 }
+
+extension AppDataService {
+  /// Resolve a card's exact targets in one snapshot, hydrating only the selected rows.
+  func aiBookListEntries(_ refs: [String], modelRead: Bool = false) async throws -> AIBookListResolution {
+    try await fixedReaderRead {
+      try $0.aiBookListEntries(refs, modelRead: modelRead, fileReference: { AIReference.make("f", $0) },
+                              bookReference: AIReadingTools.bookRef)
+    }
+  }
+}
+
+extension AIReadingAccess {
+  static func appDataService(_ service: AppDataService) -> Self {
+    .init(
+      shelves: { try await service.shelves() },
+      metadataOptions: { try await service.metadataOptions(shelfID: $0) },
+      libraryEntries: { try await service.libraryEntries($0) },
+      aiLibraryEntries: { try await service.aiLibraryEntries($0, sort: $1) },
+      aiLibraryBooks: { try await service.aiLibraryBooks($0) },
+      aiFoundBookPage: { try await service.aiFoundBookPage(query: $0, scope: $1, configuration: $2, offset: $3, limit: $4) },
+      aiBookListEntries: { try await service.aiBookListEntries($0, modelRead: $1) },
+      aiBookListThumbnail: { await service.aiBookListThumbnail($0) },
+      aiBookID: { try await service.aiBookID(sha: $0) },
+      aiMarks: { try await service.aiMarks(sha: $0) },
+      preparedBookIdentity: { file in
+        let lease = try await service.aiPrepare(file)
+        let sha = try await service.snapshot(lease.id).book.readingKey.formalSHA256
+        return (lease.id, sha)
+      },
+      snapshot: { try await service.snapshot($0) },
+      details: { try await service.details(sha: $0) },
+      detailsByID: { try await service.details(bookID: $0) },
+      chapters: { try await service.chapters($0) },
+      book: { try await service.book($0) },
+      textContext: { try await service.textContext($0, at: $1, before: $2, after: $3) },
+      textRange: { try await service.textRange($0, start: $1, end: $2) },
+      paragraph: { try await service.paragraph($0, at: $1) },
+      paragraphContaining: { try await service.paragraph($0, containing: $1) },
+      search: { try await service.search($0, query: $1, regex: $2, caseSensitive: $3, range: $4) },
+      searchBatch: { try await service.aiSearchBatch($0) },
+      statisticsRead: { first, last, book in
+        let result = try await service.statisticsRead(first: first, last: last, book: book)
+        return (result.value, result.compatibilityNotice)
+      },
+      activitiesRead: { first, last, book in
+        let result = try await service.activitiesRead(first: first, last: last, book: book)
+        return (result.value, result.compatibilityNotice)
+      })
+  }
+}
+
+extension AppDataService {
+  nonisolated var aiReadingAccess: AIReadingAccess { AIReadingAccess.appDataService(self) }
+}
+
+extension AIReadingTools {
+  init(reader: AppDataService = .shared, lineLimit: Int = 2000, owner: String? = nil) {
+    self.init(reader: reader.aiReadingAccess, lineLimit: lineLimit, owner: owner)
+  }
+}
+
+extension AIReadingReferences {
+  init(reader: AppDataService = .shared) {
+    self.init(access: reader.aiReadingAccess)
+  }
+}

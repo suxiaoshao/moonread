@@ -65,10 +65,10 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 单书详情、来源与阅读状态 | `MoonreadData/BookInformationQuery.swift` / `MoonreadLibrary/BookInformationModel.swift`，来源行序沿用 Rust `library/order.rs` | 从明确书键读取已结算资料、有效位置与正文/章概况；未读副本按修改时间，已读副本按自然名称、路径、ID，显式文件优先。正式资料隔离禁用编辑并随观察重验；详情不读事实或覆盖，统计仍独立取数 | 页面各自观察；准备编辑和单次消费者复用固定读；`MoonreadLibrary/BookMetadataDraft.swift` 持有编辑草稿，`MoonreadData/BookMetadataEditPlan.swift` 计算写入字段，原 `UserValueRows` 所在事务继续结算 |
 | 搜索与筛选按用途取数 | Swift `LibrarySearchQuery.swift` / `FolderQuery.swift` / `LibraryQueryRules.swift`；Apollo 生成固定结果类型 | 筛选取当前作者及标签，选项查询按正文身份一次汇总标签用量；普通搜索按条件选列，匹配在事务外执行，再核对输入并只给命中项补卡。AI 资料搜索保留简介与正式资料兼容屏障。AI 按条件查找沿用普通筛选求值和排序，加同一 AI 读取屏障，复核快照后只给当页的条目补状态与作者。两者沿用写入时结算的 pending 整对象覆盖 | 搜索与选择页按需观察 |
 | 标签选择页的浏览分组与顺序 | Swift `Library/Search/BookTagCategories.swift` | 原词查随包词表，按标签使用本数和拼音分组排序。计数复用选项查询，两种入口共享展示规则，查询与存储仍使用原词 | 仅展示，不写用户数据 |
-| AI 工具输入/schema/输出契约与执行 | Swift `AI/Tools/Reading/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 只拆契约、执行和 `AppDataService+AIReading.swift` 平台适配的物理文件；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
-| AI 对话筛选建议 | 包内 `AIBookFilterContracts` 与宿主 `AIReadingTools`、`AICommittedResultDecoder` | 候选与手动筛选同源；宿主复用 `BookSearchConfiguration` 校验与查询。建议随成功工具结果保存，用户点击才打开独立搜索。书架 ID 与歧义选择留在本机 | 搜索、排序与虚拟书架由原领域持有 |
-| AI 对话固定书单 | 包内 `AIBookFilterContracts`、宿主 `AIReadingReferences`、`AICommittedResultDecoder` | 现有文件与正式正文身份同批解析，只补选中书目；本地封面缩略图、精简状态和引用随工具会话提交，模型仍只接收宿主核实的引用与书目名称。用相同解析检查当前是否可打开，保留历史快照 | 不写书库、不下载正文、共享详情路由与书目行 |
-| AI b: 引用协议 | Swift `AI/Tools/Reading/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验。外部字符串解码为书或文件引用，准备权限独立；共享准备由 AppDataService 持有，最后一个等待者释放工作 | 共享引用解析 |
+| AI 工具输入/schema/输出契约与执行 | Swift `MoonreadAI/Tools/Reading/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 工具和引用解析在包内，App 通过 `AIReadingAccess` 注入读取及正文准备能力；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
+| AI 对话筛选建议 | 包内 `AIBookFilterContracts`、`AIBookFilterResolution` 和 `AIReadingTools`，由 `AICommittedResultDecoder` 恢复 | 候选与手动筛选同源，复用 `BookSearchConfiguration` 校验与查询。建议随成功工具结果保存，用户点击才打开独立搜索。书架 ID 与歧义选择留在本机 | 搜索、排序与虚拟书架由原领域持有 |
+| AI 对话固定书单 | 包内 `AIBookFilterContracts`、`AIReadingReferences`，由 `AICommittedResultDecoder` 恢复 | 现有文件与正式正文身份同批解析，只补选中书目；本地封面缩略图、精简状态和引用随工具会话提交，模型仍只接收宿主核实的引用与书目名称。用相同解析检查当前是否可打开，保留历史快照 | 不写书库、不下载正文、共享详情路由与书目行 |
+| AI b: 引用协议 | Swift `MoonreadAI/Tools/Reading/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验。外部字符串解码为书或文件引用，准备权限独立；共享准备由 AppDataService 持有，最后一个等待者释放工作 | 共享引用解析 |
 | v2 导入、搜索、重建及计时纯计算 | Rust `reading/compute.rs`、`reading/input/text.rs`、`library/tools/search_compute.rs`、`user/statistics/mod.rs` | 每步消费前态。导入共享发布规范化与原文／正文 SHA；搜索按显式范围每步最多 50 条；章节复用发布扫描器。计时新接口拒绝单步超过一天；生产采集调用连续段接口，旧切片入口仅供历史数据和 DEBUG 夹具 | 正文三项已由 Swift 用显式票据调用 |
 | v2 文件归属、连接池与本机归户 | `MoonreadData/DataOwnerState.swift` 决定账户目标；Swift `MoonreadData/DataSession.swift`、`LocalScopeImport.swift` 持有实际挂载与迁入 | 唯一会话 owner 决定 `index.sqlite` 和所挂 `usr`；失去账户确认时仍可本机读写、不同步；明确登出使用 local。首次确认启用时冻结后合并目标证据，由目标同事务结算非事实当前值并写完成标记，成功后独立清理源；旧会话代次不得访问另一账户 | 归户后由当前用户库接入同步 |
 | 本机书籍与任务记录迁入 | Swift `LegacyIndexImport`、`LegacyUserImport` 和启动准备 | 1.6 的导入来源、明确草稿指针、示例标记及设备作者随索引提交。续读、隐藏、首选文件与书架恢复只迁可确定的用户域。坏记录逐条丢弃，提交后清理发布版旧键 | 单一迁入入口 |
@@ -112,7 +112,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 多标签分组/未标注/未索引分区 | Swift `Data/Queries` 书架固定查询 | 按同一个索引身份分组，每个文件可属于多个标签 | 旧 Rust 查询已移除 |
 | 目录四封面选择 | Swift `Data/Queries` 书架固定查询 | 独立 top-4 策略，不等于目录列表顺序 | 旧 Rust 查询已移除 |
 | 字数定义与 UTF-8 前缀累计字数 | Rust `reading/text_count.rs` | 导入和覆盖对已校验切片计非空白 Unicode 标量，目录扫描在原有单趟扫描中调用同一谓词。手动修章由 Swift `UserValueRows` 校验与读取原行及旧块首累计值，一次调用 Rust 得到标题、正文起点的累计值 | 沿用存量块计数与正文坐标 |
-| 字节位置→进度比例、百分比跳转 | Swift `Data/ReadingProgress.swift`；反向定位由 `ReaderOpeningRead.location` 执行 | 进度使用同一正文 SHA 的规范化 UTF-8 位置和长度。界面百分比格式和阅读位置附件取比例，跳转面板、系统目录和 AI `getBook` 取百分数；用户跳转仍校验 0…100 并贴齐 UTF-8 标量边界 | 只读换算，原始位置仍按 SHA 保存 |
+| 字节位置→进度比例、百分比跳转 | Swift `MoonreadData/ReadingProgress.swift`；反向定位由 `ReaderOpeningRead.location` 执行 | 进度使用同一正文 SHA 的规范化 UTF-8 位置和长度。界面百分比格式和阅读位置附件取比例，跳转面板、系统目录和 AI `getBook` 取百分数；用户跳转仍校验 0…100 并贴齐 UTF-8 标量边界 | 只读换算，原始位置仍按 SHA 保存 |
 | 有效章节/位置归属 | Swift `ReaderChapterRead.headingSQL`；`IndexTasks` 持有自动章节重建 | 导航、书架和统计使用同一有效章节边界；批注对排序后的偏移批量取前驱，搜索计算接收冻结标题，折叠目录按可见行定位 | 共享有效章节查询 |
 | 文件目录类别、平台书架来源 | Swift `LibraryService` 与 `IndexSources` | 平台协调真实树和授权；Swift writer 对已准入扫描做一次事务，并保留失败范围最后清单 | 页面条目形状留 2c |
 | 正文准备、目录覆盖与笔记选择 | Swift `IndexImport`、`IndexTasks`、`AppDataService` 与 `ReaderToolsModel` | 保留已提交前缀，提交失败丢弃 Rust 后继并从字节零重验；Swift 持有章节暂存，验证原正文再原子发布 | 窗口、覆盖等有效页面读法留 2c |
@@ -126,7 +126,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 阅读工具意图、关闭与输入 | Swift `ReaderToolSession` / `ReaderPresentationHost`、`ReaderBottomPanel` | ReaderSession 每次打开持有一个工具 owner。工具通过带 opening、访问 ID 和版本的动作修改 SurfaceIntent；根工具关闭统一从当前有效会话裁决恢复。宿主只记录物理安装和对应快照，同一快照驱动内容与真实页脚；旧回调只能释放原安装 | 不改公共导航、正文容量或存储 |
 | 阅读执行、搜索与听书门禁 | Swift `ReaderExecution`（由 `ReaderSession` 持有）、`ReaderToolsModel`、`ReaderToolSession` / 原生呈现适配 | ReaderExecution 只持有当前执行主体，搜索任务独立于收起或展开；ReaderToolSession 从位置动作、选区和实际原生层的来源裁决一次播放资格。统计和自动阅读继续按正文可读性独立判断 | 均为会话状态；不持久化 |
 | v2 统计总览、书目、时段和 Widget 固定读 | Swift `StatisticsHistoryRead`；Apollo 生成结果类型 | 期间总时长、日历和书目读 `reading_day`，按记录的自然日精确归并 UInt64；作者页按当前作品确认正文键批量选取同一总览，纳入已验证旧键并复用书目、总时长和正式阅读顺序；每书只定点补历史标题、作者与封面引用。时段从两种 current 读取起止、结算时长、类型 ID、首位置与历史标题。未知事实标不完整，相交未知清除阻止出数；覆盖仍由 Rust 计算 | 快捷指令仅取日量 |
-| 有效阅读日 | Swift `MoonreadStatistics/StatisticsDataSource.swift::activeDayCount` | 在已筛选的日记录中按当地 day ID 对正结算时长的日期去重；App 统计和 AI 用总览的日记录，邀评复用同一规则并独立读取全书全期日量 | 单书累计日数与 Widget 连续日沿用各自查询 |
+| 有效阅读日 | Swift `MoonreadDataTypes/StatisticsDays.swift::activeDayCount` | 在已筛选的日记录中按当地 day ID 对正结算时长的日期去重；App 统计和 AI 用总览的日记录，邀评复用同一规则并独立读取全书全期日量 | 单书累计日数与 Widget 连续日沿用各自查询 |
 | 章节结构与覆盖加载 | Swift `ReaderChapterQuery.swift` / `ReaderToolsModel`，Rust `user/statistics/coverage.rs` | 目录结构先发布，不取事实。当前消费者只读目标书有效头、曝光文本与端点块；Rust 解码并裁去清除前缀，按连续停留算字节覆盖，再映射至非空白字符前缀。账户、正文边界或选中头变化时淘汰旧计算；兼容性阻断不显示 0%。离开后释放覆盖 | 无派生范围表或跨请求缓存 |
 | 目录/临时跳转与正式续读保存 | Swift `ReaderSession`、`ReaderToolsModel` / Rust `ReadingFrame` | 目录断 visit 并 enqueue，不等统计 writer drain、不预读笔记；跳转 frame/章节标题在 Rust 同一读取事务中返回并一起发布；临时原点只在会话内存，原已接受保存走现有 saveTask；明确采用浏览位置或同步进度共用位置交还，结束听书后提交新位置，旧 flush 不得回写旧位置 | 不改正式位置格式 |
 | 统计范围、观察与时段展示 | Swift `MoonreadStatistics.StatisticsModel`、`StatisticsSpan` | 同池观察按用途选列并合并已通知更新；保留上一范围并明示日期，不把旧数当新范围。账户变化和相交未知清除撤下旧数。单书先发布期间统计，再用同一快照复核期间并补齐累计、最近七个有记录日的时段。展示按原相邻条件合段，用类型和记录 ID 作行身份、用结算时长 checked 相加 | 每页独立观察，关闭页面取消读取；日界、时区和回前台重核参数 |

@@ -76,7 +76,6 @@ E71000000000000000000001 = {isa = PBXBuildFile; fileRef = E720000000000000000000
 AC1000000000000000000077 /* MoonCharacter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2000000000000000000077; };
 		E61000000000000000000077 /* AIReadingMoonTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000077 /* AIReadingMoonTestFixtures.swift */; };
 		E61000000000000000000007 /* AIReadingToolsTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000007 /* AIReadingToolsTestFixtures.swift */; };
-E61000000000000000000005 = {isa = PBXBuildFile; fileRef = E62000000000000000000005; };
 		E61000000000000000000004 /* AIAgentRuntimeTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000004 /* AIAgentRuntimeTestFixtures.swift */; };
 
 
@@ -145,7 +144,6 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		E7470B2B8F69485A8E707336 /* AIQuickTaskEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D7959C9A0B549099FD007FB; };
 		8E2BEFD2EFA643EDB23DD5BB /* AIQuickTaskResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2117063F3A64081A7DB32FA; };
 		19EEE1FEFFC94415B88046FB /* AIProposals.swift in Sources */ = {isa = PBXBuildFile; fileRef = C140582B21A04A6588F553EA; };
-		D24559353FE44FAC9E198202 /* AIReadingReferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0F3ACE8DCE4518AA4A8178; };
 		6C0B92C59607479E88DB5F02 /* AIProposalReviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C7DC58DBE7F4DDB8E6A4CEA; };
 		14F4DEFD709845FC8AAAEA7F /* AIProposalTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E617B7FF31E43C3A0B7C1AF; };
 		29E8AF36983F4CF9BE988DE0 /* AIOrganization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29CD035636154B598B211DC3; };
@@ -409,7 +407,6 @@ E72000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
 358000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIBookListCard.swift"; sourceTree = "<group>"; };
 		E62000000000000000000077 /* AIReadingMoonTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingMoonTestFixtures.swift"; sourceTree = "<group>"; };
 		E62000000000000000000007 /* AIReadingToolsTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingToolsTestFixtures.swift"; sourceTree = "<group>"; };
-E62000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingTools.swift"; sourceTree = "<group>"; };
 		E62000000000000000000004 /* AIAgentRuntimeTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIAgentRuntimeTestFixtures.swift"; sourceTree = "<group>"; };
 
 
@@ -481,7 +478,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		7D7959C9A0B549099FD007FB /* AIQuickTaskEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIQuickTaskEntry.swift"; sourceTree = "<group>"; };
 		A2117063F3A64081A7DB32FA /* AIQuickTaskResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIQuickTaskResult.swift"; sourceTree = "<group>"; };
 		C140582B21A04A6588F553EA /* AIProposals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIProposals.swift"; sourceTree = "<group>"; };
-		6D0F3ACE8DCE4518AA4A8178 /* AIReadingReferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingReferences.swift"; sourceTree = "<group>"; };
 		5C7DC58DBE7F4DDB8E6A4CEA /* AIProposalReviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIProposalReviews.swift"; sourceTree = "<group>"; };
 		7E617B7FF31E43C3A0B7C1AF /* AIProposalTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIProposalTools.swift"; sourceTree = "<group>"; };
 		29CD035636154B598B211DC3 /* AIOrganization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIOrganization.swift"; sourceTree = "<group>"; };
@@ -1338,9 +1334,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		9088342039FAD969B5501EED /* Reading */ = {
 			isa = PBXGroup;
 			children = (
-				6D0F3ACE8DCE4518AA4A8178 /* AIReadingReferences.swift */,
 
-				E62000000000000000000005 /* AIReadingTools.swift */,
 				15F86CEF54D14111746A4067 /* AppDataService+AIReading.swift */,
 			);
 			path = "Reading";
@@ -1826,7 +1820,6 @@ B792EA92E8204EEDB7AA1450,
 				14F4DEFD709845FC8AAAEA7F /* AIProposalTools.swift */,
 				941D8F146D7A436D97BC6909 /* AIReviewActions.swift */,
 				6C0B92C59607479E88DB5F02 /* AIProposalReviews.swift */,
-				D24559353FE44FAC9E198202 /* AIReadingReferences.swift */,
 				19EEE1FEFFC94415B88046FB /* AIProposals.swift */,
 				19B30D2DE87E46ADA99B1F85 /* AIResults.swift */,
 				8E2BEFD2EFA643EDB23DD5BB /* AIQuickTaskResult.swift */,
@@ -1857,7 +1850,7 @@ E71000000000000000000001,
 
 
 
-E61000000000000000000005, D31000000000000000000004,
+D31000000000000000000004,
 
 
 

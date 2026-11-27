@@ -1,22 +1,4 @@
-/// The host implements book operations using its existing reading and authorization owners.
-public protocol AIReadingToolActions: Actor {
-  func confirmBook(_ input: AIGetBookInput) async throws -> String?
-  func confirmText(_ refs: [String]) async throws -> String?
-  func list(_ input: AILSInput) async throws -> AIToolResponse<AILibraryResult>
-  func findBooks(_ input: AIFindBooksInput) async throws -> AIToolResponse<AIFilteredBooksResult>
-  func getBook(_ input: AIGetBookInput) async throws -> AIToolResponse<AIBookResult>
-  func chapters(_ input: AIChaptersInput) async throws -> AIToolResponse<AIChaptersResult>
-  func readText(_ input: AIReadInput) async throws -> AIToolResponse<AIReadResult>
-  func searchText(_ input: AIRGInput) async throws -> AIToolResponse<AISearchResult>
-  func marks(_ input: AIMarksInput) async throws -> AIToolResponse<AIMarksResult>
-  func statistics(_ input: AIStatisticsInput) async throws -> AIToolResponse<AIStatisticsResult>
-  func environment(_ input: AIEnvironmentInput) -> AIToolResponse<AIEnvironmentResult>
-  func listFilterOptions(_ input: AIFilterOptionsInput) async throws -> AIToolResponse<AIFilterOptionsResult>
-  func showBookList(_ input: AIShowBookListInput) async throws -> (AIToolResponse<AIShownBooksResult>, [AIBookListPresentation])
-  func proposeBookFilter(_ input: AIBookFilterArguments) async throws -> AIToolResponse<AIBookFilterSuggestion>
-}
-
-extension AIReadingToolActions {
+extension AIReadingTools {
   public nonisolated func definitions() -> [AIAgentTool] {
     [
       .init(

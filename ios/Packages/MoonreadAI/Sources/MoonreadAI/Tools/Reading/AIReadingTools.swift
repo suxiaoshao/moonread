@@ -2,39 +2,41 @@ import MoonreadSearchText
 import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
-import MoonreadAI
 import AISDKProvider
 import AISDKProviderUtils
 import Foundation
 
-actor AIReadingTools: AIReadingToolActions {
-  private let reader: AppDataService
+public actor AIReadingTools {
+  private let reader: AIReadingAccess
   private let owner: String?
   private struct Cursor: Codable {
     var signature: String
     var offset: Int
   }
   private let lineLimit: Int
-  init(reader: AppDataService = .shared, lineLimit: Int = 2000, owner: String? = nil) {
+  public init(reader: AIReadingAccess, lineLimit: Int = 2000, owner: String? = nil) {
     precondition((1...2000).contains(lineLimit))
     self.reader = reader; self.lineLimit = lineLimit; self.owner = owner
   }
-  static func ref(_ type: String, _ key: String) -> String {
+  public static func ref(_ type: String, _ key: String) -> String {
     AIReference.make(type, key)
   }
-  static func bookRef(_ sha: String) -> String { "b:" + sha }
+  public static func bookRef(_ sha: String) -> String { "b:" + sha }
+  public static func scopeRef(shelfID: String, path: String) -> String {
+    path.isEmpty ? ref("s", shelfID) : ref("d", shelfID + "/" + path)
+  }
   private func sha(_ ref: String) throws -> String { try AIReadingReferences.parseBookReference(ref).sha }
   private func position(_ bookRef: String, _ offset: UInt64) -> String? {
     (try? sha(bookRef)).map { AIPosition.ref(bookSHA: $0, offset: offset) }
   }
-  private func files() async throws -> [LibraryEntry] { try await AIReadingReferences(reader: reader).files() }
-  private func location(_ ref: String) async throws -> LibraryLocation { try await AIReadingReferences(reader: reader).location(ref) }
-  private func file(_ ref: String) async throws -> LibraryEntry { try await AIReadingReferences(reader: reader).file(ref) }
-  private func bookID(_ ref: String) async throws -> String { try await AIReadingReferences(reader: reader).bookID(ref) }
-  func confirmBook(_ input: AIGetBookInput) async throws -> String? { try await AIReadingReferences(reader: reader).confirmBook(input) }
-  func confirmText(_ refs: [String]) async throws -> String? { try await AIReadingReferences(reader: reader).confirmText(refs) }
-  private func ready(_ ref: String) async throws -> String { try await AIReadingReferences(reader: reader).ready(ref) }
-  static func preparationConfirmation(_ refs: [String], isolation: isolated (any Actor)? = #isolation, title: (String) async throws -> String?) async throws -> String? {
+  private func files() async throws -> [LibraryEntry] { try await AIReadingReferences(access: reader).files() }
+  private func location(_ ref: String) async throws -> LibraryLocation { try await AIReadingReferences(access: reader).location(ref) }
+  private func file(_ ref: String) async throws -> LibraryEntry { try await AIReadingReferences(access: reader).file(ref) }
+  private func bookID(_ ref: String) async throws -> String { try await AIReadingReferences(access: reader).bookID(ref) }
+  func confirmBook(_ input: AIGetBookInput) async throws -> String? { try await AIReadingReferences(access: reader).confirmBook(input) }
+  func confirmText(_ refs: [String]) async throws -> String? { try await AIReadingReferences(access: reader).confirmText(refs) }
+  private func ready(_ ref: String) async throws -> String { try await AIReadingReferences(access: reader).ready(ref) }
+  public static func preparationConfirmation(_ refs: [String], isolation: isolated (any Actor)? = #isolation, title: (String) async throws -> String?) async throws -> String? {
     var seen = Set<String>()
     var titles: [String] = []
     for ref in refs where seen.insert(ref).inserted {
@@ -88,8 +90,8 @@ actor AIReadingTools: AIReadingToolActions {
   func listFilterOptions(_ input: AIFilterOptionsInput) async throws -> AIToolResponse<AIFilterOptionsResult> {
     let names: [String]
     switch input.field {
-    case .tag: names = try await reader.metadataOptions(shelfID: nil).tags.map(\.name)
-    case .author: names = try await reader.metadataOptions(shelfID: nil).authors
+    case .tag: names = try await reader.metadataOptions(nil).tags.map(\.name)
+    case .author: names = try await reader.metadataOptions(nil).authors
     case .shelf: names = LibraryQueryRules.filterShelves(try await reader.shelves()).map(LibraryQueryRules.filterShelfName)
     }
     let term = input.query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -108,7 +110,7 @@ actor AIReadingTools: AIReadingToolActions {
   private func validatedBookFilter(_ input: AIBookFilterInput) async throws -> (AIBookFilterSuggestion, [LibraryShelf]) {
     _ = try input.configuration(resolveShelf: { $0 })
     if input.nodes.contains(where: { $0.kind == .author || $0.kind == .tag }) {
-      let options = try await reader.metadataOptions(shelfID: nil)
+      let options = try await reader.metadataOptions(nil)
       let tags = Set(options.tags.map { Data($0.name.utf8) })
       let authors = Set(options.authors.map { Data($0.utf8) })
       for node in input.nodes where node.kind == .tag || node.kind == .author {
@@ -152,8 +154,7 @@ actor AIReadingTools: AIReadingToolActions {
     query.cursor = nil; query.limit = nil
     let signature = try signature("find_books", query)
     let start = try cursorOffset(input.cursor, signature: signature)
-    let found = try await reader.aiFoundBookPage(query: input.query ?? "", scope: scope, configuration: configuration,
-                                                 offset: start, limit: input.limit ?? 20)
+    let found = try await reader.aiFoundBookPage(input.query ?? "", scope, configuration, start, input.limit ?? 20)
     let items = found.books.map { hit in
       let entry = hit.entry, metadata = entry.displayMetadata
       return AIFilteredBookResult(title: entry.title, author: metadata.flatMap { $0.author.isEmpty ? nil : $0.author },
@@ -168,7 +169,7 @@ actor AIReadingTools: AIReadingToolActions {
 
   func showBookList(_ input: AIShowBookListInput) async throws -> (AIToolResponse<AIShownBooksResult>, [AIBookListPresentation]) {
     try input.validate()
-    let resolved = try await reader.aiBookListEntries(input.refs, modelRead: true)
+    let resolved = try await reader.aiBookListEntries(input.refs, true)
     let entries = try input.refs.enumerated().map { index, ref in
       let field = "refs[\(index)]"
       if resolved.folders.contains(ref) { throw AIToolError("invalid_argument", field: field) }
@@ -224,7 +225,7 @@ actor AIReadingTools: AIReadingToolActions {
     let items: [AIFileResult]
     if let parent = input.parentRef {
       let rows = try await reader.aiLibraryEntries(
-        location(parent), sort: input.sort == .recent ? .reading : .name)
+        location(parent), input.sort == .recent ? .reading : .name)
       items = rows.filter {
         input.kind == nil || input.kind == .all
           || ($0.directory ? input.kind == .folders : input.kind == .books)
@@ -266,12 +267,12 @@ actor AIReadingTools: AIReadingToolActions {
       entry = nil
       contentSHA = reference.sha
     case .file(let reference, let policy):
-      let source = try await AIReadingReferences(reader: reader).file(reference)
+      let source = try await AIReadingReferences(access: reader).file(reference)
       entry = source
       switch policy {
       case .prepare:
-        let lease = try await reader.aiPrepare(source.source)
-        guard let sha = try await reader.snapshot(lease.id).book.readingKey.formalSHA256 else { throw AIToolError("needs_preparation") }
+        let prepared = try await reader.preparedBookIdentity(source.source)
+        guard let sha = prepared.formalSHA256 else { throw AIToolError("needs_preparation") }
         contentSHA = sha
       case .existingOnly:
         contentSHA = try source.metadata.map { try parseSha256(value: $0.sha) }
@@ -283,7 +284,7 @@ actor AIReadingTools: AIReadingToolActions {
           title: entry?.title ?? "", availability: entry.map(availability) ?? "unavailable",
           files: entry.map { [fileResult($0)] } ?? []))
     }
-    let details = try await reader.details(sha: contentSHA)
+    let details = try await reader.details(contentSHA)
     let files = try await files().filter { $0.metadata?.sha == details.metadata.sha }
     var data = AIBookResult(
       title: details.book?.title ?? entry?.title ?? "",
@@ -354,8 +355,8 @@ actor AIReadingTools: AIReadingToolActions {
       guard offset >= lower, offset < upper else {
         throw AIToolError("invalid_argument", field: "around", message: "The position is outside the selected chapter.")
       }
-      context = try await reader.textContext(id, at: offset,
-        before: UInt32(clamping: input.beforeParagraphs ?? 3), after: UInt32(clamping: input.afterParagraphs ?? 3))
+      context = try await reader.textContext(id, offset,
+        UInt32(clamping: input.beforeParagraphs ?? 3), UInt32(clamping: input.afterParagraphs ?? 3))
     }
     let requestedStart = context.map { max(lower, $0.startUtf8) } ?? lower
     let requestedEnd = context.map { min(upper, $0.endUtf8) } ?? upper
@@ -373,7 +374,7 @@ actor AIReadingTools: AIReadingToolActions {
     var value: TextRange?
     for _ in 0..<4 {
       do {
-        value = try await reader.textRange(id, start: start, end: end)
+        value = try await reader.textRange(id, start, end)
         break
       } catch ReaderError.InvalidRange {
         if end == requestedEnd { throw AIToolError("stale_reference", field: "around") }
@@ -421,14 +422,14 @@ actor AIReadingTools: AIReadingToolActions {
       let bounds = try await textBounds(id, chapterRef: input.chapterRef, size: size, ref: ref)
       let start = bounds.startUtf8, end = bounds.endUtf8
       let job = try await reader.search(
-        id, query: input.query, regex: (input.mode ?? .regex) == .regex,
-        caseSensitive: input.caseSensitive ?? true, range: .init(startUtf8: start, endUtf8: end))
+        id, input.query, (input.mode ?? .regex) == .regex,
+        input.caseSensitive ?? true, .init(startUtf8: start, endUtf8: end))
       defer { job.cancel() }
       var skippedContent = false
       try await withTaskCancellationHandler {
         while true {
           try Task.checkCancellation()
-          let batch = try await reader.aiSearchBatch(job)
+          let batch = try await reader.searchBatch(job)
           // Coverage warnings never terminate a scan. Completion/cancellation
           // and this tool's explicit pagination budget are independent signals.
           skippedContent = skippedContent || batch.truncated
@@ -474,7 +475,7 @@ actor AIReadingTools: AIReadingToolActions {
       return .init(data: .init(bookRef: input.bookRef, items: [one.data]), page: one.page)
     }
     let ref = input.bookRef
-    let groups = try await reader.aiMarks(sha: sha(ref))
+    let groups = try await reader.aiMarks(sha(ref))
     var scope: AIToolRange?
     if input.chapterRef != nil {
       let id = try await ready(ref)
@@ -531,7 +532,7 @@ actor AIReadingTools: AIReadingToolActions {
       page: page)
   }
   private func mark(bookRef ref: String, markRef: String, variantRef: String?, pageCursor: String?) async throws -> AIToolResponse<AIMarkResult> {
-    let groups = try await reader.aiMarks(sha: sha(ref))
+    let groups = try await reader.aiMarks(sha(ref))
     guard let heads = groups.first(where: { Self.ref("mark", $0.key) == markRef })?.value
     else { throw AIToolError("not_found", field: "markRef") }
     let readable = heads.compactMap { candidate in
@@ -617,7 +618,7 @@ actor AIReadingTools: AIReadingToolActions {
     let lastDay = Int64(last.timeIntervalSince1970 / 86400)
     let key = try input.bookRef.map(sha)
     let view = input.view ?? .summary
-    let overview = view == .sessions ? nil : try await reader.statisticsRead(first: firstDay, last: lastDay, book: key)
+    let overview = view == .sessions ? nil : try await reader.statisticsRead(firstDay, lastDay, key)
     var incomplete = overview?.compatibilityNotice == nil ? nil : true
     if view == .summary {
       guard input.cursor == nil else {
@@ -652,7 +653,7 @@ actor AIReadingTools: AIReadingToolActions {
           readingDays: $0.readingDays)
       }
     case .sessions:
-      let read = try await reader.activitiesRead(first: firstDay, last: lastDay, book: key)
+      let read = try await reader.activitiesRead(firstDay, lastDay, key)
       incomplete = read.compatibilityNotice == nil ? nil : true
       items = read.value.map {
         .init(
