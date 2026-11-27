@@ -36,7 +36,7 @@ struct ImportReadingDataIntent: AppIntent {
             let archive = directory.appendingPathComponent("Moonread.moonread-backup")
             try file.data.write(to: archive)
             let outcome = try await AppDataService.shared.importShortcutReadingBackup(archive)
-            record = .init(fileName: file.filename, updatedTitles: outcome.updatedTitles, kept: outcome.kept, globalUpdated: outcome.globalUpdated)
+            record = .init(fileName: file.filename, books: outcome.books, kept: outcome.kept, globalUpdated: outcome.globalUpdated)
         } catch { throw ShortcutReadingDataError(error) }
         record.save()
         return .result(value: record.summary, dialog: "\(record.summary)")

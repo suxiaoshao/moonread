@@ -177,10 +177,11 @@ import XCTest
         try data.write(to: archive)
 
         let applied = try await target.importShortcutReadingBackup(archive)
-        XCTAssertEqual(applied.updatedTitles.count, 1)
+        XCTAssertEqual(applied.books.count, 1)
+        XCTAssertEqual(applied.books.first?.restored, ["progress"], "The record names what was restored, like the import preview")
         XCTAssertEqual(try targetRows.positionToken(sha), "restored-position")
         let repeated = try await target.importShortcutReadingBackup(archive)
-        XCTAssertTrue(repeated.updatedTitles.isEmpty)
+        XCTAssertTrue(repeated.books.isEmpty)
 
         // A Settings import holding its staged file keeps Shortcuts out instead of queueing.
         let staged = try await target.stageReadingBackup(.init(selectedFile: archive))

@@ -1,17 +1,26 @@
 import MoonreadDesign
+import MoonreadData
 import SwiftUI
 
 /// The latest Shortcuts backup import. Shortcuts apply backups without a preview,
 /// so Settings keeps this device-local summary for review afterwards.
 public struct ShortcutBackupImportRecord: Codable, Equatable, Sendable {
+    /// One book the import changed, and which kinds of its reading data were restored.
+    public struct Book: Codable, Equatable, Sendable {
+        public let title: String?
+        public let linked: Bool
+        /// `BackupDataKind` raw values, in display order.
+        public let restored: [String]
+        public init(title: String?, linked: Bool, restored: [String]) { self.title = title; self.linked = linked; self.restored = restored }
+    }
     public let date: Date
     public let fileName: String?
-    public let updatedTitles: [String?]
+    public let books: [Book]
     public let kept: Int
     public let globalUpdated: Bool
 
-    public init(date: Date = Date(), fileName: String?, updatedTitles: [String?], kept: Int, globalUpdated: Bool) {
-        self.date = date; self.fileName = fileName; self.updatedTitles = updatedTitles
+    public init(date: Date = Date(), fileName: String?, books: [Book], kept: Int, globalUpdated: Bool) {
+        self.date = date; self.fileName = fileName; self.books = books
         self.kept = kept; self.globalUpdated = globalUpdated
     }
 
@@ -25,13 +34,13 @@ public struct ShortcutBackupImportRecord: Codable, Equatable, Sendable {
         NotificationCenter.default.post(name: .shortcutBackupImportRecorded, object: nil)
     }
 
-    public var changed: Bool { !updatedTitles.isEmpty || globalUpdated }
+    public var changed: Bool { !books.isEmpty || globalUpdated }
 
     /// One sentence shared by the Shortcuts result and the Settings row.
     public var summary: String {
         guard changed else { return String(localized: "没有需要更新的内容", table: "DataManagement") }
         var parts: [String] = []
-        if !updatedTitles.isEmpty { parts.append(String(localized: "更新了 \(updatedTitles.count) 本书", table: "DataManagement")) }
+        if !books.isEmpty { parts.append(String(localized: "更新了 \(books.count) 本书", table: "DataManagement")) }
         if globalUpdated { parts.append(String(localized: "更新了配色等全局数据", table: "DataManagement")) }
         if kept > 0 { parts.append(String(localized: "\(kept) 本保留本机较新的内容", table: "DataManagement")) }
         return parts.formatted(.list(type: .and, width: .narrow))
@@ -72,7 +81,7 @@ private struct ShortcutBackupImportRecordView: View {
     @Environment(\.dismiss) private var dismiss
     let record: ShortcutBackupImportRecord
 
-    private struct Row: Identifiable { let id: Int; let title: String? }
+    private struct Row: Identifiable { let id: Int; let book: ShortcutBackupImportRecord.Book }
 
     var body: some View {
         DataExchangeTaskSheet(title: Text("快捷指令导入", tableName: "DataManagement"), sharing: .constant(nil), onShared: {},
@@ -84,19 +93,23 @@ private struct ShortcutBackupImportRecordView: View {
                         Text(verbatim: [record.date.formatted(date: .long, time: .shortened), record.fileName].compactMap { $0 }.joined(separator: " · "))
                             .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                     }.padding(.vertical, 8)
-                    if !record.updatedTitles.isEmpty {
+                    if !record.books.isEmpty {
                         Text("更新的书", tableName: "DataManagement").font(.headline).accessibilityAddTraits(.isHeader)
-                        MetadataReviewRows(rows: record.updatedTitles.enumerated().map { Row(id: $0.offset, title: $0.element) }) { row in
-                            Group {
-                                if let title = row.title { Text(verbatim: title) }
-                                else { Text("未知小说", tableName: "DataManagement") }
-                            }
-                            .font(.body.weight(.medium)).foregroundStyle(Color(uiColor: theme.ink))
-                            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                        // Same row as the import preview: title, then what was restored.
+                        MetadataReviewRows(rows: record.books.enumerated().map { Row(id: $0.offset, book: $0.element) }) { row in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Group {
+                                    if let title = row.book.title { Text(verbatim: title) }
+                                    else { Text("未知小说", tableName: "DataManagement") }
+                                }.font(.body.weight(.medium)).foregroundStyle(Color(uiColor: theme.ink))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    let kinds = row.book.restored.compactMap(BackupDataKind.init(rawValue:)).map(\.localizedName)
+                                    if !kinds.isEmpty { Text("已恢复：\(kinds.formatted(.list(type: .and)))", tableName: "DataManagement") }
+                                    if !row.book.linked { Text("未在书架", tableName: "DataManagement") }
+                                }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                            }.padding(16).frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
                         }
                     }
-                    Text("快捷指令导入不经过预览，按与「导入备份」相同的规则合并：旧位置不会覆盖较新的位置。导入较早的备份时，本机已删除但备份里还有的阅读数据会恢复。", tableName: "DataManagement")
-                        .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                 }.padding(20).frame(maxWidth: 690).frame(maxWidth: .infinity)
             }
         } footer: {

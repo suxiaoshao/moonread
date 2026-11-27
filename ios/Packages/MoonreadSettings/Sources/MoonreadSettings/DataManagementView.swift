@@ -511,7 +511,7 @@ private struct BackupImportReviewView: View {
     }
 }
 
-private extension BackupDataKind {
+extension BackupDataKind {
     var localizedName: String {
         switch self {
         case .progress: String(localized: "阅读进度", table: "DataManagement")

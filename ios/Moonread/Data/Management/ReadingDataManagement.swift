@@ -1,4 +1,5 @@
 import MoonreadDesign
+import MoonreadSettings
 import MoonreadReader
 import MoonreadLibrary
 import MoonreadData
@@ -229,12 +230,13 @@ extension AppDataService {
     func exportReadingData(retain: Bool = true) async throws -> URL {
         let revision = userCloudConfigurationRevision
         try cleanupOldBackupExports()
-        // Drain before acquiring the operation: the writer itself saves through
-        // that operation. Acquiring it first would deadlock an in-flight batch.
-        await managementStatisticsWriter().drain()
+        // Reserve before the first suspension so Shortcuts see the export as running.
         let directory = try backupDirectory("export")
         inFlightBackupDirectories.insert(directory)
         defer { inFlightBackupDirectories.remove(directory) }
+        // Drain before acquiring the operation: the writer itself saves through
+        // that operation. Acquiring it first would deadlock an in-flight batch.
+        await managementStatisticsWriter().drain()
         do {
             let stage = directory.appendingPathComponent("snapshot", isDirectory: true)
             let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2"
@@ -329,7 +331,7 @@ extension AppDataService {
 
 /// The outcome of one Shortcuts backup import, kept on this device for review in Settings.
 struct ShortcutBackupImportOutcome: Sendable {
-    let updatedTitles: [String?]
+    let books: [ShortcutBackupImportRecord.Book]
     let kept: Int
     let globalUpdated: Bool
 }
@@ -353,8 +355,11 @@ extension AppDataService {
         let preview = try await previewReadingBackup(staging)
         let review = preview.review
         try await importReadingBackup(preview)
-        return .init(updatedTitles: review.books.filter { $0.disposition == .restore }.map(\.title),
-                     kept: review.kept, globalUpdated: review.hasGlobalChanges)
+        let books = review.books.filter { $0.disposition == .restore }.map { book in
+            ShortcutBackupImportRecord.Book(title: book.title, linked: book.linked,
+                restored: BackupDataKind.allCases.filter { book.changes.contains(.init(kind: $0, disposition: .restore)) }.map(\.rawValue))
+        }
+        return .init(books: books, kept: review.kept, globalUpdated: review.hasGlobalChanges)
     }
 }
 
