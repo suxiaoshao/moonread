@@ -9,6 +9,7 @@ struct DataManagementView: View {
     @Bindable var model: DataManagementModel
     @State private var picker = false
     @State private var showingBackupExport = false
+    @State private var showingReadingDeletion = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
@@ -56,34 +57,13 @@ struct DataManagementView: View {
                             Image(systemName: "chevron.right").font(.footnote)
                         }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
                     }.accessibilityIdentifier("readingDataList")
-                }
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("可重建缓存", tableName: "DataManagement").font(.headline)
-                    Text("清理缓存不删除小说文件与阅读数据。", tableName: "MetadataExchange")
-                        .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                    NavigationLink { ReadingDataCacheView(model: model) } label: {
-                        HStack {
-                            Text("清理缓存", tableName: "DataManagement")
-                            Spacer()
-                            if let cache = model.cache {
-                                Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: cache.bytes), countStyle: .file)).foregroundStyle(Color(uiColor: theme.secondary))
-                            } else if model.cacheError == nil {
-                                ProgressView().controlSize(.small)
-                            }
-                            Image(systemName: "chevron.right").font(.footnote)
-                        }
-                    }.foregroundStyle(Color(uiColor: theme.accent)).accessibilityIdentifier("readingDataCaches")
+                    ReadingDeletionSummary(task: model.readingDeletion) { showingReadingDeletion = true }
                 }
             }.padding(20).frame(maxWidth: 690, alignment: .leading).frame(maxWidth: .infinity)
         }
         .themedPage().navigationTitle(Text("数据管理", tableName: "DataManagement"))
         .navigationBarTitleDisplayMode(.inline)
         .modifier(ReadingDataWorking(model: model))
-        .refreshable { await model.loadCache() }
-        .task { await model.loadCache() }
-        .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { _ in
-            if !model.busy { Task { await model.loadCache() } }
-        }
         .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged)
             .merge(with: NotificationCenter.default.publisher(for: .cloudStatusChanged),
                    NotificationCenter.default.publisher(for: .cloudDataReceived),
@@ -96,6 +76,7 @@ struct DataManagementView: View {
                 if (error as NSError).code != NSUserCancelledError { model.showError(ReaderMessages.error(error)) }
             }
         }
+        .sheet(isPresented: $showingReadingDeletion) { ReadingDeletionTaskView(task: model.readingDeletion).presentationSizing(.page) }
         .sheet(isPresented: $showingBackupExport) { BackupExportView(model: model).presentationSizing(.page) }
         .sheet(isPresented: $model.showingBackupImport) { BackupImportTaskView(task: model.backupImport).presentationSizing(.page) }
     }
@@ -232,60 +213,28 @@ private struct BackupExportView: View {
     }
 }
 struct ReadingDataWorking: ViewModifier {
-    @Environment(\.theme) private var theme
-    @Bindable var model: DataManagementModel
+    let model: DataManagementModel
+
     func body(content: Content) -> some View {
-        content.disabled(model.busy).overlay {
+        content.disabled(model.working != nil).toolbar {
             if let working = model.working {
-                VStack(spacing: 12) {
-                    ProgressView(working)
-                    if model.canCancel { Button("取消") { model.cancel() } }
-                }.padding().background(theme.floatingBackground(), in: .rect(cornerRadius: 12)).accessibilityIdentifier("readingDataWorking")
+                ToolbarItem(placement: .topBarTrailing) {
+                    InlineTaskProgress(title: Text(verbatim: working))
+                        .accessibilityIdentifier("readingDataWorking")
+                }
             }
-        }
-    }
-}
-private struct ReadingDataCacheView: View {
-    @Environment(\.theme) private var theme
-    @Bindable var model: DataManagementModel
-    @State private var confirmation = false
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let cache = model.cache {
-                    Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: cache.bytes), countStyle: .file)).font(.largeTitle.bold())
-                    if cache.protected > 0 {
-                        Text("有 \(Int(clamping: cache.protected)) 本正在使用或找不到原文件，暂不清理", tableName: "DataManagement").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                    }
-                } else if model.cacheError == nil {
-                    ProgressView()
-                }
-                Text("正文缓存可以随时重新生成，清理后再打开小说会稍慢一些。", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
-                if let error = model.cacheError {
-                    Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
-                    Button("重试") { Task { await model.loadCache() } }
-                }
-                Button { confirmation = true } label: { Text("清理可重建缓存", tableName: "DataManagement").frame(maxWidth: .infinity) }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("clearRebuildableCaches")
-                if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
-                if let error = model.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
-                Spacer()
-            }.padding()
-        }.themedPage().navigationTitle(Text("可重建缓存", tableName: "DataManagement"))
-        .task { if model.cache == nil { await model.loadCache() } }
-        .refreshable { await model.loadCache() }
-        .modifier(ReadingDataWorking(model: model))
-        .alert(Text("清理可重建缓存？", tableName: "DataManagement"), isPresented: $confirmation) {
-            Button(role: .destructive) { Task { await model.clearCache() } } label: { Text("确认清理缓存", tableName: "DataManagement") }
-            Button("取消", role: .cancel) {}
         }
     }
 }
 struct ReadingDataDeletionPrompt: ViewModifier {
     @Bindable var model: DataManagementModel
+    var startTask: ((DataManagementModel.DeletionRequest) -> Void)?
     func body(content: Content) -> some View {
         content.alert(Text("清除这 \(model.deleting?.keys.count ?? 0) 本小说的阅读数据？", tableName: "DataManagement"), isPresented: Binding(get: { model.deleting != nil }, set: { if !$0 { model.deleting = nil } })) {
             if let request = model.deleting {
-                Button(role: .destructive) { Task { await model.deleteConfirmed(request) } } label: { Text("确认清除阅读数据", tableName: "DataManagement") }.accessibilityIdentifier("confirmDeleteReadingData")
+                Button(role: .destructive) {
+                    if let startTask { startTask(request) } else { Task { await model.deleteConfirmed(request) } }
+                } label: { Text("确认清除阅读数据", tableName: "DataManagement") }.accessibilityIdentifier("confirmDeleteReadingData")
             }
             Button("取消", role: .cancel) { model.deleting = nil }
         } message: {
@@ -294,6 +243,73 @@ struct ReadingDataDeletionPrompt: ViewModifier {
         }
     }
 }
+struct ReadingDeletionSummary: View {
+    @Environment(\.theme) private var theme
+    let task: DataExchangeTask<DataManagementModel.DeletionRequest, Bool>
+    let open: () -> Void
+
+    var body: some View {
+        if task.phase != .idle {
+            DataExchangeTaskSummary(symbol: task.phase == .running ? "trash" : task.phase.symbol,
+                                    iconColor: task.phase == .completed ? theme.success : task.phase == .failed ? theme.warning : theme.secondary,
+                                    link: Text(task.phase == .running ? "查看" : "查看结果", tableName: "MetadataExchange"),
+                                    open: open) {
+                switch task.phase {
+                case .idle: EmptyView()
+                case .running: Text("正在清除…", tableName: "DataManagement")
+                case .completed: Text("阅读数据已清除", tableName: "DataManagement")
+                case .failed: Text("清除阅读数据失败", tableName: "DataManagement")
+                }
+            } detail: {
+                EmptyView()
+            }.accessibilityElement(children: .contain).accessibilityIdentifier("readingDeletionSummary")
+        }
+    }
+}
+
+struct ReadingDeletionTaskView: View {
+    @Environment(\.dismiss) private var dismiss
+    let task: DataExchangeTask<DataManagementModel.DeletionRequest, Bool>
+
+    var body: some View {
+        DataExchangeTaskSheet(title: Text("清除阅读数据", tableName: "DataManagement"),
+                              sharing: .constant(nil), onShared: {}, closeIdentifier: "closeReadingDeletionTask") {
+            switch task.phase {
+            case .idle: Color.clear
+            case .running:
+                DataExchangeRunningView(title: Text("正在清除…", tableName: "DataManagement"), stopping: false, symbol: "trash") {
+                    ProgressView()
+                }
+            case .completed:
+                MetadataStatusView(symbol: task.phase.symbol, title: String(localized: "阅读数据已清除", table: "DataManagement"),
+                                   message: task.output.map(DataManagementModel.deletionMessage(cacheCleaned:)))
+                    .accessibilityIdentifier("readingDataResult")
+            case .failed:
+                MetadataStatusView(symbol: task.phase.symbol, title: String(localized: "清除阅读数据失败", table: "DataManagement"),
+                                   message: task.error)
+            }
+        } footer: {
+            if task.phase == .completed || task.phase == .failed {
+                MetadataTaskActions {
+                    if task.phase == .failed {
+                        Button { task.retry() } label: { Text("重试").frame(maxWidth: .infinity) }
+                            .buttonStyle(MetadataActionButtonStyle(prominent: true))
+                    }
+                    Button {
+                        task.clear()
+                        dismiss()
+                    } label: {
+                        Group {
+                            if task.phase == .completed { Text("完成") } else { Text("关闭") }
+                        }.frame(maxWidth: .infinity)
+                    }.buttonStyle(MetadataActionButtonStyle(prominent: task.phase == .completed))
+                        .accessibilityIdentifier("finishReadingDeletionTask")
+                }
+            }
+        }
+    }
+}
+
 @MainActor private struct BackupImportStatus {
     let task: BackupImportTask
 

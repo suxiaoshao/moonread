@@ -112,25 +112,6 @@ extension EnvironmentValues {
     @Entry var readerTheme = ThemeSurface.initial
 }
 
-/// Search entered from an open book's details. Results open above the suspended reader,
-/// so Back returns through them to the original book at its position. Folders are not
-/// browsed from here; picking the open book itself returns to it.
-struct ReaderContextSearch: View {
-    let model: LibraryModel
-    let scope: AppSearchScope
-    let isOpenBook: (LibraryEntry) -> Bool
-    let returnToBook: () -> Void
-    @State private var pushed: LibraryRoute?
-    @State private var visible = false
-    var body: some View {
-        let host = LibraryBrowsingHost(push: { pushed = $0 }, isCurrent: { visible }, allowsFileBrowsing: false,
-                                       isOpenBook: isOpenBook, returnToOpenBook: returnToBook)
-        AppSearchPage(model: model, scope: scope, host: host)
-            .navigationDestination(item: $pushed) { HostedLibraryDestination(route: $0, host: host) }
-            .onAppear { visible = true }.onDisappear { visible = false }
-    }
-}
-
 private enum AppSearchSheet: Identifiable {
     case filters(BookSearchDraft)
     case name(SavedFilterNameRequest)
@@ -153,13 +134,13 @@ struct AppSearchView: View {
     @Environment(\.theme) private var theme
     @State private var results = AppSearchResults()
     @State private var retry = 0
+    @State private var authorsExpanded = false
     @State private var sheet: AppSearchSheet?
     @State private var createdFilter: UUID?
-    @ScaledMetric(relativeTo: .body) private var minimumBookWidth = 96.0
     private var virtualShelf: Bool { savedFilter != nil }
     private var booksOnly: Bool { virtualShelf || search.configuration.booksOnly }
     private var hasCriteria: Bool { virtualShelf || search.hasCriteria }
-    private var currentCount: Int? { completedKey == key && error == nil && !results.refreshing ? books.count : nil }
+    private var savableBookCount: Int? { completedKey == key && error == nil && !results.refreshing ? books.count : nil }
     private var entries: [LibraryEntry] { results.entries }
     private var conversations: [AIConversationSearchHit] { results.conversations }
     private var completedKey: SearchKey? { results.completedKey }
@@ -167,7 +148,31 @@ struct AppSearchView: View {
     private var loading: LoadingState { results.loading }
     private var books: [LibraryEntry] { entries.filter { !$0.directory } }
     private var folders: [LibraryEntry] { host.allowsFileBrowsing ? entries.filter(\.directory) : [] }
-    private var groupCount: Int { [!books.isEmpty, !folders.isEmpty, ai.availability.isAvailable && !conversations.isEmpty].filter { $0 }.count }
+    private var groupCount: Int {
+        [!books.isEmpty, !folders.isEmpty, ai.availability.isAvailable && !conversations.isEmpty].filter { $0 }.count
+    }
+
+    private var matchedAuthors: [AuthorCredit] {
+        guard let completedKey, !completedKey.term.isEmpty,
+              !completedKey.virtualShelf, !completedKey.configuration.booksOnly else { return [] }
+        return AuthorCredit.matches(in: entries, sources: results.matches)
+    }
+
+    private func authorLink(_ author: AuthorCredit) -> some View {
+        Button {
+            dismissKeyboard()
+            host.navigate(.author(author), in: model)
+        } label: {
+            HStack {
+                Text(verbatim: author.name)
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).accessibilityHidden(true)
+            }.frame(minHeight: LayoutTokens.hit).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color(uiColor: theme.accent))
+        .accessibilityIdentifier("searchAuthor")
+    }
     private var key: SearchKey {
         SearchKey(term: search.term, configuration: search.configuration, virtualShelf: virtualShelf, revision: results.authorityRevision,
                   retry: retry, aiAvailable: ai.availability.isAvailable)
@@ -177,148 +182,162 @@ struct AppSearchView: View {
             && savedFilter?.configuration != search.configuration
     }
 
-    @ViewBuilder private var resultNotices: some View {
+    private var resultNotices: [LibraryCollectionSection.Row] {
+        var rows: [LibraryCollectionSection.Row] = []
         if let completedKey, completedKey != key, !entries.isEmpty || !conversations.isEmpty {
-            VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-                Text("以下仍是上次条件的结果").font(.subheadline.weight(.semibold))
-                if !completedKey.term.isEmpty { Text(completedKey.term).font(.subheadline) }
-                if completedKey.configuration.booksOnly {
-                    Text(completedKey.configuration.root.expression(shelfTitle: model.shelfTitle))
-                        .fixedSize(horizontal: false, vertical: true)
-                    if !completedKey.configuration.sorts.isEmpty {
-                        let order = completedKey.configuration.sortDescription(hasTerm: !completedKey.term.isEmpty)
-                        Text("排序 · \(order)").font(.footnote)
-                    }
-                }
-            }
-            .modifier(LibraryListHeading())
-        }
-        if results.unknownCount > 0 && completedKey == key {
-            Text("有 \(results.unknownCount) 本因身份或相关数据尚未确定，未参与当前条件的结果。")
-                .font(.footnote)
-                .foregroundStyle(Color(uiColor: theme.secondary))
-                .modifier(LibraryListHeading())
-        }
-        if !books.isEmpty || !folders.isEmpty || (ai.availability.isAvailable && !conversations.isEmpty), let error {
-            VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-                Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive))
-                Button("重试") { retry += 1 }.accessibilityIdentifier("searchRetry")
-            }
-            .font(.subheadline)
-            .modifier(LibraryListHeading())
-        }
-        if booksOnly, books.isEmpty, folders.isEmpty, conversations.isEmpty, error != nil || completedKey == key {
-            VStack(alignment: .leading, spacing: LayoutTokens.control) {
-                if let error {
-                    Label("搜索暂时失败", systemImage: "exclamationmark.magnifyingglass").font(.headline)
-                    Text(error).foregroundStyle(Color(uiColor: theme.destructive))
-                    Button("重试") { retry += 1 }.accessibilityIdentifier("searchRetry")
-                } else {
-                    Label("没有匹配的小说或项目", systemImage: "magnifyingglass").font(.headline)
-                    (virtualShelf ? Text("试试编辑筛选条件。") : Text("试试其他文字，或编辑筛选条件。"))
-                        .foregroundStyle(Color(uiColor: theme.secondary))
-                    Button("编辑筛选") { openEditor() }
-                    if search.configuration.booksOnly {
-                        Button("清除筛选与排序（保留文字）") { search.configuration = BookSearchConfiguration() }
-                    }
-                }
-            }
-            .buttonStyle(.borderless)
-            .padding(.vertical, LayoutTokens.compact)
-            .modifier(LibraryListHeading())
-        }
-    }
-
-    @ViewBuilder private var matchingBookCount: some View {
-        if let currentCount {
-            if virtualShelf {
-                Text("\(currentCount) 本")
-                    .font(.footnote)
-                    .foregroundStyle(Color(uiColor: theme.secondary))
-                    .accessibilityIdentifier("structuredSearchCount")
-            } else {
-                Text("小说 · \(currentCount) 本")
-                    .font(.subheadline.weight(.semibold))
-                    .accessibilityIdentifier("structuredSearchCount")
-            }
-        }
-    }
-
-    private var resultList: some View {
-        List {
-            if hasCriteria {
-                if virtualShelf { matchingBookCount.modifier(LibraryListHeading()) }
-                if showsSaveActions { saveActions.modifier(LibraryListHeading()) }
-                resultNotices
-                if booksOnly {
-                    if !virtualShelf { matchingBookCount.modifier(LibraryListHeading()) }
-                    rows(books)
-                } else if !books.isEmpty {
-                    section("书籍", count: books.count) { rows(books) }
-                }
-                if !folders.isEmpty { section("文件夹", count: folders.count) { rows(folders) } }
-                if ai.availability.isAvailable, !conversations.isEmpty {
-                    section("对话", count: conversations.count) {
-                        ForEach(conversations) { hit in
-                            // A Button, like the book rows: its tap still opens the chat while the
-                            // same tap also puts the keyboard away.
-                            Button { navigate(.conversation(hit.id, anchor: hit.anchor)) } label: {
-                                HStack(spacing: LayoutTokens.compact) {
-                                    AIConversationSearchRow(hit: hit, term: search.term)
-                                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
-                                        .foregroundStyle(Color(uiColor: theme.secondary)).accessibilityHidden(true)
-                                }.contentShape(.rect)
-                            }.buttonStyle(.plain)
-                            .listRowBackground(Color.clear)
-                            .accessibilityIdentifier("searchConversation-\(hit.id)")
+            rows.append(.init("previous") {
+                VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+                    Text("以下仍是上次条件的结果").font(.subheadline.weight(.semibold))
+                    if !completedKey.term.isEmpty { Text(completedKey.term).font(.subheadline) }
+                    if completedKey.configuration.booksOnly {
+                        Text(completedKey.configuration.root.expression(shelfTitle: model.shelfTitle))
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !completedKey.configuration.sorts.isEmpty {
+                            let order = completedKey.configuration.sortDescription(hasTerm: !completedKey.term.isEmpty)
+                            Text("排序 · \(order)").font(.footnote)
                         }
                     }
                 }
-            }
+            })
         }
-        .listStyle(.plain)
-        .frame(maxWidth: 680)
-        .frame(maxWidth: .infinity)
-        .environment(\.defaultMinListRowHeight, 0)
+        if results.unknownCount > 0 && completedKey == key {
+            rows.append(.init("unknown") {
+                Text("有 \(results.unknownCount) 本因身份或相关数据尚未确定，未参与当前条件的结果。")
+                    .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+            })
+        }
+        if !books.isEmpty || !folders.isEmpty || (ai.availability.isAvailable && !conversations.isEmpty), let error {
+            rows.append(.init("retry") {
+                VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+                    Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive))
+                    Button("重试") { retry += 1 }.accessibilityIdentifier("searchRetry")
+                }.font(.subheadline)
+            })
+        }
+        if booksOnly, books.isEmpty, folders.isEmpty, conversations.isEmpty, error != nil || completedKey == key {
+            rows.append(.init("empty") {
+                VStack(alignment: .leading, spacing: LayoutTokens.control) {
+                    if let error {
+                        Label("搜索暂时失败", systemImage: "exclamationmark.magnifyingglass").font(.headline)
+                        Text(error).foregroundStyle(Color(uiColor: theme.destructive))
+                        Button("重试") { retry += 1 }.accessibilityIdentifier("searchRetry")
+                    } else {
+                        Label("没有匹配的小说或项目", systemImage: "magnifyingglass").font(.headline)
+                        (virtualShelf ? Text("试试编辑筛选条件。") : Text("试试其他文字，或编辑筛选条件。"))
+                            .foregroundStyle(Color(uiColor: theme.secondary))
+                        Button("编辑筛选") { openEditor() }
+                        if search.configuration.booksOnly {
+                            Button("清除筛选与排序（保留文字）") { search.configuration = BookSearchConfiguration() }
+                        }
+                    }
+                }.buttonStyle(.borderless).padding(.vertical, LayoutTokens.compact)
+            })
+        }
+        return rows
     }
 
-    private var virtualShelfGrid: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-                matchingBookCount
-                if showsSaveActions { saveActions }
-                resultNotices
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumBookWidth), spacing: LayoutTokens.content)],
-                          alignment: .leading, spacing: LayoutTokens.section) {
-                    ForEach(books, id: \.id) { entry in
-                        LibraryBookTile(model: model, entry: entry, showPath: true, interaction: .browse(host))
-                    }
+    private var matchingBookCount: String? {
+        guard booksOnly, let completedKey, completedKey == key || !books.isEmpty else { return nil }
+        let count = books.count
+        return virtualShelf ? String(localized: "\(count) 本") : String(localized: "小说 · \(count) 本")
+    }
+
+    @ViewBuilder private var resultCountLabel: some View {
+        if let matchingBookCount {
+            Text(verbatim: matchingBookCount)
+                .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                .accessibilityIdentifier("structuredSearchCount")
+        }
+    }
+
+    private var resultHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                resultCountLabel.fixedSize()
+                Spacer(minLength: 0)
+                saveActions.fixedSize(horizontal: true, vertical: false)
+            }
+            VStack(alignment: .leading) {
+                resultCountLabel
+                saveActions.frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+    }
+
+    private var resultSections: [LibraryCollectionSection] {
+        guard hasCriteria else { return [] }
+        var sections: [LibraryCollectionSection] = []
+        let notices = resultNotices
+        let countHeader = showsSaveActions ? nil : matchingBookCount.map {
+            LibraryCollectionSection.Header.title($0, accessibilityID: "structuredSearchCount")
+        }
+        let emptyCount = books.isEmpty ? countHeader : nil
+        if !notices.isEmpty || emptyCount != nil {
+            sections.append(.init(id: .searchSummary, content: .rows(notices), header: emptyCount))
+        }
+        if showsSaveActions {
+            sections.insert(.init(id: .searchResultHeader, content: .rows([.init("header") { resultHeader }])),
+                            at: books.isEmpty ? 0 : sections.count)
+        }
+
+        let authors = matchedAuthors
+        if let first = authors.first {
+            sections.append(.init(id: .searchAuthors, content: .rows([.init("authors") {
+                if authors.count == 1 {
+                    authorLink(first)
+                } else {
+                    DisclosureGroup(isExpanded: $authorsExpanded) {
+                        ForEach(authors) { authorLink($0) }
+                    } label: {
+                        Text("匹配的作者 · \(authors.count)")
+                    }.accessibilityIdentifier("searchAuthorMatches")
+                }
+            }]), header: authors.count == 1 ? .title(String(localized: "作者")) : nil))
+        }
+        if !books.isEmpty {
+            let heading: LibraryCollectionSection.Header?
+            if booksOnly { heading = countHeader }
+            else if groupCount > 1 { heading = sectionHeading("书籍", count: books.count) }
+            else { heading = authors.isEmpty ? nil : .title(String(localized: "书籍")) }
+            sections.append(.init(id: .searchBooks, content: .files(books, .results), header: heading))
+        }
+        if !folders.isEmpty {
+            sections.append(.init(id: .searchFolders, content: .files(folders, .folderHits),
+                                  header: sectionHeading("文件夹", count: folders.count)))
+        }
+        if ai.availability.isAvailable, !conversations.isEmpty {
+            let term = completedKey?.term ?? ""
+            let rows = conversations.map { hit in
+                LibraryCollectionSection.Row(hit.id) {
+                    Button {
+                        dismissKeyboard()
+                        host.navigate(.conversation(hit.id, anchor: hit.anchor), in: model)
+                    } label: {
+                        HStack(spacing: LayoutTokens.compact) {
+                            AIConversationSearchRow(hit: hit, term: term)
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                                .foregroundStyle(Color(uiColor: theme.secondary)).accessibilityHidden(true)
+                        }.contentShape(.rect)
+                    }.buttonStyle(.plain)
+                        .accessibilityIdentifier("searchConversation-\(hit.id)")
                 }
             }
-            .padding(.horizontal, LayoutTokens.page)
-            .padding(.vertical, LayoutTokens.compact)
+            sections.append(.init(id: .searchConversations, content: .rows(rows),
+                                  header: sectionHeading("对话", count: conversations.count)))
         }
+        return sections
     }
 
     var body: some View {
-        Group {
-            if virtualShelf && model.layout == .grid {
-                virtualShelfGrid
-            } else {
-                resultList
-            }
-        }
+        LibraryCollection(model: model, host: host, sections: resultSections, matches: results.matches,
+                          accessibilityID: "appSearchResults", isSearch: true, hasSearchDrawer: savedFilter == nil,
+                          beforeOpen: dismissKeyboard)
         .themedPage()
-        // Tapping or dragging the content only puts the keyboard away; rows keep their actions.
-        .scrollDismissesKeyboard(.immediately)
-        .scrollBounceBehavior(.always)
-        .accessibilityIdentifier("appSearchResults")
         .navigationTitle(savedFilter.map { Text($0.name) } ?? Text("搜索")).navigationBarTitleDisplayMode(.inline)
+        .modifier(LibraryFileActivity(model: model))
         .toolbar {
-            if virtualShelf {
-                ToolbarItem(placement: .topBarTrailing) {
-                    LibraryDisplayMenu(selection: $model.layout)
-                }
+            ToolbarItem(placement: .topBarTrailing) {
+                LibraryDisplayMenu(selection: $model.layout)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("筛选与排序", systemImage: "line.3.horizontal.decrease") { openEditor() }
@@ -358,31 +377,48 @@ struct AppSearchView: View {
         .modifier(PageLoadingOverlay(request: hasCriteria ? loading.request : nil,
                                      hasContent: booksOnly || !entries.isEmpty || !conversations.isEmpty, label: "正在搜索"))
         .task(id: key) { await run(key) }
-        .simultaneousGesture(TapGesture().onEnded { search.keyboardDismissals += 1 })
+        .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
     }
     private var saveActions: some View {
-        VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-            Button {
-                guard let currentCount else { return }
-                search.keyboardDismissals += 1
-                sheet = .name(.save(search.configuration.forVirtualShelf, term: search.term, searchCount: currentCount))
-            } label: {
-                Label { virtualShelf ? Text("另存为虚拟书架") : Text("保存为虚拟书架") } icon: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(.rect)
-            }
-            .accessibilityIdentifier("saveVirtualShelf")
+        Group {
             if let savedFilter {
-                Button("更新此虚拟书架") {
-                    let configuration = search.configuration
-                    Task { await model.savedFilters.change(.update(savedFilter.id, configuration)) }
+                Menu {
+                    Button("更新此虚拟书架") {
+                        let configuration = search.configuration
+                        Task { await model.savedFilters.change(.update(savedFilter.id, configuration)) }
+                    }
+                    .accessibilityIdentifier("updateVirtualShelf")
+                    Button("另存为虚拟书架", action: saveNewShelf)
+                        .accessibilityIdentifier("saveVirtualShelf")
+                } label: {
+                    saveLabel("保存选项", symbol: "chevron.up.chevron.down")
                 }
-                .accessibilityIdentifier("updateVirtualShelf")
+                .accessibilityIdentifier("savedFilterSaveOptions")
+            } else {
+                Button(action: saveNewShelf) {
+                    saveLabel("保存为虚拟书架", symbol: "line.3.horizontal.decrease.circle")
+                }
+                .accessibilityIdentifier("saveVirtualShelf")
             }
-        }.buttonStyle(.borderless)
-            .disabled(currentCount == nil || model.savedFilters.snapshot == nil || model.savedFilters.saving)
+        }
+        .buttonStyle(.borderless)
+        .font(.subheadline)
+        .tint(Color(uiColor: theme.accent))
+        .disabled(savableBookCount == nil || model.savedFilters.snapshot == nil || model.savedFilters.saving)
+    }
+
+    private func saveLabel(_ title: LocalizedStringKey, symbol: String) -> some View {
+        Label(title, systemImage: symbol)
+            .foregroundStyle(Color(uiColor: theme.accent))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: LayoutTokens.hit)
+            .contentShape(.rect)
+    }
+
+    private func saveNewShelf() {
+        guard let savableBookCount else { return }
+        dismissKeyboard()
+        sheet = .name(.save(search.configuration.forVirtualShelf, term: search.term, searchCount: savableBookCount))
     }
 
     private func openCreatedFilter() {
@@ -398,40 +434,19 @@ struct AppSearchView: View {
     }
     private func run(_ key: SearchKey) async {
         let spec = LibraryQueryRules.SearchSpec(profile: .library, query: key.term, configuration: key.configuration, virtualShelf: key.virtualShelf)
-        await results.observe(key, hasCriteria: hasCriteria) {
-            try await Task.sleep(for: .milliseconds(120))
-            try await AppDataService.libraryTestLatency()
-            return try await model.service.searchInvalidations(spec)
-        } search: {
-            try await model.service.searchLibrary(query: key.term, configuration: key.configuration, virtualShelf: key.virtualShelf)
-        } conversations: {
+        await results.observeLibrary(key, service: model.service, hasCriteria: hasCriteria) {
             guard !spec.booksOnly, key.aiAvailable, !key.term.isEmpty, let runtime = ai.activate() else { return [] }
             return try await runtime.searchConversations(key.term)
         }
     }
 
-    private func section(_ title: LocalizedStringKey, count: Int?, @ViewBuilder content: () -> some View) -> some View {
-        Group {
-            if count == nil || groupCount > 1 {
-                HStack(spacing: LayoutTokens.compact) {
-                    Text(title).foregroundStyle(Color(uiColor: theme.ink))
-                    if let count { Text(count, format: .number).foregroundStyle(Color(uiColor: theme.secondary)) }
-                }.font(.subheadline.weight(.semibold)).modifier(LibraryListHeading())
-            }
-            content()
-        }
+    private func sectionHeading(_ title: LocalizedStringResource, count: Int) -> LibraryCollectionSection.Header? {
+        guard groupCount > 1 else { return nil }
+        return .title(String(localized: title), detail: count.formatted())
     }
-    private func navigate(_ route: LibraryRoute) {
-        host.navigate(route, in: model)
-    }
-    private func rows(_ entries: [LibraryEntry]) -> some View {
-        ForEach(entries, id: \.id) { entry in
-            LibraryFileRow(model: model, entry: entry, showPath: true, query: search.term, interaction: .browse(host))
-                .listRowInsets(EdgeInsets(top: 0, leading: LayoutTokens.page, bottom: 0, trailing: LayoutTokens.page))
-                .alignmentGuide(.listRowSeparatorLeading) { _ in LibraryFileRow.textLeading }
-                .listRowBackground(Color.clear)
-        }
-    }
+
+    private func dismissKeyboard() { search.keyboardDismissals += 1 }
+
 }
 
 struct SearchKey: Hashable {
@@ -463,17 +478,15 @@ private struct AIConversationSearchRow: View {
         }.padding(.vertical, LayoutTokens.compact)
     }
     private func highlighted(_ value: String) -> AttributedString {
-        var text = AttributedString(value)
-        if let range = text.range(of: term, options: [.caseInsensitive, .diacriticInsensitive]) {
-            text[range].backgroundColor = Color(uiColor: theme.search); text[range].foregroundColor = Color(uiColor: theme.accent)
-        }
-        return text
+        let range = term.isEmpty ? nil : value.range(of: term, options: [.caseInsensitive, .diacriticInsensitive])
+        return LibraryItemLabel.highlight(value, range: range, theme: theme)
     }
 }
 
 /// Owns publication independently of the SwiftUI task's cancellation timing.
 @MainActor @Observable final class AppSearchResults {
     private(set) var entries: [LibraryEntry] = []
+    private(set) var matches: [String: LibraryQueryRules.SearchMatch] = [:]
     private(set) var conversations: [AIConversationSearchHit] = []
     private(set) var completedKey: SearchKey?
     private(set) var unknownCount = 0
@@ -493,7 +506,22 @@ private struct AIConversationSearchRow: View {
 
     private func reset() {
         if let request = loading.request { loading.finish(request) }
-        completedKey = nil; error = nil; entries = []; conversations = []; unknownCount = 0; refreshing = false
+        completedKey = nil; error = nil; entries = []; matches = [:]; conversations = []; unknownCount = 0; refreshing = false
+    }
+
+    func observeLibrary(_ key: SearchKey, service: AppDataService, hasCriteria: Bool = true,
+                        conversations: () async throws -> [AIConversationSearchHit] = { [] }) async {
+        let spec = LibraryQueryRules.SearchSpec(profile: .library, query: key.term,
+                                                configuration: key.configuration, virtualShelf: key.virtualShelf)
+        await observe(key, hasCriteria: hasCriteria) {
+            try await Task.sleep(for: .milliseconds(120))
+            try await AppDataService.libraryTestLatency()
+            return try await service.searchInvalidations(spec)
+        } search: {
+            try await service.searchLibrary(query: key.term, configuration: key.configuration, virtualShelf: key.virtualShelf)
+        } conversations: {
+            try await conversations()
+        }
     }
 
     func observe(_ key: SearchKey, hasCriteria: Bool,
@@ -518,6 +546,7 @@ private struct AIConversationSearchRow: View {
                 if talks == nil { talks = try await conversations() }
                 guard generation == token, !Task.isCancelled else { return }
                 entries = books.entries; unknownCount = books.unknownCount
+                matches = books.matches
                 self.conversations = talks ?? []
                 error = nil; completedKey = key; refreshing = false
                 loading.finish(request)

@@ -172,14 +172,14 @@ enum UserValueRows {
 
     /// For a checked released record, preserve its author's clock. Validate
     /// same-token content against every local sibling before accepting it.
-    private static func assess(_ db: Database, key: Key, head: StoredValue, requireAsset: Bool) throws
+    private static func assess(_ db: Database, key: Key, head: StoredValue, requireAsset: Bool, known rows: [Row]? = nil) throws
     -> (body: Body, known: [Row], duplicate: Bool) {
         try requireReadable(db, key)
         let incoming = try body(key, value: head.value) { cover in
             if requireAsset { return try assetReference(db, cover) }
             return assetID(cover.id, sha: cover.sha256)
         }
-        let known = try candidates(db, key)
+        let known = try rows ?? candidates(db, key)
         var duplicate = false
         for row in known where (row["token"] as String) == head.token {
             guard (row["updated_ms"] as Int64) == head.updated, incoming.fields.allSatisfy({ name, value in
@@ -228,6 +228,64 @@ enum UserValueRows {
         return true
     }
 
+    struct BackupCoverPlan {
+        struct Candidate {
+            let key: Key
+            let head: StoredValue
+            let device: String
+        }
+
+        private var candidatesByBook: [String: [Row]] = [:]
+        private var edits: [String: [String: Candidate]] = [:]
+
+        mutating func consider(_ db: Database, _ candidate: Candidate) throws -> BackupDisposition {
+            let key = candidate.key, head = candidate.head, device = DataIdentity.canonical(candidate.device)
+            let state = try assess(db, key: key, head: head, requireAsset: false, known: candidatesByBook[key.member])
+            let disposition = disposition(state, head: head, device: device, preserveSiblingIdentity: false)
+            if disposition == .restore {
+                var row = Dictionary(uniqueKeysWithValues: state.body.fields)
+                row["device_id"] = device
+                row["token"] = head.token
+                row["updated_ms"] = head.updated
+                candidatesByBook[key.member] = state.known.filter { ($0["device_id"] as String) != device } + [Row(row)]
+                edits[key.member, default: [:]][device] = candidate
+            }
+            return disposition
+        }
+
+        /// The projection when all incoming candidates have been considered.
+        func references(_ db: Database) throws -> [String: Set<String>] {
+            var references: [String: Set<String>] = [:]
+            let rows = try Row.fetchCursor(db, sql: "SELECT partition,book_key,asset_id FROM usr.cover_candidate WHERE asset_id IS NOT NULL")
+            while let row = try rows.next() {
+                let book: String = row["book_key"]
+                if (row["partition"] as Int) != 0 || candidatesByBook[book] == nil {
+                    references[row["asset_id"], default: []].insert(book)
+                }
+            }
+            for (book, rows) in candidatesByBook {
+                for row in rows {
+                    if let asset = row["asset_id"] as String? { references[asset, default: []].insert(book) }
+                }
+            }
+            return references
+        }
+
+        func apply(_ db: Database, queueForSync: Bool, cancellation: BackupCancellation) throws -> Set<String> {
+            var replaced = Set<String>()
+            for (book, candidates) in edits {
+                for (device, candidate) in candidates {
+                    try cancellation.check()
+                    if let id = try deviceCover(db, key: candidate.key, device: device) { replaced.insert(id) }
+                    let fields = try body(candidate.key, value: candidate.head.value) { try assetReference(db, $0) }
+                    try persistLocal(db, key: candidate.key, body: fields, head: candidate.head, device: device, queueForSync: queueForSync)
+                }
+                try CurrentUserRows.settleMetadata(db, book: book)
+            }
+            return replaced
+        }
+    }
+
     private static func recordUpgradeEdit(_ db: Database, key: Key, device: String) throws {
         guard let domain = UpgradeOrigins.Domain(rawValue: key.table) else { throw DataV2Error.migrationNotVerified }
         let id = recordID(logical: key.logical, device: device)
@@ -273,12 +331,6 @@ enum UserValueRows {
         return id
     }
 
-    static func booksReferencingCover(_ db: Database, id: String, sha: String) throws -> [String] {
-        try String.fetchAll(db, sql: """
-            SELECT DISTINCT book_key FROM usr.cover_candidate WHERE asset_id=? AND partition=0
-            """, arguments: [assetID(id, sha: sha)])
-    }
-
     static func assessBackupCover(_ db: Database, id: String, sha: String) throws -> BackupDisposition {
         if try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM usr.cover_asset WHERE legacy_cover_id=? AND availability='available' AND expected_sha IS NOT ?)
@@ -310,18 +362,35 @@ enum UserValueRows {
                           arguments: [assetID(id,sha: sha)])
     }
 
-    struct CoverCopy: Sendable { let id, sha256: String }
+    struct CoverCopy: Hashable, Sendable {
+        let id, sha256: String
+        var name: String { id + "-" + sha256 }
 
-    static func verifiedCoverCopies(_ db: Database) throws -> [CoverCopy] {
+        init(id: String, sha256: String) { self.id = id; self.sha256 = sha256 }
+
+        init?(file: URL) {
+            let name = file.deletingPathExtension().lastPathComponent
+            guard ["jpg", "png"].contains(file.pathExtension), name.utf8.count == 101,
+                  name.dropLast(64).last == "-", UUID(uuidString: String(name.prefix(36))) != nil,
+                  (try? parseSha256(value: String(name.suffix(64)))) != nil else { return nil }
+            self.init(id: String(name.prefix(36)), sha256: String(name.suffix(64)))
+        }
+
+        init?(_ row: Row) {
+            guard let id: String = row["legacy_cover_id"], let sha: String = row["expected_sha"] else { return nil }
+            self.init(id: id, sha256: sha)
+        }
+    }
+
+    static func verifiedCoverCopies(_ db: Database) throws -> [CoverCopy: Bool] {
         let rows = try Row.fetchCursor(db, sql: """
             SELECT legacy_cover_id,expected_sha,bytes FROM usr.cover_asset
-            WHERE availability='available' AND legacy_cover_id IS NOT NULL AND expected_sha IS NOT NULL
+            WHERE legacy_cover_id IS NOT NULL AND expected_sha IS NOT NULL
             """)
-        var copies: [CoverCopy] = []
+        var copies: [CoverCopy: Bool] = [:]
         while let row = try rows.next() {
-            let sha: String = row["expected_sha"]
-            if let bytes = row["bytes"] as Data?, DataIdentity.sha(bytes) == sha {
-                copies.append(.init(id: row["legacy_cover_id"], sha256: sha))
+            if let copy = CoverCopy(row) {
+                copies[copy] = (row["bytes"] as Data?).map { DataIdentity.sha($0) == copy.sha256 } ?? false
             }
         }
         return copies
@@ -340,11 +409,67 @@ enum UserValueRows {
             """) == true
     }
 
-    static func removeUnreferencedCover(_ db: Database, id: String) throws {
-        try db.execute(sql: """
+    @discardableResult
+    static func removeUnreferencedCover(_ db: Database, id: String) throws -> CoverCopy? {
+        try Row.fetchOne(db, sql: """
             DELETE FROM usr.cover_asset WHERE asset_id=? AND NOT EXISTS(
                SELECT 1 FROM usr.cover_candidate c WHERE c.asset_id=cover_asset.asset_id)
-            """, arguments: [id])
+            RETURNING legacy_cover_id,expected_sha
+            """, arguments: [id]).flatMap(CoverCopy.init)
+    }
+
+    @discardableResult
+    static func reclaimCovers(_ db: Database, ids: Set<String>) throws -> [CoverCopy] {
+        guard !ids.isEmpty, try canReclaimCoverAssets(db) else { return [] }
+        return try ids.compactMap { try removeUnreferencedCover(db, id: $0) }
+    }
+
+    static func unreferencedCovers(_ db: Database) throws -> (count: Int, bytes: UInt64) {
+        guard try canReclaimCoverAssets(db) else { return (0, 0) }
+        let row = try Row.fetchOne(db, sql: """
+            SELECT count(*) AS count,coalesce(sum(length(bytes)),0) AS bytes FROM usr.cover_asset a
+            WHERE NOT EXISTS(SELECT 1 FROM usr.cover_candidate c WHERE c.asset_id=a.asset_id)
+            """)!
+        return (row["count"], row["bytes"])
+    }
+
+    static func reclaimUnreferencedCovers(_ db: Database) throws -> (count: Int, copies: [CoverCopy]) {
+        guard try canReclaimCoverAssets(db) else { return (0, []) }
+        let rows = try Row.fetchAll(db, sql: """
+            DELETE FROM usr.cover_asset WHERE NOT EXISTS(
+                SELECT 1 FROM usr.cover_candidate c WHERE c.asset_id=cover_asset.asset_id)
+            RETURNING legacy_cover_id,expected_sha
+            """)
+        return (rows.count, rows.compactMap(CoverCopy.init))
+    }
+
+    static func deviceCover(_ db: Database, key: Key, device: String) throws -> String? {
+        try String.fetchOne(db, sql: """
+            SELECT asset_id FROM usr.cover_candidate WHERE partition=0 AND book_key=? AND device_id=?
+            """, arguments: [key.member, DataIdentity.canonical(device)])
+    }
+
+    private static func localCover(_ db: Database, key: Key, value: String, asset: CoverWrite) throws -> (value: String?, attached: Bool) {
+        guard let cover = try JSONDecoder().decode(Cover?.self, from: Data(value.utf8)), cover.id == asset.id,
+              DataIdentity.sha(asset.bytes) == cover.sha256 else { throw ReaderError.InvalidSettings }
+        let current = try String.fetchOne(db, sql: """
+            SELECT c.asset_id FROM usr.metadata_current m JOIN usr.cover_candidate c
+            ON c.partition=m.source_partition AND c.record_id=m.cover_id WHERE m.book_key=?
+            """, arguments: [key.member])
+        if let existing = try Row.fetchOne(db, sql: """
+            SELECT asset_id,legacy_cover_id FROM usr.cover_asset
+            WHERE availability='available' AND expected_sha=?1 AND bytes=?2 AND legacy_cover_id IS NOT NULL
+            ORDER BY asset_id IS ?3 DESC,asset_id LIMIT 1
+            """, arguments: [cover.sha256, asset.bytes, current]) {
+            if (existing["asset_id"] as String) == current { return (nil, false) }
+            let reused = Cover(id: existing["legacy_cover_id"], sha256: cover.sha256, format: cover.format,
+                               width: cover.width, height: cover.height)
+            return (try UserSyncJSON.encode(reused), false)
+        }
+        let newCover = Cover(id: UUID().uuidString, sha256: cover.sha256, format: cover.format,
+                             width: cover.width, height: cover.height)
+        try attach(db, id: newCover.id, sha: newCover.sha256, bytes: asset.bytes)
+        return (try UserSyncJSON.encode(newCover), true)
     }
 
     struct MetadataWrite: Sendable {
@@ -352,40 +477,45 @@ enum UserValueRows {
         let cover: CoverWrite?
     }
 
-    static func putMetadata(_ db: Database, _ writes: [MetadataWrite], device: String, now: Int64, scope: DataScope = .local) throws {
+    @discardableResult
+    static func putMetadata(_ db: Database, _ writes: [MetadataWrite], device: String, now: Int64,
+                            scope: DataScope = .local) throws -> [CoverCopy] {
         var books = Set<String>(), keys = Set<String>()
         var fields: [(key: Key, value: String)] = []
         var attached = false
+        var replaced = Set<String>()
         for write in writes {
             try Task.checkCancellation()
             let plan = write.plan
             _ = try parseSha256(value: plan.sha)
             guard books.insert(plan.sha).inserted, !plan.values.isEmpty else { throw ReaderError.InvalidSettings }
+            if write.cover != nil, plan.values["metadata/\(plan.sha)/cover"] == nil { throw ReaderError.InvalidSettings }
             for (logical,value) in plan.values {
                 let key = try Key(logical)
                 guard key.isMetadata, key.member == plan.sha, keys.insert(key.logical).inserted else {
                     throw ReaderError.InvalidSettings
                 }
-                fields.append((key,value))
+                if key.kind == .cover, let asset = write.cover {
+                    let prepared = try localCover(db, key: key, value: value, asset: asset)
+                    attached = attached || prepared.attached
+                    if let value = prepared.value { fields.append((key,value)) }
+                } else {
+                    fields.append((key,value))
+                }
             }
         }
         let clocks = try metadataClocks(db, keys: fields.map(\.key))
-        for write in writes {
-            try Task.checkCancellation()
-            if let asset = write.cover {
-                guard let value = write.plan.values["metadata/\(write.plan.sha)/cover"],
-                      let cover = try JSONDecoder().decode(Cover?.self, from: Data(value.utf8)),
-                      cover.id == asset.id else { throw ReaderError.InvalidSettings }
-                try attach(db, id: cover.id, sha: cover.sha256, bytes: asset.bytes)
-                attached = true
-            }
-        }
         for field in fields {
             try Task.checkCancellation()
+            if field.key.kind == .cover, let id = try deviceCover(db, key: field.key, device: device) {
+                replaced.insert(id)
+            }
             try putLocal(db, key: field.key, value: field.value, device: device, now: now, latest: clocks[field.key.logical] ?? 0, scope: scope)
         }
         if attached { try LegacyUserImport.reconcileCoverCompleteness(db) }
+        let reclaimed = try reclaimCovers(db, ids: replaced)
         for book in books { try CurrentUserRows.settleMetadata(db, book: book) }
+        return reclaimed
     }
 
     /// Inspect every device for the actual edit keys. Only timestamps and

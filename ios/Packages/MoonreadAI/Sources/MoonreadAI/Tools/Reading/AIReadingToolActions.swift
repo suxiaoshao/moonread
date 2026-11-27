@@ -13,6 +13,8 @@ public protocol AIReadingToolActions: Actor {
   func statistics(_ input: AIStatisticsInput) async throws -> AIToolResponse<AIStatisticsResult>
   func environment(_ input: AIEnvironmentInput) -> AIToolResponse<AIEnvironmentResult>
   func listFilterOptions(_ input: AIFilterOptionsInput) async throws -> AIToolResponse<AIFilterOptionsResult>
+  func queryBooksByFilter(_ input: AIQueryBooksByFilterInput) async throws -> AIToolResponse<AIFilteredBooksResult>
+  func showBookList(_ input: AIShowBookListInput) async throws -> (AIToolResponse<AIShownBooksResult>, [AIBookListPresentation])
   func proposeBookFilter(_ input: AIBookFilterInput) async throws -> AIToolResponse<AIBookFilterSuggestion>
 }
 
@@ -40,6 +42,18 @@ extension AIReadingToolActions {
           sorts is in priority order: field recent, name, or author, with descending true or false. Use nodes:[] for a sort-only suggestion and sorts:[] for default order. For tag/author/shelf names, use list_filter_options if uncertain. Use exact names, no IDs, text query or links. A successful suggestion needs no repeated card content in the reply.
           """,
         input: AIBookFilterInput.self, execute: { try await self.proposeBookFilter($0) }),
+      .init(
+        name: "query_books_by_filter",
+        description: """
+          Query the live library with the same filter object (nodes and sorts) as propose_book_filter. Empty query text; one match per actual file. totalMatches counts confirmed files, unknownCount counts files whose metadata could not determine a match. limit defaults to 20 and accepts 1–100. Keep filter unchanged and copy page.nextCursor to continue. Use list_filter_options to resolve exact labels. Use propose_book_filter when the reader wants to edit or save a dynamic filter. This tool does not display a book card.
+          """,
+        input: AIQueryBooksByFilterInput.self, execute: { try await self.queryBooksByFilter($0) }),
+      .init(
+        name: "show_book_list",
+        description: """
+          Display a clickable list of 1–5 books, in the supplied order. Use exact fileRef (preferred) or bookRef values returned by any book tool (including ls for files, search_books and query_books_by_filter). Do not use folder references, repeat a reference or send both references for one selection. Use only when the reader wants to open specific books; for counts or comparisons answer in text. Write recommendations in the reply. Do not silently truncate or split into multiple cards. Use propose_book_filter instead for editable, dynamic results; do not show both cards for the same purpose.
+          """,
+        input: AIShowBookListInput.self, executeBookList: { try await self.showBookList($0) }),
       .init(
         name: "get_book",
         description:

@@ -29,7 +29,7 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 
 ### 单份 macOS 缓存
 
-唯一写入 ref 在 workflow 的 `CI_CACHE_WRITE_REF` 显式声明，当前为 `refs/heads/release/1.9`；升级 release 时更新它。只有该 ref 的 push 在完整 Rust 检查和当前 iOS 构建成功后保存；精确命中不重存。PR、main、旧 release、hotfix 和手动运行只按 GitHub 正常作用域恢复，PR 不向基线回写。不使用 `pull_request_target`、PAT 或额外缓存后端。
+唯一写入 ref 在 workflow 的 `CI_CACHE_WRITE_REF` 显式声明，当前为 `refs/heads/release/1.10`；升级 release 时更新它。只有该 ref 的 push 在完整 Rust 检查和当前 iOS 构建成功后保存；精确命中不重存。PR、main、旧 release、hotfix 和手动运行只按 GitHub 正常作用域恢复，PR 不向基线回写。不使用 `pull_request_target`、PAT 或额外缓存后端。
 
 单包保存 Cargo registry/git、`target` 的 host/simulator 产物、DerivedData、Debug UniFFI 生成目录及实际 Nix 用户输入缓存。CI 的 Xcode 构建启用原生编译缓存及命中诊断，CAS 路径显式设为 `build/DerivedData/CompilationCache.noindex`，随同一包恢复/保存；不另建缓存或改变本机工程设置。环境前缀包含实际 macOS/架构、Xcode build、SDK、Nix 版本和工具链/依赖锁指纹；源码、工程、scheme、xcconfig、资源和 CI 配置属于精确 key 后缀，工程小改不再隔断环境前缀恢复。Nix 输入尊重 `NIX_CACHE_HOME` / `XDG_CACHE_HOME`，不包含整个 `/nix/store`。新输入的展开体积先限 1.5 GiB，超过时不发布该代，记录证据后调整；这不冒充压缩存储量。
 
@@ -37,7 +37,7 @@ SwiftPM 的共享仓库缓存放在 `build/DerivedData/SwiftPMPackageCache`，�
 
 每个新包（含编译缓存）API 存储量预算为 4 GiB。独立清理作业先确认成功 key 在精确 writer ref 唯一可见且在预算内，再删除同命名空间更旧 ID 及明确列出的旧 Cargo/DerivedData 前缀；保留当前和更晚并发代，保存失败或 API 不可确认时不删旧。新代超预算只移除该新代，保留旧种子并报告容量未通过；不提高额度。迁移清理仅作用于 Actions cache ID，不删除日志、xcresult 或 TestFlight artifact。
 
-缓存不决定测试源码：每次仍运行当前 Cargo、UniFFI 和 Xcode build-for-testing；先移除缓存中的旧 xctestrun，要求成功构建产生唯一当前 manifest，再显式用于 test-without-building。不会仅因 cache hit 直接测试旧 App，也不按提交时间伪造 mtime。UniFFI 先写临时目录，验证三个既有输出完整，再逐文件 cmp；未变保留 mtime，缺失/有变化才替换，失败停止构建。
+缓存不决定测试源码：每次仍运行当前 Cargo、UniFFI 和 Xcode build-for-testing。先移除缓存中的旧 xctestrun，再用 `generic/platform=iOS Simulator` 和 `ARCHS=arm64` 预编译并生成唯一的当前 manifest。选定的模拟器在预编译期间于后台启动，单测执行前用 `simctl bootstatus -b` 等待同一台设备就绪。`test-without-building` 接收本次生成的 manifest 和该设备的 UDID。不会仅因 cache hit 直接测试旧 App，也不按提交时间伪造 mtime。UniFFI 先写临时目录，验证三个既有输出完整，再逐文件 cmp；未变保留 mtime，缺失/有变化才替换，失败停止构建。
 
 阶段耗时、源码与环境身份、展开尺寸（CAS 与 SwiftPM 单列但不重复计入 DerivedData）、缓存命中、SwiftPM 解析日志、编译缓存诊断、Xcode build timing、Rust/Swift 测试日志和 xcresult 保留七天；restore/save 耗时以 Actions 步骤为准，压缩包大小以 API 为准。冷缓存 PR 只读，热缓存及 Swift/Rust 源码负向对照等待 release push 生成首个种子后执行。本工作流没有打包上传逻辑，不能将性能检查当发布或真实环境验收。
 
@@ -46,12 +46,12 @@ SwiftPM 的共享仓库缓存放在 `build/DerivedData/SwiftPMPackageCache`，�
 ## 仓库设置
 
 - 仓库公开，默认分支 `main`；使用 Issues，关闭 Wiki、Projects 和 Discussions，避免与开发文档形成重复入口。
-- 开启 squash 与 merge commit，关闭 rebase merge。功能 PR 对当前 `release/x.y` 使用 squash；发布后的 `release/x.y` → `main` 使用普通 merge。线上 hotfix 从 `main` 开 `hotfix/x.y.z`，在分支上修复、打包和提审，上线后才普通 merge 回 `main` 并打 tag，再把 `main` 合进当前 release。合并后自动删除普通开发分支；受保护的 main 与 release 分支禁止删除。合并方式由维护者选择，仓库开关不会按 PR 来源自动限制。
+- 开启 squash 与 merge commit，关闭 rebase merge。功能 PR 对当前 `release/x.y` 使用 squash；发布后的 `release/x.y` → `main` 使用普通 merge。线上 hotfix 从 `main` 开 `hotfix/x.y.z`，在分支上修复、打包和提审，上线后才普通 merge 回 `main` 并打 tag，再把 `main` 合进当前 release。合并后自动删除普通开发分支。合并方式由维护者选择，仓库开关不会按 PR 来源自动限制。
 - PR 合入 `release/x.y` 或 `hotfix` 分支时，GitHub 不会根据 `Closes` 自动关闭 issue。合并后需手动关闭对应 issue，评论注明合入的分支与提交，并把看板状态改为「完成」。
 - Actions 允许范围设为全部允许；仍强制引用固定到完整 SHA，默认 token 只读，不允许其创建或批准 PR。当前工作流只使用 GitHub 官方 Actions 和 Nix 安装 action。
-- 启用 Dependabot 漏洞提醒与安全更新；Cargo 和 Actions 的常规版本更新每周向当前 `release/x.y` 提出 PR，同类兼容更新分组，不自动合并；每次新开版本分支同步修改两个 `target-branch`（当前配置 `release/1.9`）。Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 hotfix 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。Nix 输入由维护者显式更新锁文件并验证。
+- 启用 Dependabot 漏洞提醒与安全更新；Cargo 和 Actions 的常规版本更新每周向当前 `release/x.y` 提出 PR，同类兼容更新分组，不自动合并；每次新开版本分支同步修改两个 `target-branch`（当前配置 `release/1.10`）。Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 hotfix 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。Nix 输入由维护者显式更新锁文件并验证。
 
-`main` 的 App 代码始终对应 App Store 最新发布版本。开发改动（含官网和文档）进入当前 `release/1.9`；正式发布后普通 merge 到 `main` 并打 tag（如 `v1.1`），线上 hotfix 按上述发布流程处理。[TestFlight 工作流](development.md#testflight-手动-ci)从待打包的受保护版本分支运行，工作流改动通过 PR 合入该分支。完整流程见[分支与协作](development.md#分支与协作)。
+`main` 的 App 代码始终对应 App Store 最新发布版本，目前为 1.9。开发改动（含官网和文档）进入当前 `release/1.10`，正式发布后普通 merge 到 `main` 并打 tag（如 `v1.1`），线上 hotfix 按上述发布流程处理。[TestFlight 工作流](development.md#testflight-手动-ci)从待打包的受保护版本分支运行，工作流改动通过 PR 合入该分支。完整流程见[分支与协作](development.md#分支与协作)。
 
 仓库规则集[「版本分支保护」](https://github.com/suxiaoshao/moonread/rulesets/27823660)作用于 `main`、`release/*` 和 `hotfix/*`。合入须走 PR 并满足 `Rust and iOS tests` 必需检查，禁止强推和删除。管理员保留绕过权限。旧的单独分支保护规则已移除。
 
@@ -66,7 +66,7 @@ SwiftPM 的共享仓库缓存放在 `build/DerivedData/SwiftPMPackageCache`，�
 
 PR 模板记录改动、实际验证和必要限制；问题模板记录设备/版本、复现步骤及实际表现，建议模板从使用场景开始。简单事项允许空白 Issue。不添加需要个人开发者批准自己 PR 的 CODEOWNERS 规则。
 
-参考：[Actions 安全配置](https://docs.github.com/en/actions/reference/security/secure-use)、[分支保护规则](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)。
+参考 [Actions 安全配置](https://docs.github.com/en/actions/reference/security/secure-use)与[仓库规则集](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)。
 
 ## 政策与支持网站
 

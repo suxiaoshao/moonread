@@ -11,16 +11,6 @@ struct UserDataTransfer: Sendable {
     let facts: [Fact]
 }
 extension UserDataStore {
-    func pendingKeys() throws -> Set<String> {
-        var result = Set(try modelContext.fetch(FetchDescriptor<AnnotationOperation>()).map(\.contentKey))
-        result.formUnion(try modelContext.fetch(FetchDescriptor<ReadingFact>()).map(\.contentKey))
-        result.formUnion(try modelContext.fetch(FetchDescriptor<UserPosition>()).map(\.contentKey))
-        for row in try modelContext.fetch(FetchDescriptor<StatisticsClear>()) where (try? decode(ClearValue.self, row.payload)) == nil {
-            if let scope = try? JSONDecoder().decode(UserSyncClearScope.self, from: Data(row.payload.utf8)), let book = scope.book { result.insert(book) }
-        }
-        for row in try modelContext.fetch(FetchDescriptor<UserValue>()) where row.key.hasPrefix("opened/") { result.insert(String(row.key.dropFirst(7))) }
-        return result.filter { if let key = try? parseReadingKey(value: $0), case .pending = key { return true }; return false }
-    }
     private func requirePendingNonFactReadable(key: String) throws {
         try requireValueReadable("position/" + key)
         try requireValueReadable("opened/" + key)
@@ -118,5 +108,36 @@ extension UserDataStore {
             for row in operations { modelContext.delete(row) }
             for row in facts { modelContext.delete(row) }
         }
+    }
+
+    static func samePayload(_ a: String, _ b: String) -> Bool {
+        guard let a = try? UserSyncJSON.versioned(a), let b = try? UserSyncJSON.versioned(b) else { return false }
+        return sameVersionedPayload(a, b)
+    }
+    static func sameFactPayload(_ a: UserSyncJSON.ValidatedFact, _ b: UserSyncJSON.ValidatedFact) -> Bool {
+        guard let a = try? a.versioned(), let b = try? b.versioned() else { return false }
+        return sameVersionedPayload(a, b)
+    }
+    private static func sameVersionedPayload(_ a: String, _ b: String) -> Bool {
+        guard let left = try? JSONSerialization.jsonObject(with: Data(a.utf8)) as? NSDictionary,
+              let right = try? JSONSerialization.jsonObject(with: Data(b.utf8)) as? NSDictionary else { return false }
+        return left.isEqual(right)
+    }
+    /// Immutable value intake for legacy upgrade candidates.
+    /// The existing value projection remains the only winner selection.
+    func mergeValueRecord(key: String, device: String, payload: String) throws {
+        let incoming = try UserSyncJSON.storedValue(payload, key: key)
+        _ = try value(key) // Unknown siblings remain isolated.
+        let old = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == key }))
+        var exists = false
+        for row in old {
+            let parsed = try UserSyncJSON.storedValue(row.payload, key: key)
+            if parsed.token == incoming.token {
+                let same = key.hasPrefix("position/") ? try PositionCandidate.sameUpdate(parsed, incoming) : Self.samePayload(row.payload, payload)
+                guard same else { throw ReadingDataError.invalid }
+                exists = true
+            }
+        }
+        if !exists { modelContext.insert(UserValue(key: key, device: device, payload: payload)) }
     }
 }

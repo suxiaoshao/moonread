@@ -361,10 +361,12 @@ import XCTest
             UIColor.blue.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
         }
-        let cover = try await source.makeCover(XCTUnwrap(image.pngData()))
+        let draft = try await source.makeCover(XCTUnwrap(image.pngData()))
         let base = try await source.details(sha: sha).metadata
-        var edited = base; edited.cover = cover
+        var edited = base; edited.cover = draft
         try await source.saveMetadata(base: base, edited: edited)
+        let committed = try await source.details(sha: sha).metadata
+        let cover = try XCTUnwrap(committed.cover)
         let bytes = try await source.coverBytes(cover)
         try sourceRows.seedPosition(sha, offset: 4, time: 10, token: "old")
         try targetRows.seedPosition(sha, offset: 8, time: 20, token: "new")
@@ -391,6 +393,110 @@ import XCTest
         XCTAssertEqual(again.review.kept, 1)
     }
 
+    func testBackupImportsOnlyFinalCoverReferencesAndExportsOnlyReferencedAttachments() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        let session = try makeReaderIndexFixture(at: root.appending(path: "schema"))
+        defer { try? session.session.close(); try? FileManager.default.removeItem(at: root) }
+        let source = root.appending(path: "source", directoryHint: .isDirectory)
+        let exported = root.appending(path: "exported", directoryHint: .isDirectory)
+        for name in ["records", "assets"] {
+            try FileManager.default.createDirectory(at: source.appending(path: name), withIntermediateDirectories: true)
+        }
+        var manifest = BackupManifest(createdAt: 1, writerVersion: "fixture")
+        var records = Data(), referenced = Set<String>()
+        var incoming: [UserValueRows.Cover] = []
+        for i in 0..<709 {
+            let bytes = Data("fixture attachment \(i % 400)".utf8), sha = DataIdentity.sha(bytes)
+            let cover = UserValueRows.Cover(id: UUID().uuidString, sha256: sha, format: "png", width: 8, height: 8)
+            incoming.append(cover)
+            let path = "assets/\(sha).bin", file = source.appending(path: path)
+            if !FileManager.default.fileExists(atPath: file.path) {
+                try bytes.write(to: file)
+                manifest.members.append(.init(try backupMember(path: path, filePath: file.path)))
+            }
+            manifest.assets.append(.init(id: cover.id, path: path))
+            if i < 394 {
+                referenced.insert(cover.id)
+                let book = String(format: "%064x", i)
+                let head = StoredValue(updated: 1, token: UUID().uuidString, value: try UserSyncJSON.encode(cover))
+                let row = BackupRecord(key: "metadata/\(book)/cover", device: "fixture",
+                                       payload: try UserSyncJSON.encode(head, envelope: true))
+                try records.append(JSONEncoder().encode(row))
+                records.append(10)
+            }
+        }
+        for name in ["values", "positions", "annotations", "facts", "statistics-clears"] {
+            let path = "records/\(name).jsonl", file = source.appending(path: path)
+            try (name == "values" ? records : Data()).write(to: file)
+            manifest.members.append(.init(try backupMember(path: path, filePath: file.path)))
+        }
+        let cancellation = BackupCancellation()
+        let restore = try UserBackupRestore(directory: source, manifest: manifest, cancellation: cancellation)
+        let receipt = try session.session.readUsers(session.lease) {
+            try restore.preview($0, scope: .local, cancellation: cancellation)
+        }
+        XCTAssertEqual(receipt.books.count, 394)
+        XCTAssertTrue(receipt.global.isEmpty)
+        try session.session.writeUsers(session.lease) {
+            try restore.merge($0, scope: .local, syncRequested: false, cancellation: cancellation)
+        }
+        let report = try session.session.readUsers(session.lease) { db in
+            let stored = Set(try String.fetchAll(db, sql: "SELECT legacy_cover_id FROM usr.cover_asset"))
+            let manifest = try RelationalReadingData.export(db, directory: exported, writerVersion: "fixture")
+            return (stored, Set(manifest.assets.map(\.id)))
+        }
+        XCTAssertEqual(report.0, referenced)
+        XCTAssertEqual(report.1, referenced)
+
+        // Keep a newer on-device reference, restore its missing attachment and
+        // skip the package's older candidate for that device.
+        let first = incoming[0], retained = incoming[700]
+        let key = try UserValueRows.Key("metadata/\(String(format: "%064x", 0))/cover")
+        let bytes = Data("fixture attachment 300".utf8)
+        try session.session.writeUsers(session.lease) { db in
+            try UserValueRows.attach(db, id: retained.id, sha: retained.sha256, bytes: bytes)
+            _ = try UserValueRows.merge(db, key: key,
+                head: .init(updated: 2, token: UUID().uuidString, value: UserSyncJSON.encode(retained)), device: "fixture")
+            try UserValueRows.reclaimCovers(db, ids: [UserValueRows.assetID(first.id, sha: first.sha256)])
+            try db.execute(sql: "UPDATE usr.cover_asset SET bytes=NULL,availability='missing' WHERE legacy_cover_id=?",
+                           arguments: [retained.id])
+            try restore.merge(db, scope: .local, syncRequested: false, cancellation: cancellation)
+            XCTAssertNil(try UserValueRows.coverBytes(db, id: first.id, sha: first.sha256))
+            XCTAssertEqual(try UserValueRows.coverBytes(db, id: retained.id, sha: retained.sha256), bytes)
+            XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.cover_asset"), 394)
+        }
+    }
+
+    func testLocalCoverWritesReuseBytesAndReclaimOnlyTheFinalReference() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        let index = try makeReaderIndexFixture(at: root)
+        defer { try? index.session.close(); try? FileManager.default.removeItem(at: root) }
+        let first = String(repeating: "a", count: 64), second = String(repeating: "b", count: 64)
+        let bytes = Data("cover fixture".utf8), digest = DataIdentity.sha(bytes)
+        func write(_ book: String) throws -> UserValueRows.MetadataWrite {
+            let draft = UserValueRows.Cover(id: UUID().uuidString, sha256: digest, format: "png", width: 8, height: 8)
+            let key = "metadata/\(book)/cover"
+            return .init(plan: .init(sha: book, values: [key: try UserSyncJSON.encode(draft)]),
+                         cover: .init(id: draft.id, bytes: bytes))
+        }
+        try index.session.writeUsers(index.lease) { db in
+            try UserValueRows.putMetadata(db, [write(first)], device: "fixture", now: 1)
+            let currentID = try String.fetchOne(db, sql: "SELECT asset_id FROM usr.cover_candidate")
+            let currentToken = try String.fetchOne(db, sql: "SELECT token FROM usr.cover_candidate")
+            try UserValueRows.putMetadata(db, [write(first), write(second)], device: "fixture", now: 2)
+            let ids = try String.fetchAll(db, sql: "SELECT asset_id FROM usr.cover_candidate")
+            XCTAssertEqual(ids.count, 2)
+            XCTAssertEqual(Set(ids), Set([try XCTUnwrap(currentID)]))
+            XCTAssertEqual(try String.fetchOne(db, sql: "SELECT token FROM usr.cover_candidate WHERE book_key=?", arguments: [first]),
+                           currentToken)
+            for (book, count) in [(first, 1), (second, 0)] {
+                let clear = UserValueRows.MetadataWrite(plan: .init(sha: book, values: ["metadata/\(book)/cover": "null"]), cover: nil)
+                try UserValueRows.putMetadata(db, [clear], device: "fixture", now: 3)
+                XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.cover_asset"), count)
+            }
+        }
+    }
+
     func testDeletionRefusesActiveBookAndKeepsSharedCover() async throws {
         let (root, service, book, rows) = try await editorFixture()
         defer { try? rows.index.session.close(); try? FileManager.default.removeItem(at: root) }
@@ -399,11 +505,13 @@ import XCTest
             UIColor.blue.setFill()
             $0.fill(CGRect(x: 0, y: 0, width: 8, height: 12))
         }
-        let cover = try await service.makeCover(image)
+        let draft = try await service.makeCover(image)
         let sha = book.fixtureSHA256
         let base = try await service.details(sha: sha).metadata
-        var edited = base; edited.cover = cover
+        var edited = base; edited.cover = draft
         try await service.saveMetadata(base: base, edited: edited)
+        let committed = try await service.details(sha: sha).metadata
+        let cover = try XCTUnwrap(committed.cover)
         let bytes = try await service.coverBytes(cover)
         let sibling = String(repeating: "a", count: 64)
         let reference = UserValueRows.Cover(id: cover.id, sha256: cover.sha256, format: cover.extension,

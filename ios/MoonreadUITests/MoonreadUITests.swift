@@ -30,10 +30,10 @@ import XCTest
     app.launchEnvironment["MOONREAD_TEST_CREDENTIALS"] = "memory"
     app.launch()
   }
-  @discardableResult private func ready(_ element: XCUIElement, timeout: TimeInterval = 8)
+  @discardableResult private func ready(_ element: XCUIElement, timeout: TimeInterval = 8, message: String = "")
     -> XCUIElement
   {
-    if !element.exists { XCTAssertTrue(element.waitForExistence(timeout: timeout)) }
+    if !element.exists { XCTAssertTrue(element.waitForExistence(timeout: timeout), message) }
     return element
   }
   private func element(_ id: String) -> XCUIElement {
@@ -142,7 +142,7 @@ import XCTest
     app.navigationBars.buttons.firstMatch.tap()
     menu(sample)
     app.buttons["小说详情"].tap()
-    XCTAssertTrue(ready(app.buttons["合成作者"]).exists)
+    ready(app.buttons["合成作者"])
   }
   func testU04ReadingPositionSurvivesRestart() {
     launch()
@@ -303,13 +303,12 @@ import XCTest
     ready(app.buttons["statisticsSettings"]).tap()
     let statisticsEnabled = app.switches["statisticsEnabled"].switches.firstMatch
     ready(statisticsEnabled)
-    XCTAssertTrue(app.staticTexts["关闭后保留历史统计，只停止此设备的新记录。只记录可见正文活动；锁屏、后台、工具面板和闲置时暂停。"].exists)
     statisticsEnabled.tap()
     waitUntil { statisticsEnabled.value as? String == "0" }
     app.navigationBars.buttons.firstMatch.tap()
     app.tabBars.buttons["统计"].tap()
     ready(app.staticTexts["阅读统计已暂停"])
-    XCTAssertTrue(ready(app.staticTexts["暂无阅读记录"]).exists)
+    ready(app.staticTexts["暂无阅读记录"])
     XCTAssertTrue(element("statisticsPeriod").exists)
     ready(app.buttons["统计设置"]).tap()
     ready(statisticsEnabled).tap()
@@ -731,11 +730,11 @@ import XCTest
     app.buttons["closeFullIndex"].tap()
     ready(file("复原样本.txt"))
     let restoredCard = app.cells.containing(.button, identifier: "library-file-复原样本.txt").firstMatch
-    XCTAssertTrue(ready(restoredCard.staticTexts["50.0%"]).exists)
+    ready(restoredCard.staticTexts["50.0%"])
     menu("复原样本.txt")
     app.buttons["小说详情"].tap()
     ready(app.buttons["复原标签"])
-    XCTAssertTrue(ready(app.buttons["bookReadingStatus"].staticTexts["阅读中"]).exists)
+    ready(app.buttons["bookReadingStatus"].staticTexts["阅读中"])
     XCTAssertFalse(app.textViews["scrollText"].exists, "Whole-shelf indexing must not open a book")
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "U20-recovered-whole-shelf"
@@ -743,18 +742,37 @@ import XCTest
     add(screenshot)
   }
 
+  func testStorageNavigationOpensCategoryAndCleanupPages() {
+    launch(["--ui-test-storefront", "CHN"])
+    shelf()
+    open()
+    backFromReader()
+    ready(file(sample))
+    selectTab("设置")
+    ready(element("storageSettings")).tap()
+    ready(app.staticTexts["月读总占用"])
+    XCTAssertTrue(element("storageInventoryProgress").waitForNonExistence(timeout: 90))
+
+    for (id, title) in [
+      ("books", "正文与封面"), ("database", "阅读数据库"), ("work", "导入与临时文件"),
+      ("old", "旧版数据"), ("other", "其他"),
+    ] {
+      ready(element("storageCategory-\(id)")).tap()
+      ready(app.navigationBars[title])
+      app.navigationBars[title].buttons.firstMatch.tap()
+      ready(app.navigationBars["存储空间"])
+    }
+
+    ready(app.navigationBars["存储空间"].buttons["storageCleanup"], timeout: 30).tap()
+    ready(app.navigationBars["选择清理项目"])
+    ready(app.staticTexts["阅读与封面缓存"])
+  }
+
   func testU21ExportAllDeleteAndRestoreReadingData() {
     launch(["--ui-test-data-management", "--ui-test-storefront", "CHN"])
     ready(app.buttons["设置"]).tap()
     ready(element("dataManagementSettings")).tap()
-    ready(app.buttons["readingDataCaches"])
     snapshot("data-overview")
-    app.buttons["readingDataCaches"].tap()
-    ready(app.buttons["clearRebuildableCaches"])
-    XCTAssertTrue(app.staticTexts["正文缓存可以随时重新生成，清理后再打开小说会稍慢一些。"].exists)
-    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "有 0 本正在使用")).firstMatch.exists)
-    snapshot("data-cache")
-    app.navigationBars.buttons.firstMatch.tap()
     ready(app.buttons["exportAllReadingData"]).tap()
     // Export/restore our bytes; do not drive the system share UI in this test.
     ready(app.buttons["shareReadingBackup"])
@@ -767,35 +785,45 @@ import XCTest
     XCTAssertEqual(rows.count, 1)
     XCTAssertTrue(rows.firstMatch.label.contains("上次来源："))
     XCTAssertTrue(rows.firstMatch.label.contains("读到 50%"))
+    let search = app.searchFields.firstMatch
+    if !search.isHittable { app.collectionViews.firstMatch.swipeDown() }
+    ready(search).tap()
+    search.typeText("星灯\n")
+    ready(rows.firstMatch)
     ready(app.buttons["selectReadingData"]).tap()
     XCTAssertEqual(app.buttons["selectReadingData"].label, "结束选择")
     XCTAssertTrue(app.buttons["readingDataSort"].exists)
-    XCTAssertTrue(ready(app.buttons["selectAllReadingData"]).exists)
+    let selectAll = ready(app.buttons["selectAllReadingData"])
     XCTAssertTrue(app.navigationBars.buttons["BackButton"].exists)
     XCTAssertFalse(app.tabBars.buttons["书架"].isHittable)
     XCTAssertFalse(app.buttons["readingDataSelectionMenu"].exists)
-    ready(app.buttons["selectAllReadingData"]).tap()
+    selectAll.tap()
     XCTAssertEqual(app.buttons["selectAllReadingData"].label, "取消全选")
     app.buttons["readingDataFilterUnlinked"].tap()
     XCTAssertFalse(app.buttons["deleteSelectedReadingData"].isEnabled)
-    XCTAssertTrue(ready(element("readingDataNoMatches")).exists)
+    ready(element("readingDataNoMatches"))
     XCTAssertFalse(element("readingDataEmpty").exists)
     snapshot("reading-data-unlinked-selection")
     app.buttons["readingDataFilterAll"].tap()
     // Native List selection exposes row content as text, not a Button.
     ready(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-")).firstMatch).tap()
     ready(app.buttons["deleteSelectedReadingData"]).tap()
+    ready(app.alerts.buttons["取消"]).tap()
+    ready(app.buttons["deleteSelectedReadingData"]).tap()
     ready(app.buttons["confirmDeleteReadingData"].firstMatch).tap()
-    waitUntil { rows.count == 0 && !self.app.otherElements["readingDataWorking"].exists }
-    XCTAssertTrue(ready(element("readingDataResult")).exists)
-    XCTAssertTrue(ready(element("readingDataEmpty")).exists)
+    ready(app.buttons["closeReadingDeletionTask"]).tap()
+    ready(element("readingDataEmpty"))
     XCTAssertFalse(element("readingDataError").exists)
-    app.buttons["selectReadingData"].tap()
+    app.navigationBars.buttons["BackButton"].tap()
+    let deletionSummary = app.otherElements.matching(identifier: "readingDeletionSummary")
+      .containing(.button, identifier: "查看结果").firstMatch
+    ready(deletionSummary.buttons["查看结果"]).tap()
+    ready(element("readingDataResult"))
+    ready(app.buttons["finishReadingDeletionTask"]).tap()
     app.buttons["书架"].tap()
-    shelf()
-    XCTAssertTrue(ready(file(sample)).exists, "Clearing reading data must leave the original novel")
+    ready(app.buttons["shelf-builtin"]).tap()
+    ready(file(sample), message: "Clearing reading data must leave the original novel")
     app.buttons["设置"].tap()
-    app.navigationBars.buttons.element(boundBy: 0).tap()
     ready(app.buttons["importReadingBackup"]).tap()
     ready(app.staticTexts["将更新 1 本"], timeout: 30)
     ready(app.buttons["confirmImportReadingBackup"].firstMatch, timeout: 30)

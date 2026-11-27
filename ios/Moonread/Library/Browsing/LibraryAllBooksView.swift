@@ -1,15 +1,6 @@
-import TipKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct LibraryAllBooksView: View {
-    private enum ScrollTarget: Hashable { case nameGroup(String) }
-    private struct NameGroupBounds: PreferenceKey {
-        static var defaultValue: [String: [Anchor<CGRect>]] { [:] }
-        static func reduce(value: inout [String: [Anchor<CGRect>]], nextValue: () -> [String: [Anchor<CGRect>]]) {
-            for (letter, bounds) in nextValue() { value[letter, default: []].append(contentsOf: bounds) }
-        }
-    }
     @Bindable var model: LibraryModel
     let shelfID: String
     let host: LibraryBrowsingHost
@@ -36,82 +27,29 @@ struct LibraryAllBooksView: View {
         if case .tags(_, let cards) = catalogue.snapshot?.content { cards[fileID] } else { nil }
     }
     @Environment(\.theme) private var theme
-    @Environment(\.moonreadReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .body) private var minimumBookWidth = 96.0
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            Group {
-                if shownGrouping == .tags {
-                    tagBrowser
-                } else if model.layout == .list {
-                    List {
-                        summary.modifier(LibraryListHeading())
-                        ForEach(groups) { group in
-                            Section {
-                                ForEach(group.entries, id: \.id) { entry in
-                                    LibraryFileRow(model: model, entry: entry, showPath: true, interaction: .browse(host))
-                                        .listRowInsets(EdgeInsets(top: 0, leading: LayoutTokens.page, bottom: 0, trailing: LayoutTokens.page))
-                                        .alignmentGuide(.listRowSeparatorLeading) { _ in LibraryFileRow.textLeading }
-                                        .listRowBackground(Color.clear)
-                                }
-                            } header: {
-                                Text(verbatim: group.id).font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color(uiColor: theme.secondary)).id(ScrollTarget.nameGroup(group.id))
-                                    .listRowInsets(EdgeInsets(top: LayoutTokens.compact, leading: LayoutTokens.page, bottom: 4, trailing: LayoutTokens.page))
-                            }.modifier(LibraryNativeIndexLabel(letter: group.id))
-                        }
-                    }.listStyle(.plain).themedPage()
-                        .listSectionSpacing(.compact)
-                        .environment(\.defaultMinListHeaderHeight, 24)
-                        .contentMargins(.top, LayoutTokens.compact, for: .scrollContent)
-                        .modifier(LibraryNativeIndexVisibility()).accessibilityIdentifier("libraryList")
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: LayoutTokens.content) {
-                            summary
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumBookWidth), spacing: LayoutTokens.content)], alignment: .leading, spacing: 0) {
-                                ForEach(groups) { group in
-                                    Section {
-                                        ForEach(group.entries, id: \.id) { entry in
-                                            LibraryBookTile(model: model, entry: entry, showPath: true, interaction: .browse(host))
-                                                .padding(.bottom, LayoutTokens.section)
-                                                .id(entry.id)
-                                                .anchorPreference(key: NameGroupBounds.self, value: .bounds) { [group.id: [$0]] }
-                                        }
-                                    } header: {
-                                        Text(verbatim: group.id)
-                                            .font(.subheadline.weight(.semibold)).foregroundStyle(Color(uiColor: theme.secondary))
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .padding(.bottom, LayoutTokens.compact)
-                                            .accessibilityAddTraits(.isHeader)
-                                            .id(ScrollTarget.nameGroup(group.id))
-                                            .anchorPreference(key: NameGroupBounds.self, value: .bounds) { [group.id: [$0]] }
-                                    }
-                                }
-                            }
-                        }.padding(.leading, LayoutTokens.page).padding(.trailing, LayoutTokens.page + 20)
-                            .padding(.top, LayoutTokens.control).padding(.bottom)
-                    }
-                    .themedPage().accessibilityIdentifier("libraryGrid")
-                    .overlayPreferenceValue(NameGroupBounds.self) { bounds in
-                        GeometryReader { geometry in
-                            LibraryAlphabetIndex(letters: groups.map(\.id), current: currentNameGroup(bounds, in: geometry)) { letter in
-                                proxy.scrollTo(ScrollTarget.nameGroup(letter), anchor: .top)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                        }
-                    }
-                }
-            }
-            .overlay(alignment: .trailing) {
-                if shownGrouping == .name && model.layout == .list && !LibraryNativeIndexVisibility.available {
-                    LibraryAlphabetIndex(letters: groups.map(\.id)) { letter in
-                        proxy.scrollTo(ScrollTarget.nameGroup(letter), anchor: .top)
-                    }
-                }
+    private var sections: [LibraryCollectionSection] {
+        let overview = LibraryCollectionSection(id: .catalogueSummary, content: .rows([.init("summary") { summary }]))
+        if shownGrouping == .tags {
+            return [overview] + tagGroups.map { group in
+                let header: LibraryCollectionSection.Header = group.kind == .tag
+                    ? .action(AnyView(tagHeading(group)))
+                    : .title(group.title, detail: String(localized: "\(UInt64(group.fileIDs.count)) 本小说"))
+                return .init(id: .tag(group.id), content: .files(group.fileIDs.compactMap(card), .results), header: header)
             }
         }
+        return [overview] + groups.map { group in
+            .init(id: .name(group.id), content: .files(group.entries, .results), header: .title(group.id))
+        }
+    }
+
+    var body: some View {
+        LibraryCollection(model: model, host: host, sections: sections,
+                          accessibilityID: shownGrouping == .tags ? (model.layout == .grid ? "libraryTagGrid" : "libraryTagList") : nil,
+                          onRefresh: {
+            catalogue.retryIfFailed()
+            await model.refresh(showIndicator: false, userInitiated: true)
+        })
+        .themedPage()
         .navigationTitle("全部小说").navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -126,10 +64,7 @@ struct LibraryAllBooksView: View {
                 } label: { Label("显示方式", systemImage: "ellipsis") }.toolbarGlyph().accessibilityIdentifier("folderActions")
             }
         }
-        .refreshable {
-            catalogue.retryIfFailed()
-            await model.refresh(showIndicator: false, userInitiated: true)
-        }
+        .modifier(LibraryFileActivity(model: model))
         .overlay { if catalogue.snapshot != nil && !catalogue.loading.active && !model.refreshing.active && model.shelfScans[shelfID] == nil && bookCount == 0 { ContentUnavailableView("暂无小说", systemImage: "books.vertical") } }
         .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.shelfScans[shelfID] ?? catalogue.loading.request ?? model.refreshing.request,
                                      hasContent: bookCount > 0, label: "正在加载书架", immediate: model.explicitRefresh || model.shelfScans[shelfID] != nil))
@@ -139,80 +74,21 @@ struct LibraryAllBooksView: View {
                 if input == request { model.error = ReaderMessages.error(error) }
             }
         }
-
-        .animation(MotionTokens.controls(reduced: reduceMotion), value: model.layout)
     }
 
-    private func currentNameGroup(_ bounds: [String: [Anchor<CGRect>]], in geometry: GeometryProxy) -> String? {
-        // Include tiles: a long group's header can be unloaded while its books
-        // still fill the viewport. Resolve live anchors only in the index overlay;
-        // no per-frame state writes or retained geometry/last-tapped letter.
-        let starts = groups.compactMap { group -> (id: String, y: CGFloat)? in
-            guard let y = bounds[group.id]?.map({ geometry[$0].minY }).min() else { return nil }
-            return (group.id, y)
-        }
-        return starts.last(where: { $0.y <= geometry.safeAreaInsets.top })?.id ?? starts.first?.id ?? groups.first?.id
-    }
-
-    @ViewBuilder private var tagBrowser: some View {
-        if model.layout == .list {
-            List {
-                summary.modifier(LibraryListHeading())
-                ForEach(tagGroups) { group in
-                    Section {
-                        ForEach(group.fileIDs, id: \.self) { fileID in
-                            if let entry = card(fileID) {
-                                LibraryFileRow(model: model, entry: entry, showPath: true, interaction: .browse(host))
-                                    .listRowInsets(EdgeInsets(top: 0, leading: LayoutTokens.page, bottom: 0, trailing: LayoutTokens.page))
-                                    .alignmentGuide(.listRowSeparatorLeading) { _ in LibraryFileRow.textLeading }
-                                    .listRowBackground(Color.clear)
-                            }
-                        }
-                    } header: { tagHeading(group) }
-                }
-            }.listStyle(.plain).themedPage().listSectionSpacing(.compact)
-                .contentMargins(.top, LayoutTokens.compact, for: .scrollContent)
-                .accessibilityIdentifier("libraryTagList")
-        } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: LayoutTokens.section) {
-                    summary
-                    ForEach(tagGroups) { group in
-                        VStack(alignment: .leading, spacing: LayoutTokens.content) {
-                            tagHeading(group)
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumBookWidth), spacing: LayoutTokens.content)], alignment: .leading, spacing: LayoutTokens.section) {
-                                ForEach(group.fileIDs, id: \.self) { fileID in
-                                    if let entry = card(fileID) {
-                                        LibraryBookTile(model: model, entry: entry, showPath: true, interaction: .browse(host))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }.padding(.horizontal, LayoutTokens.page).padding(.top, LayoutTokens.control).padding(.bottom)
-            }.themedPage().accessibilityIdentifier("libraryTagGrid")
-        }
-    }
-
-    @ViewBuilder private func tagHeading(_ group: CatalogueTagSection) -> some View {
-        if group.kind == .tag {
-            Button {
-                host.navigate(.search(AppSearchScope(seeds: [.shelf(shownShelfID), .tag(group.tag)])), in: model)
-            } label: {
-                tagHeadingLabel(group)
-            }.buttonStyle(.plain).accessibilityIdentifier("library-tag-\(group.tag)")
-        } else {
-            tagHeadingLabel(group)
-        }
-    }
-
-    private func tagHeadingLabel(_ group: CatalogueTagSection) -> some View {
-        HStack {
-            Text(verbatim: group.title).font(.subheadline.weight(.semibold))
-            Text("\(UInt64(group.fileIDs.count)) 本小说").font(.caption)
-            if group.kind == .tag { Image(systemName: "chevron.right").font(.caption2) }
-        }.foregroundStyle(Color(uiColor: group.kind == .tag ? theme.accent : theme.secondary))
-            .textCase(nil).accessibilityElement(children: .combine)
+    private func tagHeading(_ group: CatalogueTagSection) -> some View {
+        Button {
+            host.navigate(.search(AppSearchScope(seeds: [.shelf(shownShelfID), .tag(group.tag)])), in: model)
+        } label: {
+            HStack {
+                Text(verbatim: group.title).font(.subheadline.weight(.semibold))
+                Text("\(UInt64(group.fileIDs.count)) 本小说").font(.caption)
+                Image(systemName: "chevron.right").font(.caption2)
+            }
+            .foregroundStyle(Color(uiColor: theme.accent))
+            .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
+            .contentShape(.rect)
+        }.buttonStyle(.plain).accessibilityIdentifier("library-tag-\(group.tag)")
     }
 
     private var summary: some View {

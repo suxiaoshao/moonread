@@ -44,11 +44,13 @@ struct ThemedGroupedList: UIViewControllerRepresentable {
     var selectionChanged: ((Set<String>) -> Void)?
     var reordered: (([String]) -> Void)?
     var refresh: (() async -> Void)?
+    var header: AnyView?
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
     func updateUIViewController(_ controller: Controller, context: Context) { controller.update(self) }
 
     final class Controller: UICollectionViewController {
+        private static let hostedHeaderKind = "themed-grouped-list-header"
         private var value: ThemedGroupedList?
         private var rows: [String: Row] = [:]
         private var sections: [String: Section] = [:]
@@ -66,14 +68,29 @@ struct ThemedGroupedList: UIViewControllerRepresentable {
                 collection.dequeueConfiguredReusableCell(using: cells, for: path, item: id)
             }
             let header = supplementary(footer: false), footer = supplementary(footer: true)
+            let hostedHeader = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
+                elementKind: Self.hostedHeaderKind
+            ) { [weak self] cell, _, _ in self?.configureHeader(cell) }
             source.supplementaryViewProvider = { collection, kind, path in
-                collection.dequeueConfiguredReusableSupplementary(using: kind == UICollectionView.elementKindSectionFooter ? footer : header, for: path)
+                if kind == Self.hostedHeaderKind {
+                    return collection.dequeueConfiguredReusableSupplementary(using: hostedHeader, for: path)
+                }
+                return collection.dequeueConfiguredReusableSupplementary(using: kind == UICollectionView.elementKindSectionFooter ? footer : header, for: path)
             }
             source.reorderingHandlers.canReorderItem = { [weak self] id in self?.rows[id]?.reorderable == true }
             source.reorderingHandlers.didReorder = { [weak self] transaction in
                 guard let self else { return }
                 self.value?.reordered?(transaction.finalSnapshot.itemIdentifiers.filter { self.rows[$0]?.reorderable == true })
             }
+        }
+        private func configureHeader(_ cell: UICollectionViewListCell) {
+            guard let value, let header = value.header else { return }
+            cell.contentConfiguration = UIHostingConfiguration {
+                header.environment(\.theme, value.theme)
+                    .foregroundStyle(Color(uiColor: value.theme.ink))
+                    .tint(Color(uiColor: value.theme.accent))
+            }.margins(.all, 0)
+            cell.backgroundConfiguration = .clear()
         }
         private func supplementary(footer: Bool) -> UICollectionView.SupplementaryRegistration<UICollectionViewListCell> {
             .init(elementKind: footer ? UICollectionView.elementKindSectionFooter : UICollectionView.elementKindSectionHeader) { [weak self] cell, _, path in
@@ -102,7 +119,15 @@ struct ThemedGroupedList: UIViewControllerRepresentable {
                 config.footerMode = section?.footer == nil ? .none : .supplementary
                 config.trailingSwipeActionsConfigurationProvider = { [weak self] path in self?.swipes(at: path) }
                 let result = NSCollectionLayoutSection.list(using: config, layoutEnvironment: environment)
-                if index == 0 { result.contentInsets.top = value.topInset }
+                if index == 0 {
+                    result.contentInsets.top = value.topInset
+                    if value.header != nil {
+                        let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(64))
+                        let header = NSCollectionLayoutBoundarySupplementaryItem(layoutSize: size, elementKind: Self.hostedHeaderKind, alignment: .top)
+                        header.pinToVisibleBounds = false
+                        result.boundarySupplementaryItems.append(header)
+                    }
+                }
                 return result
             }
         }
@@ -126,6 +151,7 @@ struct ThemedGroupedList: UIViewControllerRepresentable {
         func update(_ value: ThemedGroupedList) {
             loadViewIfNeeded()
             let layoutChanged = self.value?.theme != value.theme || self.value?.topInset != value.topInset
+                || (self.value?.header != nil) != (value.header != nil)
                 || self.value?.sections.map { [$0.id, $0.title ?? "", $0.footer ?? ""] } != value.sections.map { [$0.id, $0.title ?? "", $0.footer ?? ""] }
             layoutNeedsUpdate = layoutNeedsUpdate || layoutChanged
             self.value = value
@@ -154,6 +180,12 @@ struct ThemedGroupedList: UIViewControllerRepresentable {
                 if self.layoutNeedsUpdate {
                     self.layoutNeedsUpdate = false
                     self.collectionView.setCollectionViewLayout(self.layout(), animated: false)
+                }
+                if self.value?.header != nil {
+                    for view in self.collectionView.visibleSupplementaryViews(ofKind: Self.hostedHeaderKind) {
+                        if let cell = view as? UICollectionViewListCell { self.configureHeader(cell) }
+                    }
+                    self.collectionView.collectionViewLayout.invalidateLayout()
                 }
                 self.restoreSelection()
             }

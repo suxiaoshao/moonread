@@ -7,7 +7,6 @@ struct LibraryFolderView: View {
     let location: LibraryLocation
     let host: LibraryBrowsingHost
     @Environment(AIHost.self) private var ai
-    @Environment(\.theme) private var theme
     @State private var folder = FolderStore(service: .shared)
     @State private var selection = Set<String>()
     @State private var editing = EditMode.inactive
@@ -123,6 +122,7 @@ struct LibraryFolderView: View {
                 ToolbarItem(placement: .bottomBar) { Spacer() }
             }
         }
+        .modifier(LibraryFileActivity(model: model))
         .sheet(isPresented: $metadataExporting) {
             MetadataExportView(task: MetadataExchangeModel.shared.exportTask, shelfID: location.shelfID,
                                shelfName: model.shelfTitle(location.shelfID)).presentationSizing(.page)
@@ -147,11 +147,26 @@ struct LibraryFolderView: View {
     }
 
     private var browser: some View {
-        LibraryCollection(ai: ai, model: model, host: host, location: location, entries: entries, shelf: shelf,
-                          layout: model.layout, theme: theme, disabled: fileActionsDisabled,
-                          retryObservation: folder.retryIfFailed,
-                          showsEmpty: (folder.snapshot != nil || (builtinRoot && folder.failed)) && !folder.loading.active && !model.refreshing.active && model.shelfScans[location.shelfID] == nil && entries.isEmpty && (shelf?.error == nil || (location.shelfID == "builtin" && location.path.isEmpty && model.builtinDiscovery == .unavailable)),
-                          editing: $editing, selection: $selection)
+        let showsEmpty = (folder.snapshot != nil || (builtinRoot && folder.failed))
+            && !folder.loading.active && !model.refreshing.active && model.shelfScans[location.shelfID] == nil
+            && entries.isEmpty && (shelf?.error == nil || (builtinRoot && model.builtinDiscovery == .unavailable))
+        var sections: [LibraryCollectionSection] = []
+        if location.path.isEmpty || shelf?.error != nil {
+            sections.append(.init(id: .folderOverview, content: .rows([.init("overview") {
+                FolderOverview(model: model, host: host, location: location, shelf: shelf)
+                    .disabled(editing.isEditing || fileActionsDisabled)
+            }])))
+        }
+        // Keep an empty destination section for native drops.
+        sections.append(.init(id: .folderEntries, content: .files(entries, .directory)))
+        return LibraryCollection(model: model, host: host, sections: sections,
+                                 folder: .init(location: location, disabled: fileActionsDisabled,
+                                               editing: $editing, selection: $selection,
+                                               emptyView: showsEmpty ? AnyView(LibraryEmptyFolder(model: model, location: location)) : nil),
+                                 onRefresh: {
+            folder.retryIfFailed()
+            await model.refresh(showIndicator: false)
+        })
             // UIKit applies the tab/toolbar safe inset to the scroll content.
             // Let its viewport draw behind the bar, as native SwiftUI lists do.
             .ignoresSafeArea(.container, edges: .bottom)
@@ -164,5 +179,32 @@ struct LibrarySelectingFolders: PreferenceKey {
     static var defaultValue: Set<LibraryLocation> { [] }
     static func reduce(value: inout Set<LibraryLocation>, nextValue: () -> Set<LibraryLocation>) {
         value.formUnion(nextValue())
+    }
+}
+
+private struct FolderOverview: View {
+    let model: LibraryModel
+    let host: LibraryBrowsingHost
+    let location: LibraryLocation
+    let shelf: LibraryShelf?
+    @Environment(\.theme) private var theme
+    var body: some View {
+        VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+            if let error = shelf?.error {
+                Button("重新连接", systemImage: "folder.badge.questionmark") { model.chooseFiles(.folder(location.shelfID)) }
+                Text(verbatim: error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+            }
+            if location.path.isEmpty {
+                Button { host.navigate(.allBooks(location.shelfID), in: model) } label: {
+                    HStack(spacing: LayoutTokens.compact) {
+                        Label("全部小说", systemImage: "books.vertical").font(.subheadline.weight(.medium)).foregroundStyle(Color(uiColor: theme.accent))
+                        Spacer()
+                        Text("\(shelf?.bookCount ?? 0) 本小说").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color(uiColor: theme.secondary))
+                    }.frame(minHeight: LayoutTokens.hit).contentShape(.rect)
+                }.buttonStyle(.plain).accessibilityIdentifier("library-all-books")
+                ShelfIndexGuidance(model: model, shelfID: location.shelfID)
+            }
+        }
     }
 }

@@ -167,7 +167,7 @@ struct SavedFilterNameSheet: View {
     @State private var name: String
     @State private var saving = false
     @State private var shelfCount: Int?
-    @State private var countError: String?
+    @State private var countFailed = false
     @State private var countRetry = 0
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
@@ -184,29 +184,16 @@ struct SavedFilterNameSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                TextField("书架名称", text: $name)
-                    .keyboardInputRegion()
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.done)
-                    .onSubmit { save() }
-                    .listRowBackground(Color(uiColor: theme.input))
-                    .accessibilityIdentifier("savedFilterName")
-
-                if case .save(let configuration, let term, let searchCount) = request {
-                    Section {
-                        ruleRows(configuration)
-                    } header: {
-                        Text("收录规则")
-                    } footer: {
-                        if !term.isEmpty {
-                            Text("本次含搜索文字，匹配 \(searchCount) 本。虚拟书架只按收录规则匹配，不保存搜索文字。")
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: LayoutTokens.section) {
+                    nameSection
+                    if case .save(let configuration, let term, let searchCount) = request {
+                        rulesSection(configuration, term: term, searchCount: searchCount)
+                        BookSearchSortCard(sorts: configuration.forVirtualShelf.sorts)
                     }
-                    .listRowBackground(Color(uiColor: theme.surface))
-                    .listRowSeparatorTint(Color(uiColor: theme.separator))
                 }
+                .padding(.horizontal, LayoutTokens.page)
+                .padding(.vertical, LayoutTokens.content)
             }
             .themedPage()
             .scrollDismissesKeyboard(.interactively)
@@ -226,17 +213,13 @@ struct SavedFilterNameSheet: View {
         .presentationSizing(.form)
         .interactiveDismissDisabled(saving)
         .task(id: countRetry) {
-            guard case .save(let configuration, let term, let searchCount) = request else { return }
-            if term.isEmpty {
-                shelfCount = searchCount
-                return
-            }
+            guard case .save(let configuration, let term, _) = request, !term.isEmpty else { return }
             do {
                 let result = try await model.service.searchLibrary(query: "", configuration: configuration, virtualShelf: true)
                 if !Task.isCancelled { shelfCount = result.entries.count }
             } catch is CancellationError {
             } catch {
-                if !Task.isCancelled { self.countError = ReaderMessages.error(error) }
+                if !Task.isCancelled { countFailed = true }
             }
         }
         .alert("暂时无法完成", isPresented: Binding(get: { model.savedFilters.error != nil }, set: { if !$0 { model.savedFilters.error = nil } })) {
@@ -247,23 +230,55 @@ struct SavedFilterNameSheet: View {
     private var cleanedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var canSave: Bool { !cleanedName.isEmpty && !saving && !model.savedFilters.saving && model.savedFilters.snapshot != nil }
 
-    @ViewBuilder private func ruleRows(_ configuration: BookSearchConfiguration) -> some View {
-        if let countError {
-            Text(countError).foregroundStyle(Color(uiColor: theme.secondary))
-            Button("重试") { self.countError = nil; countRetry += 1 }
-        } else {
-            LabeledContent("符合规则的小说") {
-                if let shelfCount { Text("\(shelfCount) 本").fontWeight(.semibold) }
-                else { ProgressView().controlSize(.small) }
+    private var nameSection: some View {
+        VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+            BookSearchSummaryTitle(title: "书架名称")
+            TextField("书架名称", text: $name, prompt: Text("输入名称"))
+                .keyboardInputRegion()
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .onSubmit { save() }
+                .padding(LayoutTokens.control)
+                .frame(minHeight: LayoutTokens.hit)
+                .background(Color(uiColor: theme.input), in: .rect(cornerRadius: LayoutTokens.inputRadius))
+                .overlay {
+                    RoundedRectangle(cornerRadius: LayoutTokens.inputRadius)
+                        .strokeBorder(Color(uiColor: theme.border), lineWidth: LayoutTokens.border)
+                        .allowsHitTesting(false)
+                }
+                .accessibilityIdentifier("savedFilterName")
+        }
+    }
+
+    private func rulesSection(_ configuration: BookSearchConfiguration, term: String, searchCount: Int) -> some View {
+        let count = term.isEmpty ? searchCount : shelfCount
+        return BookSearchRuleCard(root: configuration.root, title: "收录规则", shelfTitle: model.shelfTitle) {
+            countStatus(count)
+        } footer: {
+            if !term.isEmpty {
+                Text("本次搜索匹配 \(searchCount) 本。搜索文字不会保存到书架。")
+                    .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             }
         }
-        Text(configuration.root.expression(shelfTitle: model.shelfTitle))
-            .fixedSize(horizontal: false, vertical: true)
-        if !configuration.sorts.isEmpty {
-            let order = configuration.sortDescription(hasTerm: false)
-            Text("排序 · \(order)")
-                .foregroundStyle(Color(uiColor: theme.secondary))
+    }
+
+    private func countStatus(_ count: Int?) -> some View {
+        Group {
+            if let count {
+                Text("当前 \(count) 本").monospacedDigit()
+                    .accessibilityIdentifier("savedFilterRuleCount")
+            } else if countFailed {
+                HStack(spacing: LayoutTokens.compact) {
+                    Text("本数暂缺")
+                    Button("重试") { countFailed = false; countRetry += 1 }
+                        .buttonStyle(.borderless).foregroundStyle(Color(uiColor: theme.accent))
+                }
+            } else {
+                InlineTaskProgress(title: Text("正在统计…"))
+            }
         }
+        .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
     }
 
     private func save() {

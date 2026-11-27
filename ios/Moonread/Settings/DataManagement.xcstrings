@@ -1,6 +1,9 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "系统未提供后台执行资格。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The system did not allow background execution."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"系统未提供后台执行资格。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"系統未提供背景執行資格。"}}}},
+    "清除阅读数据失败": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Could Not Clear Reading Data"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"清除阅读数据失败"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"無法清除閱讀資料"}}}},
+    "阅读数据已清除": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Data Cleared"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"阅读数据已清除"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"閱讀資料已清除"}}}},
     "导入阅读数据备份": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Import Reading Data Backup"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"匯入閱讀資料備份"}}}},
     "正在停止检查…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Stopping Check…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在停止檢查…"}}}},
     "正在停止…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Stopping…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在停止…"}}}},
@@ -2061,29 +2064,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "篩選"
-          }
-        }
-      }
-    },
-    "按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Based on this device’s current index. Books not yet indexed or reconnected may also appear here."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "依此裝置目前的索引判斷；尚未建立索引或重新連接的小說也可能出現在這裡。"
           }
         }
       }

@@ -106,10 +106,11 @@ extension AppDataService {
         try Task.checkCancellation()
         let index = try relationalUserIndex()
         guard admission == index.lease else { throw ReadingDataError.changed }
-        try index.session.writeUsers(index.lease) {
+        let reclaimed = try index.session.writeUsers(index.lease) {
             try UserValueRows.putMetadata($0, [.init(plan: plan, cover: asset)], device: userDevice, now: userValueClock, scope: index.lease.scope)
         }
         publishMetadataCommit([plan])
+        await removeReclaimedCoverCopies(reclaimed, index: index)
     }
     nonisolated static func readCoverDraft(_ cover: BookCoverAsset, url: URL, length: Int?) throws -> UserValueRows.CoverWrite {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
@@ -145,9 +146,9 @@ extension AppDataService {
               (try? parseSha256(value: cover.sha256)) != nil else { throw CocoaError(.fileReadCorruptFile) }
         return try coverDirectory().appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
     }
+    func coverDraftRoot() -> URL { MetadataTemporaryFiles.coverDraftRoot(dataDirectoryName: dataDirectoryName) }
     func coverDraftURL(_ cover: BookCoverAsset) -> URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("\(dataDirectoryName)-CoverDrafts", isDirectory: true)
-            .appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
+        MetadataTemporaryFiles.current(coverDraftRoot()).appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
     }
     func discardCoverDraft(_ cover: BookCoverAsset) { try? FileManager.default.removeItem(at: coverDraftURL(cover)) }
     fileprivate struct NormalizedCover {
@@ -346,15 +347,16 @@ extension AppDataService {
         let bytes = normalized.bytes
         let cover = BookCoverAsset(id: UUID().uuidString, sha256: Self.coverDigestString(bytes, digest: digest),
                                   extension: normalized.ext, width: normalized.width, height: normalized.height)
+        _ = MetadataTemporaryFiles.prepare(coverDraftRoot())
         let url = coverDraftURL(cover)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try bytes.write(to: url, options: .atomic)
         return cover
     }
-    private func normalizedCoverImage(_ data: Data) throws -> CGImage {
+    private nonisolated func normalizedCoverImage(_ data: Data, pixels: Int = 1600) throws -> CGImage {
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 1600,
+                  kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels,
                   kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
         return image
     }
@@ -410,6 +412,16 @@ extension AppDataService {
         return image
     }
 
+    /// Produce a list-sized snapshot from an existing local cover attachment.
+    func aiBookListThumbnail(_ cover: BookCoverAsset) async -> Data? {
+        guard let bytes = try? await coverBytes(cover) else { return nil }
+        return await Task.detached(priority: .utility) {
+            guard let thumbnail = try? self.normalizedCoverImage(bytes, pixels: 240) else { return nil }
+            let image = UIImage(cgImage: thumbnail)
+            return cover.extension == "png" ? image.pngData() : image.jpegData(compressionQuality: 0.86)
+        }.value
+    }
+
     private func storedCoverBytes(_ cover: BookCoverAsset) throws -> Data? {
         let index = try relationalUserIndex()
         return try index.session.readUsers(index.lease) { try UserValueRows.coverBytes($0, id: cover.id, sha: cover.sha256) }
@@ -423,7 +435,7 @@ extension AppDataService {
 actor CoverResourceLoader {
     private struct Ready { let image: UIImage; let cost: Int; var used: UInt64 }
     private var ready: [String: Ready] = [:]
-    private var running: [String: (UUID, Task<UIImage?, Error>)] = [:]
+    private var running: [String: (token: UUID, copy: UserValueRows.CoverCopy, task: Task<UIImage?, Error>)] = [:]
     private var tick: UInt64 = 0
     private var activeScope: UUID?
     private let budget = 32 * 1024 * 1024
@@ -431,7 +443,7 @@ actor CoverResourceLoader {
                attachment: @escaping @Sendable () async throws -> Data?) async throws -> UIImage? {
         if activeScope != scope {
             activeScope = scope; ready.removeAll()
-            for (_, task) in running.values { task.cancel() }; running.removeAll()
+            for value in running.values { value.task.cancel() }; running.removeAll()
         }
         let key = CoverImageLoader.key(cover, pixels, exact: true)
         tick &+= 1
@@ -439,13 +451,13 @@ actor CoverResourceLoader {
             let candidate = CoverImageLoader.key(cover, size, exact: true)
             if var value = ready[candidate] { value.used = tick; ready[candidate] = value; return value.image }
         }
-        if let (_, task) = running[key] { return try await task.value }
+        if let load = running[key] { return try await load.task.value }
         let token = UUID()
         let task = Task { try await self.read(cover, pixels: pixels, directory: directory, attachment: attachment) }
-        running[key] = (token, task)
+        running[key] = (token, .init(id: cover.id, sha256: cover.sha256), task)
         do {
             let image = try await task.value
-            guard activeScope == scope, running[key]?.0 == token else { throw CancellationError() }
+            guard activeScope == scope, running[key]?.token == token else { throw CancellationError() }
             running[key] = nil
             if let image {
                 let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? pixels * pixels * 4
@@ -456,7 +468,20 @@ actor CoverResourceLoader {
                 }
             }
             return image
-        } catch { if running[key]?.0 == token { running[key] = nil }; throw error }
+        } catch { if running[key]?.token == token { running[key] = nil }; throw error }
+    }
+
+    func idleCacheFiles(_ files: [StorageFile]) -> [StorageFile] {
+        let names = Set(running.values.map(\.copy.name))
+        guard !names.isEmpty else { return files }
+        return files.filter { file in
+            let name = file.url.deletingPathExtension().lastPathComponent
+            return !names.contains(name) && !names.contains { name.hasPrefix($0 + "-") }
+        }
+    }
+
+    func removeCacheFiles(_ files: [StorageFile]) -> UInt64 {
+        StorageFile.remove(idleCacheFiles(files))
     }
     private func read(_ cover: BookCoverAsset, pixels: Int, directory: String,
                       attachment: @escaping @Sendable () async throws -> Data?) async throws -> UIImage? {
@@ -477,7 +502,7 @@ actor CoverResourceLoader {
             try manager.createDirectory(at: main.deletingLastPathComponent(), withIntermediateDirectories: true)
             try bytes.write(to: main, options: .atomic)
         }
-        let draft = manager.temporaryDirectory.appendingPathComponent("\(directory)-CoverDrafts")
+        let draft = MetadataTemporaryFiles.current(MetadataTemporaryFiles.coverDraftRoot(dataDirectoryName: directory))
             .appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
         let url = manager.fileExists(atPath: main.path) ? main : draft
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),

@@ -122,7 +122,7 @@
 
 输入：`bookRef:string,markRef:string,variantRef?:string,maxBytes?:正整数=51200,cursor?:string`。
 
-普通批注返回 `data={markRef,bookRef,kind,range,excerpt,noteText,sourceRef}` 与分页。只对评论分页，UTF-8 边界连续；摘录完整返回。存在冲突且未选variantRef时返回 `data={markRef,hasConflict:true,variants:[{variantRef,deleted,range?,noteSnippet?}]}`；variantRef只用于读取这次候选，过期重新查询，不是模型可写的冲突解决指令。选择候选后按普通结果分页，不把某个候选当作最终已确认批注。
+普通批注返回 `data={markRef,bookRef,kind,range,excerpt,noteText,sourceRef}` 与分页。只对评论分页，UTF-8 边界连续；摘录完整返回。存在冲突且未选 `variantRef` 时返回 `data={markRef,hasConflict:true,variants:[{variantRef,range?,noteSnippet}]}`，只列仍有内容的候选。`markRef` 无可读标注时返回 `not_found`；指定已删除或已失效的 `variantRef` 时返回 `stale_reference`。候选引用只用于读取该版本，过期后重新查询。选择候选后按普通结果分页，不把某个候选当作最终已确认批注。
 
 依据：现有候选归并和批注编辑基线；工具已提供只读冲突投影。get_marks 摘录不能代替完整评论读取。
 
@@ -139,7 +139,7 @@
 
 与现有统计页一致：日期按阅读发生地保存的 local_day，不接受一个 timezone 来悄悄重排历史。环境工具的当前时区只用于解释“今天”等相对日期。多设备同时阅读如实累计，不做时间重叠去重；阅读时长不能断言喜好，覆盖率是估算。summary、分页总计由业务层算，不从当前一页让模型相加。时段使用已结算的时长；结果带 `incomplete: true` 时，只代表当前可理解的记录，不能把缺失数据当作零。
 
-依据：`AppDataService.statistics/activities/chapters`、`statistics.rs`；现有 AIReadingTools 已对结果分页。章节覆盖和原文缺失保留区分。
+[AIReadingTools](../../../ios/Moonread/AI/Tools/Reading/AIReadingTools.swift) 解释日期、视图与分页参数，并分派到目录或[统计查询](../../../ios/Moonread/Data/Queries/StatisticsQuery.swift)。章节覆盖和原文缺失分别表示。
 
 ### 10. `get_environment` — 当前环境
 
@@ -173,6 +173,13 @@
 | `propose_book_filter` | nodes:[{kind,parent?,relation?,excluded?,values?}], sorts:[{field,descending}] | 返回可重放的筛选建议。节点以先父后子的顺序提交，第一项为组，后续 `parent` 是父组的零起始下标。组用 `all/any`，标签用 `all/any/none`，`untagged` 是独立条件。排序键按优先级使用 `recent/name/author`，可只排序。 |
 
 建议按实际支持的筛选条件生成。无法表达或找不到精确名称时，模型应解释并向用户确认如何改写。标签与作者按原始 UTF-8 核对，唯一书架以不透明引用保留原身份，名称歧义由用户在本机选择。工具运行仅生成建议，点击成功提交到对话历史的卡片才使用现有搜索查询。筛选修改只作用于当次结果，另存虚拟书架仍由用户明确命名。
+
+### 按条件查找小说与展示书单
+
+两项工具沿用当前聊天接收方的阅读资料许可，无逐次确认。只问数量或需要比较时可直接文字回复。要让用户打开指定小说时用书单。需要编辑或保存会随库更新的条件时用筛选建议。
+
+- `query_books_by_filter` 接收 `filter`（与 `propose_book_filter` 同形）、可选 `limit`（1–100，默认 20）及 `cursor`。复用普通搜索的筛选、排序和资料未知语义。作者、标签按原始 UTF-8 匹配，书架同名有歧义时返回参数错误。只在当前书库查询，不访问原文。结果 `data` 含 `totalMatches`、`unknownCount`、`items`。每个文件一项，返回书名、文件引用、正式正文引用（已有时）、作者与可判定的阅读状态、可用性。资料不足返回 `partial`。计数包括整次求值，分页只限制返回项，沿用条目字节上限。续页用同一规则、排序与实际书架签名重查，可改变每页条数。
+- `show_book_list` 接收 `refs`，含 1–5 个不同的现有文件或正式书目引用。宿主验证全部目标并保持传入次序，目录或非法引用报参数错，已找不到的目标报 `not_found`，整次不生成卡片。成功只返回各项原引用、书名与可用的作者。模型消息无缩略图或读书进度。页面层独立保存卡片呈现快照，实时可用性只影响本机按钮。
 
 整理 temporaryRef 必须唯一，并与 scopeRef、所有 placement fileRef 及真实引用保留命名空间（prefix: 形式）分离，校验发生在目录准备和预览变更前。普通 f/source 等名称仍有效；有效临时目录引用继续支持嵌套父子与文件 placement。
 

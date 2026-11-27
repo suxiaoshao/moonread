@@ -197,8 +197,9 @@ extension AppDataService {
         // Finish writes before checking live readers; completed/failed batches
         // no longer own reading leases or need a separate discard operation.
         await managementStatisticsWriter().drain()
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+        try Task.checkCancellation()
         let index = try relationalUserIndex()
         let deleted = try index.deleteUserBooks(keys, activeReadingIDs: activeReadingIDsForDeletion()) { ReadingDataError.busy }
         for key in deleted { metadataImportDeletionTokens[key] = nil }
@@ -346,9 +347,10 @@ extension AppDataService {
             guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
             let index = try relationalUserIndex()
             guard index.lease == lease else { throw ReadingDataError.changed }
-            try index.session.writeUsers(index.lease) {
+            let reclaimed = try index.session.writeUsers(index.lease) {
                 try plan.merge($0, scope: index.lease.scope, syncRequested: cloudSyncIntent.requested, cancellation: cancellation)
             }
+            await removeReclaimedCoverCopies(reclaimed, index: index)
         } onCancel: { cancellation.cancel() }
         dataChanged()
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)

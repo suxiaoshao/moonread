@@ -328,10 +328,18 @@ struct BookMetadataEditor: View {
                 Section {
                     VStack(spacing: 16) {
                         BookCoverView(title: title, cover: draft.value.cover, contentSHA256: draft.value.sha, author: draft.value.author).frame(width: 112, height: 160)
-                            .overlay { if draft.choosingImage { ProgressView("正在处理图片").padding(8).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12)) } }
-                        ViewThatFits(in: .horizontal) {
-                            HStack(spacing: 12) { coverActions }
-                            VStack(spacing: 12) { coverActions }
+                        ZStack {
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: 12) { coverActions }
+                                VStack(spacing: 12) { coverActions }
+                            }
+                            .opacity(draft.choosingImage ? 0 : 1)
+                            .accessibilityHidden(draft.choosingImage)
+                            if draft.choosingImage {
+                                InlineTaskProgress(title: Text("正在处理图片"))
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color(uiColor: theme.secondary))
+                            }
                         }
                         if draft.value.cover != nil {
                             Menu {
@@ -433,10 +441,10 @@ struct BookInformationSections: View {
     let library: LibraryModel?
     let host: LibraryBrowsingHost
     @Environment(\.theme) private var theme
+    @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
-    /// Search entered from an open book's details is pushed above the suspended reader.
-    @State private var readerSearch: AppSearchScope?
+    @State private var readerDestination: LibraryRoute?
     @Environment(\.returnToReading) private var returnToReading
     /// Reading is the page's main task: one full-width prominent action under the book identity.
     @ViewBuilder private var primaryAction: some View {
@@ -454,31 +462,28 @@ struct BookInformationSections: View {
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         }
     }
-    /// Author and tag start a contextual search on this stack; Back returns here.
-    private func search(_ token: AppSearchSeed) {
+    /// A push from the reader's details keeps the original reader on this stack.
+    private func navigate(_ route: LibraryRoute) {
         guard let library else { return }
-        let scope = AppSearchScope(seeds: [token])
-        if target.fromReader { readerSearch = scope } else { host.navigate(.search(scope), in: library) }
+        if target.fromReader { readerDestination = route } else { host.navigate(route, in: library) }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .top, spacing: 16) {
                 BookCoverView(title: model.entry?.title ?? target.title, cover: model.details?.metadata.cover, contentSHA256: model.details?.metadata.sha, author: model.details?.metadata.author)
                     .frame(width: 64, height: 90).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: model.entry?.title ?? target.title)
                         .font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 6) { author; bookCounts }
-                        VStack(alignment: .leading, spacing: 4) { author; bookCounts }
-                    }.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                    author
+                    bookCounts.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                 }
             }.accessibilityIdentifier("bookInformationHeader")
             primaryAction
             if let tags = model.details?.metadata.tags, !tags.isEmpty {
                 AIFlowLayout(spacing: 8) {
                     ForEach(tags, id: \.self) { tag in
-                        Button(tag) { search(.tag(tag)) }
+                        Button(tag) { navigate(.search(.init(seeds: [.tag(tag)]))) }
                             .font(.subheadline).buttonStyle(.bordered)
                             .disabled(library == nil)
                     }
@@ -488,28 +493,38 @@ struct BookInformationSections: View {
                 BookSynopsis(synopsis: synopsis).id(synopsis)
             }
             VStack(alignment: .leading, spacing: 12) {
-                Text("我的阅读").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+                Text("我的阅读").font(.headline)
                 readingCard
             }.id("myReading")
         }.frame(maxWidth: .infinity, alignment: .leading).id("bookInformation")
-        .navigationDestination(item: $readerSearch) { scope in
-            if let library {
-                ReaderContextSearch(model: library, scope: scope,
-                                    isOpenBook: { entry in entry.id == target.fileID || (model.contentSHA(for: target) != nil && entry.readingKey == model.contentSHA(for: target)) },
-                                    returnToBook: { if let returnToReading { returnToReading() } else { dismiss() } })
-            }
+        .navigationDestination(item: $readerDestination) { route in
+            HostedLibraryDestination(route: route, host: .init(allowsFileBrowsing: false, isOpenBook: { entry in
+                entry.id == target.fileID || model.contentSHA(for: target).map { entry.readingKey == $0 } == true
+            }, returnToOpenBook: {
+                if let returnToReading { returnToReading() } else { dismiss() }
+            }))
         }
     }
     @ViewBuilder private var author: some View {
         if let author = model.details?.metadata.author, !author.isEmpty {
             if library != nil {
-                Button(author) { search(.author(author)) }.buttonStyle(.plain)
+                Button { navigate(.author(.init(author))) } label: {
+                    let arrow = Text(Image(systemName: "chevron.right")).font(.caption.weight(.semibold))
+                    Text("\(Text(verbatim: author)) \(arrow)")
+                        .accessibilityLabel(Text(verbatim: author))
+                }
+                    .buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.accent))
             } else { Text(verbatim: author) }
         }
     }
     @ViewBuilder private var bookCounts: some View {
         if let body = model.details?.body, body.wordCount > 0 {
-            Text("\(body.wordCount) 字 · \(body.chapterCount) 章")
+            let style = IntegerFormatStyle<UInt64>.number.locale(locale)
+            let count = body.wordCount < 10_000
+                ? body.wordCount.formatted(style)
+                : body.wordCount.formatted(style.notation(.compactName).precision(.fractionLength(0)))
+            Text("\(count) 字 · \(body.chapterCount) 章")
+                .accessibilityLabel(Text("\(body.wordCount) 字 · \(body.chapterCount) 章"))
         }
     }
     private var readingCard: some View {
@@ -518,7 +533,7 @@ struct BookInformationSections: View {
                 let position = model.entry?.positionUtf8 ?? details.book?.positionUtf8 ?? 0
                 let bytes = model.entry?.byteCount ?? details.book?.byteCount ?? 0
                 HStack(alignment: .top, spacing: 12) {
-                    if let chapter = details.currentChapter { Text(verbatim: chapter).font(.headline).fixedSize(horizontal: false, vertical: true) }
+                    if let chapter = details.currentChapter { Text(verbatim: chapter).font(.body).fixedSize(horizontal: false, vertical: true) }
                     Spacer(minLength: 0)
                     Picker("阅读状态", selection: Binding(get: { details.metadata.status }, set: { value in Task { await model.setStatus(value) } })) {
                         if case .other = details.metadata.status { Text(details.metadata.status.label).tag(details.metadata.status) }
@@ -540,7 +555,7 @@ struct BookInformationSections: View {
                 Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
                 Button("重试") { model.retryInformation() }
             } else if model.matches(target), model.contentSHA(for: target) == nil {
-                Label("正文身份尚未确定", systemImage: "info.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                Text("阅读位置暂不可用").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
             } else if model.details == nil { ProgressView() }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
@@ -554,7 +569,6 @@ struct BookInformationSections: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("本章覆盖 \(model.chapters.last(where: { $0.startUtf8 <= position })?.coverageLabel(readingPrefix: false) ?? "—")")
             if let error = model.coverageError { Text(verbatim: error).font(.caption) }
-            else if model.chapters.isEmpty { Text("本章覆盖尚未计算完成，不影响继续阅读。").font(.caption) }
         }
     }
 }
@@ -573,7 +587,7 @@ private struct BookSynopsis: View {
                 DisclosureGroup(isExpanded: $expanded) {
                     EmptyView()
                 } label: {
-                    Text("简介").frame(minHeight: LayoutTokens.hit, alignment: .leading)
+                    Text("简介").font(.headline).foregroundStyle(Color(uiColor: theme.ink)).frame(minHeight: LayoutTokens.hit, alignment: .leading)
                 }
             }
             synopsisText(limit: overflows && expanded ? nil : 3)
@@ -590,8 +604,8 @@ private struct BookSynopsis: View {
     }
 
     private func synopsisText(limit: Int? = nil) -> some View {
-        Text(verbatim: synopsis).font(.subheadline).lineLimit(limit)
-            .foregroundStyle(Color(uiColor: theme.secondary))
+        Text(verbatim: synopsis).font(.body).lineLimit(limit)
+            .foregroundStyle(Color(uiColor: theme.ink))
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -616,7 +630,6 @@ struct BookReadingDataClearSection: View {
             }
                 .buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).foregroundStyle(Color(uiColor: theme.destructive))
                 .disabled(manager.busy).accessibilityIdentifier("clearBookReadingData")
-            Text("不删除小说文件。删除会随阅读数据同步到其他设备。").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             if let message = manager.message { Text(verbatim: message).font(.footnote) }
         }.padding(.top, 8)
             .modifier(ReadingDataDeletionPrompt(model: manager))

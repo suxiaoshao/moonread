@@ -21,6 +21,7 @@ struct ReaderFontPicker: View {
 
     var body: some View {
         ReaderFontList(sections: fontSections, theme: theme, focusedResource: focusedResource)
+            .underNavigationBar()
             .themedPage().navigationTitle("字体").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

@@ -47,10 +47,23 @@ import UIKit
             return previous
         }
         let view = previous?.view ?? AINativeMarkdownView()
-        view.theme = package.revision.theme
-        view.setContentImmediately(package.content)
+        Self.configure(view, content: package.content, theme: package.revision.theme)
+        return .init(view: view, revision: package.revision, accessed: access)
+    }
+
+    public static func preview(text: String, theme: MarkdownTheme) -> MarkdownTextView {
+        let view = AINativeMarkdownView()
+        configure(view, content: MarkdownContent(markdown: text, theme: theme, isStreaming: false), theme: theme)
+        view.isUserInteractionEnabled = false
+        view.accessibilityCustomActions = nil
+        return view
+    }
+
+    private static func configure(_ view: MarkdownTextView, content: MarkdownContent, theme: MarkdownTheme) {
+        view.theme = theme
+        view.setContentImmediately(content)
         view.backgroundColor = .clear
-        let accessibility = AINativeMarkdownAccessibility(blocks: package.content.blocks)
+        let accessibility = AINativeMarkdownAccessibility(blocks: content.blocks)
         view.isAccessibilityElement = true
         view.accessibilityTraits = .staticText
         view.accessibilityLabel = accessibility.label
@@ -69,7 +82,6 @@ import UIKit
             }
             if let url { UIApplication.shared.open(url) }
         }
-        return .init(view: view, revision: package.revision, accessed: access)
     }
     public func view(id: String, text: String, streaming: Bool, theme: MarkdownTheme) -> MarkdownTextView {
         let package = content(id: id, text: text, streaming: streaming, theme: theme)

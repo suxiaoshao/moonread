@@ -12,7 +12,7 @@ final class AppShellModel {
     var libraryPath: [LibraryRoute] = []
     var statisticsPath: [LibraryRoute] = []
     var searchPath: [LibraryRoute] = []
-    var settingsNavigation = SettingsNavigation()
+    let settingsNavigation: SettingsNavigation
     var path: [LibraryRoute] {
         get {
             return switch selectedTab {
@@ -36,11 +36,17 @@ final class AppShellModel {
     let dataManagement: DataManagementModel
     /// A reader that closed with an error reports it here, after its position is saved.
     var readerExitError: String?
+    struct StorageReader {
+        let bookID: String
+        let close: @MainActor () async -> Bool
+    }
+    var storageReaders: [UUID: StorageReader] = [:]
     var reviewCandidate: ReadingReviewCandidate?
     /// An AI quick task opened from the library; the session itself lives in AIService.
     var aiRequest: AIQuickTaskRequest?
 
     init(service: AppDataService) {
+        settingsNavigation = SettingsNavigation(service: service)
         dataManagement = DataManagementModel(service: service)
     }
 

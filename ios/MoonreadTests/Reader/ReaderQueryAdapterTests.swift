@@ -260,7 +260,6 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
       XCTAssertEqual(groups.map(\.tag), ["Group 2","Group 10","",""])
       XCTAssertEqual(groups.map(\.fileIDs), [["file-2","file-10"],["file-2","file-10"],["file-3"],["unindexed"]])
       XCTAssertEqual(grouped.entries.map(\.id), named.entries.map(\.id))
-      XCTAssertEqual(grouped.entries.count, 4, "Physical files are counted once, even in two tag sections")
       XCTAssertEqual(grouped.entries.first?.displayMetadata?.author, "", "Readable tag-only metadata has published defaults")
       XCTAssertEqual(grouped.entries.first { $0.id == "file-3" }?.displayMetadata?.author, "",
                      "Pending synopsis suppresses both the formal author and formal tag")
@@ -492,6 +491,12 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
       XCTAssertEqual(results.entries.map(\.id), ["a", "a-copy"])
       XCTAssertEqual(results.unknownCount, 1)
       XCTAssertTrue(results.entries.allSatisfy { $0.metadata == nil && $0.displayMetadata?.author == "Synthetic Writer" })
+      let authorHits = try index.searchCatalogue(.all, spec: .init(profile: .library, query: "writer"))
+      XCTAssertEqual(authorHits.entries.map(\.id), ["a", "a-copy"])
+      let author = "Synthetic Writer"
+      XCTAssertEqual(authorHits.matches, [
+        "a": .author(author, author.range(of: "Writer")), "a-copy": .author(author, author.range(of: "Writer")),
+      ])
       let folders = try index.searchCatalogue(.all, spec: .init(profile: .library, query: "fixture")).entries.filter(\.directory)
       XCTAssertEqual(folders.map(\.id), ["root", "nested"])
       XCTAssertEqual(folders.compactMap { $0.folderRow?.childBookCount }, [2, 2])

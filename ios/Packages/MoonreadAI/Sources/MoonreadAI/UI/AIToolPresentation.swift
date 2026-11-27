@@ -16,6 +16,8 @@ public enum AIToolPresentation {
         case "ls": String(localized: "浏览书架")
         case "search_books": String(localized: "查找书籍")
         case "list_filter_options": String(localized: "查找筛选选项")
+        case "query_books_by_filter": String(localized: "按条件查找小说")
+        case "show_book_list": String(localized: "展示书单")
         case "propose_book_filter": String(localized: "建议书架筛选")
         case "get_book": String(localized: "查看书籍资料")
         case "get_chapters": String(localized: "查看目录")
@@ -41,6 +43,8 @@ public enum AIToolPresentation {
         case "ls": "folder"
         case "search_books": "magnifyingglass"
         case "list_filter_options": "magnifyingglass"
+        case "query_books_by_filter": "line.3.horizontal.decrease.circle"
+        case "show_book_list": "books.vertical"
         case "propose_book_filter": "line.3.horizontal.decrease.circle"
         case "get_book": "book.closed"
         case "get_chapters": "list.bullet"
@@ -64,16 +68,4 @@ public enum AIToolPresentation {
         if let title = output?.object["data"]?.object["title"]?.string, !title.isEmpty, !parts.contains(title) { parts.insert(title, at: 0) }
         return parts.joined(separator: " · ")
     }
-    public static func status(_ output: JSONValue?, outcome: AIAgentStatus) -> String {
-        guard let output else {
-            return outcome == .waitingConfirmation ? String(localized: "等待确认") : [.stopped, .interrupted, .failed].contains(outcome) ? String(localized: "已停止") : String(localized: "执行中")
-        }
-        switch output.object["status"]?.string {
-        case "denied": return String(localized: "未准备")
-        case "error": return output.object["error"]?.object["code"]?.string == "cancelled" ? String(localized: "已停止") : String(localized: "未完成")
-        case "partial": return String(localized: "部分结果")
-        default: return String(localized: "已完成")
-        }
-    }
 }
-

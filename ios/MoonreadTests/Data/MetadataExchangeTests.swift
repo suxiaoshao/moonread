@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import CryptoKit
 import SwiftData
 import XCTest
@@ -58,8 +59,10 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         XCTAssertEqual(afterCover.metadata.author, edited.author)
         XCTAssertEqual(afterCover.metadata.status, .finished)
         XCTAssertEqual(afterCover.book?.positionUtf8, position)
-        let retainedCover = try await service.coverBytes(cover)
-        XCTAssertFalse(retainedCover.isEmpty)
+        let assets = try core.session.readUsers(core.lease) { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.cover_asset")
+        }
+        XCTAssertEqual(assets, 0)
 
         let beforeEdit = try await service.metadataCleanupInventory()
         let stale = try beforeEdit.confirmation(selected: [key], fields: [.author])
@@ -280,10 +283,12 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
             }
             return try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
         }
-        let existingCover = try await service.makeCover(coverBytes(.blue))
+        let existingDraft = try await service.makeCover(coverBytes(.blue))
         let oldMetadata = try await service.details(sha: second.fixtureSHA256).metadata
-        var oldWithCover = oldMetadata; oldWithCover.cover = existingCover
+        var oldWithCover = oldMetadata; oldWithCover.cover = existingDraft
         try await service.saveMetadata(base: oldMetadata, edited: oldWithCover)
+        let committed = try await service.details(sha: second.fixtureSHA256).metadata
+        let existingCover = try XCTUnwrap(committed.cover)
         let proposedCover = try await service.makeCover(coverBytes(.green))
         let firstBase = try await service.details(sha: first.fixtureSHA256).metadata
         var firstEdit = firstBase
@@ -304,9 +309,11 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
             }
             XCTFail("Failure after inserting a cover and fields must roll back the whole batch")
         } catch {}
-        let missing = try store.coverBytes(id: proposedCover.id, sha: proposedCover.sha256)
+        let assetCount = try store.index.session.readUsers(store.index.lease) {
+            try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.cover_asset")
+        }
         let after = try store.metadataTokens()
-        XCTAssertNil(missing)
+        XCTAssertEqual(assetCount, 1)
         XCTAssertEqual(initialValues, after)
         let input = root.appendingPathComponent("batch.jsonl")
         try [first, second].map { "{\"v\":1,\"content_sha256\":\"\($0.fixtureSHA256)\",\"author\":\"Imported\"}" }.joined(separator: "\n").write(to: input, atomically: true, encoding: .utf8)
@@ -324,8 +331,10 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         let saved = try await service.details(sha: first.fixtureSHA256).metadata
         XCTAssertTrue(saved.author.isEmpty)
         XCTAssertNil(saved.cover)
-        let discardedCover = try store.coverBytes(id: proposedCover.id, sha: proposedCover.sha256)
-        XCTAssertNil(discardedCover)
+        let afterAssets = try store.index.session.readUsers(store.index.lease) {
+            try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.cover_asset")
+        }
+        XCTAssertEqual(afterAssets, 1)
         XCTAssertEqual(result.remaining.first { $0.id == second.fixtureSHA256 }?.cover, existingCover)
         let task = Task { () -> MetadataBatchResult in
             withUnsafeCurrentTask { $0?.cancel() }

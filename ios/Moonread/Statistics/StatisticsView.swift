@@ -225,7 +225,7 @@ struct StatisticsView: View {
     private var statisticsSections: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("阅读统计").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+                Text("阅读统计").font(.headline).foregroundStyle(Color(uiColor: target == nil ? theme.secondary : theme.ink))
                 Spacer()
                 if target != nil { periodMenu }
             }
@@ -239,7 +239,13 @@ struct StatisticsView: View {
                     Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive))
                     Button("重试") { model.restartObservation() }
                 }
-                if overview.books.isEmpty {
+                if overview.books.isEmpty, target != nil {
+                    Text("这段时间暂无阅读记录")
+                        .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                        .padding().frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+                        .accessibilityIdentifier("statisticsEmpty")
+                } else if overview.books.isEmpty {
                     ContentUnavailableView {
                         Label("暂无阅读记录", systemImage: "book.closed")
                     } description: {
@@ -250,10 +256,10 @@ struct StatisticsView: View {
                 } else {
                     periodSummary(overview)
                 }
-                if target != nil { cumulativeSummary }
                 if !overview.books.isEmpty {
                     if target == nil { bookSection } else { sessionsSection }
                 }
+                if target != nil { cumulativeSummary }
             } else if let error = statisticsState.error {
                 ContentUnavailableView {
                     Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
@@ -262,9 +268,9 @@ struct StatisticsView: View {
                 }.frame(maxWidth: .infinity, minHeight: 230)
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
             } else if statisticsState.content?.waitingForIdentity == true {
-                Label("正文身份尚未确定", systemImage: "info.circle")
-                    .foregroundStyle(Color(uiColor: theme.secondary))
-                    .frame(maxWidth: .infinity, minHeight: 230)
+                Text("阅读统计暂不可用")
+                    .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else if statisticsState.loading {
                 LoadingActivity(size: 52, waitingLabel: "正在读取统计").frame(maxWidth: .infinity, minHeight: 230)
             }
@@ -376,37 +382,53 @@ struct StatisticsView: View {
     @ViewBuilder private var fileInformation: some View {
         if target != nil, let entry = information.entry {
             VStack(alignment: .leading, spacing: 14) {
-                Text("文件信息").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+                Text("文件信息").font(.headline)
                 VStack(spacing: 12) {
-                    LabeledContent("书架", value: entry.shelfName)
-                    LabeledContent("路径", value: entry.relativePath)
-                    LabeledContent("文件大小", value: ByteCountFormatter.string(fromByteCount: Int64(entry.size), countStyle: .file))
-                    if let book = information.details?.book { LabeledContent("编码", value: book.encoding) }
-                    LabeledContent("本机状态", value: entry.needsDownload ? String(localized: "待下载") : String(localized: "已下载"))
-                }.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                    .padding(16).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+                    detailFact("书架", value: entry.shelfName)
+                    detailFact("路径", value: entry.relativePath)
+                    detailFact("文件大小", value: ByteCountFormatter.string(fromByteCount: Int64(entry.size), countStyle: .file))
+                    if let count = information.details?.wordCount, count > 0 {
+                        detailFact("正文字数", value: String(localized: "\(count) 字"))
+                    }
+                    if let book = information.details?.book { detailFact("编码", value: book.encoding) }
+                    detailFact("本机状态", value: entry.needsDownload ? String(localized: "待下载") : String(localized: "已下载"))
+                }
+                .padding(16).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
             }
         }
     }
 
-    private var cumulativeSummary: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("累计阅读").font(.subheadline.weight(.medium))
-            VStack(alignment: .leading, spacing: 8) {
-                if statisticsState.content?.detailsLoaded == false {
-                    if statisticsState.loading { LoadingActivity(waitingLabel: "正在读取统计") }
-                    else { Text("—") }
-                } else {
-                    Text(StatisticsDates.duration(statisticsState.cumulative?.durationMs ?? 0)).font(.title3).monospacedDigit()
+    private func detailFact(_ label: LocalizedStringKey, value: String) -> some View {
+        LabeledContent {
+            Text(verbatim: value).foregroundStyle(Color(uiColor: theme.ink))
+        } label: {
+            Text(label).foregroundStyle(Color(uiColor: theme.secondary))
+        }.font(.subheadline)
+    }
+
+    @ViewBuilder private var cumulativeSummary: some View {
+        if let book = statisticsState.cumulative {
+            let first = Date(timeIntervalSince1970: Double(book.firstReadMs) / 1000)
+            let last = Date(timeIntervalSince1970: Double(book.lastReadMs) / 1000)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("累计阅读").font(.headline)
+                VStack(alignment: .leading, spacing: 8) {
+                    if displayedRange.window.period != .all {
+                        durationSummary(book.durationMs, days: book.readingDays)
+                    }
+                    if Calendar.current.isDate(first, inSameDayAs: last) {
+                        detailFact("阅读日期", value: first.formatted(date: .abbreviated, time: .omitted))
+                    } else {
+                        detailFact("首次阅读", value: first.formatted(date: .abbreviated, time: .omitted))
+                        detailFact("最近阅读", value: last.formatted(date: .abbreviated, time: .omitted))
+                    }
                 }
-                if let book = statisticsState.cumulative {
-                    Text("\(book.readingDays) 个阅读日")
-                    Text("首次阅读 \(Date(timeIntervalSince1970: Double(book.firstReadMs) / 1000).formatted(date: .abbreviated, time: .omitted))")
-                    Text("最近阅读 \(Date(timeIntervalSince1970: Double(book.lastReadMs) / 1000).formatted(date: .abbreviated, time: .omitted))")
-                }
-            }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).padding(.top, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }.foregroundStyle(Color(uiColor: theme.secondary)).padding(.vertical, 4)
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+            }
+        } else if statisticsState.content?.detailsLoaded == false, statisticsState.loading {
+            LoadingActivity(waitingLabel: "正在读取统计")
+        }
     }
     private func periodSummary(_ overview: StatisticsOverview) -> some View {
         let range = displayedRange
@@ -414,24 +436,22 @@ struct StatisticsView: View {
                                       today: range.today, book: target == nil ? nil : statisticsState.key) { openedDay = $0 }
         return VStack(alignment: .leading, spacing: 18) {
             if target != nil {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("所选范围阅读").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                    durationSummary
-                    Text("\(overview.activeDayCount) 个阅读日").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                }.accessibilityElement(children: .combine).accessibilityIdentifier("statisticsSummary")
+                durationSummary(total, days: UInt64(overview.activeDayCount))
+                    .accessibilityElement(children: .combine).accessibilityIdentifier("statisticsSummary")
             }
             if rhythm.hasContent { rhythm }
         }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
     }
-    private var durationSummary: some View {
-        var text = AttributedString()
-        for character in StatisticsDates.duration(total) {
-            var part = AttributedString(String(character))
-            part.font = character.isNumber ? .system(size: 36, weight: .semibold) : .body
-            text.append(part)
+    private func durationSummary(_ duration: UInt64, days: UInt64) -> some View {
+        let time = Text(StatisticsDates.duration(duration)).font(.body.weight(.medium)).monospacedDigit()
+            .foregroundStyle(Color(uiColor: theme.ink))
+        let days = Text("\(days) 个阅读日").font(.subheadline)
+            .foregroundStyle(Color(uiColor: theme.secondary))
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline) { time; days }
+            VStack(alignment: .leading) { time; days }
         }
-        return Text(text).monospacedDigit()
     }
     private var periodMenu: some View {
         Picker("统计范围", selection: periodSelection) {
@@ -503,7 +523,7 @@ struct StatisticsView: View {
     private var sessionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("阅读时段").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+                Text("阅读时段").font(.headline)
                 Spacer()
             }
             VStack(spacing: 0) {
@@ -511,23 +531,26 @@ struct StatisticsView: View {
                     if statisticsState.loading { LoadingActivity(waitingLabel: "正在读取统计").padding(16) }
                     else { Text("—").padding(16) }
                 } else {
-                ForEach(Array(statisticsState.spans.reversed().prefix(3))) { span in
-                    ReadingSessionRow(span: span, showBook: false, compact: true).padding(16)
-                    ThemedDivider()
-                }
-                NavigationLink {
-                    StatisticsSessionsView(spans: statisticsState.spans, theme: theme)
-                } label: {
-                    HStack {
-                        Text("全部时段")
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption)
-                    }.font(.subheadline).padding(16).frame(minHeight: LayoutTokens.hit)
-                }
+                    let spans = statisticsState.spans
+                    let dayCount = Set(spans.map(\.day)).count
+                    ForEach(Array(spans.reversed().prefix(3))) { span in
+                        ReadingSessionRow(span: span, showBook: false, compact: true).padding(16)
+                        ThemedDivider()
+                    }
+                    if dayCount > 0 {
+                        NavigationLink {
+                            StatisticsSessionsView(spans: spans, theme: theme)
+                        } label: {
+                            HStack {
+                                Text("查看最近 \(dayCount) 个阅读日的时段")
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption).accessibilityHidden(true)
+                            }.font(.subheadline).padding(16).frame(minHeight: LayoutTokens.hit)
+                        }
+                    }
                 }
             }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
                 .accessibilityIdentifier("bookReadingSessions")
-            Text("所选范围内最近 7 个阅读日").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
         }
     }
 }

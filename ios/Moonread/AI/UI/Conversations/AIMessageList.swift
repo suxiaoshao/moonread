@@ -205,8 +205,17 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
 
     override func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         guard let id = source.itemIdentifier(for: indexPath), let row = rows[id],
-              let feedback = replyFeedback?(row), let theme = appearance?.theme else { return nil }
-        return UIContextMenuConfiguration(identifier: id as NSString, previewProvider: nil) { [weak self] _ in
+              let feedback = replyFeedback?(row), let appearance, let window = tableView.window else { return nil }
+        let theme = appearance.theme
+        let traits = traitCollection
+        let markdown = appearance.markdownTheme(traits: traits)
+        let background = (tableView.backgroundColor ?? theme.canvas).resolvedColor(with: traits)
+        var available = window.bounds.inset(by: window.safeAreaInsets).size
+        available.width = min(available.width, tableView.bounds.width)
+        let previewSize = available
+        return UIContextMenuConfiguration(identifier: id as NSString, previewProvider: {
+            AIReplyPreviewController(text: feedback.text, theme: markdown, background: background, availableSize: previewSize)
+        }) { [weak self] _ in
             UIMenu(children: [
                 UIAction(title: String(localized: "复制回复"), image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = feedback.text },
                 UIAction(title: String(localized: "反馈这条回复"), image: UIImage(systemName: "envelope")) { [weak self] _ in
@@ -229,7 +238,12 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         tableView.estimatedRowHeight = 80
         tableView.selfSizingInvalidation = .enabledIncludingConstraints
         tableView.keyboardDismissMode = .interactive
-        tableView.contentInsetAdjustmentBehavior = .never
+        if #available(iOS 26, *) {
+            // Only the viewport extends at the top. The composer and keyboard still own the bottom layout.
+            tableView.contentInsetAdjustmentBehavior = .automatic
+        } else {
+            tableView.contentInsetAdjustmentBehavior = .never
+        }
         tableView.accessibilityIdentifier = "aiMessages"
         tableView.alwaysBounceVertical = true
         tableView.register(AIHostedMessageCell.self, forCellReuseIdentifier: "message")

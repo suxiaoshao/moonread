@@ -107,6 +107,17 @@ struct DeferredLoading<Content: View>: View {
     func finish(_ id: UUID) { if request == id { request = nil } }
 }
 
+struct InlineTaskProgress: View {
+    let title: Text
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small).accessibilityHidden(true)
+            title
+        }
+    }
+}
+
 /// Empty pages show a large native spinner; refreshes use a small one in the navigation bar.
 struct PageLoadingOverlay: ViewModifier {
     let request: UUID?

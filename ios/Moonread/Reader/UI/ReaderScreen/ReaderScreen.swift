@@ -27,6 +27,7 @@ struct ReaderScreen: View {
     @State private var localHeaderTop: CGFloat = 0
     @State private var battery = ReaderBattery()
     @State private var exitPhase = ReaderExitPhase.reading
+    @State private var storageExit: CheckedContinuation<Bool, Never>?
     @State private var navigationPresentation = NavigationPresentationState()
     // Same View-owned storage; extensions only read the existing owner/binding values.
     var readerSession: ReaderSession { session }
@@ -42,7 +43,6 @@ struct ReaderScreen: View {
     private var rendered: ReaderRenderSnapshot { nativeHost.node ?? render }
     var controlsVisible: Bool { rendered.controls }
     private var taskID: String? { rendered.taskID }
-    private var isSearch: Bool { rendered.compact == .search }
     private var isLibrary: Bool { rendered.taskID == "library" }
     private var isAI: Bool { rendered.taskID == "ai" }
     private var sheetPresented: Bool { nativeHost.token != nil }
@@ -72,7 +72,8 @@ struct ReaderScreen: View {
                 .overlay(alignment: .top) {
                     if isWide, !session.isLeaving, !readerNavigationVisible, let book = session.book {
                         ReaderCompactHeader(session: session, battery: battery, book: book, readerWidth: geometry.size.width,
-                            compactHeaderHeight: compactHeaderHeight, showControls: { sendTool(.showChrome) })
+                            compactHeaderHeight: compactHeaderHeight, sharingExcerpt: sharingExcerpt,
+                            showControls: { sendTool(.showChrome) })
                             .padding(.top, localHeaderTop)
                             .opacity(navigationPresentation.isSuspended ? 0 : 1)
                     }
@@ -362,6 +363,14 @@ struct ReaderScreen: View {
 
     private var lifecycleReader: some View {
         presentationAwareReader
+        .onChange(of: session.readingID, initial: true) { _, bookID in
+            guard let id = openingRequest?.id else { return }
+            if let bookID {
+                library.shell.storageReaders[id] = .init(bookID: bookID) { await closeForStorage(id) }
+            } else {
+                library.shell.storageReaders[id] = nil
+            }
+        }
         .onChange(of: controlsVisible) { _, visible in
             if visible { session.refreshBookmark(); Onboarding.shared.didShowControls() }
         }
@@ -443,6 +452,12 @@ struct ReaderScreen: View {
             .toolbarBackground(Color(uiColor: theme.paper), for: .navigationBar)
             .toolbarBackground(readerOwnsChrome ? .visible : .automatic, for: .navigationBar)
             .toolbar {
+                if sharingExcerpt && readerOwnsChrome && readerNavigationVisible && !navigationPresentation.revealsNavigation {
+                    ToolbarItem(placement: .principal) {
+                        InlineTaskProgress(title: Text("正在准备分享"))
+                            .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("小说详情", systemImage: "info.circle") { openBookDetails() }
                         .labelStyle(.iconOnly).toolbarGlyph()
@@ -500,7 +515,6 @@ struct ReaderScreen: View {
         .onChange(of: isLibrary) { old, new in
             if old && !new { tools.finishNoteSelection() }
         }
-        .overlay { if sharingExcerpt { ProgressView().padding().background(Color(uiColor: theme.surface), in: .capsule) } }
         .sheet(item: $excerptShare) { LibraryShareSheet(files: $0.files, text: $0.text) }
         .modifier(SystemReadingConfirmation(active: !sheetPresented))
         .alert("阅读遇到问题", isPresented: readingErrorPresented) {
@@ -624,6 +638,8 @@ struct ReaderScreen: View {
         let snapshot = rendered
         let context = snapshot.context
         let token = nativeHost.token
+        let locating = session.navigating && !session.isLeaving
+        let presentsChapters = if case .library(.listing(.chapters)) = snapshot.visit?.route { true } else { false }
         let showsFooterTools = session.book != nil
             && (snapshot.controls || snapshot.compact == .automatic || (snapshot.compact == .listening && listening?.active != true))
         let toolRowHeight = max(56, scaledToolRowHeight)
@@ -682,6 +698,7 @@ struct ReaderScreen: View {
             }
         } taskContent: { measureAnnotations in
             ReaderTaskContent(visit: snapshot.visit, session: session, tools: tools, toolSession: toolSession,
+                locatingInChapters: locating && presentsChapters,
                 aiConversationID: $aiConversationID, openingIsActive: { exitPhase == .reading && !session.isLeaving },
                 closeTask: { if let visit = snapshot.visit { sendTool(.closeVisit(visit.id), from: context) } },
                 measureAnnotations: measureAnnotations,
@@ -695,7 +712,7 @@ struct ReaderScreen: View {
         .environment(\.readerNativeToolScope, toolSession.nativeToolScope(for: context))
         .background(ReaderModalChildProbe(host: nativeHost))
         .overlay {
-            if session.navigating && !session.isLeaving { LoadingActivity(size: 24, waitingLabel: "正在定位").allowsHitTesting(false) }
+            if locating && !presentsChapters { LoadingActivity(size: 24, waitingLabel: "正在定位").allowsHitTesting(false) }
         }
     }
 
@@ -722,11 +739,32 @@ struct ReaderScreen: View {
     }
 
     private func finishReturning() {
-        guard exitPhase == .ready, !sheetPresented else { return }
+        guard exitPhase == .ready, !sheetPresented || (storageExit != nil && !sourceSelected) else { return }
         aiConversationID = nil
         exitPhase = .returned
         session.clearTransientState()
+        if let id = openingRequest?.id {
+            library.shell.storageReaders[id] = nil
+            if let storageExit {
+                self.storageExit = nil
+                let saved = session.error == nil
+                let released = session.relinquishClosingBody()
+                library.shell.removeReaderDestination(id)
+                Task {
+                    if let released { for await _ in released {} }
+                    storageExit.resume(returning: saved)
+                }
+            }
+        }
         onExit(session.error, reviewExitIsNormal && StatisticsWriter.shared.error == nil ? session.activity.effectiveReadingMilliseconds : 0)
+    }
+
+    private func closeForStorage(_ id: UUID) async -> Bool {
+        guard exitPhase == .reading, library.shell.containsReaderDestination(id) else { return false }
+        return await withCheckedContinuation { continuation in
+            storageExit = continuation
+            completeReturning()
+        }
     }
 
     private var undoCapsuleVisible: Bool {
@@ -782,7 +820,8 @@ struct ReaderScreen: View {
 
     private func compactHeader(book: BookInfo) -> some View {
         ReaderCompactHeader(session: session, battery: battery, book: book, readerWidth: readerWidth,
-                            compactHeaderHeight: compactHeaderHeight, showControls: { sendTool(.showChrome) })
+                            compactHeaderHeight: compactHeaderHeight, sharingExcerpt: sharingExcerpt,
+                            showControls: { sendTool(.showChrome) })
     }
     private var readerOwnsChrome: Bool {
         // Keep the outgoing reader in charge of the shared bar during interactive pop.

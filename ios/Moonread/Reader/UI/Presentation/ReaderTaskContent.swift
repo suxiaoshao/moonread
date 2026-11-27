@@ -6,6 +6,7 @@ struct ReaderTaskContent: View {
     let session: ReaderSession
     let tools: ReaderToolsModel
     let toolSession: ReaderToolSession
+    let locatingInChapters: Bool
     @Binding var aiConversationID: String?
     let openingIsActive: () -> Bool
     let closeTask: () -> Void
@@ -46,7 +47,8 @@ struct ReaderTaskContent: View {
             }
         case .library:
             ReaderLibrarySheet(model: tools, session: session, navigate: { navigate($0, $1, $2, nil) },
-                edit: edit, close: closeTask, editing: toolSession.libraryEditing, editorClosed: editorClosed)
+                edit: edit, close: closeTask, editing: toolSession.libraryEditing,
+                locatingInChapters: locatingInChapters, editorClosed: editorClosed)
                 .disabled(session.navigating)
         default:
             EmptyView()

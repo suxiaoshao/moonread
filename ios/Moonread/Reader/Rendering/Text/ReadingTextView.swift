@@ -5,6 +5,39 @@ import UIKit
 class ReadingTextView: UITextView {
     var readingText = ReadingText(text: "")
     var accessibilityNavigation: (() -> Void)?
+
+    #if DEBUG
+    // The screenshot runner taps the rendered highlight through XCTest.
+    override var accessibilityValue: String? {
+        get {
+            guard StoreShotScene.requested == .annotation,
+                  let capture = StoreShotCapture.requested, let window,
+                  let fixture = try? StoreShotFixture.localized(capture.language) else {
+                return super.accessibilityValue
+            }
+            let marked = (textStorage.string as NSString).range(of: fixture.notes[0][0])
+            guard marked.location != NSNotFound else { return super.accessibilityValue }
+            let inset = textContainerInset
+            let visible = bounds.insetBy(dx: 0, dy: 28).offsetBy(dx: -inset.left, dy: -inset.top)
+            let manager = layoutManager
+            let glyphs = NSIntersectionRange(
+                manager.glyphRange(forCharacterRange: marked, actualCharacterRange: nil),
+                manager.glyphRange(forBoundingRect: visible, in: textContainer)
+            )
+            for glyph in glyphs.location..<NSMaxRange(glyphs) {
+                let rect = manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+                let point = CGPoint(x: rect.midX, y: rect.midY)
+                if rect.width > 0, visible.contains(point) {
+                    let target = convert(CGPoint(x: point.x + inset.left, y: point.y + inset.top), to: window)
+                    return "StoreShotAnnotation:\(target.x),\(target.y)"
+                }
+            }
+            return super.accessibilityValue
+        }
+        set { super.accessibilityValue = newValue }
+    }
+    #endif
+
     override func accessibilityScroll(_ direction: UIAccessibilityScrollDirection) -> Bool {
         accessibilityNavigation?()
         return super.accessibilityScroll(direction)

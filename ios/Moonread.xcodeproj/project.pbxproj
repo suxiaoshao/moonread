@@ -7,6 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		ACDA3BF15FB2502D8E9807A4 /* CloudCallbackJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88CC01BA70B951BE9CA0C2A5 /* CloudCallbackJournal.swift */; };
+		F618FD57698B568994D28CB0 /* CloudInboxRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DCF6FB820125DA3BE5F4714 /* CloudInboxRows.swift */; };
+		EDD4277BCD8250569B8AA972 /* DataExchangeTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21EDB020537F5784BF5EBFCE /* DataExchangeTask.swift */; };
+		A80885CC5F9D5814A5E1511E /* RelationalReadingData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0621A45802455F07BCC2B7B4 /* RelationalReadingData.swift */; };
+		9C6623F2575E5EA790765826 /* UserBackupRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F77F001BB3A5E69A7C058C1 /* UserBackupRestore.swift */; };
+		FCF6C9A4531E5694B9584497 /* ReadingWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3C75640B4F5969A1616A85 /* ReadingWindow.swift */; };
+		F327C48148375FB399ECB5B8 /* BookSearchConditionPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 876C7011C17350089BBFEFD4 /* BookSearchConditionPages.swift */; };
+		8FEC8C6E8A2954F393A2A389 /* BookSearchTagRulePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5613FA4B23135F6FB815B8E2 /* BookSearchTagRulePage.swift */; };
 		A1A276000000000000000001 /* MoonreadAI in Frameworks */ = {isa = PBXBuildFile; productRef = A1A276000000000000000002 /* MoonreadAI */; };
         270E20000000000000000090 = {isa = PBXBuildFile; fileRef = 270E10000000000000000090;};
         270E20000000000000000091 = {isa = PBXBuildFile; fileRef = 270E10000000000000000091;};
@@ -88,6 +96,7 @@
         270D00000000000000000039 = {isa = PBXBuildFile; fileRef = 270D00000000000000000019;};
         270D0000000000000000003A = {isa = PBXBuildFile; fileRef = 270D0000000000000000001A;};
         270D0000000000000000003B = {isa = PBXBuildFile; fileRef = 270D0000000000000000001B;};
+        A327DEBA0000000000000001 = {isa = PBXBuildFile; fileRef = A327DEBA0000000000000002;};
         270D0000000000000000003C = {isa = PBXBuildFile; fileRef = 270D0000000000000000001C;};
         271C00000000000000000002 = {isa = PBXBuildFile; fileRef = 271C00000000000000000001;};
         271D00000000000000000002 = {isa = PBXBuildFile; fileRef = 271D00000000000000000001;};
@@ -102,6 +111,7 @@
         270D00000000000000000030 = {isa = PBXBuildFile; fileRef = 270D00000000000000000010;};
         270D0000000000000000002F = {isa = PBXBuildFile; fileRef = 270D0000000000000000000F;};
         270D0000000000000000002A = {isa = PBXBuildFile; fileRef = 270D0000000000000000000A;};
+		C3660000000000000000000A /* ReleasedReadingDataLayoutMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000009 /* ReleasedReadingDataLayoutMigrationTests.swift */; };
         270D00000000000000000029 = {isa = PBXBuildFile; fileRef = 270D00000000000000000009;};
         270D00000000000000000028 = {isa = PBXBuildFile; fileRef = 270D00000000000000000008;};
         270D00000000000000000027 = {isa = PBXBuildFile; fileRef = 270D00000000000000000007;};
@@ -207,7 +217,10 @@ FB1000000000000000000001 = {isa = PBXBuildFile; fileRef = FB20000000000000000000
 
 FA1000000000000000000002 = {isa = PBXBuildFile; fileRef = FA2000000000000000000002; };
 FA1000000000000000000001 = {isa = PBXBuildFile; fileRef = FA2000000000000000000001; };
+4ECB33000000000000000001 = {isa = PBXBuildFile; fileRef = 4ECB33000000000000000002; };
+		C36600000000000000000002 /* AIToolRequestNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000001 /* AIToolRequestNames.swift */; };
 E71000000000000000000001 = {isa = PBXBuildFile; fileRef = E72000000000000000000001; };
+358000000000000000000004 = {isa = PBXBuildFile; fileRef = 358000000000000000000003; };
 E71000000000000000000077 /* AIReadingMoon.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72000000000000000000077; };
 AC1000000000000000000077 /* MoonCharacter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2000000000000000000077; };
 		E61000000000000000000077 /* AIReadingMoonTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000077 /* AIReadingMoonTestFixtures.swift */; };
@@ -235,6 +248,7 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         B01000000000000000000001 = {isa = PBXBuildFile; fileRef = B02000000000000000000001; };
         B01000000000000000000002 = {isa = PBXBuildFile; fileRef = B02000000000000000000002; };
         AF1000000000000000000003 /* LibraryCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000003; };
+        BA332A1147C34AF4B0033201 /* AuthorLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA332A1147C34AF4B0033202; };
         AF1000000000000000000002 /* LibraryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000002; };
         AF1000000000000000000001 /* WelcomeStory.txt in Resources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000001; };
         AE1000000000000000000001 = {isa = PBXBuildFile; fileRef = AE2000000000000000000001; };
@@ -375,8 +389,11 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
         D50610000000000000000001 /* UserDataBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000001; };
         D50610000000000000000002 /* ReadingDataManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000002; };
         D50610000000000000000003 /* CacheManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000003; };
+        A36101000000000000000002 /* StorageManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000002 /* StorageManagement.swift */; };
+        A36101000000000000000001 /* StorageFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000001 /* StorageFiles.swift */; };
         D50610000000000000000004 /* DataManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000004; };
         D50610000000000000000005 /* DataManagement.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000005; };
+        A36101000000000000000005 /* Storage.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000005 /* Storage.xcstrings */; };
         D50610000000000000000006 /* DataManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000006; };
         D50610000000000000000007 /* CacheManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000007; };
 		7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */; };
@@ -417,6 +434,7 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		C31100000000000000000008 /* tag-map.json in Resources */ = {isa = PBXBuildFile; fileRef = C31100000000000000000007; };
 		154000000000000000000006 = {isa = PBXBuildFile; fileRef = 154000000000000000000005; };
 		154000000000000000000008 = {isa = PBXBuildFile; fileRef = 154000000000000000000007; };
+		358000000000000000000002 = {isa = PBXBuildFile; fileRef = 358000000000000000000001; };
 		6D93C1035BB54BA388AEDB7C /* ReaderAutoReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA37E7E44EF4E73B8BC6A70 /* ReaderAutoReading.swift */; };
 		1656D9DC94AB4BC4942732E9 /* ReaderAutoReadingContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0918A2524BAB480FBC176B72 /* ReaderAutoReadingContent.swift */; };
 
@@ -478,6 +496,11 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802F64D6FADEC829D9FABA3E /* AIComposer.swift */; };
 		88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */; };
 		90709A613E0B26BF14B9F308 /* DataManagementModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */; };
+		A36101000000000000000004 /* StorageSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000004 /* StorageSpaceView.swift */; };
+		C36600000000000000000008 /* StorageDatabasePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000007 /* StorageDatabasePage.swift */; };
+		C36600000000000000000006 /* StorageSelectionPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000005 /* StorageSelectionPage.swift */; };
+		C36600000000000000000004 /* StorageCategoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000003 /* StorageCategoryPage.swift */; };
+		A36101000000000000000003 /* StorageSpaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000003 /* StorageSpaceModel.swift */; };
 		4E5986F68A44B334B7F8643D /* ReadingDataListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */; };
 		42F0869878D5AA951138E187 /* ReadingDataIssuesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */; };
 		2D2BA9F36327CC9404EEC2D1 /* AIModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */; };
@@ -520,6 +543,14 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		88CC01BA70B951BE9CA0C2A5 /* CloudCallbackJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudCallbackJournal.swift; sourceTree = "<group>"; };
+		1DCF6FB820125DA3BE5F4714 /* CloudInboxRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudInboxRows.swift; sourceTree = "<group>"; };
+		21EDB020537F5784BF5EBFCE /* DataExchangeTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataExchangeTask.swift; sourceTree = "<group>"; };
+		0621A45802455F07BCC2B7B4 /* RelationalReadingData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelationalReadingData.swift; sourceTree = "<group>"; };
+		3F77F001BB3A5E69A7C058C1 /* UserBackupRestore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserBackupRestore.swift; sourceTree = "<group>"; };
+		9A3C75640B4F5969A1616A85 /* ReadingWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingWindow.swift; sourceTree = "<group>"; };
+		876C7011C17350089BBFEFD4 /* BookSearchConditionPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookSearchConditionPages.swift; sourceTree = "<group>"; };
+		5613FA4B23135F6FB815B8E2 /* BookSearchTagRulePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookSearchTagRulePage.swift; sourceTree = "<group>"; };
         270E10000000000000000090 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibrarySearchQuery.swift"; sourceTree = "<group>";};
         270E10000000000000000091 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/SearchCandidatesQuery.graphql.swift"; sourceTree = "<group>";};
         270E10000000000000000092 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/BookFilterOptionsQuery.graphql.swift"; sourceTree = "<group>";};
@@ -598,6 +629,7 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
         270D00000000000000000019 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSegmentRows.swift"; sourceTree = "<group>";};
         270D0000000000000000001A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingClearRows.swift"; sourceTree = "<group>";};
         270D0000000000000000001B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudTransportRows.swift"; sourceTree = "<group>";};
+        A327DEBA0000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingDataLayoutUpgrade.swift"; sourceTree = "<group>";};
         270D0000000000000000001C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FixedValueCloudRows.swift"; sourceTree = "<group>";};
         270D0000000000000000001E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CausalCloudRows.swift"; sourceTree = "<group>";};
         270D00000000000000000018 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MetadataExchangeRows.swift"; sourceTree = "<group>";};
@@ -608,6 +640,7 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
         270D00000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalReadingRows.swift"; sourceTree = "<group>";};
         270D0000000000000000000F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexTasks.swift"; sourceTree = "<group>";};
         270D0000000000000000000A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Data/DataV2MigrationTests.swift"; sourceTree = SOURCE_ROOT;};
+		C36600000000000000000009 /* ReleasedReadingDataLayoutMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/Data/ReleasedReadingDataLayoutMigrationTests.swift; sourceTree = SOURCE_ROOT; };
         270D00000000000000000009 = {isa = PBXFileReference; lastKnownFileType = text; path = "Moonread/Data/Database/LegacySQL/source_decoding_migration.sql"; sourceTree = SOURCE_ROOT;};
         270D00000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text; path = "Moonread/Data/Database/LegacySQL/full_index.sql"; sourceTree = SOURCE_ROOT;};
         270D00000000000000000007 = {isa = PBXFileReference; lastKnownFileType = text; path = "Moonread/Data/Database/LegacySQL/schema.sql"; sourceTree = SOURCE_ROOT;};
@@ -714,7 +747,10 @@ AP2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.xml
 FB2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AINativeMarkdown.swift"; sourceTree = "<group>"; };
 FA2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIMessageRow.swift"; sourceTree = "<group>"; };
 FA2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIMessageList.swift"; sourceTree = "<group>"; };
+4ECB33000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIToolResultDetails.swift"; sourceTree = "<group>"; };
+		C36600000000000000000001 /* AIToolRequestNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIToolRequestNames.swift; sourceTree = "<group>"; };
 E72000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AITurnView.swift"; sourceTree = "<group>"; };
+358000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIBookListCard.swift"; sourceTree = "<group>"; };
 E72000000000000000000077 /* AIReadingMoon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingMoon.swift"; sourceTree = "<group>"; };
 		E62000000000000000000077 /* AIReadingMoonTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingMoonTestFixtures.swift"; sourceTree = "<group>"; };
 		E62000000000000000000007 /* AIReadingToolsTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingToolsTestFixtures.swift"; sourceTree = "<group>"; };
@@ -745,6 +781,7 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         270D0000000000000000001D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSyncEngineAdapter.swift"; sourceTree = "<group>";};
         B02000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudLibrary.swift"; sourceTree = "<group>"; };
         AF2000000000000000000003 /* LibraryCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryCollection.swift"; sourceTree = "<group>"; };
+        BA332A1147C34AF4B0033202 /* AuthorLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AuthorLibraryView.swift"; sourceTree = "<group>"; };
         AF2000000000000000000002 /* LibraryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryPresentation.swift"; sourceTree = "<group>"; };
         AF2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text; path = Resources/WelcomeStory.txt; sourceTree = "<group>"; };
         AE2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryService.swift"; sourceTree = "<group>"; };
@@ -885,8 +922,11 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
         D50620000000000000000001 /* UserDataBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserDataBackup.swift"; sourceTree = "<group>"; };
         D50620000000000000000002 /* ReadingDataManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingDataManagement.swift"; sourceTree = "<group>"; };
         D50620000000000000000003 /* CacheManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CacheManagement.swift"; sourceTree = "<group>"; };
+        A36102000000000000000002 /* StorageManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageManagement.swift; sourceTree = "<group>"; };
+        A36102000000000000000001 /* StorageFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageFiles.swift; sourceTree = "<group>"; };
         D50620000000000000000004 /* DataManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementView.swift; sourceTree = "<group>"; };
         D50620000000000000000005 /* DataManagement.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = DataManagement.xcstrings; sourceTree = "<group>"; };
+        A36102000000000000000005 /* Storage.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Storage.xcstrings; sourceTree = "<group>"; };
         D50620000000000000000006 /* DataManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DataManagementTests.swift"; sourceTree = "<group>"; };
         D50620000000000000000007 /* CacheManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CacheManagementTests.swift"; sourceTree = "<group>"; };
 		3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingSnapshot.swift; sourceTree = "<group>"; };
@@ -921,6 +961,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		C31100000000000000000007 /* tag-map.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "tag-map.json"; sourceTree = "<group>"; };
 		154000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedFilters.swift; sourceTree = "<group>"; };
 		154000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedFilterViews.swift; sourceTree = "<group>"; };
+		358000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookSearchSummaryViews.swift; sourceTree = "<group>"; };
 		FDA37E7E44EF4E73B8BC6A70 /* ReaderAutoReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderAutoReading.swift; sourceTree = "<group>"; };
 		0918A2524BAB480FBC176B72 /* ReaderAutoReadingContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderAutoReadingContent.swift"; sourceTree = "<group>"; };
 
@@ -980,6 +1021,11 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		802F64D6FADEC829D9FABA3E /* AIComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIComposer.swift; sourceTree = "<group>"; };
 		3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIReadingAttachmentPreview.swift; sourceTree = "<group>"; };
 		C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementModel.swift; sourceTree = "<group>"; };
+		A36102000000000000000004 /* StorageSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSpaceView.swift; sourceTree = "<group>"; };
+		C36600000000000000000007 /* StorageDatabasePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageDatabasePage.swift; sourceTree = "<group>"; };
+		C36600000000000000000005 /* StorageSelectionPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSelectionPage.swift; sourceTree = "<group>"; };
+		C36600000000000000000003 /* StorageCategoryPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageCategoryPage.swift; sourceTree = "<group>"; };
+		A36102000000000000000003 /* StorageSpaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSpaceModel.swift; sourceTree = "<group>"; };
 		B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataListView.swift; sourceTree = "<group>"; };
 		B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataIssuesView.swift; sourceTree = "<group>"; };
 		36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModelDetailView.swift; sourceTree = "<group>"; };
@@ -1034,7 +1080,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 
 /* Begin PBXGroup section */
         270E30000000000000000000 /* Queries */ = {isa = PBXGroup; children = (270E10000000000000000001,270E10000000000000000002,270E10000000000000000003,270E10000000000000000004,270E10000000000000000005,270E10000000000000000006,270E10000000000000000007,270E10000000000000000008,270E10000000000000000009,270E1000000000000000000A,270E1000000000000000000B,270E1000000000000000000C,270E1000000000000000000D,270E1000000000000000000E,270E1000000000000000000F,270E10000000000000000010,270E10000000000000000011,270E10000000000000000012,270E10000000000000000013,270E10000000000000000014,270E10000000000000000015,270E10000000000000000016,270E10000000000000000017,270E10000000000000000018,270E10000000000000000019,270E10000000000000000030,270E10000000000000000031,270E10000000000000000032,270E10000000000000000033,270E10000000000000000034,270E10000000000000000035,270E10000000000000000036,270E10000000000000000037,270E10000000000000000038,270E10000000000000000050,270E10000000000000000051,270E10000000000000000052,270E10000000000000000053,270E10000000000000000054,270E10000000000000000055,270E10000000000000000056,270E10000000000000000057,270E10000000000000000070,270E10000000000000000071,270E10000000000000000072,270E10000000000000000073,270E10000000000000000074,270E10000000000000000075,270E10000000000000000076,270E10000000000000000077,270E10000000000000000090,270E10000000000000000091,270E10000000000000000092,270E10000000000000000093,270E10000000000000000094,C31100000000000000000001,270E100000000000000000A0,270E100000000000000000A1,270E100000000000000000A2,270E100000000000000000A3,270E100000000000000000A4,270E100000000000000000A5,270E100000000000000000A6,270E100000000000000000A7,270E100000000000000000A8,270E100000000000000000B0,270E100000000000000000B1,270E100000000000000000B2); path = Queries; sourceTree = "<group>";};
-        270D00000000000000000040 /* Database */ = {isa = PBXGroup; children = (270D00000000000000000001,270D00000000000000000002,270D00000000000000000003,270D00000000000000000004,270D00000000000000000005,270D00000000000000000006,270D00000000000000000007,270D00000000000000000008,270D00000000000000000009,270D0000000000000000000B,270D0000000000000000000C,270D0000000000000000000D,270D0000000000000000000E,270D0000000000000000000F,270D00000000000000000010,270D00000000000000000011,270D00000000000000000012,270D00000000000000000013,270D00000000000000000014,270D00000000000000000015,270D00000000000000000016,270D00000000000000000017,270D00000000000000000019,270D0000000000000000001A,270D0000000000000000001B,271C00000000000000000001,271D00000000000000000001,270D0000000000000000001C,270D0000000000000000001E,270D00000000000000000018,270D0000000000000000001F); path = Database; sourceTree = "<group>";};
+        270D00000000000000000040 /* Database */ = {isa = PBXGroup; children = (88CC01BA70B951BE9CA0C2A5 /* CloudCallbackJournal.swift */,1DCF6FB820125DA3BE5F4714 /* CloudInboxRows.swift */,270D00000000000000000001,270D00000000000000000002,270D00000000000000000003,270D00000000000000000004,270D00000000000000000005,270D00000000000000000006,270D00000000000000000007,270D00000000000000000008,270D00000000000000000009,270D0000000000000000000B,270D0000000000000000000C,270D0000000000000000000D,270D0000000000000000000E,270D0000000000000000000F,270D00000000000000000010,270D00000000000000000011,270D00000000000000000012,270D00000000000000000013,270D00000000000000000014,270D00000000000000000015,270D00000000000000000016,270D00000000000000000017,270D00000000000000000019,270D0000000000000000001A,270D0000000000000000001B,A327DEBA0000000000000002,271C00000000000000000001,271D00000000000000000001,270D0000000000000000001C,270D0000000000000000001E,270D00000000000000000018,270D0000000000000000001F); path = Database; sourceTree = "<group>";};
 		12BD6151DCDE468C8BAEC02A /* Concurrency */ = {isa = PBXGroup; children = (D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */,); path = Concurrency; sourceTree = "<group>"; };
 		A50000000000000000000001 = {
 			isa = PBXGroup;
@@ -1266,6 +1312,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
 				D50620000000000000000005 /* DataManagement.xcstrings */,
+				A36102000000000000000005 /* Storage.xcstrings */,
 				C77FEFA6FC6D2D5785EE3779 /* DataManagement */,
                 E28400000000000000000002 /* DeveloperMetadataCleanupView.swift */,
                 E28400000000000000000004 /* DeveloperTools.xcstrings */,
@@ -1284,6 +1331,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		C60318128F8C4F59B3C2CFB2 /* Data */ = {
 			isa = PBXGroup;
 			children = (
+				9A3C75640B4F5969A1616A85 /* ReadingWindow.swift */,
                 270D00000000000000000040, 270E30000000000000000000,
 				E237B1E2BAF2109F635ED408 /* UserData */,
 				A20000000000000000000002 /* AppDataService.swift */,
@@ -1785,6 +1833,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
                 270D0000000000000000000A,
+				C36600000000000000000009 /* ReleasedReadingDataLayoutMigrationTests.swift */,
 				D50620000000000000000007 /* CacheManagementTests.swift */,
 				8B7347C8B711202E4F6D8DF4 /* CloudAccountTests.swift */,
 				3E3F5C90A0A8FB0A54303016 /* CloudFileHandoffTests.swift */,
@@ -1810,6 +1859,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				3B82F24C02769E4A4B06B3E9 /* LibraryRows.swift */,
 				AF2000000000000000000002 /* LibraryPresentation.swift */,
 				AF2000000000000000000003 /* LibraryCollection.swift */,
+				BA332A1147C34AF4B0033202 /* AuthorLibraryView.swift */,
 			);
 			path = "Browsing";
 			sourceTree = "<group>";
@@ -1834,6 +1884,9 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				D32000000000000000000005 /* AIConversationsView.swift */,
 				FA2000000000000000000001 /* AIMessageList.swift */,
 				E72000000000000000000001 /* AITurnView.swift */,
+				358000000000000000000003 /* AIBookListCard.swift */,
+				4ECB33000000000000000002 /* AIToolResultDetails.swift */,
+				C36600000000000000000001 /* AIToolRequestNames.swift */,
 
 				FB2000000000000000000001 /* AINativeMarkdown.swift */,
 				FC2100000000000000000001 /* AIReplyFeedback.swift */,
@@ -1875,6 +1928,8 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		CD0A619093C77339C2E311F9 /* Search */ = {
 			isa = PBXGroup;
 			children = (
+				876C7011C17350089BBFEFD4 /* BookSearchConditionPages.swift */,
+				5613FA4B23135F6FB815B8E2 /* BookSearchTagRulePage.swift */,
 				B14000000000000000000003 /* AppSearch.swift */,
 				154000000000000000000003 /* BookSearchEditor.swift */,
 				C31100000000000000000005 /* BookTagCategories.swift */,
@@ -1883,6 +1938,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				154000000000000000000001 /* BookSearchQuery.swift */,
 				154000000000000000000005 /* SavedFilters.swift */,
 				154000000000000000000007 /* SavedFilterViews.swift */,
+				358000000000000000000001 /* BookSearchSummaryViews.swift */,
 				660000000000000000000001 /* LibraryQueryRules.swift */,
 			);
 			path = "Search";
@@ -1912,8 +1968,13 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		E5A0C22F71F5B7838D74C9D2 /* Management */ = {
 			isa = PBXGroup;
 			children = (
+				21EDB020537F5784BF5EBFCE /* DataExchangeTask.swift */,
+				0621A45802455F07BCC2B7B4 /* RelationalReadingData.swift */,
+				3F77F001BB3A5E69A7C058C1 /* UserBackupRestore.swift */,
 				D50620000000000000000002 /* ReadingDataManagement.swift */,
 				D50620000000000000000003 /* CacheManagement.swift */,
+				A36102000000000000000002 /* StorageManagement.swift */,
+				A36102000000000000000001 /* StorageFiles.swift */,
 			);
 			path = "Management";
 			sourceTree = "<group>";
@@ -1986,6 +2047,11 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			children = (
 				D50620000000000000000004 /* DataManagementView.swift */,
 				C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */,
+				A36102000000000000000004 /* StorageSpaceView.swift */,
+				C36600000000000000000007 /* StorageDatabasePage.swift */,
+				C36600000000000000000005 /* StorageSelectionPage.swift */,
+				C36600000000000000000003 /* StorageCategoryPage.swift */,
+				A36102000000000000000003 /* StorageSpaceModel.swift */,
 				B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */,
 				B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */,
 			);
@@ -2140,6 +2206,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 D84AF1EE58BF3D4813B23CFA /* MetadataExchange.xcstrings in Resources */,
                 E28400000000000000000003 /* DeveloperTools.xcstrings in Resources */,
                 D50610000000000000000005 /* DataManagement.xcstrings in Resources */,
+                A36101000000000000000005 /* Storage.xcstrings in Resources */,
                 B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */,
                 F14900000000000000000003 /* FullIndex.xcstrings in Resources */,
                 83C1F3DE49DE5AC693D3E8E8,
@@ -2245,6 +2312,7 @@ OS1000000000000000000001,
                 270D00000000000000000039,
                 270D0000000000000000003A,
                 270D0000000000000000003B,
+                A327DEBA0000000000000001,
                 271C00000000000000000002,
                 271D00000000000000000002,
                 270D0000000000000000003C,
@@ -2327,6 +2395,11 @@ OS1000000000000000000001,
 				F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */,
 				88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */,
 				90709A613E0B26BF14B9F308 /* DataManagementModel.swift in Sources */,
+				A36101000000000000000004 /* StorageSpaceView.swift in Sources */,
+				C36600000000000000000008 /* StorageDatabasePage.swift in Sources */,
+				C36600000000000000000006 /* StorageSelectionPage.swift in Sources */,
+				C36600000000000000000004 /* StorageCategoryPage.swift in Sources */,
+				A36101000000000000000003 /* StorageSpaceModel.swift in Sources */,
 				4E5986F68A44B334B7F8643D /* ReadingDataListView.swift in Sources */,
 				42F0869878D5AA951138E187 /* ReadingDataIssuesView.swift in Sources */,
 
@@ -2392,7 +2465,17 @@ OS1000000000000000000001,
 				7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */,
                 D50610000000000000000004 /* DataManagementView.swift in Sources */,
                 D50610000000000000000003 /* CacheManagement.swift in Sources */,
+                A36101000000000000000002 /* StorageManagement.swift in Sources */,
+                A36101000000000000000001 /* StorageFiles.swift in Sources */,
                 D50610000000000000000002 /* ReadingDataManagement.swift in Sources */,
+				ACDA3BF15FB2502D8E9807A4 /* CloudCallbackJournal.swift in Sources */,
+				F618FD57698B568994D28CB0 /* CloudInboxRows.swift in Sources */,
+				EDD4277BCD8250569B8AA972 /* DataExchangeTask.swift in Sources */,
+				A80885CC5F9D5814A5E1511E /* RelationalReadingData.swift in Sources */,
+				9C6623F2575E5EA790765826 /* UserBackupRestore.swift in Sources */,
+				FCF6C9A4531E5694B9584497 /* ReadingWindow.swift in Sources */,
+				F327C48148375FB399ECB5B8 /* BookSearchConditionPages.swift in Sources */,
+				8FEC8C6E8A2954F393A2A389 /* BookSearchTagRulePage.swift in Sources */,
                 D50610000000000000000001 /* UserDataBackup.swift in Sources */,
 				660000000000000000000002,
 				154000000000000000000004,
@@ -2400,6 +2483,7 @@ OS1000000000000000000001,
 				C31100000000000000000004 /* BookTagPicker.swift in Sources */,
 				154000000000000000000006,
 				154000000000000000000008,
+				358000000000000000000002,
 				154000000000000000000002,
                 FD64F53149DE5DBFB6AA04F1,
                 344233D679E94ACDA4FA2A11,
@@ -2449,6 +2533,9 @@ D31000000000000000000005,E51000000000000000000004,E51000000000000000000005,E5100
 FA1000000000000000000002,
 FA1000000000000000000001, FB1000000000000000000001,
 E71000000000000000000001,
+358000000000000000000004,
+4ECB33000000000000000001,
+				C36600000000000000000002 /* AIToolRequestNames.swift in Sources */,
 
 E71000000000000000000077,
 
@@ -2533,6 +2620,7 @@ F01900000000000000000001,
 				A10000000000000000000003 /* LibraryView.swift in Sources */,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
+                BA332A1147C34AF4B0033201 /* AuthorLibraryView.swift in Sources */,
                 AF1000000000000000000004 /* LibraryDrop.swift in Sources */,
                 F14900000000000000000001,
                 B39A10000000000000000001 /* ShelfRecovery.swift in Sources */,
@@ -2575,6 +2663,7 @@ F01900000000000000000001,
 		};
 		A60000000000000000000006 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
                 270D0000000000000000002A,
+				C3660000000000000000000A /* ReleasedReadingDataLayoutMigrationTests.swift in Sources */,
 
 				64AA023FE349DA30C4CD3701 /* AIConnectionWriteTests.swift in Sources */,
 				3FD57CF7AF53ADCD54DAAC4F /* ShelfRecoveryTests.swift in Sources */,
@@ -2710,8 +2799,8 @@ F01900000000000000000001,
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 18;
-                MARKETING_VERSION = 1.8;
+                CURRENT_PROJECT_VERSION = 19;
+                MARKETING_VERSION = 1.9;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -2761,8 +2850,8 @@ F01900000000000000000001,
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 18;
-                MARKETING_VERSION = 1.8;
+                CURRENT_PROJECT_VERSION = 19;
+                MARKETING_VERSION = 1.9;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;

@@ -48,7 +48,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让常规依赖版本更新 PR 指向当前版本分支。
 - Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 PR 的 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 `hotfix/x.y.z` 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。
-- 当前开发分支为 `release/1.9`（`main` 对应已发布的 1.8）。常规依赖更新目标同为 `release/1.9`，以 `.github/dependabot.yml` 为准；新版本分支切换后需核对实际配置。
+- 当前开发分支为 `release/1.10`。`main` 对应已发布的 1.9，见[开发文档入口](../README.md)。常规依赖更新目标以 [Dependabot 配置](../../../.github/dependabot.yml) 为准，新版本分支切换后需核对实际配置。
 
 签名配置、小说原件、构建产物与凭据不随代码推送。CI、仓库保护、模板及依赖更新见[仓库与持续集成](repository.md)，测试范围与推送前要求见[测试原则](verification.md#测试原则)。
 
@@ -141,12 +141,19 @@ Duo 必须在 DeviceHub 选择 Closed / Open，再核对 App 布局。Xcode 27.2
 | R02 | 阅读设置的排版控件与真实阅读预览 |
 | R03 | 隔离本机基线与较后候选触发的生产续读提示，未接受 |
 | R04 | 真实 SpringBoard 中号继续阅读组件；百分比与章节通过 Rust 目录查询取得 |
-| R05 | 六本原创书、两个非空文件夹的实际书架 |
+| R05 | 24 本原创样书、两个非空文件夹的网格书架 |
 | R06 | 真实笔记列表；保留小说选项入口按钮可见，不展开导出菜单 |
 | R07 | 固定 2026-10-25 的七天统计，使用生产时钟写入与查询 |
-| R08 / R09 | 正文高亮 / 原创人物名实际书内搜索，键盘收起 |
+| R08 / R09 | 点正文高亮打开批注详情 / 原创人物名实际书内搜索，键盘收起 |
 | R10 / R11 | 六本有效记录的数据管理总览 / 已审合成 AI 回顾（不发网络请求） |
 | R15 | 听书播放条与固定句子高亮（无实际播放） |
+| R16 / R17 | 带续读卡、虚拟书架和最近阅读网格的首页 / 已应用筛选的书库搜索列表 |
+| R19 | 在隔离书库导出真实备份并改变本机资料后，复用正式导入流程停在预览 |
+| R20 | 从书架菜单打开编辑首页，显示与隐藏各有区块 |
+| R21 | 存储空间总览，实际统计 Release 模拟器包、隔离书库与正文索引、数据库及实际导出的备份 |
+| R22 | 从小说详情点作者名，显示多本作品及实际写入的阅读时长 |
+
+拍摄 R21 时，`build-for-testing` 和 `test-without-building` 都用 `-configuration Release`，将签名参数换成 `CODE_SIGNING_ALLOWED=NO`，并传入 `'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DEBUG'` 以启用隔离夹具。App 体积取已安装的 Release 模拟器包，使用发布配置的优化和资源裁剪。
 
 R04 的桌面只需准备一次：倒数第二页是拍摄页，只放月读中号「继续阅读」小组件，退出编辑状态；最后一页保留已安装的开发 App 和 XCTest runner。首次安装后如图标落在拍摄页，把它们移到最后一页，后续不卸载或清理。运行前停在拍摄页或最后一页，测试从 App 回桌面后会检查当前页；找不到组件时向右翻一页，再等待可见组件显示本批书名、章节和进度。若失败，检查桌面分工、组件尺寸和系统语言，从拍摄页重跑。App 的语言参数不改变 SpringBoard；必须在模拟器设置切到本批系统语言。独立的 `StoreScreenshots/catalog.json` 不改正常 `SystemReading/v1`。
 
@@ -158,7 +165,9 @@ R15 使用隔离合成书库，在正文就绪后以生产播放条和高亮显�
 /usr/bin/python3 ios/StoreScreenshots/export.py sync-sources --root "$PWD"
 ```
 
-R15 原图写到 `build/Release/1.4-screenshots/raw/1.6/<语言>/<设备组>/<light|dark>/R15.png`，按 `R15-<F|P|L|O|I>-<语言>-<明暗>` 更新同集 `raw/manifest.json`；`sources.json` 可列待拍项，文件和 manifest 才证明已经拍摄。其他场景仍写 `build/Release/<工程MARKETING_VERSION>-screenshots/raw/<语言>/<设备组>/<light|dark>/<场景>.png`。Manifest 记录来源提交与 dirty 摘要、设备/运行时、像素、方向、请求配置、App 实际 receipt 和 PNG SHA。旧图保留原来源与哈希，不随索引改写；同一张原图重拍后再重新派生各用途。
+R15 原图写到 `build/Release/1.4-screenshots/raw/1.6/<语言>/<设备组>/<light|dark>/R15.png`，按 `R15-<F|P|L|O|I>-<语言>-<明暗>` 更新同集 `raw/manifest.json`；`sources.json` 可列待拍项，文件和 manifest 才证明已经拍摄。Manifest 记录来源提交与 dirty 摘要、设备/运行时、像素、方向、请求配置、App 实际 receipt 和 PNG SHA。旧图保留原来源与哈希，不随索引改写；同一张原图重拍后再重新派生各用途。
+
+[导出脚本](../../../ios/StoreScreenshots/export.py)的 `VERSIONED_GALLERY_SCENES` 表列出各版本直写长期集的场景。命中表的原图写到 `raw/<版本>/<语言>/<设备组>/<light|dark>/<场景>.png`，当轮凭证写到 `raw/<版本>/capture-manifest.json`。逐张核对后再更新长期集的 `sources.json` 和 `raw/manifest.json`，旧图留在原版本目录。其余商店场景写到 `build/Release/<工程MARKETING_VERSION>-screenshots/raw/<语言>/<设备组>/<light|dark>/<场景>.png`，R15 按上面的路径处理。
 
 只导出原生 PNG，不缩放、不叠标题；按 RGB 排除黑图，去掉误导方向的 EXIF，核对尺寸/姿态。manifest 的像素检查不代替人工审图，默认 `review=pending-visual-review`。错误写入 `build/StoreScreenshots/export.log` 并使当前用例失败。中断后保留已有原图与证据，继续时只补缺项，不要求清理模拟器或重拍已完成且画面未变的页面。
 
@@ -196,9 +205,9 @@ xcodebuild -project ios/Moonread.xcodeproj -scheme Moonread \
 
 1.3 按可独立试用的功能批次组织 PR；重大功能或 UI 先完成本地相关测试和真机试用，由用户确认后一次推送开 PR，CI 运行全量测试，合并仍由用户安排。
 
-本机 Debug 和 Release 的阅读数据默认都使用 Development；App Store 工作流归档时指定 `MOONREAD_READING_CLOUD_ENVIRONMENT=Production`，并核对导出 IPA 的配置与签名。真机试用包使用 Release 优化时也应核对签名的 CloudKit 环境与 Info.plist 的 `MoonreadReadingCloudEnvironment` 一致。两种环境不共用关系库。
+主 App 的 Info.plist 与默认 entitlements 共用 `MOONREAD_READING_CLOUD_ENVIRONMENT`。本机 Debug 和 Release 默认使用 Development，关系库在 `Data/v3/development`。App Store 工作流归档时指定 Production，审计导出 IPA 中主 App 的 `MoonreadReadingCloudEnvironment` 和实际签名的 CloudKit 环境都为 Production，关系库在 `Data/v3/production`。真机试用包也要核对两处环境一致。混装历史的设备先按[阅读数据环境升级](../data/sync.md)确认旧库来源。
 
-需要让本机真机试用包读取用户现有的正式 iCloud 数据时，按当轮已确认的验收顺序使用 Release 配置，复制主 App 的 entitlements 到忽略的 `build/`，仅在该副本加入 `com.apple.developer.icloud-container-environment=Production`，通过现有的主 App 参数 `MOONREAD_ENTITLEMENTS` 指向该副本（绝对路径），同时指定 `MOONREAD_READING_CLOUD_ENVIRONMENT=Production`；扩展沿用自己的权限文件。覆盖安装前用 `codesign -d --entitlements :-` 检查实际签名的环境确为 Production、容器为 `iCloud.dev.moonread.Moonread`，并确认 `get-task-allow` 与本次使用的开发/分发描述文件一致（本机开发调试签名为 true，分发签名为 false）。自动签名如不允许该组合，停止报告，不改用 Development 云数据。核验后用 `devicectl` 覆盖安装并启动，保留 App 和数据，不卸载；连接、解锁或人工授权由用户处理。试用安装不等于发版或合并。
+需要让本机真机试用包读取用户现有的正式 iCloud 数据时，按当轮已确认的验收顺序使用 Release 配置，指定 `MOONREAD_READING_CLOUD_ENVIRONMENT=Production`。覆盖安装前用 `codesign -d --entitlements :-` 检查实际签名的环境确为 Production、容器为 `iCloud.dev.moonread.Moonread`，并确认 `get-task-allow` 与本次使用的开发/分发描述文件一致（本机开发调试签名为 true，分发签名为 false）。自动签名如不允许该组合，停止报告，不改用 Development 云数据。核验后用 `devicectl` 覆盖安装并启动，保留 App 和数据，不卸载；连接、解锁或人工授权由用户处理。试用安装不等于发版或合并。
 
 ### Personal Team 本地试用包
 

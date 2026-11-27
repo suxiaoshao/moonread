@@ -339,14 +339,6 @@ enum ReadingFactSettlement {
         try changes.apply(db)
     }
 
-    /// Clear or scope barrier changed, not the underlying evidence. Do not
-    /// change the classification of an ID and do not load exposure bytes.
-    static func settleVisibility(_ db: Database, ids: Set<String>) throws {
-        var changes = ReadingDayRows.Changes()
-        try stageSettlement(db, ids: ids, evidence: [], scope: "", changes: &changes)
-        try changes.apply(db)
-    }
-
     static func stageSettlement(_ db: Database, ids: Set<String>, evidence: Set<String>, scope: String,
                                 changes: inout ReadingDayRows.Changes, transferringLocal: Bool = false) throws {
         for id in Set(evidence.map(ReadingFactRows.identity)).sorted() { try verifyIdentity(db, id: id, scope: scope, transferringLocal: transferringLocal) }
