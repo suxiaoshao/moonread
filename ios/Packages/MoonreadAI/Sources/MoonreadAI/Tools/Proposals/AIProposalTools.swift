@@ -72,7 +72,7 @@ public enum AIResolvedSource: Sendable, Identifiable {
     @ObservationIgnored public var beginApplication: @MainActor (String) throws -> UUID = { _ in throw AIError.storage }
     @ObservationIgnored public var endApplication: @MainActor (String, UUID) -> Void = { _, _ in }
     @ObservationIgnored public var attach: @MainActor (String, AIReadingAttachment, AIStagedAsset?) async throws -> Void = { _, _, _ in }
-    @ObservationIgnored public private(set) var reviews: [String: AIReviewValue] = [:]
+    public private(set) var reviews: [String: AIReviewValue] = [:]
     public var inFlight: Set<String> = []
     public var lastErrors: [String: String] = [:]
     public var feedback: [String: String] = [:]
