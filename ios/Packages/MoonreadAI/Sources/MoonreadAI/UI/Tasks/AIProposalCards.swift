@@ -1,14 +1,21 @@
-import MoonreadReader
-import MoonreadLibrary
 import MoonreadDesign
 import MoonreadData
 import MoonreadDataTypes
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 
+public typealias AIProposalNoteEditor = @MainActor (
+    AnnotationEdit, AIAnnotationCommitHooks, @escaping @MainActor () -> Void
+) -> AnyView
+
 /// Canonical history is always visible. Editable reviews are fresh, view-lifetime values.
-struct AIResultCard: View {
+public struct AIResultCard: View {
+    public init(result: AIResultValue, noteEditor: @escaping AIProposalNoteEditor) {
+        self.result = result
+        self.noteEditor = noteEditor
+    }
+
+    private let noteEditor: AIProposalNoteEditor
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     let result: AIResultValue
@@ -23,7 +30,7 @@ struct AIResultCard: View {
     @State private var shelfNames: [String: String] = [:]
     private var review: AIReviewValue? { ai.proposals.review(resultID) }
     private var saving: Bool { ai.proposals.inFlight.contains(resultID) }
-    var body: some View {
+    public var body: some View {
         Group {
             Group {
                 switch result.body {
@@ -52,7 +59,7 @@ struct AIResultCard: View {
             .accessibilityIdentifier("aiResult-\(resultID)")
             .task(id: resultID) {
                 await ai.proposals.openResult(result)
-                if let shelves = try? await AppDataService.shared.shelves() { shelfNames = Dictionary(uniqueKeysWithValues: shelves.map { ($0.id, $0.name) }) }
+                if let shelves = try? await ai.readingAccess.shelves() { shelfNames = Dictionary(uniqueKeysWithValues: shelves.map { ($0.id, $0.name) }) }
             }
             .onDisappear { if !metadataSheet && !coverSheet { ai.proposals.closeResult(resultID) } }
             .sheet(isPresented: $metadataSheet) { AIMetadataResultReview(result: result).themeScope(theme) }
@@ -72,7 +79,7 @@ struct AIResultCard: View {
                 }.themeScope(theme)
             }
             .sheet(item: $editor) { request in
-                NoteEditor(edit: request.edit, service: AppDataService.shared, aiCommit: ai.proposals.annotationHooks(result)) { editor = nil }
+                noteEditor(request.edit, ai.proposals.annotationHooks(result)) { editor = nil }
                     .themeScope(theme).preferredColorScheme(theme.scheme)
             }
         }
@@ -214,15 +221,23 @@ struct AIResultButtonStyle: ButtonStyle {
     }
 }
 
-struct AIBookFilterCard: View {
+public struct AIBookFilterCard: View {
+    public init(suggestion: AIBookFilterSuggestion, configuration: BookSearchConfiguration,
+                shelves: [LibraryShelf], open: @escaping () -> Void) {
+        self.suggestion = suggestion
+        self.configuration = configuration
+        self.shelves = shelves
+        self.open = open
+    }
+
+    let shelves: [LibraryShelf]
     let suggestion: AIBookFilterSuggestion
     let configuration: BookSearchConfiguration
     let open: () -> Void
-    @Environment(LibraryModel.self) private var library
     @Environment(\.theme) private var theme
 
-    var body: some View {
-        let resolution = suggestion.resolveShelves(library.shelves)
+    public var body: some View {
+        let resolution = suggestion.resolveShelves(shelves)
         let root = configuration.root
         Button(action: open) {
             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
@@ -256,17 +271,27 @@ struct AIBookFilterCard: View {
     }
 }
 
-struct AIFilterShelfChoiceSheet: View {
+public struct AIFilterShelfChoiceSheet: View {
+    public init(suggestion: AIBookFilterSuggestion, shelves: [LibraryShelf],
+                shelfLabel: @escaping @MainActor (LibraryShelf) -> AnyView,
+                open: @escaping (BookSearchConfiguration) -> Void) {
+        self.suggestion = suggestion
+        self.shelves = shelves
+        self.shelfLabel = shelfLabel
+        self.open = open
+    }
+
+    let shelves: [LibraryShelf]
+    let shelfLabel: @MainActor (LibraryShelf) -> AnyView
     let suggestion: AIBookFilterSuggestion
     let open: (BookSearchConfiguration) -> Void
     @Environment(\.dismiss) private var dismiss
-    @Environment(LibraryModel.self) private var library
     @Environment(\.theme) private var theme
     @State private var selected: [Data: String] = [:]
 
-    var body: some View {
-        let options = suggestion.resolveShelves(library.shelves)
-        let resolution = suggestion.resolveShelves(library.shelves, selected: selected)
+    public var body: some View {
+        let options = suggestion.resolveShelves(shelves)
+        let resolution = suggestion.resolveShelves(shelves, selected: selected)
         NavigationStack {
             List {
                 ForEach(options.choices) { choice in
@@ -275,7 +300,7 @@ struct AIFilterShelfChoiceSheet: View {
                             let checked = selected[choice.id] == shelf.id
                             Button { selected[choice.id] = shelf.id } label: {
                                 HStack {
-                                    BookSearchShelfOptionLabel(shelf: shelf, service: library.service, showsLocation: true)
+                                    shelfLabel(shelf)
                                     Spacer()
                                     if checked { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
                                 }.contentShape(.rect)

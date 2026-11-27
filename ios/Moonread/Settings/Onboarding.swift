@@ -1,3 +1,4 @@
+import MoonreadAI
 import MoonreadSettings
 import MoonreadDesign
 import MoonreadDataTypes

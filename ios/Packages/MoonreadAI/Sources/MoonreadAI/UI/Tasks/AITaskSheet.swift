@@ -4,17 +4,29 @@ import MoonreadCoreBindings
 import SwiftUI
 
 /// The object a quick task works on, shown at the top of both phases.
-struct AITaskObject {
-    var title: String
-    var subtitle: String?
-    var cover: BookCoverAsset?
-    var symbol = "book.closed"
-    var contentSHA256: String? = nil
-    var author: String? = nil
+public struct AITaskObject {
+    public var title: String
+    public var subtitle: String?
+    public var cover: BookCoverAsset?
+    public var symbol: String
+    public var contentSHA256: String?
+    public var author: String?
+
+    public init(title: String, subtitle: String? = nil, cover: BookCoverAsset? = nil,
+                symbol: String = "book.closed", contentSHA256: String? = nil, author: String? = nil) {
+        self.title = title; self.subtitle = subtitle; self.cover = cover; self.symbol = symbol
+        self.contentSHA256 = contentSHA256; self.author = author
+    }
 }
 
 /// Local setup exists only until Start. Started sessions use AIChatView.
-struct AITaskSetup<Setup: View>: View {
+public struct AITaskSetup<Setup: View>: View {
+    public init(object: AITaskObject, canStart: Bool = true, starting: Bool = false,
+                @ViewBuilder setup: @escaping () -> Setup,
+                start: @escaping (String, AIModelSelection) -> Void) {
+        self.object = object; self.canStart = canStart; self.starting = starting
+        self.setup = setup; self.start = start
+    }
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     let object: AITaskObject
@@ -25,7 +37,7 @@ struct AITaskSetup<Setup: View>: View {
     @State private var instruction = ""
     @State private var selection: AIModelSelection?
     @FocusState private var focused: Bool
-    var body: some View {
+    public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: LayoutTokens.section) {
                 AITaskObjectHeader(object: object)
@@ -49,13 +61,14 @@ struct AITaskSetup<Setup: View>: View {
 }
 
 /// Cover, title and subtitle of the task's object; large type stacks vertically.
-struct AITaskObjectHeader: View {
+public struct AITaskObjectHeader: View {
+    public init(object: AITaskObject) { self.object = object }
     @Environment(\.theme) private var theme
-    let object: AITaskObject
-    var body: some View {
+    public let object: AITaskObject
+    public var body: some View {
         HStack(alignment: .top, spacing: LayoutTokens.control) {
             if object.cover != nil || object.contentSHA256 != nil {
-                BookCoverView(title: object.title, cover: object.cover, contentSHA256: object.contentSHA256, author: object.author).frame(width: 40, height: 56).accessibilityHidden(true)
+                MetadataCoverPreview(title: object.title, cover: object.cover, contentSHA256: object.contentSHA256, author: object.author).frame(width: 40, height: 56).accessibilityHidden(true)
             } else {
                 Image(systemName: object.symbol).font(.title2).foregroundStyle(Color(uiColor: theme.secondary))
                     .frame(width: 40, height: 56).accessibilityHidden(true)

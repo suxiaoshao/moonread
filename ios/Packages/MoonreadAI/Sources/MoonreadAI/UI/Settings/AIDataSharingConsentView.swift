@@ -1,6 +1,5 @@
 import MoonreadDesign
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 
 struct AIDataSharingConsentView: View {
@@ -32,8 +31,8 @@ struct AIDataSharingConsentView: View {
                     }
                     Text("服务可能按其政策保存和处理这些内容，并使用该账户的额度。你可以随时在 AI 设置中撤销许可；已发送的数据无法追回。拒绝不会影响阅读。")
                     VStack(alignment: .leading, spacing: 8) {
-                        Link(destination: AppLinks.privacy()) { Label("隐私政策", systemImage: "arrow.up.right") }
-                        if let policy = AppLinks.providerPrivacy(request.destination.provider) {
+                        Link(destination: ai.privacyPolicy()) { Label("隐私政策", systemImage: "arrow.up.right") }
+                        if let policy = Self.providerPrivacy(request.destination.provider) {
                             Link(destination: policy) { Label("服务商隐私政策", systemImage: "arrow.up.right") }
                         }
                     }.foregroundStyle(Color(uiColor: theme.accent)).tint(Color(uiColor: theme.accent))
@@ -42,6 +41,11 @@ struct AIDataSharingConsentView: View {
                 .safeAreaInset(edge: .bottom, spacing: 0) { actions }
                 .navigationTitle("数据共享许可").navigationBarTitleDisplayMode(.inline)
         }.accessibilityIdentifier("aiDataSharingConsent")
+    }
+
+    private static func providerPrivacy(_ provider: String) -> URL? {
+        let links = ["openai": "https://openai.com/policies/privacy-policy/", "anthropic": "https://www.anthropic.com/legal/privacy", "google": "https://policies.google.com/privacy", "xai": "https://x.ai/legal/privacy-policy", "openrouter": "https://openrouter.ai/privacy"]
+        return links[provider].flatMap(URL.init(string:))
     }
 
     private var actions: some View {
@@ -69,11 +73,12 @@ struct AIDataSharingConsentView: View {
 }
 
 /// Presented by the currently visible chat/task sheet, never by the root window.
-struct AIDataSharingPresentation: ViewModifier {
+public struct AIDataSharingPresentation: ViewModifier {
     @Environment(AIService.self) private var ai
     let owner: String
     @State private var presentedID: UUID?
-    func body(content: Content) -> some View {
+    public init(owner: String) { self.owner = owner }
+    public func body(content: Content) -> some View {
         content.sheet(item: Binding(get: { ai.sharing.requests.first { $0.owner == owner } }, set: { _ in }), onDismiss: {
             if let id = presentedID { ai.sharing.answer(id, approved: false) }
             presentedID = nil

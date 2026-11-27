@@ -207,7 +207,7 @@ final class OfflineTestProtocol: URLProtocol, @unchecked Sendable {
       AITransport(configuration: TestAI.configuration())
     }
   ) -> AIService {
-    AIService(
+    makeAppAIService(
       repository: repository, defaults: defaults, storefront: storefront,
       auth: auth ?? authentication(), reader: reader, makeTransport: makeTransport)
   }

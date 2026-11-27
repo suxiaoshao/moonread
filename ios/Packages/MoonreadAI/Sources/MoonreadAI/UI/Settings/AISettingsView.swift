@@ -1,6 +1,5 @@
 import MoonreadDesign
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 
 private struct AIConnectionRoute: Hashable {
@@ -8,12 +7,13 @@ private struct AIConnectionRoute: Hashable {
     var startsLogin = false
 }
 
-struct AISettingsView: View {
+public struct AISettingsView: View {
+    public init() {}
     @State private var adding = false
     @State private var connectionRoute: AIConnectionRoute?
     @Environment(\.dismiss) private var dismiss
     @Environment(AIService.self) private var ai
-    var body: some View {
+    public var body: some View {
         AISettingsPage(
             connections: ai.providers.connections, error: ai.providers.error,
             loginInProgress: ai.providers.loginConnectionID != nil, state: ai.providers.connectionState,

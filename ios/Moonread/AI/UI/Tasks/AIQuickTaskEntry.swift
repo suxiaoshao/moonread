@@ -6,110 +6,14 @@ import MoonreadStatistics
 import MoonreadAI
 import SwiftUI
 
-/// What an entry asks for: the task kind, the object it works on, and the attachments
-/// the first request carries.
-struct AIQuickTaskRequest: Identifiable {
-    enum Family: Hashable { case metadata, cover, organization, statistics }
-    let family: Family
-    let origin: AITaskOrigin
-    let object: AITaskObject
-    let attachments: [AIReadingAttachment]
-    var id: String { "\(family)-\(origin.hashValue)" }
-    var title: LocalizedStringKey {
-        switch family { case .metadata: "完善资料"; case .cover: "封面"; case .organization: "整理"; case .statistics: "分析阅读" }
-    }
-    var runningLabel: LocalizedStringKey {
-        switch family { case .metadata: "正在完善"; case .cover: "正在处理封面"; case .organization: "正在整理"; case .statistics: "正在分析" }
-    }
-    @MainActor func task(_ ai: AIService) -> AISessionSummary? {
-        ai.session(origin: origin, family: family)
-    }
-    static func family(_ kind: AITaskKind) -> Family {
-        switch kind { case .metadata: .metadata; case .cover: .cover; case .organization: .organization; case .statistics: .statistics }
-    }
-}
-
-/// The entry-side sheet: the setup form until Start, then the task, and after transfer
-/// the conversation it became. Closing never stops anything.
+/// App host wrapper for task conversations, whose navigation remains in the app.
 struct AIQuickTaskSheet: View {
-    @Environment(AIService.self) private var ai
-    @Environment(\.theme) private var theme
-    @Environment(\.dismiss) private var dismiss
     let request: AIQuickTaskRequest
-    @State private var startedID: String?
-    @State private var starting = false
-    @State private var coverMode: AICoverMode = .find
-    @State private var notice: AIActionNotice?
-    @State private var visible = false
-    @State private var transferring = false
-    @State private var detent = PresentationDetent.large
-    private var sessionID: String? { startedID ?? request.task(ai)?.id }
+
     var body: some View {
-        NavigationStack {
-            Group {
-                if let id = sessionID, let session = ai.conversation(id) {
-                    AIChatView(conversationID: id, placement: .sheet, taskObject: request.object)
-                        .toolbar {
-                            if !session.listed {
-                                ToolbarItem(placement: .topBarLeading) {
-                                    Button("转入对话") {
-                                        transferring = true
-                                        Task {
-                                            defer { transferring = false }
-                                            do { _ = try await ai.transferTask(id) } catch { ai.notify(error) }
-                                        }
-                                    }.disabled(transferring || session.deleting).accessibilityIdentifier("transferAITask")
-                                }
-                            }
-                        }
-                } else {
-                    AITaskSetup(object: request.object, canStart: request.family != .cover || AICoverModePicker.canStart(coverMode, ai), starting: starting) {
-                        if request.family == .cover { AICoverModePicker(mode: $coverMode) }
-                    } start: { instruction, selection in start(instruction, selection) }
-                        .modifier(AIDataSharingPresentation(owner: request.id))
-                }
-            }
-            .navigationTitle(request.title).navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close) { dismiss() }.toolbarGlyph().accessibilityIdentifier("closeAITask") } }
-
+        AIQuickTaskSheetContent(request: request) { id, object in
+            AIChatView(conversationID: id, placement: .sheet, taskObject: object)
         }
-        .presentationDetents([.medium, .large], selection: $detent).presentationDragIndicator(.visible)
-        .onAppear { visible = true }.onDisappear { visible = false; notice = nil }
-        .onReceive(NotificationCenter.default.publisher(for: .aiActionFailed).receive(on: DispatchQueue.main)) { notification in
-            guard visible, let event = notification.object as? AIActionNotice, event.sessionID == nil else { return }
-            notice = event
-        }
-        .alert("暂时无法完成", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
-            Button("知道了", role: .cancel) { notice = nil }
-        } message: { Text(notice?.message ?? "") }
-        .task { await ai.load(); if startedID == nil { startedID = request.task(ai)?.id } }
-    }
-    private func start(_ instruction: String, _ selection: AIModelSelection) {
-        guard !starting else { return }
-        // Reserve before creating the asynchronous work, including repeated clicks in this run loop.
-        starting = true
-        let kind: AITaskKind = switch request.family {
-        case .metadata: .metadata
-        case .cover: .cover(mode: coverMode)
-        case .organization: .organization
-        case .statistics: .statistics
-        }
-        Task {
-            defer { starting = false }
-            do {
-                startedID = try await ai.startTask(origin: request.origin, kind: kind, attachments: request.attachments, instruction: instruction, selection: selection, consentOwner: request.id).id
-            } catch { ai.notify(error) }
-        }
-    }
-}
-
-enum AIQuickTaskDates {
-    /// Statistics days are civil day numbers; the task carries explicit local dates.
-    static func iso(_ day: Int64) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = StatisticsDates.civilCalendar; formatter.timeZone = StatisticsDates.civilCalendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: StatisticsDates.date(day))
     }
 }
 
@@ -154,24 +58,5 @@ extension AIQuickTaskRequest {
         scope.scopeRef = scopeRef
         return AIQuickTaskRequest(family: .organization, origin: AITaskOrigin(scopeRef: scopeRef),
                                   object: AITaskObject(title: title, symbol: "folder"), attachments: [scope])
-    }
-}
-
-enum AIQuickTaskAttachments {
-    static func statistics(from: String, to: String, bookSHA: String?, title: String) -> [AIReadingAttachment] {
-        var period = AIReadingAttachment(kind: .statistics, origin: "statistics", bookRef: bookSHA.map(AIReadingTools.bookRef), title: title)
-        period.fromDate = from; period.toDate = to
-        return [period]
-    }
-}
-
-enum AIQuickTaskRemoval {
-    /// States only what removal changes for this task; applied changes are never reverted.
-    @MainActor static func message(_ task: AISessionSummary) -> String {
-        var parts: [String] = []
-        if task.running { parts.append(String(localized: "正在进行的请求会停止。")) }
-        parts.append(String(localized: "任务及其结果会删除。"))
-        parts.append(String(localized: "已应用的修改会保留。"))
-        return parts.joined(separator: "")
     }
 }

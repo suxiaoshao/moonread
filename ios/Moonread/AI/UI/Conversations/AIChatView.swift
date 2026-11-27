@@ -35,6 +35,7 @@ struct AIChatView: View {
     @State private var pickingKind: AIReadingAttachment.Kind?
     @State private var listRequest = AIMessageListRequest()
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.metadataCoverRenderer) private var renderCover
     @State private var atBottom = true
     @State private var visible = false
     @FocusState private var inputFocused: Bool
@@ -94,6 +95,7 @@ struct AIChatView: View {
                         .background(row.turnID == highlightedTurn && highlightedTurn != nil ? Color(uiColor: theme.search) : .clear)
                         .environment(ai).environment(\.theme, theme).environment(\.dynamicTypeSize, typeSize)
                         .environment(library)
+                        .environment(\.metadataCoverRenderer, renderCover)
                         .environment(\.systemReadingRouter, systemReadingRouter)
                         .environment(\.colorScheme, theme.scheme)
                     }

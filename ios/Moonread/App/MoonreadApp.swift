@@ -11,47 +11,6 @@ import CoreSpotlight
 import UIKit
 import CloudKit
 
-@MainActor @Observable final class AIHost {
-    private let defaults: UserDefaults
-    let availability: AIAvailability
-    private(set) var runtime: AIService?
-
-    init() {
-        defaults = AIAvailability.applicationDefaults
-        availability = AIAvailability(defaults: defaults)
-    }
-
-    func activate() -> AIService? {
-        guard availability.isAvailable else { return nil }
-        if let runtime { return runtime }
-        let service = AIService(defaults: defaults, availability: availability)
-        runtime = service
-        return service
-    }
-
-    var connectionCount: Int {
-        runtime?.providers.connections.count ?? AIConnectionService.storedConnections(defaults).count
-    }
-}
-
-struct AIEntry<Content: View>: View {
-    @Environment(AIHost.self) private var host
-    var active = true
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        Group {
-            if host.availability.isAvailable {
-                if let runtime = host.runtime { content().environment(runtime) }
-                else if active { ProgressView() }
-            }
-        }
-        .task(id: active && host.availability.isAvailable) {
-            if active { _ = host.activate() }
-        }
-    }
-}
-
 @main
 struct MoonreadApp: App {
     @UIApplicationDelegateAdaptor(MoonreadDelegate.self) private var appDelegate
@@ -59,7 +18,9 @@ struct MoonreadApp: App {
     @State private var themes = ThemeStore()
     @State private var readerSettings = ReaderSettingsStore.shared
     @State private var cloud = CloudStore()
-    @State private var ai = AIHost()
+    @State private var ai = AIHost { defaults, availability in
+        makeAppAIService(defaults: defaults, availability: availability)
+    }
     @State private var tipJar = TipJar()
     private enum Startup {
         case preparing, failed(String), ready
@@ -196,6 +157,7 @@ struct MoonreadApp: App {
     private var indexedAppContent: some View {
         MoonreadRoot(library: library, themes: themes, defersIntroduction: showsUpgradeNotice)
             .environment(cloud).environment(ai).environment(tipJar).environment(readerSettings)
+            .metadataCoverPresentation()
             .task { await tipJar.listenForTransactions() }
             .task {
                 library.startCloudDiscovery()

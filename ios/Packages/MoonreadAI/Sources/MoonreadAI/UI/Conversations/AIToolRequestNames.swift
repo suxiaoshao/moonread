@@ -1,10 +1,10 @@
 import MoonreadCoreBindings
 import AISDKProvider
 import Foundation
-import MoonreadAI
 
 /// Display names already established by earlier committed tools within this turn.
-struct AIToolRequestNames: Equatable {
+public struct AIToolRequestNames: Equatable {
+    public init() {}
     var references: [String: String] = [:]
     var chapterAtPosition: String?
     subscript(_ reference: String?) -> String? { reference.flatMap { references[$0] } }

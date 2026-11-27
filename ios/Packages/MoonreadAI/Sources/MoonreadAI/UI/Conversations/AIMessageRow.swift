@@ -1,22 +1,27 @@
 import MoonreadDataTypes
-import MoonreadLibrary
 import MoonreadCoreBindings
-import MoonreadAI
 import Foundation
 import Observation
 import AISDKProvider
 import AISDKProviderUtils
 
-struct AIProcessExpansionState: Equatable {
-    var group = false
-    var reasoning = Set<String>()
-    var replyResultCalls = Set<String>()
-    var requestNames: [String: AIToolRequestNames] = [:]
+public struct AIProcessExpansionState: Equatable {
+    public var group = false
+    public var reasoning = Set<String>()
+    public var replyResultCalls = Set<String>()
+    public var requestNames: [String: AIToolRequestNames] = [:]
+    public init(group: Bool = false, reasoning: Set<String> = [], replyResultCalls: Set<String> = [],
+                requestNames: [String: AIToolRequestNames] = [:]) {
+        self.group = group
+        self.reasoning = reasoning
+        self.replyResultCalls = replyResultCalls
+        self.requestNames = requestNames
+    }
 }
 
 /// Identity is independent of content and of the live/committed boundary.
-struct AIMessageRow: Identifiable, Equatable {
-    enum Content: Equatable {
+public struct AIMessageRow: Identifiable, Equatable {
+    public enum Content: Equatable {
         case header, earlier, later
         case user(AIAgentEntry), queued(AIAgentInput)
         case block(AIProcessBlock, AIAgentStatus, AIProcessExpansionState = .init())
@@ -28,7 +33,7 @@ struct AIMessageRow: Identifiable, Equatable {
         case error(String)
         case actions(String, AIAgentStatus)
 
-        static func == (lhs: Self, rhs: Self) -> Bool {
+        public static func == (lhs: Self, rhs: Self) -> Bool {
             switch (lhs, rhs) {
             case (.header, .header), (.earlier, .earlier), (.later, .later), (.generating, .generating): true
             case (.user(let a), .user(let b)): a == b
@@ -45,10 +50,17 @@ struct AIMessageRow: Identifiable, Equatable {
             }
         }
     }
-    let id: String
-    let turnID: String?
-    var version = 0
-    let content: Content
+    public let id: String
+    public let turnID: String?
+    public var version = 0
+    public let content: Content
+
+    public init(id: String, turnID: String?, version: Int = 0, content: Content) {
+        self.id = id
+        self.turnID = turnID
+        self.version = version
+        self.content = content
+    }
 
     static func project(_ turn: AIConversationTurn, active: Bool, confirmations: [AIAgentConfirmation], expanded: Bool, itemExpansion: Set<AIProcessExpansionID> = []) -> [Self] {
         var rows: [Self] = []
@@ -111,18 +123,18 @@ struct AIMessageTurnCache {
 
 extension AIConversation {
     /// Reopening completed history collapses its process; finishing in this presentation does not.
-    func beginMessagePresentation() {
+    public func beginMessagePresentation() {
         processExpansion = [:]
         presentedActiveTurns = []
         messageTurnCache = [:]
     }
-    func toggleProcess(_ turn: String) {
+    public func toggleProcess(_ turn: String) {
         processExpansion[turn] = !(processExpansion[turn] ?? presentedActiveTurns.contains(turn))
     }
-    func toggleProcessItem(_ id: AIProcessExpansionID) {
+    public func toggleProcessItem(_ id: AIProcessExpansionID) {
         if !processItemExpansion.insert(id).inserted { processItemExpansion.remove(id) }
     }
-    var messageRows: [AIMessageRow] {
+    public var messageRows: [AIMessageRow] {
         let projected = turns
         var rows: [AIMessageRow] = []
         if hasEarlier { rows.append(.init(id: "page/earlier", turnID: nil, content: .earlier)) }
@@ -152,7 +164,7 @@ extension AIConversation {
 }
 
 extension AIConversation {
-    func messageRowID(for anchor: AIConversationAnchor) -> String? {
+    public func messageRowID(for anchor: AIConversationAnchor) -> String? {
         if let entry = entries.first(where: { $0.sequence == anchor.sequence }) {
             if entry.message.object["role"]?.string == "user" { return entry.id }
             let parts = entry.message.object["content"]?.object["parts"]?.array ?? []
@@ -166,7 +178,7 @@ extension AIConversation {
 }
 
 extension AIMessageRow {
-    var viewportRow: AIMessageViewportRow {
+    public var viewportRow: AIMessageViewportRow {
         let kind: AIMessageViewportRow.Kind
         switch content {
         case .block(let block, _, _): kind = .block(message: block.isMessage ? block.items[0].text : nil)
@@ -185,7 +197,7 @@ extension AIMessageRow {
 }
 
 extension AIMessageRow {
-    var nativeText: (text: String, streaming: Bool)? {
+    public var nativeText: (text: String, streaming: Bool)? {
         guard case .block(let block, let status, _) = content, block.isMessage,
               let item = block.items.first, item.kind == .text else { return nil }
         return (item.text, [.running, .compacting, .waitingConfirmation].contains(status))

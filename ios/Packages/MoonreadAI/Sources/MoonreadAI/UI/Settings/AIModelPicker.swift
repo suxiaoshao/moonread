@@ -1,6 +1,5 @@
 import MoonreadDesign
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 
 /// Where a picker reads and writes: a stored target, or a form's local draft
@@ -42,23 +41,23 @@ enum AIModelPickerDestination {
     var purpose: AIModelPurpose? { if case .purpose(let purpose) = self { purpose } else { nil } }
 }
 /// Shared controls write only to their caller's selection target.
-struct AIModelPickerButton: View {
+public struct AIModelPickerButton: View {
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     let destination: AIModelPickerDestination
     var compact = false
     var title: LocalizedStringKey?
-    init(target: AIModelSelectionTarget, compact: Bool = false, title: LocalizedStringKey? = nil) {
+    public init(target: AIModelSelectionTarget, compact: Bool = false, title: LocalizedStringKey? = nil) {
         destination = .target(target); self.compact = compact; self.title = title
     }
-    init(draft: Binding<AIModelSelection?>) { destination = .draft(draft) }
-    init(purpose: AIModelPurpose, title: LocalizedStringKey? = nil) { destination = .purpose(purpose); self.title = title }
+    public init(draft: Binding<AIModelSelection?>) { destination = .draft(draft) }
+    public init(purpose: AIModelPurpose, title: LocalizedStringKey? = nil) { destination = .purpose(purpose); self.title = title }
     @State private var completePicker = false
     @State private var panel = false
     @State private var showing = false
     @State private var detent = PresentationDetent.medium
     @State private var saveFailed = false
-    var body: some View {
+    public var body: some View {
         Button {
             if destination.purpose != nil { showing = true } else { completePicker = false; detent = .medium; panel = true }
         } label: {

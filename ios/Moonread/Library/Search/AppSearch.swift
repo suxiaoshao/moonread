@@ -1,3 +1,4 @@
+import MoonreadAI
 import MoonreadLibrary
 import MoonreadSearchText
 import MoonreadData

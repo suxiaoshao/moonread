@@ -1,16 +1,16 @@
 import MoonreadDesign
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 
 
 /// The only choice made before Start, because it decides which service is billed.
-struct AICoverModePicker: View {
+public struct AICoverModePicker: View {
+    public init(mode: Binding<AICoverMode>) { self._mode = mode }
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
-    @Binding var mode: AICoverMode
+    @Binding public var mode: AICoverMode
     private func available(_ mode: AICoverMode) -> Bool { ai.providers.purposeSelection(mode.purpose) != nil }
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: LayoutTokens.compact) {
             Picker("方式", selection: $mode) {
                 ForEach(AICoverMode.all) { Text($0.title).tag($0) }
@@ -22,26 +22,34 @@ struct AICoverModePicker: View {
         }
         .onAppear { if !available(mode), let other = AICoverMode.all.first(where: available) { mode = other } }
     }
-    static func canStart(_ mode: AICoverMode, _ ai: AIService) -> Bool { ai.providers.purposeSelection(mode.purpose) != nil }
+    public static func canStart(_ mode: AICoverMode, _ ai: AIService) -> Bool { ai.providers.purposeSelection(mode.purpose) != nil }
 }
 
 /// A candidate as the session presents it; bytes stay with the session's attachment store.
-struct AICoverCandidateItem: Identifiable {
-    let id: String
-    var size: CGSize?
+public struct AICoverCandidateItem: Identifiable {
+    public init(id: String, size: CGSize? = nil, source: String? = nil, sourceURL: URL? = nil,
+                failure: String? = nil, load: @escaping @MainActor (Int) async -> UIImage?) {
+        self.id = id; self.size = size; self.source = source; self.sourceURL = sourceURL
+        self.failure = failure; self.load = load
+    }
+    public let id: String
+    public var size: CGSize?
     /// Source domain or explicit origin label.
-    var source: String?
-    var sourceURL: URL?
-    var failure: String?
-    let load: @MainActor (_ pixels: Int) async -> UIImage?
+    public var source: String?
+    public var sourceURL: URL?
+    public var failure: String?
+    public let load: @MainActor (_ pixels: Int) async -> UIImage?
 }
 
-struct AICoverCandidateGrid: View {
+public struct AICoverCandidateGrid: View {
+    public init(items: [AICoverCandidateItem], open: @escaping (AICoverCandidateItem) -> Void) {
+        self.items = items; self.open = open
+    }
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var typeSize
-    let items: [AICoverCandidateItem]
-    let open: (AICoverCandidateItem) -> Void
-    var body: some View {
+    public let items: [AICoverCandidateItem]
+    public let open: (AICoverCandidateItem) -> Void
+    public var body: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: LayoutTokens.control, alignment: .top), count: typeSize.isAccessibilitySize ? 1 : 2)
         LazyVGrid(columns: columns, spacing: LayoutTokens.content) {
             ForEach(items) { item in
@@ -64,7 +72,7 @@ struct AICoverCandidateGrid: View {
 }
 
 extension AICoverCandidateItem {
-    static func caption(_ item: AICoverCandidateItem) -> String {
+    public static func caption(_ item: AICoverCandidateItem) -> String {
         if let failure = item.failure { return failure }
         var parts: [String] = []
         if let size = item.size { parts.append("\(Int(size.width))×\(Int(size.height))") }
@@ -73,12 +81,13 @@ extension AICoverCandidateItem {
     }
 }
 
-struct AICoverImage: View {
+public struct AICoverImage: View {
+    public init(item: AICoverCandidateItem, pixels: Int) { self.item = item; self.pixels = pixels }
     @Environment(\.theme) private var theme
-    let item: AICoverCandidateItem
-    let pixels: Int
+    public let item: AICoverCandidateItem
+    public let pixels: Int
     @State private var image: UIImage?
-    var body: some View {
+    public var body: some View {
         ZStack {
             Color(uiColor: theme.selected)
             if let image { Image(uiImage: image).resizable().scaledToFit() }
@@ -90,23 +99,31 @@ struct AICoverImage: View {
 }
 
 /// Full candidate with the current cover beside it for comparison.
-struct AICoverPreview: View {
+public struct AICoverPreview: View {
+    public init(item: AICoverCandidateItem, bookTitle: String, currentCover: BookCoverAsset?,
+                contentSHA256: String? = nil, author: String? = nil,
+                useAsReference: (() -> Void)? = nil, canUseReference: Bool = true,
+                setCover: @escaping () async -> Bool) {
+        self.item = item; self.bookTitle = bookTitle; self.currentCover = currentCover
+        self.contentSHA256 = contentSHA256; self.author = author; self.useAsReference = useAsReference
+        self.canUseReference = canUseReference; self.setCover = setCover
+    }
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    let item: AICoverCandidateItem
-    let bookTitle: String
-    let currentCover: BookCoverAsset?
-    var contentSHA256: String? = nil
-    var author: String? = nil
+    public let item: AICoverCandidateItem
+    public let bookTitle: String
+    public let currentCover: BookCoverAsset?
+    public var contentSHA256: String? = nil
+    public var author: String? = nil
     /// Nil when the image service cannot edit with a reference.
-    var useAsReference: (() -> Void)?
-    var canUseReference = true
-    let setCover: () async -> Bool
+    public var useAsReference: (() -> Void)?
+    public var canUseReference = true
+    public let setCover: () async -> Bool
     @State private var working = false
     @State private var failed = false
     @State private var saved = false
-    var body: some View {
+    public var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: LayoutTokens.section) {
@@ -114,7 +131,7 @@ struct AICoverPreview: View {
                         .frame(maxHeight: 420).frame(maxWidth: .infinity)
                         .accessibilityLabel(Text("封面候选"))
                     HStack(alignment: .center, spacing: LayoutTokens.control) {
-                        BookCoverView(title: bookTitle, cover: currentCover, contentSHA256: contentSHA256, author: author).frame(width: 48, height: 68)
+                        MetadataCoverPreview(title: bookTitle, cover: currentCover, contentSHA256: contentSHA256, author: author).frame(width: 48, height: 68)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("当前封面").font(.subheadline)
                         }

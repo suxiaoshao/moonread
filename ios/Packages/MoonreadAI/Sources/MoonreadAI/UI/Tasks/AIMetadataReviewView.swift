@@ -1,7 +1,6 @@
 import MoonreadDesign
 import MoonreadDataTypes
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 
 enum AIProposalSources {
@@ -66,18 +65,19 @@ struct AIResultSource: Identifiable {
 }
 
 private struct AISourcePreview: View {
+    @Environment(AIService.self) private var ai
     let source: AIResultSource
 
     var body: some View {
         AISourceExcerptSheet(id: source.id, title: source.title) {
-            let reader = AppDataService.shared
+            let reader = ai.readingAccess
             let sha = source.book.sha
-            let id = try await reader.aiBookID(sha: sha)
+            let id = try await reader.aiBookID(sha)
             let snapshot = try await reader.snapshot(id)
             guard snapshot.book.readingKey.formalSHA256 == sha else { throw AIToolError("stale_reference") }
             // Inspect the exact, bounded, SHA-keyed source; never write reading position/statistics.
             guard source.end - source.start <= 65_536 else { throw AIToolError("resource_limit") }
-            let range = try await reader.textRange(id, start: source.start, end: source.end)
+            let range = try await reader.textRange(id, source.start, source.end)
             return range.text
         }
     }
@@ -89,7 +89,8 @@ extension AIMetadataFieldKind {
     }
 }
 
-struct AIMetadataResultReview: View {
+public struct AIMetadataResultReview: View {
+    public init(result: AIResultValue) { self.result = result }
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
@@ -100,13 +101,13 @@ struct AIMetadataResultReview: View {
     @State private var editor: AIMetadataTextEdit?
     private var review: AIReviewValue? { ai.proposals.review(resultID) }
     private var saving: Bool { ai.proposals.inFlight.contains(resultID) }
-    var body: some View {
+    public var body: some View {
         NavigationStack {
             ScrollView {
                 if let review, case .metadata(let metadata) = review.body {
                     VStack(alignment: .leading, spacing: LayoutTokens.section) {
                         HStack(alignment: .top, spacing: LayoutTokens.content) {
-                            BookCoverView(title: metadata.rename.map { $0.selected ? $0.draft : ($0.currentName as NSString).deletingPathExtension } ?? metadata.title, cover: ai.proposals.liveMetadata[resultID]?.cover, contentSHA256: ai.proposals.liveMetadata[resultID]?.sha, author: ai.proposals.liveMetadata[resultID]?.author)
+                            MetadataCoverPreview(title: metadata.rename.map { $0.selected ? $0.draft : ($0.currentName as NSString).deletingPathExtension } ?? metadata.title, cover: ai.proposals.liveMetadata[resultID]?.cover, contentSHA256: ai.proposals.liveMetadata[resultID]?.sha, author: ai.proposals.liveMetadata[resultID]?.author)
                                 .frame(width: 64, height: 90)
                             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                                 if let rename = metadata.rename {
@@ -292,11 +293,12 @@ private struct AIMetadataTextEditor: View {
     }
 }
 
-struct AIResultFeedback: View {
+public struct AIResultFeedback: View {
+    public init(resultID: String) { self.resultID = resultID }
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     let resultID: String
-    var body: some View {
+    public var body: some View {
         if let text = ai.proposals.feedback[resultID] { Text(verbatim: text).font(.footnote).foregroundStyle(Color(uiColor: theme.success)) }
         if let text = ai.proposals.lastErrors[resultID] { Text(verbatim: text).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
         if let text = ai.proposals.renameFeedback[resultID] { Text(verbatim: text).font(.footnote).foregroundStyle(Color(uiColor: theme.success)) }
