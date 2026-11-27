@@ -31,7 +31,7 @@ final class FeedbackTests: AppStorePrivacyFixture {
     let selected = AIMessageRow(
       id: turn + "/actions", turnID: turn, content: .actions("Selected reply", .completed))
     let feedback = try XCTUnwrap(
-      AIReplyFeedback(row: selected, conversation: conversation, connections: [connection]))
+      AIReplyFeedback(row: selected, conversation: conversation, connections: [connection], recipient: AppLinks.supportEmail))
     XCTAssertEqual(feedback.recipient, AppLinks.supportEmail)
     XCTAssertEqual(feedback.provider, connection.name)
     XCTAssertEqual(feedback.model, "Readable Model")
@@ -43,21 +43,21 @@ final class FeedbackTests: AppStorePrivacyFixture {
     XCTAssertFalse(feedback.body.contains(connection.credentialReference))
     XCTAssertTrue(feedback.copyText.contains(AppLinks.supportEmail))
     let removed = try XCTUnwrap(
-      AIReplyFeedback(row: selected, conversation: conversation, connections: []))
+      AIReplyFeedback(row: selected, conversation: conversation, connections: [], recipient: AppLinks.supportEmail))
     XCTAssertEqual(removed.provider, String(localized: "已删除的连接"))
     XCTAssertEqual(removed.model, answer.model)
     XCTAssertFalse(removed.body.contains(connection.id))
     XCTAssertNil(
       AIReplyFeedback(
         row: .init(id: "user", turnID: turn, content: .user(answer)), conversation: conversation,
-        connections: [connection]))
+        connections: [connection], recipient: AppLinks.supportEmail))
   }
 
   // S245: 反馈路由按能力降级且只交付明确反馈内容；假 composer/open sink，保留成功与拒绝两个分支，不启动系统邮件。
   @MainActor func testReplyFeedbackOpensDefaultMailAppWithEncodedFields() async throws {
     let feedback = AIReplyFeedback(
       provider: "Provider", model: "Model", text: "Synthetic + & ? # 漢字\nnext line",
-      version: "1.0 (2)")
+      recipient: AppLinks.supportEmail, version: "1.0 (2)")
     var opened: [URL] = []
     let route = await AIReplyFeedbackDelivery.route(feedback, canCompose: false) {
       opened.append($0)

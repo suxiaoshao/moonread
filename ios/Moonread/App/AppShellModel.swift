@@ -1,4 +1,5 @@
 import MoonreadSettings
+import MoonreadAI
 import MoonreadLibrary
 import SwiftUI
 

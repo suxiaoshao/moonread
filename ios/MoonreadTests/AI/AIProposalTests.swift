@@ -4,6 +4,7 @@ import MoonreadCoreBindings
 import AISDKProvider
 import AISDKProviderUtils
 import SwiftData
+import Observation
 import UIKit
 import XCTest
 
@@ -100,7 +101,12 @@ final class AIProposalTests: BookAIFixture {
     }
     XCTAssertEqual(review.fields.first(where: { $0.kind == .tags })?.selectedTags, ["add"])
     XCTAssertEqual(registry.metadataChangeCount(value.id, review), 2)
+    // The review page reads review(id); an edit must notify it, or the selection stays stale on screen.
+    final class Fired: @unchecked Sendable { var value = false }
+    let notified = Fired()
+    withObservationTracking { _ = registry.review(value.id) } onChange: { notified.value = true }
     registry.editMetadata(value.id, kind: .synopsis, text: "Edited synopsis")
+    XCTAssertTrue(notified.value, "Editing a suggestion must invalidate views observing its review")
     registry.editMetadata(value.id, kind: .synopsis, selected: false)
     registry.editMetadata(value.id, kind: .tags, tag: "add")
     guard case .metadata(let deselected) = registry.review(value.id)?.body else {

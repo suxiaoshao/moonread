@@ -209,13 +209,6 @@ struct LibraryGridStatus: View {
     }
 }
 
-private extension VerticalAlignment {
-    private enum LibraryStatus: AlignmentID {
-        static func defaultValue(in context: ViewDimensions) -> CGFloat { context[.bottom] }
-    }
-    static let libraryStatus = VerticalAlignment(LibraryStatus.self)
-}
-
 struct LibraryFileRow: View {
     let model: LibraryModel
     let entry: LibraryEntry
@@ -223,15 +216,13 @@ struct LibraryFileRow: View {
     var recent = false
     var match: LibraryQueryRules.SearchMatch?
     let interaction: LibraryItemInteraction
-    static let coverSize = CGSize(width: 56, height: 80)
-    static let textLeading = coverSize.width + LayoutTokens.control
     @Environment(\.theme) private var theme
 
     private var label: LibraryItemLabel { .init(entry: entry, theme: theme, match: match) }
     private var showsMenu: Bool { recent || interaction.menuHost != nil }
 
     var body: some View {
-        Content(title: label.title(), author: label.author(), showsMenu: showsMenu) {
+        BookFileRowContent(title: label.title(), author: label.author(), showsMenu: showsMenu) {
             Color.clear
         } status: {
             statusLine
@@ -239,7 +230,7 @@ struct LibraryFileRow: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .background {
-            LibraryCoverButton(entry: entry, size: Self.coverSize, detail: accessibilityDetail) {
+            LibraryCoverButton(entry: entry, size: BookFileRowLayout.coverSize, detail: accessibilityDetail) {
                 if recent { model.open(entry) }
                 else { interaction.activate(entry, in: model) }
             } cover: {
@@ -248,36 +239,8 @@ struct LibraryFileRow: View {
                 actions
             }
         }
-        .overlay(alignment: Alignment(horizontal: .trailing, vertical: .libraryStatus)) {
+        .overlay(alignment: Alignment(horizontal: .trailing, vertical: BookFileRowLayout.statusAlignment)) {
             if showsMenu { LibraryItemMore(entry: entry) { actions } }
-        }
-    }
-
-    struct Content<Cover: View, Status: View>: View {
-        let title: Text
-        let author: Text?
-        var showsMenu = false
-        var unavailable = false
-        @ViewBuilder let cover: Cover
-        @ViewBuilder let status: Status
-        @Environment(\.theme) private var theme
-
-        var body: some View {
-            HStack(spacing: LayoutTokens.control) {
-                cover.frame(width: LibraryFileRow.coverSize.width, height: LibraryFileRow.coverSize.height)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading) {
-                    title.font(.body.weight(.medium)).lineLimit(1)
-                        .foregroundStyle(Color(uiColor: unavailable ? theme.secondary : theme.ink))
-                    if let author {
-                        author.font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
-                    }
-                    status.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        .alignmentGuide(.libraryStatus) { $0[.bottom] }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, showsMenu ? LayoutTokens.hit : 0)
-            }
         }
     }
 
@@ -292,7 +255,7 @@ struct LibraryFileRow: View {
 
     private var cover: some View {
         label.cover(compact: true)
-            .frame(width: Self.coverSize.width, height: Self.coverSize.height)
+            .frame(width: BookFileRowLayout.coverSize.width, height: BookFileRowLayout.coverSize.height)
             .overlay {
                 if !interaction.isEditing && !entry.directory {
                     LibraryFileAvailability(entry: entry, compact: true)
