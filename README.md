@@ -8,7 +8,7 @@
 
 *A free, ad-free, open-source TXT reader for iPhone and iPad, with iCloud sync and customizable reading themes.*
 
-[在 App Store 下载](https://apps.apple.com/app/id6823849812) · [访问官网](https://suxiaoshao.github.io/moonread/)
+[在 App Store 下载](https://apps.apple.com/cn/app/id6823849812) · [访问官网](https://suxiaoshao.github.io/moonread/)
 
 <img src="docs/assets/reading-1.2.jpg" alt="月读 1.2：素白配色和宣纸纹理下的阅读画面，使用原创示例小说" width="302">
 
