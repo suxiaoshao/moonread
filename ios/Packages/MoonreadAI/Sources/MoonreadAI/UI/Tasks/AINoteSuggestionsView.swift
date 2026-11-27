@@ -208,8 +208,6 @@ private struct AINoteSuggestionRow: View {
     let edit: (String) -> Void
     let openSource: () -> Void
 
-    private let quoteInset = LayoutTokens.control
-
     var body: some View {
         HStack(alignment: .top, spacing: LayoutTokens.compact) {
             if multiple && review.canSave {
@@ -234,7 +232,7 @@ private struct AINoteSuggestionRow: View {
                     Text(verbatim: excerpt)
                         .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, quoteInset)
+                        .padding(.leading, LayoutTokens.control)
                         .overlay(alignment: .leading) {
                             Rectangle().fill(Color(uiColor: theme.separator)).frame(width: 2)
                         }
@@ -251,7 +249,6 @@ private struct AINoteSuggestionRow: View {
                     .padding(.vertical, 8).padding(.horizontal, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(uiColor: theme.input), in: .rect(cornerRadius: 10))
-                    .padding(.leading, quoteInset)
                     .disabled(!review.canSave || busy)
                     .accessibilityIdentifier("aiNoteDraft-\(suggestion.id)")
                 }
