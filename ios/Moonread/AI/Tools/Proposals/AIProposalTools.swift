@@ -27,13 +27,26 @@ struct AIMetadataProposalInput: AIReadingInput {
 }
 struct AINoteProposalInput: AIReadingInput {
     var bookRef: String
-    var startUtf8: UInt64
-    var endUtf8: UInt64
+    var near: String
+    var quote: String
     var note: String
     var markRef: String?
-    func validate() throws { guard startUtf8 < endUtf8, note.utf8.count <= 64 * 1024 else { throw AIToolError("invalid_argument") } }
+    func validate() throws {
+        guard !quote.isEmpty, quote.utf8.count <= 4096 else { throw AIToolError("invalid_argument", field: "quote", message: "Quote 1–4096 bytes of the original text.") }
+        guard note.utf8.count <= 64 * 1024 else { throw AIToolError("invalid_argument", field: "note") }
+    }
+    static var constraints: [String: [String: JSONValue]] {
+        ["near": ["type": .string("string"), "minLength": .number(1), "description": .string("A positionRef at or shortly before the passage, e.g. from read_text or search_text.")],
+         "quote": ["type": .string("string"), "minLength": .number(1), "description": .string("The exact original text to annotate, copied from read_text.")]]
+    }
 }
-struct AIBookmarkProposalInput: AIReadingInput { var bookRef: String; var offsetUtf8: UInt64 }
+struct AIBookmarkProposalInput: AIReadingInput {
+    var bookRef: String
+    var at: String
+    static var constraints: [String: [String: JSONValue]] {
+        ["at": ["type": .string("string"), "minLength": .number(1), "description": .string("A positionRef from a book tool.")]]
+    }
+}
 struct AICoverProposalInput: AIReadingInput { var bookRef: String; var attachmentRef: String }
 
 struct AIFindCoverInput: AIReadingInput { var bookRef: String; var query: String? }
@@ -207,10 +220,10 @@ enum AIResolvedSource: Sendable, Identifiable {
         for entry in try await history(owner) where entry.message.object["role"] == .string("tool") {
             for part in entry.message.object["content"]?.array ?? [] {
                 let object = part.object
-                guard ["read", "rg", "get_marks", "get_mark", "web_search", "find_cover"].contains(object["toolName"]?.string ?? "") else { continue }
+                guard ["read_text", "search_text", "list_marks", "web_search", "search_cover"].contains(object["toolName"]?.string ?? "") else { continue }
                 let output = object["output"]?.object["value"] ?? object["output"] ?? .null
                 let tool = object["toolName"]?.string ?? "", status = output.object["status"]?.string
-                guard status == "ok" || (tool == "rg" && status == "partial") else { continue }
+                guard status == "ok" || (tool == "search_text" && status == "partial") else { continue }
                 for source in AIWebSource.committed(in: output, tool: object["toolName"]?.string ?? "") { produced[source.sourceRef] = .web(source) }
                 let data = output.object["data"] ?? .null
                 let values = [data] + (output.object["sources"]?.array ?? []) + (data.object["sources"]?.array ?? []) + (data.object["hits"]?.array ?? []) + (data.object["items"]?.array ?? [])
@@ -242,7 +255,7 @@ enum AIResolvedSource: Sendable, Identifiable {
                 if object["toolName"] == .string("generate_image"),
                    let result = try? JSONDecoder().decode(AINativeResult.self, from: bytes),
                    result.data.attachments?.contains(where: { $0.attachmentRef == ref }) == true { return .generated }
-                if object["toolName"] == .string("find_cover"),
+                if object["toolName"] == .string("search_cover"),
                    let result = try? JSONDecoder().decode(AIToolResponse<AIFindCoverResult>.self, from: bytes),
                    let candidate = result.data.candidates.first(where: { $0.attachment.attachmentRef == ref }),
                    let source = candidate.origin.webSource,
@@ -251,10 +264,39 @@ enum AIResolvedSource: Sendable, Identifiable {
         }
         return .unknown
     }
+    /// Finds the quoted original text near a position. The model never computes offsets.
+    func quoteRange(bookRef: String, near: String, quote: String, references: AIReadingReferences) async throws -> (UInt64, UInt64) {
+        let sha = try references.sha(bookRef)
+        let anchor = try AIPosition.offset(near, bookSHA: sha, field: "near")
+        let id = try await references.ready(bookRef)
+        let size = try await reader.book(id).byteCount
+        var lower = anchor > 4096 ? anchor - 4096 : 0, upper = min(size, anchor + 65536)
+        var text: TextRange?
+        for _ in 0..<4 where text == nil {
+            do { text = try await reader.textRange(id, start: lower, end: upper) }
+            catch ReaderError.InvalidRange { lower = lower == 0 ? 0 : lower + 1; upper = upper == size ? size : upper - 1 }
+        }
+        guard let text else { throw AIToolError("stale_reference", field: "near") }
+        let bytes = Array(text.text.utf8), needle = Array(quote.utf8)
+        var found: [Int] = []
+        if needle.count <= bytes.count {
+            for start in 0...(bytes.count - needle.count) where bytes[start] == needle[0] && Array(bytes[start..<start + needle.count]) == needle {
+                found.append(start)
+                if found.count > 1 { break }
+            }
+        }
+        guard found.count == 1, let match = found.first else {
+            throw AIToolError("invalid_argument", field: "quote", message: found.isEmpty
+                ? "The quote was not found near this position. Copy the exact text from read_text."
+                : "The quote appears more than once here. Quote a longer passage.")
+        }
+        let start = text.startUtf8 + UInt64(match)
+        return (start, start + UInt64(needle.count))
+    }
     func definitions(owner: String, providers: AIConnectionService, makeTransport: @escaping @Sendable () -> AITransport) -> [AIAgentTool] {
         let references = AIReadingReferences(reader: reader)
         return [
-            .init(name: "find_cover", description: "Search with the configured search service for a cover. Fetch only returned sources and one level of images explicitly declared by those pages. Resolve relative image URLs without guessing paths or executing scripts; filter decoded cover candidates by dimensions. Web citations without images are a valid result. No cover is applied.", input: AIFindCoverInput.self,
+            .init(name: "search_cover", description: "Search the web for cover images of a book with the configured search service. Returns candidates and their sources for the reader to review; no cover is applied.", input: AIFindCoverInput.self,
                 enabled: { providers.purposeSelection(.search) != nil }, execute: { input in
                     let sha = try await references.sha(input.bookRef)
                     let details = try await self.reader.details(sha: sha)
@@ -279,11 +321,13 @@ enum AIResolvedSource: Sendable, Identifiable {
             .init(name: "propose_book_metadata", description: "Propose only the requested metadata fields for user review. Attribute authors only from explicit filename attribution, existing metadata, front matter, body attribution or cited web sources; never infer authorship from characters or style. Extract or compose synopsis and tags as requested. Tag removals, replacements and clears require explicit user request. Never infer reading status; include it only when the user explicitly requested a status change. Omitted fields are unchanged, empty fields clear only by explicit request. Tags merge by default. Optionally propose rename {fileRef,name}: name is a filename stem and the original extension is retained. Only propose renaming to remove obvious author/site/format/completion noise from a filename, or on explicit user request. Do not rewrite, translate or infer the book title from prose. fileRef must belong to bookRef. User confirmation renames that real file without replacement, independently of metadata saving.", input: AIMetadataProposalInput.self, execute: { input in
                 try await self.prepare(.metadata(self.metadataProposal(input)), owner: owner)
             }),
-            .init(name: "propose_note", description: "Propose an annotation using tool-returned UTF-8 boundaries. Existing notes/conflicts are handled by the app editor; never overwrite them.", input: AINoteProposalInput.self, confirmation: { try await references.confirmText([$0.bookRef]) }, execute: { input in
-                try await self.prepare(.notes(.init(proposalRef: UUID().uuidString, bookRef: input.bookRef, kind: .note, startUtf8: input.startUtf8, endUtf8: input.endUtf8, note: input.note, markRef: input.markRef)), owner: owner)
+            .init(name: "propose_note", description: "Suggest an annotation for the reader to review. Quote the exact original text and give a nearby positionRef; existing notes and conflicts are handled in the app editor and never overwritten.", input: AINoteProposalInput.self, confirmation: { try await references.confirmText([$0.bookRef]) }, execute: { input in
+                let (start, end) = try await self.quoteRange(bookRef: input.bookRef, near: input.near, quote: input.quote, references: references)
+                return try await self.prepare(.notes(.init(proposalRef: UUID().uuidString, bookRef: input.bookRef, kind: .note, startUtf8: start, endUtf8: end, note: input.note, markRef: input.markRef)), owner: owner)
             }),
-            .init(name: "propose_bookmark", description: "Propose a bookmark at a valid tool-returned UTF-8 position. Applying preserves an existing bookmark.", input: AIBookmarkProposalInput.self, confirmation: { try await references.confirmText([$0.bookRef]) }, execute: { input in
-                try await self.prepare(.notes(.init(proposalRef: UUID().uuidString, bookRef: input.bookRef, kind: .bookmark, startUtf8: input.offsetUtf8, endUtf8: input.offsetUtf8, note: "")), owner: owner)
+            .init(name: "propose_bookmark", description: "Suggest a bookmark at a positionRef for the reader to review. An existing bookmark there is kept.", input: AIBookmarkProposalInput.self, confirmation: { try await references.confirmText([$0.bookRef]) }, execute: { input in
+                let offset = try AIPosition.offset(input.at, bookSHA: try references.sha(input.bookRef), field: "at")
+                return try await self.prepare(.notes(.init(proposalRef: UUID().uuidString, bookRef: input.bookRef, kind: .bookmark, startUtf8: offset, endUtf8: offset, note: "")), owner: owner)
             }),
             .init(name: "propose_cover", description: "Propose an image attachment from this session as a cover for user review. For a generated cover, call generate_image first and pass its returned attachmentRef here. Does not apply the cover.", input: AICoverProposalInput.self, execute: { input in
                 let image = try await AIImageStore.shared.attachment(owner: owner, ref: input.attachmentRef)

@@ -63,7 +63,7 @@ public struct AIWebSource: Codable, Equatable, Sendable, Identifiable {
         case "web_search":
             guard let result = try? JSONDecoder().decode(AINativeResult.self, from: bytes), result.status == "ok" else { return [] }
             return Self.merge(result.sources)
-        case "find_cover":
+        case "search_cover":
             guard let result = try? JSONDecoder().decode(AIToolResponse<AIFindCoverResult>.self, from: bytes), result.status == "ok" else { return [] }
             return Self.merge(result.data.sources)
         default: return []

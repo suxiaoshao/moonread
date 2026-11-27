@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import AISDKProvider
 
 public struct AISessionValue: Codable, Sendable, Identifiable {
     public let id: String
@@ -83,6 +84,9 @@ public struct AIStagedAsset: Sendable {
                 location = directory.appending(path: session.map { "ai-ui-\($0).store" } ?? "ai-conversations.store")
             }
             configuration = ModelConfiguration(schema: schema, url: location, cloudKitDatabase: .none)
+            let container = try ModelContainer(for: schema, configurations: [configuration])
+            try AIToolNameMigration.run(container, store: location)
+            return AIRepository(modelContainer: container)
         }
         return AIRepository(modelContainer: try ModelContainer(for: schema, configurations: [configuration]))
     }
@@ -203,3 +207,55 @@ public struct AIStagedAsset: Sendable {
         return limit != nil && after < 0 ? Array(rows.reversed()) : rows
     }
 }
+
+/// 1.10 renamed and merged the AI tools (#378). Saved conversations are rewritten once to the
+/// new names, so display and replay know only the current tool set. Inputs and outputs are kept.
+enum AIToolNameMigration {
+    static let renamed: [String: String] = [
+        "ls": "list_shelf", "search_books": "find_books", "query_books_by_filter": "find_books",
+        "list_filter_options": "list_filter_values", "show_book_list": "show_books", "get_book": "get_book_info",
+        "get_chapters": "list_chapters", "read": "read_text", "rg": "search_text",
+        "get_marks": "list_marks", "get_mark": "list_marks", "get_environment": "get_current_time", "find_cover": "search_cover",
+    ]
+    static let version = 2
+
+    static func run(_ container: ModelContainer, store: URL, defaults: UserDefaults = .standard) throws {
+        let key = "Moonread.ai.toolNames." + store.lastPathComponent
+        guard defaults.integer(forKey: key) < version else { return }
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        for row in try context.fetch(FetchDescriptor<AIAgentEntryRecord>()) {
+            if let payload = rewritten(row.payload, key: "toolName") { row.payload = payload }
+        }
+        for row in try context.fetch(FetchDescriptor<AIAgentHeadRecord>()) {
+            if let payload = rewritten(row.payload, key: "name", under: "pendingCalls") { row.payload = payload }
+        }
+        try context.save()
+        defaults.set(version, forKey: key)
+    }
+
+    /// The payload with old tool names replaced, or nil when nothing changed.
+    static func rewritten(_ payload: Data, key: String, under parent: String? = nil) -> Data? {
+        guard let value = try? JSONDecoder().decode(JSONValue.self, from: payload) else { return nil }
+        var changed = false
+        func walk(_ value: JSONValue, inside: Bool) -> JSONValue {
+            switch value {
+            case .object(let fields):
+                var result: [String: JSONValue] = [:]
+                for (name, field) in fields {
+                    if name == key, inside || parent == nil, case .string(let old) = field, let new = renamed[old] {
+                        result[name] = .string(new); changed = true
+                    } else {
+                        result[name] = walk(field, inside: inside || name == parent)
+                    }
+                }
+                return .object(result)
+            case .array(let items): return .array(items.map { walk($0, inside: inside) })
+            default: return value
+            }
+        }
+        let result = walk(value, inside: false)
+        return changed ? try? JSONEncoder().encode(result) : nil
+    }
+}
+

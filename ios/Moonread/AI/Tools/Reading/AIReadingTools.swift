@@ -24,6 +24,9 @@ actor AIReadingTools: AIReadingToolActions {
   }
   static func bookRef(_ sha: String) -> String { "b:" + sha }
   private func sha(_ ref: String) throws -> String { try AIReadingReferences.parseBookReference(ref).sha }
+  private func position(_ bookRef: String, _ offset: UInt64) -> String? {
+    (try? sha(bookRef)).map { AIPosition.ref(bookSHA: $0, offset: offset) }
+  }
   private func files() async throws -> [LibraryEntry] { try await AIReadingReferences(reader: reader).files() }
   private func location(_ ref: String) async throws -> LibraryLocation { try await AIReadingReferences(reader: reader).location(ref) }
   private func file(_ ref: String) async throws -> LibraryEntry { try await AIReadingReferences(reader: reader).file(ref) }
@@ -93,12 +96,12 @@ actor AIReadingTools: AIReadingToolActions {
     var seen = Set<Data>()
     let matches = LibraryQueryRules.filterSuggestions(names, query: term).filter { seen.insert(Data($0.utf8)).inserted }
     let query = AIFilterOptionsInput(field: input.field, query: term)
-    let (rows, page) = try page(matches, signature: signature("list_filter_options", query), cursor: input.cursor, limit: 100)
+    let (rows, page) = try page(matches, signature: signature("list_filter_values", query), cursor: input.cursor, limit: 100)
     return .init(data: .init(names: rows), page: page)
   }
 
-  func proposeBookFilter(_ input: AIBookFilterInput) async throws -> AIToolResponse<AIBookFilterSuggestion> {
-    let (suggestion, _) = try await validatedBookFilter(input)
+  func proposeBookFilter(_ input: AIBookFilterArguments) async throws -> AIToolResponse<AIBookFilterSuggestion> {
+    let (suggestion, _) = try await validatedBookFilter(input.stored())
     return .init(data: suggestion)
   }
 
@@ -112,7 +115,7 @@ actor AIReadingTools: AIReadingToolActions {
         let candidates = node.kind == .tag ? tags : authors
         if let missing = node.values?.first(where: { !candidates.contains(Data($0.utf8)) }) {
           throw AIToolError("not_found", field: node.kind.rawValue,
-                            message: "No exact match for “\(missing)”. Use list_filter_options or ask the user; do not drop the condition.")
+                            message: "No exact match for “\(missing)”. Use list_filter_values or ask the user; do not drop the condition.")
         }
       }
     }
@@ -124,30 +127,39 @@ actor AIReadingTools: AIReadingToolActions {
         let matches = shelves.filter { LibraryQueryRules.filterShelfName($0).utf8.elementsEqual(name.utf8) }
         guard let shelf = matches.first else {
           throw AIToolError("not_found", field: "shelf",
-                            message: "No exact shelf name “\(name)”. Use list_filter_options or ask the user.")
+                            message: "No exact shelf name “\(name)”. Use list_filter_values or ask the user.")
         }
         if matches.count == 1 { references.append(.init(name: name, reference: AIBookFilterSuggestion.shelfReference(shelf))) }
       }
     }
     return (.init(filter: input, shelves: references), shelves)
   }
-  func queryBooksByFilter(_ input: AIQueryBooksByFilterInput) async throws -> AIToolResponse<AIFilteredBooksResult> {
+  func findBooks(_ input: AIFindBooksInput) async throws -> AIToolResponse<AIFilteredBooksResult> {
     try input.validate()
-    let (suggestion, shelves) = try await validatedBookFilter(input.filter)
-    let resolution = suggestion.resolveShelves(shelves)
-    if let ambiguous = resolution.choices.first {
-      throw AIToolError("invalid_argument", field: "shelf",
-                        message: "More than one shelf is named “\(ambiguous.name)”. Ask the user to choose with propose_book_filter.")
+    var configuration = BookSearchConfiguration()
+    if let stored = try input.stored() {
+      let (suggestion, shelves) = try await validatedBookFilter(stored)
+      let resolution = suggestion.resolveShelves(shelves)
+      if let ambiguous = resolution.choices.first {
+        throw AIToolError("invalid_argument", field: "shelves",
+                          message: "More than one shelf is named “\(ambiguous.name)”. Ask the reader to choose with propose_book_filter.")
+      }
+      configuration = try resolution.configuration(suggestion)
     }
-    let configuration = try resolution.configuration(suggestion)
-    let signature = try signature("query_books_by_filter", suggestion)
+    let scope: LibraryLocation?
+    if let ref = input.scopeRef { scope = try await location(ref) } else { scope = nil }
+    var query = input
+    query.cursor = nil; query.limit = nil
+    let signature = try signature("find_books", query)
     let start = try cursorOffset(input.cursor, signature: signature)
-    let found = try await reader.aiFilteredBookPage(configuration, offset: start, limit: input.limit ?? 20)
+    let found = try await reader.aiFoundBookPage(query: input.query ?? "", scope: scope, configuration: configuration,
+                                                 offset: start, limit: input.limit ?? 20)
     let items = found.books.map { hit in
-      let entry = hit.entry, author = entry.displayMetadata?.author
-      return AIFilteredBookResult(title: entry.title, author: author.flatMap { $0.isEmpty ? nil : $0 },
+      let entry = hit.entry, metadata = entry.displayMetadata
+      return AIFilteredBookResult(title: entry.title, author: metadata.flatMap { $0.author.isEmpty ? nil : $0.author },
         readingStatus: hit.status.map(statusName), availability: availability(entry),
-        fileRef: Self.ref("f", entry.id), bookRef: entry.readingIdentity?.formalSHA256.map(Self.bookRef))
+        fileRef: Self.ref("f", entry.id), bookRef: entry.readingIdentity?.formalSHA256.map(Self.bookRef),
+        tags: entry.metadata.flatMap { $0.tags.isEmpty ? nil : $0.tags })
     }
     let (rows, page) = try pageWindow(items, start: start, total: found.count, signature: signature)
     return .init(status: found.unknownCount == 0 ? "ok" : "partial",
@@ -243,31 +255,8 @@ actor AIReadingTools: AIReadingToolActions {
     query.kind = query.kind ?? .all
     query.sort = query.sort ?? .name
     let (rows, page) = try page(
-      items, signature: signature("ls", query), cursor: input.cursor, limit: input.limit ?? 100)
+      items, signature: signature("list_shelf", query), cursor: input.cursor, limit: input.limit ?? 100)
     return .init(data: .init(items: rows, parentRef: input.parentRef), page: page)
-  }
-  func searchBooks(_ input: AISearchBooksInput) async throws -> AIToolResponse<
-    AIBooksResult
-  > {
-    let scope: LibraryLocation?
-    if let ref = input.scopeRef { scope = try await location(ref) } else { scope = nil }
-    let rows = try await reader.searchCatalogue(scope, spec: .init(profile: .ai, query: input.query ?? "", author: input.author, tags: input.tags ?? [], status: input.readingStatus?.rawValue, nameOrder: input.sort == .name))
-    var items: [AIBookResult] = []
-    for row in rows {
-      var item = AIBookResult(
-        title: row.title, availability: availability(row), files: [fileResult(row)])
-      item.filesTruncated = false
-      if let metadata = row.metadata { addMetadata(metadata, to: &item, snippet: true) }
-      items.append(item)
-    }
-    var queryInput = input
-    queryInput.cursor = nil
-    queryInput.limit = nil
-    queryInput.sort = queryInput.sort ?? .recent
-    let (pageItems, page) = try page(
-      items, signature: signature("search_books", queryInput), cursor: input.cursor,
-      limit: input.limit ?? 100)
-    return .init(data: .init(items: pageItems), page: page)
   }
   func getBook(_ input: AIGetBookInput) async throws -> AIToolResponse<AIBookResult> {
     let entry: LibraryEntry?
@@ -310,6 +299,7 @@ actor AIReadingTools: AIReadingToolActions {
         offsetUtf8: book.positionUtf8,
         percent: ReadingProgress.percentage(book.positionUtf8, of: book.byteCount),
         chapterTitle: details.currentChapter)
+      data.progress?.positionRef = AIPosition.ref(bookSHA: contentSHA, offset: book.positionUtf8)
     }
     return .init(data: data)
   }
@@ -321,7 +311,7 @@ actor AIReadingTools: AIReadingToolActions {
       let end =
         outline.items.dropFirst(index + 1).first { $0.level <= chapter.level }?.startUtf8
         ?? book.byteCount
-      return .init(
+      var item = AIChapterResult(
         chapterRef: Self.ref("c", "\(input.bookRef):\(chapter.startUtf8)"), title: chapter.title,
         level: chapter.level,
         parentChapterRef: chapter.parentUtf8.map { Self.ref("c", "\(input.bookRef):\($0)") },
@@ -330,6 +320,8 @@ actor AIReadingTools: AIReadingToolActions {
         estimatedCoveragePercent: chapter.coveredCharacters.map {
           chapter.wordCount == 0 ? 0 : min(100, Double($0) * 100 / Double(chapter.wordCount))
         })
+      item.positionRef = position(input.bookRef, chapter.startUtf8)
+      return item
     }
     let filtered = items.filter { item in input.query.map { item.title.localizedCaseInsensitiveContains($0) } ?? true }
     var query = input
@@ -357,24 +349,23 @@ actor AIReadingTools: AIReadingToolActions {
     let lower = bounds.startUtf8
     let upper = bounds.endUtf8
     var context: TextRange?
-    if let offset = input.contextOffsetUtf8 {
-      guard UInt64(offset) >= lower, UInt64(offset) < upper else {
-        throw AIToolError("invalid_argument", field: "contextOffsetUtf8")
+    if let around = input.around {
+      let offset = try AIPosition.offset(around, bookSHA: sha(ref), field: "around")
+      guard offset >= lower, offset < upper else {
+        throw AIToolError("invalid_argument", field: "around", message: "The position is outside the selected chapter.")
       }
-      context = try await reader.textContext(id, at: UInt64(offset),
+      context = try await reader.textContext(id, at: offset,
         before: UInt32(clamping: input.beforeParagraphs ?? 3), after: UInt32(clamping: input.afterParagraphs ?? 3))
     }
-    let requestedStart = context.map { max(lower, $0.startUtf8) } ?? UInt64(input.startUtf8 ?? Int(lower))
-    let requestedEnd = context.map { min(upper, $0.endUtf8) } ?? UInt64(input.endUtf8 ?? Int(upper))
-    guard requestedStart >= lower, requestedEnd <= upper, requestedStart < requestedEnd else {
-      throw AIToolError(
-        "invalid_argument", field: "startUtf8/endUtf8",
-        message: "The range must be inside the selected book or chapter.")
+    let requestedStart = context.map { max(lower, $0.startUtf8) } ?? lower
+    let requestedEnd = context.map { min(upper, $0.endUtf8) } ?? upper
+    guard requestedStart < requestedEnd else {
+      throw AIToolError("invalid_argument", field: "around", message: "There is no text here.")
     }
     var query = input
     query.cursor = nil
     query.maxBytes = nil
-    let signature = try signature("read", query) + ":\(lower):\(upper):\(requestedStart):\(requestedEnd)"
+    let signature = try signature("read_text", query) + ":\(lower):\(upper):\(requestedStart):\(requestedEnd)"
     var start = requestedStart
     if input.cursor != nil { start = UInt64(try cursorOffset(input.cursor, signature: signature)) }
     guard start >= requestedStart, start < requestedEnd else { throw AIToolError("stale_cursor", field: "cursor") }
@@ -385,18 +376,11 @@ actor AIReadingTools: AIReadingToolActions {
         value = try await reader.textRange(id, start: start, end: end)
         break
       } catch ReaderError.InvalidRange {
-        if end == requestedEnd {
-          throw AIToolError(
-            "invalid_argument", field: "startUtf8/endUtf8",
-            message: "Use valid UTF-8 boundaries from tool results.")
-        }
+        if end == requestedEnd { throw AIToolError("stale_reference", field: "around") }
         end -= 1
       }
     }
-    guard let text = value else {
-      throw AIToolError(
-        "invalid_argument", field: "startUtf8", message: "Must be a UTF-8 character boundary.")
-    }
+    guard let text = value else { throw AIToolError("stale_reference", field: "around") }
     guard end > start else { throw AIToolError("invalid_argument", field: "maxBytes", message: "The byte budget must fit the next UTF-8 character.") }
     var content = text.text
     var lines = 0
@@ -412,17 +396,17 @@ actor AIReadingTools: AIReadingToolActions {
       next = try cursor(Int(end), signature: signature)
     }
     let range = AIToolRange(startUtf8: start, endUtf8: end)
+    var data = AIReadResult(bookRef: ref, text: content, range: range, sourceRef: source(ref, range).sourceRef)
+    data.positionRef = position(ref, start)
     return .init(
-      data: .init(
-        bookRef: ref, text: content, range: range,
-        sourceRef: source(ref, range).sourceRef),
+      data: data,
       page: .init(nextCursor: next, complete: end == requestedEnd))
   }
   func searchText(_ input: AIRGInput) async throws -> AIToolResponse<AISearchResult> {
     var query = input
     query.cursor = nil; query.maxHits = nil
     query.mode = query.mode ?? .regex; query.caseSensitive = query.caseSensitive ?? true
-    let querySignature = try signature("rg", query)
+    let querySignature = try signature("search_text", query)
     let offset = try cursorOffset(input.cursor, signature: querySignature)
     let pageLimit = input.maxHits ?? 100
     let (requested, overflow) = offset.addingReportingOverflow(pageLimit)
@@ -435,11 +419,7 @@ actor AIReadingTools: AIReadingToolActions {
       let id = try await ready(ref)
       let size = try await reader.book(id).byteCount
       let bounds = try await textBounds(id, chapterRef: input.chapterRef, size: size, ref: ref)
-      let start = UInt64(input.startUtf8 ?? Int(bounds.startUtf8))
-      let end = UInt64(input.endUtf8 ?? Int(bounds.endUtf8))
-      guard start >= bounds.startUtf8, end <= bounds.endUtf8, start < end else {
-        throw AIToolError("invalid_argument", field: "startUtf8/endUtf8")
-      }
+      let start = bounds.startUtf8, end = bounds.endUtf8
       let job = try await reader.search(
         id, query: input.query, regex: (input.mode ?? .regex) == .regex,
         caseSensitive: input.caseSensitive ?? true, range: .init(startUtf8: start, endUtf8: end))
@@ -455,9 +435,11 @@ actor AIReadingTools: AIReadingToolActions {
           truncated = truncated || batch.truncated
           hits += batch.hits.prefix(max(0, target - hits.count)).map { hit in
             let range = AIToolRange(startUtf8: hit.startUtf8, endUtf8: hit.endUtf8)
-            return .init(
+            var item = AISearchHitResult(
               bookRef: ref, range: range, excerpt: String(hit.excerpt.prefix(500)),
               chapterTitle: hit.chapter, sourceRef: source(ref, range).sourceRef)
+            item.positionRef = position(ref, hit.startUtf8)
+            return item
           }
           if batch.done || batch.cancelled || hits.count >= target {
             truncated = truncated || batch.cancelled || hits.count >= target
@@ -487,8 +469,17 @@ actor AIReadingTools: AIReadingToolActions {
       page: page)
   }
   func marks(_ input: AIMarksInput) async throws -> AIToolResponse<AIMarksResult> {
+    if let markRef = input.markRef {
+      let one = try await mark(bookRef: input.bookRef, markRef: markRef, variantRef: input.variantRef, pageCursor: input.cursor)
+      return .init(data: .init(bookRef: input.bookRef, items: [one.data]), page: one.page)
+    }
     let ref = input.bookRef
     let groups = try await reader.aiMarks(sha: sha(ref))
+    var scope: AIToolRange?
+    if input.chapterRef != nil {
+      let id = try await ready(ref)
+      scope = try await textBounds(id, chapterRef: input.chapterRef, size: reader.book(id).byteCount, ref: ref)
+    }
     var rows: [(UInt64, String, AIMarkResult)] = []
     for (markID, heads) in groups {
       guard let candidate = heads.first(where: { $0.content != nil }),
@@ -505,24 +496,26 @@ actor AIReadingTools: AIReadingToolActions {
       {
         continue
       }
-      if let start = input.startUtf8, let end = input.endUtf8,
+      if let scope,
         !heads.contains(where: { c in
           guard let value = c.content else { return false }
           return candidate.bookmark
-            ? value.start >= UInt64(start) && value.start < UInt64(end)
-            : value.start < UInt64(end) && value.end > UInt64(start)
+            ? value.start >= scope.startUtf8 && value.start < scope.endUtf8
+            : value.start < scope.endUtf8 && value.end > scope.startUtf8
         })
       {
         continue
       }
       let range = AIToolRange(startUtf8: content.start, endUtf8: content.end)
-      let item = AIMarkResult(
+      // Short notes arrive whole; only long notes need markRef to read on.
+      var item = AIMarkResult(
         markRef: Self.ref("mark", markID), kind: kind.rawValue, range: range,
         excerpt: conflict ? "" : String(content.excerpt.prefix(500)),
-        note: conflict ? "" : String(content.note.prefix(500)),
-        noteTruncated: content.note.count > 500, excerptTruncated: content.excerpt.count > 500,
+        note: conflict ? "" : String(content.note.prefix(2000)),
+        noteTruncated: content.note.count > 2000, excerptTruncated: content.excerpt.count > 500,
         hasConflict: conflict, createdAt: timestamp(Int64(candidate.created)),
         sourceRef: source(ref, range).sourceRef)
+      item.positionRef = position(ref, content.start)
       rows.append((content.start, markID, item))
     }
     rows.sort { ($0.0, $0.1) < ($1.0, $1.1) }
@@ -531,62 +524,64 @@ actor AIReadingTools: AIReadingToolActions {
     query.limit = nil
     query.kind = query.kind ?? .all
     let (items, page) = try page(
-      rows.map(\.2), signature: signature("get_marks", query), cursor: input.cursor,
+      rows.map(\.2), signature: signature("list_marks", query), cursor: input.cursor,
       limit: input.limit ?? 100)
     return .init(
       data: .init(bookRef: ref, items: items),
       page: page)
   }
-  func mark(_ input: AIMarkInput) async throws -> AIToolResponse<AIMarkResult> {
-    let ref = input.bookRef
+  private func mark(bookRef ref: String, markRef: String, variantRef: String?, pageCursor: String?) async throws -> AIToolResponse<AIMarkResult> {
     let groups = try await reader.aiMarks(sha: sha(ref))
-    guard let heads = groups.first(where: { Self.ref("mark", $0.key) == input.markRef })?.value
+    guard let heads = groups.first(where: { Self.ref("mark", $0.key) == markRef })?.value
     else { throw AIToolError("not_found", field: "markRef") }
     let readable = heads.compactMap { candidate in
       candidate.content.map { (candidate: candidate, content: $0) }
     }
-    if input.variantRef == nil, !readable.isEmpty, AnnotationReduction.conflicts(heads) {
+    if variantRef == nil, !readable.isEmpty, AnnotationReduction.conflicts(heads) {
       return .init(
         data: .init(
-          markRef: input.markRef, hasConflict: true,
+          markRef: markRef, hasConflict: true,
           variants: readable.map { candidate, content in
-            .init(
+            var variant = AIMarkVariant(
               variantRef: Self.ref("v", candidate.id),
               range: .init(startUtf8: content.start, endUtf8: content.end),
               noteSnippet: String(content.note.prefix(500)))
+            variant.positionRef = position(ref, content.start)
+            return variant
           }))
     }
-    let selected = if let variant = input.variantRef {
+    let selected = if let variant = variantRef {
       readable.first { Self.ref("v", $0.candidate.id) == variant }
     } else {
       readable.first
     }
     guard let (candidate, content) = selected else {
-      throw AIToolError(input.variantRef == nil ? "not_found" : "stale_reference",
-                        field: input.variantRef == nil ? "markRef" : "variantRef")
+      throw AIToolError(variantRef == nil ? "not_found" : "stale_reference",
+                        field: variantRef == nil ? "markRef" : "variantRef")
     }
     // Byte offsets keep continuation stable when maxBytes changes.
     let bytes = Array(content.note.utf8)
-    let signature = "mark:\(ref):\(input.markRef):\(candidate.id)"
+    let signature = "mark:\(ref):\(markRef):\(candidate.id)"
     var start = 0
-    start = try cursorOffset(input.cursor, signature: signature)
+    start = try cursorOffset(pageCursor, signature: signature)
     guard start <= bytes.count, String(bytes: bytes.prefix(start), encoding: .utf8) != nil else {
       throw AIToolError("stale_cursor", field: "cursor")
     }
-    var end = min(bytes.count, start + min(bytes.count - start, min(input.maxBytes ?? 51200, 51200)))
+    var end = min(bytes.count, start + min(bytes.count - start, 51200))
     while end > start, String(bytes: bytes[start..<end], encoding: .utf8) == nil { end -= 1 }
-    guard end > start || start == bytes.count else { throw AIToolError("invalid_argument", field: "maxBytes", message: "The byte budget must fit the next UTF-8 character.") }
     var next: String?
     if end < bytes.count {
       next = try cursor(end, signature: signature)
     }
     let range = AIToolRange(startUtf8: content.start, endUtf8: content.end)
+    var data = AIMarkResult(
+      markRef: markRef, bookRef: ref, kind: candidate.bookmark ? "bookmark" : "annotation", range: range,
+      excerpt: content.excerpt,
+      noteText: String(decoding: bytes[start..<end], as: UTF8.self),
+      excerptTruncated: false, sourceRef: source(ref, range).sourceRef)
+    data.positionRef = position(ref, content.start)
     return .init(
-      data: .init(
-        markRef: input.markRef, bookRef: ref, kind: candidate.bookmark ? "bookmark" : "annotation", range: range,
-        excerpt: content.excerpt,
-        noteText: String(decoding: bytes[start..<end], as: UTF8.self),
-        excerptTruncated: false, sourceRef: source(ref, range).sourceRef),
+      data: data,
       page: .init(nextCursor: next, complete: end == bytes.count))
   }
   private func timestamp(_ ms: Int64) -> String {

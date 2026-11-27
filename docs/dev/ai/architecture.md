@@ -109,11 +109,11 @@ listed/unlisted 会话采用同一删除入口。实际业务应用或批注 Don
 
 原生 OpenAI/ChatGPT/Google/xAI 来源统一由 AIWebSource factory 产生 `web:SHA256(UTF8 exact URL)`，供应商 citation ID 不作应用引用。保留签名 query；相同 ref 合并时优先首个非空标题，最后才使用 host。hash 正确不代表授权：提案／UI 只解析同 owner 成功 committed 工具来源。
 
-find_cover 的即时原生来源列表以精确 sourceRef+URL 配对授权此次下载；结果、来源、候选一起成为 canonical 成功历史后才授权其他操作。只允许授权搜索来源及从该页面本地提取的一层显式图片，不猜 URL、不递归抓取。`AIImageOrigin` 为 web/generated/currentCover/unknown；缺少实际 producer 证据保持 unknown。
+search_cover 的即时原生来源列表以精确 sourceRef+URL 配对授权此次下载；结果、来源、候选一起成为 canonical 成功历史后才授权其他操作。只允许授权搜索来源及从该页面本地提取的一层显式图片，不猜 URL、不递归抓取。`AIImageOrigin` 为 web/generated/currentCover/unknown；缺少实际 producer 证据保持 unknown。
 
-下载使用普通 ephemeral URLSession/ATS／默认系统信任和 routing；不带供应商凭证、cookies 或应用 DNS/IP 策略。没有后缀、MIME 白名单、50 MiB header／stream／makeCover 输入门槛，也不在早期前缀识别失败时拒绝。完整响应下载到系统暂存文件后，以完成的 ImageIO 解码判断可用性；find_cover 对非图片来源可本地提取一层页面声明图片；完整下载不等于给模型读取网页正文。缩略图与用户封面输出下采样政策保留，工具适配使用实际资产 MIME，不猜测格式。未实施真实供应商或设备网络验收。
+下载使用普通 ephemeral URLSession/ATS／默认系统信任和 routing；不带供应商凭证、cookies 或应用 DNS/IP 策略。没有后缀、MIME 白名单、50 MiB header／stream／makeCover 输入门槛，也不在早期前缀识别失败时拒绝。完整响应下载到系统暂存文件后，以完成的 ImageIO 解码判断可用性；search_cover 对非图片来源可本地提取一层页面声明图片；完整下载不等于给模型读取网页正文。缩略图与用户封面输出下采样政策保留，工具适配使用实际资产 MIME，不猜测格式。未实施真实供应商或设备网络验收。
 
-封面提取和 Referer、限额、解码与取消的现行规则见[封面来源页面图片提取](cover-fetch.md)。未新增通用图片 MIME、后缀或字节数门槛；find_cover 的尺寸启发式不扩展到生图。
+封面提取和 Referer、限额、解码与取消的现行规则见[封面来源页面图片提取](cover-fetch.md)。未新增通用图片 MIME、后缀或字节数门槛；search_cover 的尺寸启发式不扩展到生图。
 
 ### 组织操作
 
@@ -125,7 +125,7 @@ canonical 结果保存原始 scopeRef 和提案内容；本次复核读取棚架
 
 统一会话、资产与结果应用的真实运行证据集中在[验证记录](../engineering/verification.md)，不以旧架构的通过记录代替当前实现。
 
-`rg` 的 partial 表示覆盖不完整，已返回命中的来源仍有效；来源解析仅对 rg 接受 partial，保留既有 owner、范围和 sourceRef 完整性校验。文本/网页来源及图片来源的历史查询按实际操作需要执行，不在启动恢复卡片。
+`search_text` 的 partial 表示覆盖不完整，已返回命中的来源仍有效；来源解析仅对 search_text 接受 partial，保留既有 owner、范围和 sourceRef 完整性校验。文本/网页来源及图片来源的历史查询按实际操作需要执行，不在启动恢复卡片。
 
 ## 消息投影与呈现
 

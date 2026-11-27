@@ -20,10 +20,10 @@ final class AIAgentPersistenceAgentRuntimeTests: AgentRuntimeFixture {
     let bytes = imageBytes()
     let model = AgentModel([[
       .streamStart(warnings: []),
-      .toolCall(.init(toolCallId: "books", toolName: "show_book_list", input: "{\"refs\":[\"\(ref)\"]}")),
+      .toolCall(.init(toolCallId: "books", toolName: "show_books", input: "{\"refs\":[\"\(ref)\"]}")),
       .finish(finishReason: .init(unified: .toolCalls), usage: .init(), providerMetadata: nil),
     ], text("完成")])
-    let definition = AIAgentTool(name: "show_book_list", description: "Book list fixture", input: AIShowBookListInput.self,
+    let definition = AIAgentTool(name: "show_books", description: "Book list fixture", input: AIShowBookListInput.self,
       executeBookList: { input in
         let attachment = try await AIImageStore.shared.save(bytes, owner: owner)
         let item = AIShownBooksResult.Item(ref: input.refs[0], title: "Fixture", author: nil)

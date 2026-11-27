@@ -31,16 +31,24 @@ public struct AIBookFilterInput: AIReadingInput {
         public let relation: Relation?
         public let excluded: Bool?
         public let values: [String]?
+
+        public init(parent: Int?, kind: Kind, relation: Relation? = nil, excluded: Bool? = nil, values: [String]? = nil) {
+            self.parent = parent; self.kind = kind; self.relation = relation; self.excluded = excluded; self.values = values
+        }
     }
 
     public struct Sort: Codable, Sendable {
         public enum Field: String, Codable, CaseIterable, Sendable { case recent, name, author }
         public let field: Field
         public let descending: Bool
+
+        public init(field: Field, descending: Bool) { self.field = field; self.descending = descending }
     }
 
     public let nodes: [Node]
     public let sorts: [Sort]
+
+    public init(nodes: [Node], sorts: [Sort]) { self.nodes = nodes; self.sorts = sorts }
 
     public var shelfNames: [String] {
         var seen = Set<Data>()
@@ -128,17 +136,158 @@ private func filterEnum<T: RawRepresentable>(_ values: [T]) -> [String: JSONValu
     ["type": .string("string"), "enum": .array(values.map { .string($0.rawValue) })]
 }
 
-public struct AIQueryBooksByFilterInput: AIReadingInput {
-    public let filter: AIBookFilterInput
-    public let limit: Int?
-    public let cursor: String?
+/// The filter the model writes: at most two levels, so the schema needs no recursion
+/// (some providers reject recursive tool schemas). Stored cards keep `AIBookFilterInput`.
+public struct AIBookFilter: Codable, Sendable {
+    public enum Match: String, Codable, CaseIterable, Sendable { case all, any }
+    /// One condition; exactly one of status, tags, untagged, authors or shelves.
+    public struct Condition: Codable, Sendable {
+        public var exclude: Bool?
+        public var status: [String]?
+        public var tags: [String]?
+        public var tagMatch: AIBookFilterInput.Node.Relation?
+        public var untagged: Bool?
+        public var authors: [String]?
+        public var shelves: [String]?
+    }
+    /// A condition, or a sub-group of conditions.
+    public struct Rule: Codable, Sendable {
+        public var match: Match?
+        public var rules: [Condition]?
+        public var exclude: Bool?
+        public var status: [String]?
+        public var tags: [String]?
+        public var tagMatch: AIBookFilterInput.Node.Relation?
+        public var untagged: Bool?
+        public var authors: [String]?
+        public var shelves: [String]?
+        var condition: Condition {
+            .init(exclude: exclude, status: status, tags: tags, tagMatch: tagMatch, untagged: untagged, authors: authors, shelves: shelves)
+        }
+    }
+    public var match: Match
+    public var exclude: Bool?
+    public var rules: [Rule]
 
-    public static var constraints: [String: [String: JSONValue]] {
-        ["filter": AIBookFilterInput.schema.object, "limit": ["maximum": .number(100), "default": .number(20)]]
+    static func node(_ c: Condition, parent: Int, field: String) throws -> AIBookFilterInput.Node {
+        let set = [c.status != nil, c.tags != nil, c.untagged == true, c.authors != nil, c.shelves != nil].filter { $0 }.count
+        guard set == 1, c.tagMatch == nil || c.tags != nil else {
+            throw AIToolError("invalid_argument", field: field, message: "Use exactly one of status, tags, untagged, authors or shelves; tagMatch only with tags.")
+        }
+        let excluded = c.exclude == true ? true : nil
+        if let v = c.status { return .init(parent: parent, kind: .status, excluded: excluded, values: v) }
+        if let v = c.tags { return .init(parent: parent, kind: .tag, relation: c.tagMatch ?? .any, excluded: excluded, values: v) }
+        if let v = c.authors { return .init(parent: parent, kind: .author, excluded: excluded, values: v) }
+        if let v = c.shelves { return .init(parent: parent, kind: .shelf, excluded: excluded, values: v) }
+        return .init(parent: parent, kind: .untagged, excluded: excluded)
     }
 
+    /// The stored flat form, parents before children.
+    public func stored(sorts: [AIBookFilterInput.Sort]) throws -> AIBookFilterInput {
+        let rootRelation: AIBookFilterInput.Node.Relation = match == .all ? .all : .any
+        var nodes = [AIBookFilterInput.Node(parent: nil, kind: .group, relation: rootRelation, excluded: exclude == true ? true : nil)]
+        for (index, rule) in rules.enumerated() {
+            let field = "filter.rules[\(index)]"
+            if let group = rule.match {
+                guard let children = rule.rules, !children.isEmpty, rule.condition.status == nil, rule.tags == nil,
+                      rule.untagged == nil, rule.authors == nil, rule.shelves == nil else {
+                    throw AIToolError("invalid_argument", field: field, message: "A sub-group has match and rules only (plus exclude).")
+                }
+                let parent = nodes.count
+                nodes.append(.init(parent: 0, kind: .group, relation: group == .all ? .all : .any, excluded: rule.exclude == true ? true : nil))
+                for (child, condition) in children.enumerated() {
+                    nodes.append(try Self.node(condition, parent: parent, field: field + ".rules[\(child)]"))
+                }
+            } else {
+                guard rule.rules == nil else { throw AIToolError("invalid_argument", field: field, message: "rules needs match.") }
+                nodes.append(try Self.node(rule.condition, parent: 0, field: field))
+            }
+        }
+        if rules.isEmpty { nodes = [] }
+        let value = AIBookFilterInput(nodes: nodes, sorts: sorts)
+        try value.validate()
+        return value
+    }
+
+    static var conditionProperties: [String: JSONValue] {
+        let names: JSONValue = .object(["type": .string("array"), "minItems": .number(1), "maxItems": .number(16),
+                                        "items": .object(["type": .string("string"), "minLength": .number(1)])])
+        return [
+            "exclude": .object(["type": .string("boolean"), "description": .string("true excludes books matching this condition.")]),
+            "status": .object(["type": .string("array"), "minItems": .number(1),
+                               "items": .object(["type": .string("string"), "enum": .array(["unread", "reading", "finished", "paused"].map { .string($0) })])]),
+            "tags": names,
+            "tagMatch": .object(["type": .string("string"), "enum": .array(["all", "any", "none"].map { .string($0) }),
+                                 "description": .string("For tags: all, any (default) or none of the listed tags.")]),
+            "untagged": .object(["type": .string("boolean"), "description": .string("true for books with no tags.")]),
+            "authors": names,
+            "shelves": names,
+        ]
+    }
+    public static var schema: JSONValue {
+        var subgroup = conditionProperties
+        subgroup["match"] = .object(["type": .string("string"), "enum": .array([.string("all"), .string("any")])])
+        subgroup["rules"] = .object(["type": .string("array"), "minItems": .number(1), "maxItems": .number(16),
+                                     "items": .object(["type": .string("object"), "additionalProperties": .bool(false),
+                                                       "properties": .object(conditionProperties)])])
+        return .object([
+            "type": .string("object"), "additionalProperties": .bool(false),
+            "required": .array([.string("match"), .string("rules")]),
+            "properties": .object([
+                "match": .object(["type": .string("string"), "enum": .array([.string("all"), .string("any")])]),
+                "exclude": .object(["type": .string("boolean")]),
+                "rules": .object(["type": .string("array"), "maxItems": .number(16), "items": .object([
+                    "type": .string("object"), "additionalProperties": .bool(false),
+                    "description": .string("One condition, or a sub-group {match, rules:[conditions]}."),
+                    "properties": .object(subgroup)])]),
+            ]),
+        ])
+    }
+}
+
+/// Input of propose_book_filter.
+public struct AIBookFilterArguments: AIReadingInput {
+    public var filter: AIBookFilter?
+    public var sorts: [AIBookFilterInput.Sort]?
+
+    public static var constraints: [String: [String: JSONValue]] {
+        ["filter": AIBookFilter.schema.object, "sorts": sortSchema]
+    }
+    static var sortSchema: [String: JSONValue] {
+        ["type": .string("array"), "maxItems": .number(3), "items": .object([
+            "type": .string("object"), "additionalProperties": .bool(false),
+            "required": .array([.string("field"), .string("descending")]), "properties": .object([
+                "field": .object(filterEnum(AIBookFilterInput.Sort.Field.allCases).mapValues { $0 }), "descending": .object(["type": .string("boolean")]),
+            ]),
+        ])]
+    }
+    public func stored() throws -> AIBookFilterInput {
+        try (filter ?? AIBookFilter(match: .all, rules: [])).stored(sorts: sorts ?? [])
+    }
+    public func validate() throws { _ = try stored() }
+}
+
+/// Input of find_books: optional keywords plus an optional filter in the same form as propose_book_filter.
+public struct AIFindBooksInput: AIReadingInput {
+    public var query: String?
+    public var scopeRef: String?
+    public var filter: AIBookFilter?
+    public var sorts: [AIBookFilterInput.Sort]?
+    public var limit: Int?
+    public var cursor: String?
+
+    public static var constraints: [String: [String: JSONValue]] {
+        ["filter": AIBookFilter.schema.object, "sorts": AIBookFilterArguments.sortSchema,
+         "query": ["type": .string("string"), "description": .string("Keywords matched against title, author, synopsis and tags.")],
+         "limit": ["maximum": .number(100), "default": .number(20)]]
+    }
+    public func stored() throws -> AIBookFilterInput? {
+        guard filter != nil || !(sorts ?? []).isEmpty else { return nil }
+        return try (filter ?? AIBookFilter(match: .all, rules: [])).stored(sorts: sorts ?? [])
+    }
     public func validate() throws {
         if let limit, !(1...100).contains(limit) { throw AIToolError("invalid_argument", field: "limit") }
+        _ = try stored()
     }
 }
 
@@ -149,10 +298,11 @@ public struct AIFilteredBookResult: Codable, Sendable {
     public let availability: String
     public let fileRef: String
     public let bookRef: String?
+    public let tags: [String]?
 
-    public init(title: String, author: String?, readingStatus: String?, availability: String, fileRef: String, bookRef: String?) {
+    public init(title: String, author: String?, readingStatus: String?, availability: String, fileRef: String, bookRef: String?, tags: [String]? = nil) {
         self.title = title; self.author = author; self.readingStatus = readingStatus
-        self.availability = availability; self.fileRef = fileRef; self.bookRef = bookRef
+        self.availability = availability; self.fileRef = fileRef; self.bookRef = bookRef; self.tags = tags
     }
 }
 

@@ -43,36 +43,31 @@ extension AIReadingInput {
           "Use a reference returned by a tool. Omit or use null when unused; never send an empty string."
         )
       }
-      if name == "startUtf8" || name == "endUtf8" || name == "contextOffsetUtf8" {
-        value["minimum"] = .number(0)
-        value["maximum"] = .number(9_007_199_254_740_991)
-      }
       if name == "limit" {
         value["minimum"] = .number(1)
       }
       let descriptions: [String: String] = [
-        "parentRef": "Folder reference from ls. Omit to list shelf roots; ls lists direct children only.",
-        "scopeRef": "Shelf or folder reference from ls. Search recursively within it; omit to search all shelves.",
-        "fileRef": "File reference from ls or search_books. For get_book supply fileRef OR bookRef, never both.",
-        "prepare": "Default false. Set true only when get_book must prepare an unavailable text; the app asks the user before downloading.",
+        "parentRef": "Folder reference from list_shelf. Omit to list shelf roots.",
+        "scopeRef": "Shelf or folder reference from list_shelf; searches inside it. Omit for all shelves.",
+        "fileRef": "File reference from list_shelf or find_books. Supply fileRef or bookRef, not both.",
+        "prepare": "Default false. Set true only when the text must be prepared first; the app asks the reader.",
         "fromDate": "Inclusive local date YYYY-MM-DD.",
         "toDate": "Inclusive local date YYYY-MM-DD.",
-        "view": "summary for totals; days/books/sessions for paginated detail; chapters requires bookRef.",
-        "variantRef": "Candidate reference from get_mark when hasConflict is true. Omit for an ordinary annotation.",
-        "bookRef": "Exact bookRef from the reading attachment or search_books. Do not invent it.",
-        "bookRefs": "Search scope: exact bookRef values from attachments or search_books, not file paths. Prefer one book.",
-        "chapterRef": "Optional chapter scope from get_chapters; omit to use the whole book.",
-        "startUtf8": "Inclusive byte boundary returned by a tool; not a character or page number. Usually omit.",
-        "endUtf8": "Exclusive byte boundary returned by a tool. Usually omit.",
-        "contextOffsetUtf8": "To read around a search hit, copy its range.startUtf8 here; omit startUtf8/endUtf8.",
-        "beforeParagraphs": "Paragraphs before the hit (like rg -B, but paragraphs). Default 3.",
-        "afterParagraphs": "Paragraphs after the hit (like rg -A, but paragraphs). Default 3.",
-        "cursor": "For more results copy page.nextCursor, retaining the same query and scope. Omit on the first call.",
-        "maxBytes": "Maximum UTF-8 bytes of text per page; default 51200 for read. A nextCursor continues without losing text.",
-        "limit": "Maximum items on this page; a byte budget may return fewer. Use nextCursor for more.",
-        "maxHits": "Maximum matches on this page (default 100). Like an output head limit, not rg -m per-file semantics.",
-        "caseSensitive": "Default true. Set false for rg -i matching.",
-        "mode": "regex (default) uses Rust regular expressions; literal matches rg -F. Do not put command flags in query."
+        "view": "summary for totals; days/books/sessions for detail pages; chapters requires bookRef.",
+        "markRef": "A mark from list_marks. With markRef the result is that mark with its full note, paged by cursor.",
+        "variantRef": "One version of a conflicting annotation, from list_marks with markRef.",
+        "bookRef": "Exact bookRef from the reading attachment or a book tool.",
+        "bookRefs": "Exact bookRef values. Prefer one book.",
+        "chapterRef": "Chapter from list_chapters; omit for the whole book.",
+        "around": "A positionRef from search_text, read_text, list_chapters or list_marks; reads the paragraphs around it.",
+        "beforeParagraphs": "Paragraphs before the position. Default 3.",
+        "afterParagraphs": "Paragraphs after the position. Default 3.",
+        "cursor": "Copy page.nextCursor for more, keeping the other fields unchanged. Omit on the first call.",
+        "maxBytes": "Text size per page; default and maximum 51200. nextCursor continues without losing text.",
+        "limit": "Maximum items on this page. Use nextCursor for more.",
+        "maxHits": "Maximum matches on this page (default 100).",
+        "caseSensitive": "Default true.",
+        "mode": "regex (default) or literal. Write the pattern only, no command flags."
       ]
       if constraints[name]?["type"] != nil { value = [:] }
       for (key, constraint) in constraints[name] ?? [:] { value[key] = constraint }
@@ -118,28 +113,6 @@ public struct AILSInput: AIReadingInput {
     ["kind": enumField(AILibraryKind.self), "sort": enumField(AIToolSort.self)]
   }
 }
-public struct AISearchBooksInput: AIReadingInput {
-  public var query: String?
-  public var scopeRef: String?
-  public var author: String?
-  public var tags: [String]?
-  public var readingStatus: AIReadingStatusFilter?
-  public var sort: AIToolSort?
-  public var limit: Int?
-  public var cursor: String?
-  public static var constraints: [String: [String: JSONValue]] {
-    [
-      "sort": enumField(AIToolSort.self), "readingStatus": enumField(AIReadingStatusFilter.self),
-
-      "tags": [
-        "type": .string("array"),
-        "items": .object([
-          "type": .string("string"), "minLength": .number(1),
-        ]),
-      ],
-    ]
-  }
-}
 public struct AIGetBookInput: AIReadingInput {
   public var bookRef: String?
   public var fileRef: String?
@@ -167,11 +140,9 @@ public struct AIChaptersInput: AIReadingInput {
 public struct AIReadInput: AIReadingInput {
   public var bookRef: String
   public var chapterRef: String?
-  public var contextOffsetUtf8: Int?
+  public var around: String?
   public var beforeParagraphs: Int?
   public var afterParagraphs: Int?
-  public var startUtf8: Int?
-  public var endUtf8: Int?
   public var maxBytes: Int?
   public var cursor: String?
   public static var constraints: [String: [String: JSONValue]] {
@@ -180,35 +151,22 @@ public struct AIReadInput: AIReadingInput {
      "afterParagraphs": ["minimum": .number(0)]]
   }
   public func validate() throws {
-    if contextOffsetUtf8 != nil && (startUtf8 != nil || endUtf8 != nil) {
-      throw AIToolError("invalid_argument", message: "Use contextOffsetUtf8 or startUtf8/endUtf8, not both.")
-    }
-    if contextOffsetUtf8 == nil && (beforeParagraphs != nil || afterParagraphs != nil) {
-      throw AIToolError("invalid_argument", field: "contextOffsetUtf8")
-    }
-
-    if let startUtf8, let endUtf8, startUtf8 >= endUtf8 {
-      throw AIToolError(
-        "invalid_argument", field: "endUtf8", message: "Must be greater than startUtf8.")
+    if around == nil && (beforeParagraphs != nil || afterParagraphs != nil) {
+      throw AIToolError("invalid_argument", field: "around", message: "beforeParagraphs/afterParagraphs need around.")
     }
   }
 }
 public struct AIRGInput: AIReadingInput {
   public var bookRefs: [String]
   public var chapterRef: String?
-  public var startUtf8: Int?
-  public var endUtf8: Int?
   public var query: String
   public var mode: AISearchMode?
   public var caseSensitive: Bool?
   public var maxHits: Int?
   public var cursor: String?
   public func validate() throws {
-    if (chapterRef != nil || startUtf8 != nil || endUtf8 != nil) && bookRefs.count != 1 {
-      throw AIToolError("invalid_argument", field: "bookRefs", message: "Scoped search requires exactly one book.")
-    }
-    if let startUtf8, let endUtf8, startUtf8 >= endUtf8 {
-      throw AIToolError("invalid_argument", field: "endUtf8")
+    if chapterRef != nil && bookRefs.count != 1 {
+      throw AIToolError("invalid_argument", field: "bookRefs", message: "chapterRef requires exactly one book.")
     }
   }
   public static var constraints: [String: [String: JSONValue]] {
@@ -228,33 +186,18 @@ public struct AIMarksInput: AIReadingInput {
   public var bookRef: String
   public var kind: AIMarkKind?
   public var query: String?
-  public var startUtf8: Int?
-  public var endUtf8: Int?
+  public var chapterRef: String?
+  public var markRef: String?
+  public var variantRef: String?
   public var limit: Int?
   public var cursor: String?
   public static var constraints: [String: [String: JSONValue]] {
     ["kind": enumField(AIMarkKind.self), "query": [:]]
   }
   public func validate() throws {
-    guard (startUtf8 == nil) == (endUtf8 == nil) else {
-      throw AIToolError(
-        "invalid_argument", field: "startUtf8/endUtf8",
-        message: "Supply both range boundaries or neither.")
+    if variantRef != nil && markRef == nil {
+      throw AIToolError("invalid_argument", field: "variantRef", message: "variantRef needs markRef.")
     }
-    if let startUtf8, let endUtf8, startUtf8 >= endUtf8 {
-      throw AIToolError(
-        "invalid_argument", field: "endUtf8", message: "Must be greater than startUtf8.")
-    }
-  }
-}
-public struct AIMarkInput: AIReadingInput {
-  public var bookRef: String
-  public var markRef: String
-  public var variantRef: String?
-  public var maxBytes: Int?
-  public var cursor: String?
-  public static var constraints: [String: [String: JSONValue]] {
-    ["maxBytes": ["minimum": .number(1)]]
   }
 }
 public struct AIStatisticsInput: AIReadingInput {
@@ -394,6 +337,8 @@ public struct AICoverResult: Codable, Sendable {
     }
 }
 public struct AIProgressResult: Codable, Sendable {
+  /// Copy into read_text around, propose_bookmark at or propose_note near.
+  public var positionRef: String? = nil
   public var offsetUtf8: UInt64
   public var percent: Double
   public var chapterTitle: String?
@@ -465,6 +410,8 @@ public struct AIBooksResult: Codable, Sendable {
   }
 }
 public struct AIChapterResult: Codable, Sendable {
+  /// Copy into read_text around, propose_bookmark at or propose_note near.
+  public var positionRef: String? = nil
   public var chapterRef: String
   public var title: String
   public var level: UInt32
@@ -509,6 +456,8 @@ public struct AIChaptersResult: Codable, Sendable {
     }
 }
 public struct AIReadResult: Codable, Sendable {
+  /// Copy into read_text around, propose_bookmark at or propose_note near.
+  public var positionRef: String? = nil
   public var bookRef: String
   public var text: String
   public var range: AIToolRange
@@ -527,6 +476,8 @@ public struct AIReadResult: Codable, Sendable {
     }
 }
 public struct AISearchHitResult: Codable, Sendable {
+  /// Copy into read_text around, propose_bookmark at or propose_note near.
+  public var positionRef: String? = nil
   public var bookRef: String
   public var range: AIToolRange
   public var excerpt: String
@@ -583,6 +534,8 @@ public struct AISearchResult: Codable, Sendable {
     }
 }
 public struct AIMarkVariant: Codable, Sendable {
+  /// Copy into read_text around, propose_bookmark at or propose_note near.
+  public var positionRef: String? = nil
   public var variantRef: String
   public var range: AIToolRange?
   public var noteSnippet: String
@@ -598,6 +551,8 @@ public struct AIMarkVariant: Codable, Sendable {
     }
 }
 public struct AIMarkResult: Codable, Sendable {
+  /// Copy into read_text around, propose_bookmark at or propose_note near.
+  public var positionRef: String? = nil
   public var markRef: String
   public var bookRef: String?
   public var kind: String?
@@ -753,5 +708,28 @@ public struct AIEnvironmentResult: Codable, Sendable {
 public enum AIReference {
     public static func make(_ type: String, _ key: String) -> String {
         type + ":" + SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// A text position the model copies back instead of byte offsets. The check digits bind it
+/// to its book, so an edited or misplaced reference is rejected rather than read elsewhere.
+public enum AIPosition {
+    public static func ref(bookSHA: String, offset: UInt64) -> String {
+        "p:\(offset):" + check(bookSHA, offset)
+    }
+    public static func offset(_ ref: String, bookSHA: String, field: String) throws -> UInt64 {
+        guard let offset = offset(of: ref), ref == Self.ref(bookSHA: bookSHA, offset: offset) else {
+            throw AIToolError("stale_reference", field: field, message: "Use a positionRef returned for this book.")
+        }
+        return offset
+    }
+    /// The offset for display only; it is not validated against a book.
+    public static func offset(of ref: String) -> UInt64? {
+        let parts = ref.split(separator: ":")
+        guard parts.count == 3, parts[0] == "p" else { return nil }
+        return UInt64(parts[1])
+    }
+    private static func check(_ sha: String, _ offset: UInt64) -> String {
+        SHA256.hash(data: Data("moonread-position:\(sha):\(offset)".utf8)).prefix(4).map { String(format: "%02x", $0) }.joined()
     }
 }

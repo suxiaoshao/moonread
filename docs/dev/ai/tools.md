@@ -1,15 +1,15 @@
 # AI 工具契约
 
-状态：2026-10-06，10个读取工具、原生搜索／生图及资料／笔记／书签／封面／整理业务工具已注册。本文定义模型可填参数、结果与用户应用边界；[Agent 基础](agent.md)定义运行与保存，[内容任务技术设计](architecture.md#快捷任务与业务提案)说明当前存储与业务接口。业务结果 UI 已接入并完成受影响定向回归，验证边界见实施计划。
+状态：2026-11-27（#378 起），10 个读取工具、原生搜索／生图及资料／笔记／书签／封面／整理业务工具已注册，共 19 个。本文定义模型可填参数、结果与用户应用边界；[Agent 基础](agent.md)定义运行与保存，[内容任务技术设计](architecture.md#快捷任务与业务提案)说明当前存储与业务接口。业务结果 UI 已接入并完成受影响定向回归，验证边界见实施计划。
 
 ## 共同约定
 
-- 工具为阅读业务接口，不是 shell。名称沿用 `ls/read/rg` 的用途，但不接受路径、命令、SQL、账号、凭证或任意文件 URL。
-- 基础轮次注册下方 10 个读取工具。后续内容工具只有对应执行能力接入后才注册，不能用成功空结果模拟未实现。
+- 工具为阅读业务接口，不是 shell，不接受路径、命令、SQL、账号、凭证或任意文件 URL。命名：只读用「动词_对象」（list/find/get/read/search），给读者审的卡片用 `propose_`，直接展示的用 `show_`。
+- 基础轮次注册下方读取工具。后续内容工具只有对应执行能力接入后才注册，不能用成功空结果模拟未实现。
 - 同一工具在阅读、选区、书架、统计入口使用同一 schema。入口提供本次输入附件，发送后固定；模型仍可查询其他授权书籍。附件不扩大写入 scope，当前书和当前位置也不是剧透限制。
 - 参数表中 `?` 表示可省略或传 null；空字符串不是未填引用或游标。明确注明的默认值由工具补齐。每个工具以 Codable 输入/结果接入 SDK `TypedTool`；schema 基础字段由 SDK 生成，再补类型与业务范围。锁定 SDK 无法推断 nil 的可选枚举/数组，定义处补类型，枚举值从 Swift allCases 生成。SDK JSON Schema validator 拒绝未知字段与越界值，Codable 负责解码；工具只校验引用二选一、区间关系等业务规则。不存在独立的手写参数校验器或 JSON 字典分发器。
-- ID 都是应用返回的不透明字符串，模型只能回传，不解析也不构造。`bookRef` 对应完整规范正文 SHA，`fileRef` 对应来源文件身份，`shelfRef/folderRef` 对应授权树对象。未解析文件只有 `fileRef`，不能用导入任务 ID 冒充长期 `bookRef`。跨重启持久对象可重解，游标按查询和偏移解码。
-- `Source`：`sourceRef, bookRef?, fileRef?, chapterRef?, title, excerpt?, range?`。`range={startUtf8,endUtf8}` 是规范化正文 UTF-8 字节半开区间 `[start,end)`，非原 TXT 字节、字符序号或屏幕位置；非字符边界输入返回 `invalid_argument`。chapterRef 包含正文身份与章节起点，章节修改后验证是否仍存在。
+- ID 都是应用返回的不透明字符串，模型只能回传，不解析也不构造。正文位置同样用不透明的 `positionRef`（`p:<偏移>:<校验>`，校验位绑定正文 SHA），由 search_text、read_text、list_chapters、list_marks、get_book_info 的结果发出；输入不再接受 UTF-8 字节数，改过或用错书的位置引用返回 `stale_reference`。`bookRef` 对应完整规范正文 SHA，`fileRef` 对应来源文件身份，`shelfRef/folderRef` 对应授权树对象。未解析文件只有 `fileRef`，不能用导入任务 ID 冒充长期 `bookRef`。跨重启持久对象可重解，游标按查询和偏移解码。
+- `Source`：`sourceRef, bookRef?, fileRef?, chapterRef?, title, excerpt?, range?`。结果里的 `range={startUtf8,endUtf8}` 是规范化正文 UTF-8 字节半开区间 `[start,end)`，供应用解析来源与显示，模型不回填。chapterRef 包含正文身份与章节起点，章节修改后验证是否仍存在。
 - 原文与工具内容均是非可信资料。来源引用由应用验证，模型编造的 sourceRef 不生成可点击入口。点击引用走临时查看，不调用正式续读位置写入；正文已变更不能把旧坐标套到新正文。
 - 数字范围以 JSON 安全整数上限为限。时间使用带时区偏移的 ISO 8601；日期使用 `YYYY-MM-DD`。时长统一整数毫秒，百分比为 0–100。
 
@@ -27,7 +27,7 @@
 
 ## 基础工具：一次交付全部接通
 
-### 1. `ls` — 浏览授权书架树
+### 1. `list_shelf` — 浏览授权书架树
 
 输入：
 
@@ -42,89 +42,83 @@
 
 实现依据：`AppDataService.shelves/libraryEntries`；工具层实现稳定目录引用解析和分页投影。不要把 relativePath 直接当模型操作参数。
 
-### 2. `search_books` — 按资料查小说
+### 2. `find_books` — 找书
 
 | 字段 | 类型与规则 |
 | --- | --- |
-| query? | 字符串，默认空；书名/已知作者/简介内不区分大小写包含匹配，不暗示语义向量搜索 |
+| query? | 关键词，匹配书名、作者、简介与标签（AI 搜索 profile）；不暗示语义向量搜索 |
 | scopeRef? | 授权 shelfRef/folderRef；省略所有授权书架 |
-| author? | 字符串；作者包含匹配 |
-| tags? | 字符串数组，全部匹配 |
-| readingStatus? | `unread/reading/finished/paused`；未关联正文的状态未知，不伪造 unread |
-| sort? | `name/recent`，默认 recent |
-| limit?, cursor? | 通用分页 |
+| filter? | 与 `propose_book_filter` 同形的两层筛选（见下） |
+| sorts? | `[{field:recent/name/author, descending}]`，按优先级 |
+| limit? | 1–100，默认 20 |
+| cursor? | 后续页，其他字段保持一致 |
 
-过滤条件相与。结果 `data={items:[{bookRef?,title,author?,synopsisSnippet?,tags,readingStatus?,availability,files:[{fileRef,name,parentRef,availability}]}]}`。逐个返回匹配的真实文件，不按 SHA 去重隐藏来源。简介摘录最多500字符，每项指向对应的真实文件；完整来源由 get_book 获取。摘录字段明确标记截取。查询只使用现有索引，不为筛选下载正文。结果明确 `warnings` 中哪些文件无完整资料。
+关键词与筛选可单用或同用，共用普通搜索的筛选、排序和资料未知语义；作者、标签按原始 UTF-8 匹配，书架同名有歧义时返回参数错误。结果 `data={totalMatches,unknownCount,items:[{title,author?,readingStatus?,availability,fileRef,bookRef?,tags?}]}`，每个真实文件一项，不按 SHA 去重隐藏来源；`unknownCount>0` 时 status 为 partial。只用现有索引，不为筛选下载正文；简介等完整资料由 get_book_info 获取。
 
-依据：`libraryEntries/allLibraryBooks`、`effectiveQuery` 资料投影。工具服务基于最终业务数组完成组合筛选、去重和结果分页；当前不是数据库级书库分页，不声称大书库扫描恒定内存。
+依据：`ReaderIndex.aiFilteredBookPage(_:query:catalogue:offset:limit:)` 一次取得匹配页、总数和资料未知数。替代 1.9 的 `search_books` 与 `query_books_by_filter`。
 
-### 3. `get_book` — 资料、来源与可用状态
+### 3. `get_book_info` — 资料、来源与可用状态
 
 输入：`bookRef?:string, fileRef?:string`，必须恰好一个；`prepare?:bool=false`。未知 SHA 的文件可用 fileRef 加 prepare=true，在应用确认后准备并取得正文身份；默认只读已有资料。
 
-结果 `data={bookRef?,title,author?,synopsis?,tags,readingStatus?,wordCount?,chapterCount?,progress?:{offsetUtf8,percent,chapterTitle?,lastReadAt?},cover?:{assetRef,width,height},availability,availableUtf8?,totalUtf8?,files:[{fileRef,name,parentRef,availability}],filesTruncated}`。返回完整简介及所有来源。cover 仅元信息，不自动读取图片/上传。`progress.percent` 是同一正文 SHA 的规范化 UTF-8 进度百分数，与界面共用比例计算。正式位置与估算覆盖分别命名。
+结果 `data={bookRef?,title,author?,synopsis?,tags,readingStatus?,wordCount?,chapterCount?,progress?:{offsetUtf8,positionRef,percent,chapterTitle?,lastReadAt?},cover?:{assetRef,width,height},availability,availableUtf8?,totalUtf8?,files:[{fileRef,name,parentRef,availability}],filesTruncated}`。返回完整简介及所有来源。cover 仅元信息，不自动读取图片/上传。`progress.percent` 是同一正文 SHA 的规范化 UTF-8 进度百分数，与界面共用比例计算。正式位置与估算覆盖分别命名。
 
 依据：`AppDataService.details(bookID:sha:)`、`snapshot`、库来源投影。正文不可用时仍返回可取得的 SHA 用户资料；文件改动须重新验证映射，不能复用旧 SHA 的资料当成新正文。
 
-### 4. `get_chapters` — 当前有效目录
+### 4. `list_chapters` — 当前有效目录
 
 输入：`bookRef:string, query?:string, limit?:integer, cursor?:string`。query 为最多256字符的标题字面筛选，例如“番外”或“第316章”；游标绑定该筛选。
 
-结果 `data={bookRef,outlineComplete:bool,items:[{chapterRef,title,level:0|1,parentChapterRef?,range:{startUtf8,endUtf8},wordCount,countComplete,estimatedCoveredCharacters?}]}`。
+结果 `data={bookRef,outlineComplete:bool,items:[{chapterRef,positionRef,title,level:0|1,parentChapterRef?,range:{startUtf8,endUtf8},wordCount,countComplete,estimatedCoveredCharacters?}]}`，positionRef 指章节起点。
 
 依据：`AppDataService.chapters` （实现见 `Data/Queries/ReaderChapterQuery.swift`）。章节结束用下一有效条目起点/正文终点计算；卷条目与章条目可能层级重叠，不能声称每项互不相交。返回用户更正后的目录，删除的标题不出现；分页前统一解析有效目录。未完整准备先进入下方确认流程。
 
-### 5. `read` — 有界正文读取
+### 5. `read_text` — 有界正文读取
 
 | 字段 | 类型与规则 |
 | --- | --- |
 | bookRef | 必填 |
 | chapterRef? | 可选章节；存在时将读取限制在该章节范围 |
-| contextOffsetUtf8? | 工具返回的命中 startUtf8 等有效位置；读取所在段及前后文，不能与显式 startUtf8/endUtf8 混用 |
-| beforeParagraphs?, afterParagraphs? | 仅与 contextOffsetUtf8 一起使用；各默认3，非负整数；空白行不计段数，保留原文空白；指定 chapterRef 时结果裁在该章内 |
-| startUtf8? | 非负安全整数；默认章节起点，否则0 |
-| endUtf8? | 大于 start，默认章节末/正文末；指定 chapterRef 时不得越界 |
+| around? | 工具返回的 positionRef；读取所在段及前后文 |
+| beforeParagraphs?, afterParagraphs? | 仅与 around 一起使用；各默认3，非负整数；空白行不计段数，保留原文空白；指定 chapterRef 时结果裁在该章内 |
 | maxBytes? | 默认51200，正整数；实际最多51200，正文 UTF-8 字节上限 |
 | cursor? | 后续页必须保持以上查询一致 |
 
-结果 `data={bookRef,text,range,sourceRef}` 加 page。按字符边界截断，可优先保留完整段落；返回真实 range，nextCursor 指向下一字节。page.complete 表示请求范围读完，不表示全书。无正文或不完整时不自动只读前缀；先确认准备。不得通过自动展开整章绕过大小限制。
+结果 `data={bookRef,text,range,positionRef,sourceRef}` 加 page，positionRef 指本页文本起点。按字符边界截断，可优先保留完整段落；nextCursor 指向下一字节。page.complete 表示请求范围读完，不表示全书。无正文或不完整时不自动只读前缀；先确认准备。不得通过自动展开整章绕过大小限制。
 
-依据：`AppDataService.textRange/textContext`；Rust 解析前后段边界，模型直接回传命中位置，无需自行加减 UTF-8 偏移。底层上下文最多1 MiB，AI 仍按 maxBytes 分页，后续页保持上下文参数不变。工具读取不调用 `writePosition`、不启动阅读计时。
+依据：`AppDataService.textRange/textContext`；Rust 解析前后段边界。底层上下文最多1 MiB，AI 仍按 maxBytes 分页，后续页保持上下文参数不变。工具读取不调用 `writePosition`、不启动阅读计时。
 
-### 6. `rg` — 正文检索
+### 6. `search_text` — 正文检索
 
 | 字段 | 类型与规则 |
 | --- | --- |
 | bookRefs | 必填，至少一个 bookRef；不省略为“搜整个库” |
 | chapterRef? | 限定有效章节；仅 bookRefs 恰好一本时可用 |
-| startUtf8?, endUtf8? | 限定正文半开范围，可只给一端；默认章/书边界。仅单书可用，指定 chapterRef 时必须在章内；使用工具返回的边界 |
 | query | 必填，非空字符串 |
-| mode? | `literal/regex`，默认 regex；regex 为 Rust regex，单行，不支持回溯引用/lookaround |
+| mode? | `literal/regex`，默认 regex；regex 为单行，不支持回溯引用/lookaround |
 | caseSensitive? | bool，默认 true |
 | maxHits? | 默认100，正整数 |
 | cursor? | 后续页 |
 
-结果 `data={hits:[{bookRef,range,excerpt,chapterRef?,chapterTitle?,sourceRef}],coverage:[{bookRef,requestedRange?,status,scannedUtf8,availableUtf8,complete}],truncated:bool}`。excerpt 为同一行短摘录，最多500字符，范围是实际匹配范围；用 `read(contextOffsetUtf8: hit.range.startUtf8)` 取前后段。按 bookRefs 输入顺序、原文位置稳定排序；不是相关性排名。未准备项统一列出准备提示；拒绝本次调用返回 denied，不擅自准备其中其他书。
+结果 `data={hits:[{bookRef,range,positionRef,excerpt,chapterRef?,chapterTitle?,sourceRef}],coverage:[{bookRef,requestedRange?,status,scannedUtf8,availableUtf8,complete}],truncated:bool}`。excerpt 为同一行短摘录，最多500字符；用 `read_text(around: hit.positionRef)` 取前后段。
 
 范围在 Rust 扫描之前生效，不先全书搜索再过滤；正则锚点以选定范围中的行片段为边界。complete 表示 requestedRange 扫描完整，scannedUtf8 是已扫描到的绝对正文偏移，availableUtf8 为本次扫描终点。范围是按用户问题选择的查询条件，不是强制剧透策略。
 
 依据：`AppDataService.search` → 最终有效章节投影 → `SearchJob.nextBatch/cancel`。按相同查询及偏移重扫，不跨调用保留活跃句柄；退出或取消释放任务。不设置单书2000或多书5000总命中上限。收集到当前页及下一条命中后停止本次扫描，coverage 明确未扫描完的范围；用 nextCursor 继续。
 
-### 7. `get_marks` — 书签和批注
+### 7. `list_marks` — 书签和批注
 
-输入：`bookRef:string, kind?:"all"|"bookmark"|"annotation"=all, query?:string, startUtf8?:integer, endUtf8?:integer, limit?,cursor?`。范围两个字段一起出现且 start<end；批注按交叉判定，书签按点落入判定。query 在摘录与评论包含匹配，大小写不敏感。
+输入：`bookRef:string, kind?:"all"|"bookmark"|"annotation"=all, query?:string, chapterRef?:string, markRef?:string, variantRef?:string, limit?,cursor?`。chapterRef 限定章节：批注按交叉判定，书签按点落入判定。query 在摘录与评论包含匹配，大小写不敏感。
 
-结果 `data={bookRef,items:[{markRef,kind,range,excerpt,note,createdAt,sourceRef,hasConflict}]}`。评论/摘录各最多500字符，超长字段带 `noteTruncated/excerptTruncated`；未解决冲突标识保留，不自行挑选一个版本当确定内容。
+不带 markRef 时列出 `data={bookRef,items:[{markRef,kind,range,positionRef,excerpt,note,createdAt,sourceRef,hasConflict}]}`。评论最多2000字符、摘录最多500字符，超长带 `noteTruncated/excerptTruncated`；短评论直接是全文。未解决冲突标识保留，不自行挑选一个版本当确定内容。
 
-依据：`userMarks/annotations/mark` 与批注候选业务投影；现有 `aiMarks(sha:)` 已提供按 SHA 的候选查询，工具输出冲突状态而不暴露候选存储键。后续编辑必须读取最新编辑基线。
+带 markRef 时 `items` 只含该标注：普通批注返回完整评论 `noteText` 并按 UTF-8 边界分页（每页最多 51200 字节），摘录完整返回。存在冲突且未选 `variantRef` 时返回 `{markRef,hasConflict:true,variants:[{variantRef,range?,positionRef,noteSnippet}]}`，只列仍有内容的候选。`markRef` 无可读标注返回 `not_found`；已删除或失效的 variantRef 返回 `stale_reference`。替代 1.9 的 `get_marks` 与 `get_mark`。
 
-### 8. `get_mark` — 完整评论与冲突候选
+依据：`aiMarks(sha:)` 与批注候选业务投影；工具输出冲突状态而不暴露候选存储键。后续编辑必须读取最新编辑基线。
 
-输入：`bookRef:string,markRef:string,variantRef?:string,maxBytes?:正整数=51200,cursor?:string`。
+### 8. 已并入的工具
 
-普通批注返回 `data={markRef,bookRef,kind,range,excerpt,noteText,sourceRef}` 与分页。只对评论分页，UTF-8 边界连续；摘录完整返回。存在冲突且未选 `variantRef` 时返回 `data={markRef,hasConflict:true,variants:[{variantRef,range?,noteSnippet}]}`，只列仍有内容的候选。`markRef` 无可读标注时返回 `not_found`；指定已删除或已失效的 `variantRef` 时返回 `stale_reference`。候选引用只用于读取该版本，过期后重新查询。选择候选后按普通结果分页，不把某个候选当作最终已确认批注。
-
-依据：现有候选归并和批注编辑基线；工具已提供只读冲突投影。get_marks 摘录不能代替完整评论读取。
+1.9 的 `search_books`／`query_books_by_filter` 并入 `find_books`，`get_marks`／`get_mark` 并入 `list_marks`。已保存对话在 1.10 首次打开 AI 数据库时一次性改成新工具名（`AIToolNameMigration`，按存储文件记版本），调用参数和结果按原样保留；结果详情按当前结构解码，旧结构解不出的部分退回通用显示。
 
 ### 9. `get_reading_statistics` — 阅读记录与汇总
 
@@ -141,7 +135,7 @@
 
 [AIReadingTools](../../../ios/Moonread/AI/Tools/Reading/AIReadingTools.swift) 解释日期、视图与分页参数，并分派到目录或[统计查询](../../../ios/Moonread/Data/Queries/StatisticsQuery.swift)。章节覆盖和原文缺失分别表示。
 
-### 10. `get_environment` — 当前环境
+### 10. `get_current_time` — 当前时间与语言
 
 输入：`fields?:["time"|"locale"]`，默认两者。
 
@@ -149,7 +143,7 @@
 
 ## 正文准备不是任意下载工具
 
-`get_book(prepare=true)` 及 `read/get_chapters/rg` 遇到 needs_download/needs_parse 时，解析具体 fileRef、已知大小和查询目的，发出应用确认卡。多书 `rg` 一次列出全部尚未准备的书籍，按引用去重；用户同意的是这次完整列表，不能只提示第一本后准备其余书籍。模型不能提交 `approved:true`、下载 URL 或替换源路径。用户确认后应用使用 `prepareSourceFile` 和导入服务，显示进度，再重试原调用；下载本身不改变阅读位置、不制造阅读统计。
+`get_book_info(prepare=true)` 及 `read_text/list_chapters/search_text` 遇到 needs_download/needs_parse 时，解析具体 fileRef、已知大小和查询目的，发出应用确认卡。多书 `search_text` 一次列出全部尚未准备的书籍，按引用去重；用户同意的是这次完整列表，不能只提示第一本后准备其余书籍。模型不能提交 `approved:true`、下载 URL 或替换源路径。用户确认后应用使用 `prepareSourceFile` 和导入服务，显示进度，再重试原调用；下载本身不改变阅读位置、不制造阅读统计。
 
 相同来源准备请求合并；取消 AI 等待只释放本任务的等待与租约，不取消读者或其他会话仍需要的共享导入。内容校验后若 SHA 改变，返回 stale_reference 和新的可查询身份，不能悄悄把旧书引用重绑新正文。来源失效提示重新授权，由用户走系统文件入口。
 
@@ -157,39 +151,39 @@
 
 ## 业务提案与原生内容工具
 
-下表工具已注册到同一运行器；web_search/generate_image/find_cover 按对应用途配置提供。它们复用本契约的引用、消息、确认和取消机制。所有 `propose_*` 只产生预览，真正应用由用户点击驱动，无模型可调用的通用 `apply/delete/move`。
+下表工具已注册到同一运行器；web_search/generate_image/search_cover 按对应用途配置提供。它们复用本契约的引用、消息、确认和取消机制。所有 `propose_*` 只产生预览，真正应用由用户点击驱动，无模型可调用的通用 `apply/delete/move`。
 
 | 工具 | 输入（未标 ? 均必填） | 返回及约束 |
 | --- | --- | --- |
 | `web_search` | query:string（非空）, language?:BCP47 | answer、sources:{sourceRef,title,url,excerpt?}；默认搜索连接的原生工具执行；没有配置时不注册；截断按现有预算标记 |
 | `generate_image` | prompt:string（非空）, referenceAttachmentRefs?:string[] | attachments:{attachmentRef,mimeType,width,height}、实际执行来源；默认生图配置执行，参考图要求实际编辑能力 |
-| `find_cover` | bookRef, query?:string | bookRef、candidates（proposalRef、attachment:{attachmentRef,mimeType,width,height}、source、generated）、answer 与 sources；只获取本次搜索返回的来源及其页面显式声明的一层图片；无图片可返回空候选，不猜 URL、不冒充官方封面 |
+| `search_cover` | bookRef, query?:string | bookRef、candidates（proposalRef、attachment:{attachmentRef,mimeType,width,height}、source、generated）、answer 与 sources；只获取本次搜索返回的来源及其页面显式声明的一层图片；无图片可返回空候选，不猜 URL、不冒充官方封面 |
 | `propose_book_metadata` | bookRef, author?:string, synopsis?:string, tags?:string[], tagsMode?:`merge/replace`, readingStatus?:`unread/reading/finished/paused`, sourceRefs?:string[], rename?:{fileRef,name} | 至少一个建议字段；省略/null不改，明确空字符串表示建议清空；tags 默认 merge，replace（含空数组清空）须有用户明确要求且默认不选。readingStatus 仅接受用户明确要求的状态修改，绝不推断；默认“完善资料”快捷任务不提出阅读状态。每条结果一本书；审阅页显示最终效果，变化文本默认采用建议、可切换原内容并编辑；新增标签默认选中，replace 移除标签默认保留、由用户逐项选择。按钮按实际写入项计数（标签整体一项）；proposalRef 不变，无 baseRevision。书名不属于 BookMetadata；rename 对指定来源文件真实改名，name 为主干并保留扩展名。fileRef 必须属于 bookRef，仅明显文件名噪声或用户明确要求时建议，不改写/翻译书名或按正文猜测。用户在审阅页确认，应用校验原文件快照并以 replace:false 改名；冲突不覆盖、不自动换名。重命名与 metadata 独立执行并分别报告，不影响按正文 SHA 保存的阅读数据 |
-| `propose_note` | bookRef, startUtf8, endUtf8, note:string, markRef? | 新增/编辑批注预览；范围与当前文本核对，交叉标注按既定合并规则，出现冲突进入既有编辑页，不自动覆盖候选 |
-| `propose_bookmark` | bookRef, offsetUtf8:integer | 预览已存在/新增，确认是“确保存在”，不调用 toggle 导致已有书签被删 |
+| `propose_note` | bookRef, near:positionRef, quote:string, note:string, markRef? | 新增/编辑批注预览；应用在 near 前 4 KiB 至后 64 KiB 内查找 quote 的原文，恰好一处才得到范围，找不到或多处返回 quote 参数错误；交叉标注按既定合并规则，出现冲突进入既有编辑页，不自动覆盖候选 |
+| `propose_bookmark` | bookRef, at:positionRef | 预览已存在/新增，确认是“确保存在”，不调用 toggle 导致已有书签被删 |
 | `propose_cover` | bookRef, attachmentRef | 确认替换预览；必须是此任务可访问的有效图片附件，应用后转为用户封面资源 |
 | `propose_library_organization` | scopeRef, folders:[{temporaryRef,parentRef,name}], placements:[{fileRef,parentRef,name?}] | 虚拟目录树、变更、冲突、previewRef；应用捕获源原始 SHA 与父目录状态快照，不接受模型提供的 baseRevision。parentRef 只能是本方案 scopeRef 范围内目录或本方案 temporaryRef；名称校验，禁止循环/重复归属/删除/覆盖；未提到对象保持原样 |
-| `list_filter_options` | field:`tag/author/shelf`, query?:string, cursor?:string | `data.names` 与分页信息。复用筛选器的标签、作者和可用真实书架；候选仅包含名称，沿用当前聊天接收方的 reading 许可。 |
-| `propose_book_filter` | nodes:[{kind,parent?,relation?,excluded?,values?}], sorts:[{field,descending}] | 返回可重放的筛选建议。节点以先父后子的顺序提交，第一项为组，后续 `parent` 是父组的零起始下标。组用 `all/any`，标签用 `all/any/none`，`untagged` 是独立条件。排序键按优先级使用 `recent/name/author`，可只排序。 |
+| `list_filter_values` | field:`tag/author/shelf`, query?:string, cursor?:string | `data.names` 与分页信息。复用筛选器的标签、作者和可用真实书架；候选仅包含名称，沿用当前聊天接收方的 reading 许可。 |
+| `propose_book_filter` | filter?:{match:all/any, exclude?, rules:[条件 或 {match, exclude?, rules:[条件]}]}, sorts?:[{field,descending}] | 返回可重放的筛选建议。最多两层（外层＋一层子组），schema 不用递归引用；每个条件恰好一项：status（unread/reading/finished/paused）、tags（tagMatch all/any/none，默认 any）、untagged、authors、shelves，可加 exclude。排序键按优先级使用 `recent/name/author`，可只排序。宿主转换为保存用的扁平节点（`AIBookFilterInput`）后校验，卡片与历史保存扁平形式；更深的子组由用户在编辑器里继续改。 |
 
 建议按实际支持的筛选条件生成。无法表达或找不到精确名称时，模型应解释并向用户确认如何改写。标签与作者按原始 UTF-8 核对，唯一书架以不透明引用保留原身份，名称歧义由用户在本机选择。工具运行仅生成建议，点击成功提交到对话历史的卡片才使用现有搜索查询。筛选修改只作用于当次结果，另存虚拟书架仍由用户明确命名。
 
-### 按条件查找小说与展示书单
+### 找书与展示书单
 
 两项工具沿用当前聊天接收方的阅读资料许可，无逐次确认。只问数量或需要比较时可直接文字回复。要让用户打开指定小说时用书单。需要编辑或保存会随库更新的条件时用筛选建议。
 
-- `query_books_by_filter` 接收 `filter`（与 `propose_book_filter` 同形）、可选 `limit`（1–100，默认 20）及 `cursor`。复用普通搜索的筛选、排序和资料未知语义。作者、标签按原始 UTF-8 匹配，书架同名有歧义时返回参数错误。只在当前书库查询，不访问原文。结果 `data` 含 `totalMatches`、`unknownCount`、`items`。每个文件一项，返回书名、文件引用、正式正文引用（已有时）、作者与可判定的阅读状态、可用性。资料不足返回 `partial`。计数包括整次求值，分页只限制返回项，沿用条目字节上限。续页用同一规则、排序与实际书架签名重查，可改变每页条数。
-- `show_book_list` 接收 `refs`，含 1–5 个不同的现有文件或正式书目引用。宿主验证全部目标并保持传入次序，目录或非法引用报参数错，已找不到的目标报 `not_found`，整次不生成卡片。成功只返回各项原引用、书名与可用的作者。模型消息无缩略图或读书进度。页面层独立保存卡片呈现快照，实时可用性只影响本机按钮。
+- `find_books` 见上文第 2 节。复用普通搜索的筛选、排序和资料未知语义。作者、标签按原始 UTF-8 匹配，书架同名有歧义时返回参数错误。只在当前书库查询，不访问原文。结果 `data` 含 `totalMatches`、`unknownCount`、`items`。每个文件一项，返回书名、文件引用、正式正文引用（已有时）、作者与可判定的阅读状态、可用性。资料不足返回 `partial`。计数包括整次求值，分页只限制返回项，沿用条目字节上限。续页用同一规则、排序与实际书架签名重查，可改变每页条数。
+- `show_books` 接收 `refs`，含 1–5 个不同的现有文件或正式书目引用。宿主验证全部目标并保持传入次序，目录或非法引用报参数错，已找不到的目标报 `not_found`，整次不生成卡片。成功只返回各项原引用、书名与可用的作者。模型消息无缩略图或读书进度。页面层独立保存卡片呈现快照，实时可用性只影响本机按钮。
 
 整理 temporaryRef 必须唯一，并与 scopeRef、所有 placement fileRef 及真实引用保留命名空间（prefix: 形式）分离，校验发生在目录准备和预览变更前。普通 f/source 等名称仍有效；有效临时目录引用继续支持嵌套父子与文件 placement。
 
-网页 sourceRef 统一为 `web:SHA256(UTF8 精确返回 URL)`，不使用 SDK citation ID；URL 包括原始签名查询，工厂检查 http(s)／host。同引用保留首次位置与首个非空标题，host 只在末尾补缺。提案与 UI 只解析同一 session 已成功提交的类型化搜索／find_cover 结果；可计算哈希不代表可引用，编造来源或其他 session 来源返回 stale_reference。
+网页 sourceRef 统一为 `web:SHA256(UTF8 精确返回 URL)`，不使用 SDK citation ID；URL 包括原始签名查询，工厂检查 http(s)／host。同引用保留首次位置与首个非空标题，host 只在末尾补缺。提案与 UI 只解析同一 session 已成功提交的类型化搜索／search_cover 结果；可计算哈希不代表可引用，编造来源或其他 session 来源返回 stale_reference。
 
-find_cover 在执行期间暂存本次候选／图片，不提前发布结果；工具结果 entry 成功提交到本 session 历史后，才显示答案、来源和候选。取消或失败时清理该调用未提交的新图片，先前资产不受影响；已提交成功结果在后续 turn 中断后仍保留。
+search_cover 在执行期间暂存本次候选／图片，不提前发布结果；工具结果 entry 成功提交到本 session 历史后，才显示答案、来源和候选。取消或失败时清理该调用未提交的新图片，先前资产不受影响；已提交成功结果在后续 turn 中断后仍保留。
 
-封面 proposal 的 origin 为 web(AIWebSource)、generated、currentCover 或 unknown；来源来自同 owner 的已提交 find_cover／generate_image／当前封面附件快照，不由无网页来源或显示标题猜测。候选按 owner／book／attachmentRef 唯一，所有 proposalRef 和历史保留，不持久保存候选已应用状态；不同引用不按图片内容合并。
+封面 proposal 的 origin 为 web(AIWebSource)、generated、currentCover 或 unknown；来源来自同 owner 的已提交 search_cover／generate_image／当前封面附件快照，不由无网页来源或显示标题猜测。候选按 owner／book／attachmentRef 唯一，所有 proposalRef 和历史保留，不持久保存候选已应用状态；不同引用不按图片内容合并。
 
-搜索与生图接口、配置、认证边界及交付条件见[原生工具契约](native-tools.md)。不实现独立 read_web；供应商内部浏览不伪装成应用独立工具。不将摘要冒充网页原文，连接与模型不由工具参数指定。generate_image 为通用图片能力，不自动替换书籍封面；find_cover/propose_cover 的候选经封面审阅流程应用。
+搜索与生图接口、配置、认证边界及交付条件见[原生工具契约](native-tools.md)。不实现独立 read_web；供应商内部浏览不伪装成应用独立工具。不将摘要冒充网页原文，连接与模型不由工具参数指定。generate_image 为通用图片能力，不自动替换书籍封面；search_cover/propose_cover 的候选经封面审阅流程应用。
 
 业务提案沿用 `AIReadingInput`/Codable/TypedTool，结果作为工具历史快照保存；领域页面展示消息携带的原始建议，用户编辑与选择仅由本次复核持有，关闭丢弃。用户应用必须重新解析实时业务值，不把模型结果或历史“已应用”当写入权限。
 
@@ -220,21 +214,21 @@ find_cover 在执行期间暂存本次候选／图片，不提前发布结果；
 
 ### 参数与结果的可发现性
 
-工具为 typed JSON 接口，`rg` 不接收 shell 命令。参数说明明确 literal 对应 `rg -F`、caseSensitive=false 对应 `rg -i`、regex 对应 Rust 正则。模型先用具体词检索，再将命中的 range.startUtf8 原样传给 read.contextOffsetUtf8，通过 beforeParagraphs/afterParagraphs 读上下文，不自行计算偏移。bookRef/chapterRef/cursor 都使用工具返回的值；分页保持查询不变。
+工具为 typed JSON 接口，`search_text` 不接收 shell 命令，参数说明不提命令行叫法或正则引擎。模型先用具体词检索，再把命中的 positionRef 原样传给 read_text.around，通过 beforeParagraphs/afterParagraphs 读上下文；批注用附近的 positionRef 加原文 quote。模型不接触字节偏移。bookRef/chapterRef/positionRef/cursor 都使用工具返回的值；分页保持查询不变。`bookRef`（正式正文，跨文件稳定）与 `fileRef`（某个真实文件）的区别只在参数说明里讲一次。
 
 搜索结果只在 hits 中保存来源身份、范围与章节，不再在 sources 重复；UI 从同一条命中生成原文预览入口。缩小单页不会丢失结果，nextCursor 可继续读取。
 
-读取与批注来源从 data 本身生成；批注列表来源使用顶层 bookRef 和条目范围，不重复附带 sources。列表只给短预览，完整评论用 get_mark 翻页，原文用 read 按范围取回。所有列表共享50 KiB条目预算；ls/search_books/统计维持分页，环境信息保持按需字段。
+读取与批注来源从 data 本身生成；批注列表来源使用顶层 bookRef 和条目范围，不重复附带 sources。列表里评论最多 2000 字符，更长的用 list_marks 带 markRef 翻页，原文用 read_text 按 positionRef 取回。所有列表共享50 KiB条目预算；list_shelf/find_books/统计维持分页，环境信息保持按需字段。
 
 ## 持久结果与全新复核
 
-所有 propose_* 和 find_cover 只有成功 committed history 结果生成可操作卡片；pending output 只用于恢复。提案正文以 history 为唯一来源，每次复核从 result/entry/call ID 对应的原始结果和当前业务数据新建页面内编辑与选择，关闭丢弃。资料和封面应用只有 transient saving/success/error，业务成功后刷新当前值，不持久保存应用成功／回执来限制再次操作。会话资产使用同 container 的外部存储 row，在第一次 queue/pending/history 引用的同一保存中插入。
+所有 propose_* 和 search_cover 只有成功 committed history 结果生成可操作卡片；pending output 只用于恢复。提案正文以 history 为唯一来源，每次复核从 result/entry/call ID 对应的原始结果和当前业务数据新建页面内编辑与选择，关闭丢弃。资料和封面应用只有 transient saving/success/error，业务成功后刷新当前值，不持久保存应用成功／回执来限制再次操作。会话资产使用同 container 的外部存储 row，在第一次 queue/pending/history 引用的同一保存中插入。
 
-find_cover 串行获取本次搜索精确 canonical ref+URL 配对授权的来源。完整下载后先做 ImageIO 解码；非图片响应仅把前2 MiB原始字节交给 Rust 提取器，这只是解析输入上限，不限制网络或磁盘用量，截断可能漏图。字符编码按 HTTP charset、BOM、meta 声明、UTF-8 lossy 选择。
+search_cover 串行获取本次搜索精确 canonical ref+URL 配对授权的来源。完整下载后先做 ImageIO 解码；非图片响应仅把前2 MiB原始字节交给 Rust 提取器，这只是解析输入上限，不限制网络或磁盘用量，截断可能漏图。字符编码按 HTTP charset、BOM、meta 声明、UTF-8 lossy 选择。
 
 页面图片按 og:image、twitter:image、image_src/itemprop=image、JSON-LD image（含数组、ImageObject、@graph）、带非空书名 alt 或 cover/bookimg/book-img/mainpic 标记的 img 顺序提取；lazy 地址优先于 src，兜底最多2个，每页合计最多4个去重地址。相对地址依据最终响应 URL 和第一个有效 base href 解析，只接受有 host 的 http(s)。不猜路径、不改 query、不跟随普通链接、不执行脚本、不将网页文本加入模型上下文；派生资源只解码，不递归提取。按请求前已解析 URL 精确去重，保留首次来源，不承诺合并重定向别名。候选上限不是请求数上限，尺寸筛选也不保证排除方形 logo。
 
-图片请求每一跳重新计算 Referer：同源为去掉 userinfo/fragment 的最终页面 URL，跨源只发 origin，HTTPS 页面到 HTTP 目标移除该头。候选 origin/sourceRef 保留原始搜索来源，后续提案来源仍须成功提交到同 owner 历史。取消或调用失败清理本次全部未提交暂存资产；成功只保留返回候选，其他调用和已提交资产不动。这些规则仅作用于 find_cover，不改变通用生图和图片存储契约。
+图片请求每一跳重新计算 Referer：同源为去掉 userinfo/fragment 的最终页面 URL，跨源只发 origin，HTTPS 页面到 HTTP 目标移除该头。候选 origin/sourceRef 保留原始搜索来源，后续提案来源仍须成功提交到同 owner 历史。取消或调用失败清理本次全部未提交暂存资产；成功只保留返回候选，其他调用和已提交资产不动。这些规则仅作用于 search_cover，不改变通用生图和图片存储契约。
 
 ## 封面获取实现
 

@@ -4,9 +4,10 @@ import MoonreadDataTypes
 import MoonreadCoreBindings
 
 extension AppDataService {
-    func aiFilteredBookPage(_ configuration: BookSearchConfiguration, offset: Int, limit: Int) async throws
+    func aiFoundBookPage(query: String, scope: LibraryLocation?, configuration: BookSearchConfiguration, offset: Int, limit: Int) async throws
         -> (books: [FilteredBookHit], count: Int, unknownCount: Int) {
-        try await fixedReaderRead { try $0.aiFilteredBookPage(configuration, offset: offset, limit: limit) }
+        let catalogue = catalogueScope(scope, recursive: true)
+        return try await fixedReaderRead { try $0.aiFilteredBookPage(configuration, query: query, catalogue: catalogue, offset: offset, limit: limit) }
     }
 
     func libraryCatalogueSearch(_ scope: CatalogueScope, spec: LibraryQueryRules.SearchSpec) async throws -> LibraryQueryRules.SearchOutcome {

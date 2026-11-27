@@ -20,45 +20,40 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     try await reader.refreshLibraryShelf(shelfID)
     let files = try await reader.allLibraryBooks(shelfID)
     try store.index.linkLibraryFile(fileId: XCTUnwrap(files.first { $0.name == "a.txt" }?.id), bookId: book.id)
-    let filter: JSONValue = .object([
-      "nodes": .array([
-        .object(["kind": .string("group"), "relation": .string("all")]),
-        .object(["kind": .string("status"), "parent": .number(0), "values": .array([.string("unread")])]),
-      ]),
-      "sorts": .array([.object(["field": .string("name"), "descending": .bool(false)])]),
-    ])
-    let configuration = try JSONDecoder().decode(AIBookFilterInput.self, from: JSONEncoder().encode(filter)).configuration { $0 }
+    let filter: JSONValue = .object(["match": .string("all"), "rules": .array([.object(["status": .array([.string("unread")])])])])
+    let sorts: JSONValue = .array([.object(["field": .string("name"), "descending": .bool(false)])])
+    let configuration = try JSONDecoder().decode(AIBookFilterArguments.self, from: JSONEncoder().encode(
+      JSONValue.object(["filter": filter, "sorts": sorts]))).stored().configuration { $0 }
     let search = try await reader.searchLibrary(query: "", configuration: configuration)
     XCTAssertEqual(search.entries.count, 2)
     XCTAssertEqual(search.unknownCount, 1)
 
-    let first = try await invoke(tools, "query_books_by_filter", ["filter": filter, "limit": .number(1)])
+    let first = try await invoke(tools, "find_books", ["filter": filter, "sorts": sorts, "limit": .number(1)])
     XCTAssertEqual(first.object["status"], .string("partial"))
     XCTAssertEqual(first.object["data"]?.object["totalMatches"]?.int, search.entries.count)
     XCTAssertEqual(first.object["data"]?.object["unknownCount"]?.int, search.unknownCount)
     let item = try XCTUnwrap(first.object["data"]?.object["items"]?.array?.first?.object)
     XCTAssertEqual(item["readingStatus"], .string("unread"))
     let cursor = try XCTUnwrap(first.object["page"]?.object["nextCursor"])
-    let second = try await invoke(tools, "query_books_by_filter", ["filter": filter, "limit": .number(5), "cursor": cursor])
+    let second = try await invoke(tools, "find_books", ["filter": filter, "sorts": sorts, "limit": .number(5), "cursor": cursor])
     let next = try XCTUnwrap(second.object["data"]?.object["items"]?.array?.first?.object)
     XCTAssertEqual([item["fileRef"]?.string, next["fileRef"]?.string], search.entries.map { AIReference.make("f", $0.id) })
     XCTAssertEqual(second.object["page"]?.object["complete"], .bool(true))
     XCTAssertEqual(item["bookRef"], next["bookRef"], "Duplicate files have distinct file references and the same formal book reference")
-    let changed = JSONValue.object(["nodes": .array([]), "sorts": filter.object["sorts"]!])
-    let stale = try await invoke(tools, "query_books_by_filter", ["filter": changed, "cursor": cursor])
+    let stale = try await invoke(tools, "find_books", ["sorts": sorts, "cursor": cursor])
     XCTAssertEqual(stale.object["error"]?.object["code"], .string("stale_cursor"))
 
-    let generalSearch = try await invoke(tools, "search_books", ["query": .string(search.entries[0].title)])
+    let generalSearch = try await invoke(tools, "find_books", ["query": .string(search.entries[0].title)])
     let formal = try XCTUnwrap(generalSearch.object["data"]?.object["items"]?.array?.first?.object["bookRef"])
-    let contents = try await invoke(tools, "ls", ["parentRef": .string(AIReference.make("d", shelfID + "/Subfolder"))])
+    let contents = try await invoke(tools, "list_shelf", ["parentRef": .string(AIReference.make("d", shelfID + "/Subfolder"))])
     let fromFolder = try XCTUnwrap(contents.object["data"]?.object["items"]?.array?.first?.object["fileRef"])
     let refs = [try XCTUnwrap(next["fileRef"]), formal, fromFolder]
-    let details = AIToolResultDetails(item: .init(id: "query", kind: .tool, name: "query_books_by_filter",
-      input: .object(["filter": filter, "limit": .number(1)]), output: first), outcome: .completed, hasReplyResult: false)
+    let details = AIToolResultDetails(item: .init(id: "query", kind: .tool, name: "find_books",
+      input: .object(["filter": filter, "sorts": sorts, "limit": .number(1)]), output: first), outcome: .completed, hasReplyResult: false)
     XCTAssertTrue(details.opensDetail)
     XCTAssertEqual(details.bookResult?.rows.map(\.text), [search.entries[0].title])
     XCTAssertNotNil(details.requestedFilter?.root)
-    let shown = try await invoke(tools, "show_book_list", ["refs": .array(refs)])
+    let shown = try await invoke(tools, "show_books", ["refs": .array(refs)])
     XCTAssertEqual(shown.object["data"]?.object["items"]?.array?.compactMap { $0.object["ref"] }, refs)
     for rejected in [[refs[0], refs[0]], Array(repeating: refs[0], count: 6)] {
       let args = try JSONDecoder().decode(AIShowBookListInput.self, from: JSONEncoder().encode(["refs": JSONValue.array(rejected)]))
@@ -67,7 +62,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let entries = try await reader.libraryEntries(.init(shelfID: shelfID))
     let folderID = try XCTUnwrap(entries.first(where: \.directory)?.id)
     let folderRef = JSONValue.string(AIReference.make("f", folderID))
-    let invalid = try await invoke(tools, "show_book_list", ["refs": .array([folderRef])])
+    let invalid = try await invoke(tools, "show_books", ["refs": .array([folderRef])])
     XCTAssertEqual(invalid.object["error"]?.object["field"], .string("refs[0]"))
     XCTAssertEqual(invalid.object["error"]?.object["code"], .string("invalid_argument"))
 
@@ -87,23 +82,24 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     edited.tags = ["推理", "e\u{301}"]
     try await reader.saveMetadata(base: base, edited: edited)
 
-    let options = try await invoke(tools, "list_filter_options", ["field": .string("tag"), "query": .string("推理")])
+    let options = try await invoke(tools, "list_filter_values", ["field": .string("tag"), "query": .string("推理")])
     XCTAssertEqual(options.object["data"], .object(["names": .array([.string("推理")])]))
-    let authors = try await invoke(tools, "list_filter_options", ["field": .string("author")])
+    let authors = try await invoke(tools, "list_filter_values", ["field": .string("author")])
     XCTAssertEqual(authors.object["data"], .object(["names": .array([.string("Fixture Author")])]))
     let sorts: [JSONValue] = [
       .object(["field": .string("recent"), "descending": .bool(true)]),
       .object(["field": .string("name"), "descending": .bool(false)]),
     ]
-    let nodes: [JSONValue] = [
-      .object(["kind": .string("group"), "relation": .string("all")]),
-      .object(["kind": .string("group"), "parent": .number(0), "relation": .string("any"), "excluded": .bool(true)]),
-      .object(["kind": .string("author"), "parent": .number(1), "values": .array([.string("Fixture Author")])]),
-      .object(["kind": .string("untagged"), "parent": .number(1)]),
-      .object(["kind": .string("tag"), "parent": .number(0), "relation": .string("any"), "values": .array([.string("推理")])]),
-      .object(["kind": .string("status"), "parent": .number(0), "values": .array([.string("unread")])]),
+    var rules: [JSONValue] = [
+      .object(["match": .string("any"), "exclude": .bool(true), "rules": .array([
+        .object(["authors": .array([.string("Fixture Author")])]),
+        .object(["untagged": .bool(true)]),
+      ])]),
+      .object(["tags": .array([.string("推理")]), "tagMatch": .string("any")]),
+      .object(["status": .array([.string("unread")])]),
     ]
-    let result = try await invoke(tools, "propose_book_filter", ["nodes": .array(nodes), "sorts": .array(sorts)])
+    let result = try await invoke(tools, "propose_book_filter", [
+      "filter": .object(["match": .string("all"), "rules": .array(rules)]), "sorts": .array(sorts)])
     func history(_ value: JSONValue, role: String = "tool") -> AIAgentEntry {
       .init(sequence: 2, turn: "fixture", provider: "fixture", model: "fixture",
             message: .object(["role": .string(role), "content": .array([.object([
@@ -123,11 +119,11 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     XCTAssertTrue(matches.entries.isEmpty, "An excluded author must not be dropped during replay")
     XCTAssertTrue(AICommittedResultDecoder.results(history(result, role: "assistant"), sessionID: "session").isEmpty)
 
-    let sortOnly = try await invoke(tools, "propose_book_filter", ["nodes": .array([]), "sorts": .array(sorts)])
+    let sortOnly = try await invoke(tools, "propose_book_filter", ["sorts": .array(sorts)])
     XCTAssertEqual(sortOnly.object["status"], .string("ok"))
-    var invalid = nodes
-    invalid[4] = .object(["kind": .string("tag"), "parent": .number(0), "relation": .string("any"), "values": .array([.string("é")])])
-    let failed = try await invoke(tools, "propose_book_filter", ["nodes": .array(invalid), "sorts": .array([])])
+    rules[1] = .object(["tags": .array([.string("é")])])
+    let failed = try await invoke(tools, "propose_book_filter", [
+      "filter": .object(["match": .string("all"), "rules": .array(rules)]), "sorts": .array([])])
     XCTAssertEqual(failed.object["error"]?.object["field"], .string("tag"), "Canonically equivalent names must still match the stored UTF-8")
     XCTAssertTrue(AICommittedResultDecoder.results(history(failed), sessionID: "session").isEmpty)
   }
@@ -156,7 +152,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let (root, _, book, _, tools) = try await fixture(text: text)
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
-    let result = try await invoke(tools, "rg", ["bookRefs": .array([ref]), "query": .string("后续命中")])
+    let result = try await invoke(tools, "search_text", ["bookRefs": .array([ref]), "query": .string("后续命中")])
     let data = try XCTUnwrap(result.object["data"])
     let hits = try XCTUnwrap(data.object["hits"]?.array)
     XCTAssertEqual(hits.count, 1, "A skipped line must not terminate later batches")
@@ -166,6 +162,33 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     XCTAssertEqual(coverage.object["complete"], .bool(false))
     XCTAssertEqual(data.object["truncated"], .bool(true))
     XCTAssertEqual(result.object["status"], .string("partial"))
+  }
+
+  // #378: 模型只回传工具给出的位置引用；批注用「附近位置 + 原文」定位，改过的引用被拒绝。
+  func testPositionReferencesAndQuotedNoteRanges() async throws {
+    let text = "第一章 开端\n甲乙丙丁。重复的句子。\n戊己庚辛。重复的句子。\n"
+    let (root, reader, book, _, tools) = try await fixture(text: text)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
+    let hit = try await invoke(tools, "search_text", ["bookRefs": .array([ref]), "query": .string("戊己"), "mode": .string("literal")])
+    let position = try XCTUnwrap(hit.object["data"]?.object["hits"]?.array?.first?.object["positionRef"]?.string)
+    let around = try await invoke(tools, "read_text", ["bookRef": ref, "around": .string(position)])
+    XCTAssertTrue(around.object["data"]?.object["text"]?.string?.contains("戊己庚辛") == true)
+    let tampered = position.replacingOccurrences(of: "p:", with: "p:1")
+    let rejected = try await invoke(tools, "read_text", ["bookRef": ref, "around": .string(tampered)])
+    XCTAssertEqual(rejected.object["error"]?.object["code"], .string("stale_reference"))
+
+    let registry = await AIProposalRegistry(reader: reader)
+    let references = AIReadingReferences(reader: reader)
+    let (start, end) = try await registry.quoteRange(bookRef: ref.string!, near: position, quote: "庚辛", references: references)
+    let quoted = try await reader.textRange(book.id, start: start, end: end)
+    XCTAssertEqual(quoted.text, "庚辛")
+    for quote in ["重复的句子", "不存在的句子"] {
+      do {
+        _ = try await registry.quoteRange(bookRef: ref.string!, near: position, quote: quote, references: references)
+        XCTFail("An ambiguous or missing quote must be rejected: \(quote)")
+      } catch let error as AIToolError { XCTAssertEqual(error.field, "quote") }
+    }
   }
 
   // S131: AI 准备未完整书籍必须列出准确确认对象，不遗漏或重复授权范围。
@@ -187,7 +210,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
     let before = try await reader.book(book.id)
-    let result = try await invoke(tools, "read", ["bookRef": ref, "maxBytes": .number(32)])
+    let result = try await invoke(tools, "read_text", ["bookRef": ref, "maxBytes": .number(32)])
     XCTAssertEqual(result.object["status"], .string("ok"))
     let value = try XCTUnwrap(result.object["data"]?.object["text"]?.string)
     XCTAssertFalse(value.contains("�"))
@@ -204,7 +227,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let (root, _, book, store, tools) = try await fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
-    let tool = tools.definitions().first { $0.name == "read" }!
+    let tool = tools.definitions().first { $0.name == "read_text" }!
     let invalidSchema = await tool.sdkTool.inputSchema.resolve().validate([
       "bookRef": ref.string!, "path": "/tmp/file",
     ])
@@ -227,8 +250,8 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let args: [String: JSONValue] = [
       "bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "m")),
     ]
-    let result = try await invoke(tools, "get_mark", args)
-    let data = try XCTUnwrap(result.object["data"])
+    let result = try await invoke(tools, "list_marks", args)
+    let data = try XCTUnwrap(result.object["data"]?.object["items"]?.array?.first)
     XCTAssertEqual(data.object["hasConflict"], .bool(true))
     let variants = try XCTUnwrap(data.object["variants"]?.array)
     XCTAssertEqual(variants.count, 2)
@@ -239,17 +262,19 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
 
     var selected = args
     selected["variantRef"] = .string(AIReadingTools.ref("v", a.id))
-    let living = try await invoke(tools, "get_mark", selected)
-    XCTAssertEqual(living.object["data"]?.object["noteText"], .string("甲"))
-    XCTAssertNil(living.object["data"]?.object["deleted"])
+    let living = try await invoke(tools, "list_marks", selected)
+    let chosen = living.object["data"]?.object["items"]?.array?.first?.object
+    XCTAssertEqual(chosen?["noteText"], .string("甲"))
+    XCTAssertNil(chosen?["deleted"])
+    XCTAssertNotNil(chosen?["positionRef"], "A mark returns a position the model can read around")
 
     selected["variantRef"] = .string(AIReadingTools.ref("v", deletedVariant.id))
-    let stale = try await invoke(tools, "get_mark", selected)
+    let stale = try await invoke(tools, "list_marks", selected)
     XCTAssertEqual(stale.object["error"]?.object["code"], .string("stale_reference"))
     XCTAssertEqual(stale.object["error"]?.object["field"], .string("variantRef"))
     XCTAssertNil(stale.object["data"])
 
-    let missing = try await invoke(tools, "get_mark", [
+    let missing = try await invoke(tools, "list_marks", [
       "bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "removed")),
     ])
     XCTAssertEqual(missing.object["error"]?.object["code"], .string("not_found"))
@@ -259,15 +284,15 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
 
   // S137: 工具续页范围拼接不截断 Unicode，重建工具实例后仍续接；正文/笔记各一页边界，不跑 2500 行。
   func testReadLineBudgetContinuesAcrossToolInstances() async throws {
-    let (root, reader, book, users, _) = try await fixture(paragraphs: 3)
+    let (root, reader, book, _, _) = try await fixture(paragraphs: 3)
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
     let tools = AIReadingTools(reader: reader, lineLimit: 2)
-    let first = try await invoke(tools, "read", ["bookRef": ref])
+    let first = try await invoke(tools, "read_text", ["bookRef": ref])
     let prefix = try XCTUnwrap(first.object["data"]?.object["text"]?.string)
     let cursor = try XCTUnwrap(first.object["page"]?.object["nextCursor"]?.string)
     let next = try await invoke(
-      AIReadingTools(reader: reader, lineLimit: 2), "read",
+      AIReadingTools(reader: reader, lineLimit: 2), "read_text",
       ["bookRef": ref, "cursor": .string(cursor)])
     let suffix = try XCTUnwrap(next.object["data"]?.object["text"]?.string)
     XCTAssertEqual(
@@ -275,28 +300,6 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
       first.object["data"]?.object["range"]?.object["endUtf8"])
     XCTAssertFalse((prefix + suffix).contains("�"), "a page boundary cannot split Unicode")
     XCTAssertFalse(suffix.isEmpty)
-    let note = "甲乙🙂第二段🌙"
-    let candidate = AnnotationCandidate(
-      id: "note-page", ancestors: [], content: .init(start: 0, end: 9, excerpt: "第一章", note: note),
-      created: 1, bookmark: false)
-    try users.seedAnnotation(key: book.fixtureSHA256, mark: "paged", candidate: candidate)
-    let firstNote = try await invoke(
-      tools, "get_mark",
-      [
-        "bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "paged")),
-        "maxBytes": .number(8),
-      ])
-    let noteCursor = try XCTUnwrap(firstNote.object["page"]?.object["nextCursor"]?.string)
-    let rest = try await invoke(
-      AIReadingTools(reader: reader), "get_mark",
-      [
-        "bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "paged")),
-        "cursor": .string(noteCursor), "maxBytes": .number(32),
-      ])
-    XCTAssertEqual(
-      (firstNote.object["data"]?.object["noteText"]?.string ?? "")
-        + (rest.object["data"]?.object["noteText"]?.string ?? ""), note,
-      "note pagination must preserve UTF-8 when the byte budget changes")
   }
 
   // S138: 工具准备共享工作但不写正式阅读状态/统计；只测 Swift lease 和写入边界。
@@ -305,7 +308,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     defer { try? FileManager.default.removeItem(at: root) }
     let shelf = try await reader.shelves().first!
     let file = try await reader.allLibraryBooks(shelf.id).first!
-    let definition = tools.definitions().first { $0.name == "get_book" }!
+    let definition = tools.definitions().first { $0.name == "get_book_info" }!
     let args = JSONValue.object([
       "fileRef": .string(AIReadingTools.ref("f", file.id)), "prepare": .bool(true),
     ])
@@ -332,10 +335,10 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     try await reader.savePosition(bookID: book.id, offset: 3)
     let before = try await reader.book(book.id)
     do {
-      _ = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .string("")])
+      _ = try await invoke(tools, "get_book_info", ["bookRef": ref, "fileRef": .string("")])
       XCTFail("empty recorded references must be rejected")
     } catch {}
-    let value = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .null])
+    let value = try await invoke(tools, "get_book_info", ["bookRef": ref, "fileRef": .null])
     XCTAssertEqual(value.object["status"], .string("ok"))
     let progress = value.object["data"]?.object["progress"]?.object
     XCTAssertEqual(progress?["offsetUtf8"], .number(3))
@@ -355,10 +358,10 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
     let first = try await invoke(
-      tools, "rg", ["bookRefs": .array([ref]), "query": .string("甲"), "maxHits": .number(2)])
+      tools, "search_text", ["bookRefs": .array([ref]), "query": .string("甲"), "maxHits": .number(2)])
     let cursor = try XCTUnwrap(first.object["page"]?.object["nextCursor"]?.string)
     let next = try await invoke(
-      AIReadingTools(reader: reader), "rg",
+      AIReadingTools(reader: reader), "search_text",
       [
         "bookRefs": .array([ref]), "query": .string("甲"), "mode": .string("regex"),
         "caseSensitive": .bool(true), "maxHits": .number(3), "cursor": .string(cursor),
@@ -372,7 +375,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
       try XCTUnwrap(firstHits.last?.object["range"]?.object["startUtf8"]?.int),
       try XCTUnwrap(nextHits.first?.object["range"]?.object["startUtf8"]?.int))
     let changed = try await invoke(
-      tools, "rg", ["bookRefs": .array([ref]), "query": .string("乙"), "cursor": .string(cursor)])
+      tools, "search_text", ["bookRefs": .array([ref]), "query": .string("乙"), "cursor": .string(cursor)])
     XCTAssertEqual(changed.object["error"]?.object["code"], .string("stale_cursor"))
   }
 }

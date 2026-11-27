@@ -248,6 +248,34 @@ final class AIProposalTests: BookAIFixture {
     XCTAssertTrue(model.canApply)
   }
 
+  // #378: 已保存对话里的旧工具名启动时一次性改成新名，参数和结果不动，只跑一次。
+  func testSavedConversationToolNamesMigrateOnce() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = directory.appendingPathComponent("ai-\(UUID().uuidString).store")
+    let marker = "Moonread.ai.toolNames." + store.lastPathComponent
+    defer { UserDefaults.standard.removeObject(forKey: marker) }
+    let owner = UUID().uuidString
+    do {
+      let repository = try await AIRepository.open(url: store)
+      try await repository.create(.init(id: owner, title: "Old", listed: false))
+      let output: JSONValue = .object(["status": .string("ok"), "data": .object(["text": .string("原文")])])
+      try await append(entry(output, name: "rg", sequence: 0), repository: repository, owner: owner)
+      try await append(entry(output, name: "get_mark", sequence: 1), repository: repository, owner: owner)
+    }
+    UserDefaults.standard.removeObject(forKey: marker)  // as if the old store came from 1.9
+    let migrated = try await AIRepository.open(url: store)
+    let names = try await migrated.history(owner, limit: nil).flatMap { entry in
+      (entry.message.object["content"]?.array ?? []).compactMap { $0.object["toolName"]?.string }
+    }
+    XCTAssertEqual(names, ["search_text", "list_marks"])
+    let text = try await migrated.history(owner, limit: nil).first?.message.object["content"]?.array?.first?
+      .object["output"]?.object["value"]?.object["data"]?.object["text"]
+    XCTAssertEqual(text, .string("原文"), "Outputs are kept as saved")
+    XCTAssertEqual(UserDefaults.standard.integer(forKey: marker), AIToolNameMigration.version)
+  }
+
   // S104: 笔记建议未确认不写入，重开丢弃草稿并进入同一业务编辑入口。
   func testNoteReviewReopenDiscardsDraftAndUsesSharedEditorOnce() async throws {
     let (root, reader, book, _, _) = try await fixture()
