@@ -273,7 +273,7 @@ enum AIResolvedSource: Sendable, Identifiable {
         // to the end of the paragraph about 64 KB after it (a read_text page is at most 50 KB).
         let size = try await reader.book(id).byteCount
         let lower = try await reader.textContext(id, at: anchor, before: 5, after: 0).startUtf8
-        let upper = try await reader.paragraph(id, at: min(anchor + 65536, size - 1)).endUtf8
+        let upper = try await reader.paragraph(id, containing: min(anchor + 65536, size - 1)).endUtf8
         let text = try await reader.textRange(id, start: lower, end: upper)
         let bytes = Array(text.text.utf8), needle = Array(quote.utf8)
         var found: [Int] = []

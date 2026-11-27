@@ -690,6 +690,7 @@ actor AppDataService: ReaderDataAccess {
         try indexStore().textContext(bookId: id, offsetUtf8: offset, beforeParagraphs: before, afterParagraphs: after)
     }
     func paragraph(_ id: String, at offset: UInt64) throws -> TextRange { try indexStore().paragraphRange(bookId: id, offsetUtf8: offset) }
+    func paragraph(_ id: String, containing offset: UInt64) throws -> TextRange { try indexStore().paragraphRange(bookId: id, containingUtf8: offset) }
     func annotate(_ id: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async throws -> ReaderMark {
         let edit = try await prepareUserAnnotation(id, start: start, end: end, admission: admission)
         if edit.baselines.values.contains(where: AnnotationReduction.conflicts) { throw UserDataConflict(candidates: edit.baselines.values.flatMap { $0 }) }

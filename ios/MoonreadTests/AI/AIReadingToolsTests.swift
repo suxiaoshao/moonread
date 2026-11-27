@@ -197,6 +197,21 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     }
   }
 
+  // #378: 原文查找范围的终点按字节估算，落在中文字中间时仍按所在段落取，不因对齐失败报错。
+  func testQuotedNoteWindowEndsInsideMultibyteText() async throws {
+    let text = "开头\n\n" + String(repeating: "字", count: 30000) + "\n结尾。\n"
+    let (root, reader, book, _, tools) = try await fixture(text: text)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
+    let hit = try await invoke(tools, "search_text", ["bookRefs": .array([ref]), "query": .string("开头"), "mode": .string("literal")])
+    let position = try XCTUnwrap(hit.object["data"]?.object["hits"]?.array?.first?.object["positionRef"]?.string)
+    let registry = await AIProposalRegistry(reader: reader)
+    let (start, end) = try await registry.quoteRange(bookRef: ref.string!, near: position, quote: "开头",
+                                                     references: AIReadingReferences(reader: reader))
+    let quoted = try await reader.textRange(book.id, start: start, end: end)
+    XCTAssertEqual(quoted.text, "开头")
+  }
+
   // S131: AI 准备未完整书籍必须列出准确确认对象，不遗漏或重复授权范围。
   func testPreparationConfirmationIncludesEveryIncompleteBookOnce() async throws {
     var visited: [String] = []

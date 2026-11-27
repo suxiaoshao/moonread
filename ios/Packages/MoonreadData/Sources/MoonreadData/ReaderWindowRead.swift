@@ -343,6 +343,18 @@ extension ReaderIndex {
         }
     }
 
+    /// The paragraph containing any byte offset, e.g. a size-based probe that may fall inside a scalar.
+    /// `paragraphRange` keeps rejecting unaligned offsets because those come from stored positions.
+    public func paragraphRange(bookId: String, containingUtf8 offset: UInt64) throws -> TextRange {
+        try read { db in
+            let body = try IndexedBookBody.fetch(db, id: bookId, scope: self.lease.scope.key)
+            guard body.bytes > 0 else { throw ReaderError.EmptyBook }
+            let point = min(offset, body.bytes - 1)
+            let aligned = try Self.scalarOffset(IndexedBookBody.chunk(db, id: body.id, at: point), at: point, forward: false)
+            return try Self.paragraph(db, body: body, at: aligned)
+        }
+    }
+
     public func textContext(bookId: String, offsetUtf8: UInt64, beforeParagraphs: UInt32, afterParagraphs: UInt32) throws -> TextRange {
         try read { db in
             let body = try IndexedBookBody.fetch(db, id: bookId, scope: self.lease.scope.key)
