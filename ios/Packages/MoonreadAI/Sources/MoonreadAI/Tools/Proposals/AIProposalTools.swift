@@ -1,23 +1,26 @@
 import MoonreadDataTypes
 import MoonreadCoreBindings
-import MoonreadAI
+import MoonreadData
 import Foundation
 import Observation
 import AISDKProvider
 
-struct AIMetadataProposalInput: AIReadingInput {
-    var bookRef: String
-    var author: String?
-    var synopsis: String?
-    var tags: [String]?
-    var tagsMode: AITagsMode?
-    var readingStatus: AIReadingStatus?
-    var sourceRefs: [String]?
-    var rename: AIMetadataRenameInput?
-    func validate() throws {
+public struct AIMetadataProposalInput: AIReadingInput {
+    public var bookRef: String
+    public var author: String?
+    public var synopsis: String?
+    public var tags: [String]?
+    public var tagsMode: AITagsMode?
+    public var readingStatus: AIReadingStatus?
+    public var sourceRefs: [String]?
+    public var rename: AIMetadataRenameInput?
+    public init(bookRef: String, author: String? = nil, synopsis: String? = nil, tags: [String]? = nil, tagsMode: AITagsMode? = nil, readingStatus: AIReadingStatus? = nil, sourceRefs: [String]? = nil, rename: AIMetadataRenameInput? = nil) {
+        self.bookRef = bookRef; self.author = author; self.synopsis = synopsis; self.tags = tags; self.tagsMode = tagsMode; self.readingStatus = readingStatus; self.sourceRefs = sourceRefs; self.rename = rename
+    }
+    public func validate() throws {
         guard author != nil || synopsis != nil || tags != nil || readingStatus != nil || rename != nil else { throw AIToolError("invalid_argument") }
     }
-    static var constraints: [String: [String: JSONValue]] {
+    public static var constraints: [String: [String: JSONValue]] {
         ["rename": ["type": .string("object"), "properties": .object(["fileRef": .object(["type": .string("string")]), "name": .object(["type": .string("string")])]), "required": .array([.string("fileRef"), .string("name")]), "additionalProperties": .bool(false)],
          "tagsMode": ["type": .string("string"), "enum": .array(AITagsMode.allCases.map { .string($0.rawValue) })],
          "readingStatus": ["type": .string("string"), "enum": .array(AIReadingStatus.allCases.map { .string($0.rawValue) })],
@@ -25,65 +28,70 @@ struct AIMetadataProposalInput: AIReadingInput {
          "sourceRefs": ["type": .string("array"), "items": .object(["type": .string("string")])]]
     }
 }
-struct AINoteProposalInput: AIReadingInput {
-    var bookRef: String
-    var near: String
-    var quote: String
-    var note: String
-    var markRef: String?
-    func validate() throws {
+public struct AINoteProposalInput: AIReadingInput {
+    public var bookRef: String
+    public var near: String
+    public var quote: String
+    public var note: String
+    public var markRef: String?
+    public init(bookRef: String, near: String, quote: String, note: String, markRef: String? = nil) { self.bookRef = bookRef; self.near = near; self.quote = quote; self.note = note; self.markRef = markRef }
+    public func validate() throws {
         guard !quote.isEmpty, quote.utf8.count <= 4096 else { throw AIToolError("invalid_argument", field: "quote", message: "Quote 1–4096 bytes of the original text.") }
         guard note.utf8.count <= 64 * 1024 else { throw AIToolError("invalid_argument", field: "note") }
     }
-    static var constraints: [String: [String: JSONValue]] {
+    public static var constraints: [String: [String: JSONValue]] {
         ["near": ["type": .string("string"), "minLength": .number(1), "description": .string("A positionRef at or shortly before the passage, e.g. from read_text or search_text.")],
          "quote": ["type": .string("string"), "minLength": .number(1), "description": .string("The exact original text to annotate, copied from read_text.")]]
     }
 }
-struct AIBookmarkProposalInput: AIReadingInput {
-    var bookRef: String
-    var at: String
-    static var constraints: [String: [String: JSONValue]] {
+public struct AIBookmarkProposalInput: AIReadingInput {
+    public var bookRef: String
+    public var at: String
+    public init(bookRef: String, at: String) { self.bookRef = bookRef; self.at = at }
+    public static var constraints: [String: [String: JSONValue]] {
         ["at": ["type": .string("string"), "minLength": .number(1), "description": .string("A positionRef from a book tool.")]]
     }
 }
-struct AICoverProposalInput: AIReadingInput { var bookRef: String; var attachmentRef: String }
+public struct AICoverProposalInput: AIReadingInput { public var bookRef: String; public var attachmentRef: String; public init(bookRef: String, attachmentRef: String) { self.bookRef = bookRef; self.attachmentRef = attachmentRef } }
 
-struct AIFindCoverInput: AIReadingInput { var bookRef: String; var query: String? }
+public struct AIFindCoverInput: AIReadingInput { public var bookRef: String; public var query: String?; public init(bookRef: String, query: String? = nil) { self.bookRef = bookRef; self.query = query } }
 /// A source verified against this session's committed tool results.
-enum AIResolvedSource: Sendable, Identifiable {
+public enum AIResolvedSource: Sendable, Identifiable {
     case text(bookRef: String, startUtf8: UInt64, endUtf8: UInt64, title: String)
     case web(AIWebSource)
-    var id: String {
+    public var id: String {
         switch self {
         case .text(let book, let start, let end, _): AIReadingTools.ref("source", "\(book):\(start):\(end)")
         case .web(let source): source.sourceRef
         }
     }
 }
-@MainActor @Observable final class AIProposalRegistry {
-    @ObservationIgnored var history: @MainActor (String) async throws -> [AIAgentEntry] = { _ in [] }
-    @ObservationIgnored var canEdit: @MainActor (String) -> Bool = { _ in false }
-    @ObservationIgnored var beginApplication: @MainActor (String) throws -> UUID = { _ in throw AIError.storage }
-    @ObservationIgnored var endApplication: @MainActor (String, UUID) -> Void = { _, _ in }
-    @ObservationIgnored var attach: @MainActor (String, AIReadingAttachment, AIStagedAsset?) async throws -> Void = { _, _, _ in }
-    private(set) var reviews: [String: AIReviewValue] = [:]
-    var inFlight: Set<String> = []
-    var lastErrors: [String: String] = [:]
-    var feedback: [String: String] = [:]
-    var renameFeedback: [String: String] = [:]
-    var renameErrors: [String: String] = [:]
-    var liveMetadata: [String: BookMetadata] = [:]
-    let reader: AppDataService
-    init(reader: AppDataService = .shared) { self.reader = reader }
-    func remove(_ owner: String) { closeSession(owner) }
-    func closeSession(_ owner: String) {
+@MainActor @Observable public final class AIProposalRegistry {
+    @ObservationIgnored public var history: @MainActor (String) async throws -> [AIAgentEntry] = { _ in [] }
+    @ObservationIgnored public var canEdit: @MainActor (String) -> Bool = { _ in false }
+    @ObservationIgnored public var beginApplication: @MainActor (String) throws -> UUID = { _ in throw AIError.storage }
+    @ObservationIgnored public var endApplication: @MainActor (String, UUID) -> Void = { _, _ in }
+    @ObservationIgnored public var attach: @MainActor (String, AIReadingAttachment, AIStagedAsset?) async throws -> Void = { _, _, _ in }
+    @ObservationIgnored public private(set) var reviews: [String: AIReviewValue] = [:]
+    public var inFlight: Set<String> = []
+    public var lastErrors: [String: String] = [:]
+    public var feedback: [String: String] = [:]
+    public var renameFeedback: [String: String] = [:]
+    public var renameErrors: [String: String] = [:]
+    public var liveMetadata: [String: BookMetadata] = [:]
+    @ObservationIgnored let host: AIProposalHost
+    public init(host: AIProposalHost) { self.host = host }
+    func details(sha: String) async throws -> BookDetails {
+        try await host.reading.details(sha)
+    }
+    public func remove(_ owner: String) { closeSession(owner) }
+    public func closeSession(_ owner: String) {
         for id in reviews.values.filter({ $0.sessionID == owner }).map(\.id) { closeResult(id) }
     }
-    func closeResult(_ id: String) { reviews[id] = nil; lastErrors[id] = nil; feedback[id] = nil; liveMetadata[id] = nil; renameFeedback[id] = nil; renameErrors[id] = nil }
-    func review(_ id: String) -> AIReviewValue? { reviews[id] }
-    func update(_ value: AIReviewValue) { guard reviews[value.id] != nil else { return }; reviews[value.id] = value }
-    func openResult(_ result: AIResultValue) async {
+    public func closeResult(_ id: String) { reviews[id] = nil; lastErrors[id] = nil; feedback[id] = nil; liveMetadata[id] = nil; renameFeedback[id] = nil; renameErrors[id] = nil }
+    public func review(_ id: String) -> AIReviewValue? { reviews[id] }
+    public func update(_ value: AIReviewValue) { guard reviews[value.id] != nil else { return }; reviews[value.id] = value }
+    public func openResult(_ result: AIResultValue) async {
         guard canEdit(result.sessionID) else { return }
         closeResult(result.id)
         do {
@@ -94,7 +102,7 @@ enum AIResolvedSource: Sendable, Identifiable {
             await refreshLive(result.id)
         } catch is CancellationError {} catch { lastErrors[result.id] = AIRequestError.message(error) }
     }
-    static func coverCandidates(_ result: AIResultValue) -> [AICoverCandidate] {
+    public static func coverCandidates(_ result: AIResultValue) -> [AICoverCandidate] {
         let proposals: [AICoverProposal]
         switch result.body { case .cover(let p): proposals = [p]; case .findCover(let p): proposals = p.candidates; default: proposals = [] }
         var order: [String] = [], candidates: [String: AICoverCandidate] = [:]
@@ -116,25 +124,25 @@ enum AIResolvedSource: Sendable, Identifiable {
         case .findCover(let p): ref = p.bookRef
         case .organization, .bookFilter, .bookList: return
         }
-        do { let sha = try await AIReadingReferences(reader: reader).sha(ref); liveMetadata[id] = try await reader.details(sha: sha).metadata }
+        do { let sha = try AIReadingReferences.parseBookReference(ref).sha; liveMetadata[id] = try await details(sha: sha).metadata }
         catch { /* Optional refresh does not turn an actual business save into failure. */ }
     }
-    func metadataCurrent(_ id: String, field: AIMetadataFieldReview) -> String { liveMetadata[id].map { Self.metadataValue(field.kind, $0) } ?? field.current }
-    static func metadataValue(_ kind: AIMetadataFieldKind, _ value: BookMetadata) -> String {
+    public func metadataCurrent(_ id: String, field: AIMetadataFieldReview) -> String { liveMetadata[id].map { Self.metadataValue(field.kind, $0) } ?? field.current }
+    public static func metadataValue(_ kind: AIMetadataFieldKind, _ value: BookMetadata) -> String {
         switch kind { case .author: value.author; case .synopsis: value.synopsis; case .tags: value.tags.sorted().joined(separator: "\n"); case .readingStatus: String(describing: value.status) }
     }
     private func initialCoverReview(_ ref: String, candidates: [String]) async -> AICoverReviewValue {
         let sha = try? AIReadingReferences.parseBookReference(ref).sha
         let details: BookDetails?
-        if let sha { details = try? await reader.details(sha: sha) } else { details = nil }
+        if let sha { details = try? await self.details(sha: sha) } else { details = nil }
         return .init(bookRef: ref, title: details?.book?.title ?? String(localized: "封面"), contentSHA256: sha, candidateAssetIDs: candidates)
     }
     private func initialReview(_ result: AIResultValue) async throws -> AIReviewValue {
-        let references = AIReadingReferences(reader: reader)
+        let references = AIReadingReferences(access: host.reading)
         let body: AIReviewValue.Body
         switch result.body {
         case .metadata(let p):
-            let details = try await reader.details(sha: references.sha(p.bookRef)), mode = p.tagsMode ?? .merge
+            let details = try await details(sha: references.sha(p.bookRef)), mode = p.tagsMode ?? .merge
             let tags = p.tags.map { Set($0.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }) }
             let suggested = tags.map { mode == .merge ? Set(details.metadata.tags).union($0).sorted() : $0.sorted() }
             let offered: [(AIMetadataFieldKind, String?)] = [(.author, p.author?.trimmingCharacters(in: .whitespacesAndNewlines)), (.synopsis, p.synopsis?.trimmingCharacters(in: .whitespacesAndNewlines)), (.tags, suggested?.joined(separator: "\n")), (.readingStatus, p.readingStatus?.rawValue)]
@@ -157,10 +165,10 @@ enum AIResolvedSource: Sendable, Identifiable {
             var value = AINoteReviewValue(draft: p.note, selected: true, excerpt: "", chapter: nil, existingBookmark: false, unavailable: nil)
             do {
                 let reading = try await references.available(p.bookRef)
-                let range = p.kind == .bookmark ? try await reader.paragraph(reading, at: p.startUtf8) : try await reader.textRange(reading, start: p.startUtf8, end: p.endUtf8)
-                value.excerpt = String(range.text.prefix(160)); value.chapter = try await reader.details(bookID: reading).currentChapter
+                let range = p.kind == .bookmark ? try await host.reading.paragraph(reading, p.startUtf8) : try await host.reading.textRange(reading, p.startUtf8, p.endUtf8)
+                value.excerpt = String(range.text.prefix(160)); value.chapter = try await host.reading.detailsByID(reading).currentChapter
                 if p.kind == .bookmark {
-                    let marks = try await reader.aiMarks(sha: references.sha(p.bookRef))
+                    let marks = try await host.reading.aiMarks(references.sha(p.bookRef))
                     value.existingBookmark = marks.values.contains { $0.contains { $0.bookmark && $0.content?.start == p.startUtf8 } }
                     if value.existingBookmark { value.selected = false }
                 }
@@ -170,7 +178,7 @@ enum AIResolvedSource: Sendable, Identifiable {
         case .findCover(let p): body = .cover(await initialCoverReview(p.bookRef, candidates: Self.coverCandidates(result).map(\.id)))
         case .organization(let p):
             let location = try await references.location(p.input.scopeRef)
-            let plan = AIOrganizationPlan(proposal: p, scope: location, reader: reader)
+            let plan = AIOrganizationPlan(proposal: p, scope: location, host: host)
             try await plan.prepare()
             body = .organization(plan)
         case .bookFilter, .bookList:
@@ -178,14 +186,14 @@ enum AIResolvedSource: Sendable, Identifiable {
         }
         return .init(id: result.id, sessionID: result.sessionID, result: result, body: body)
     }
-    func metadataProposal(_ input: AIMetadataProposalInput) async throws -> AIMetadataProposal {
+    public func metadataProposal(_ input: AIMetadataProposalInput) async throws -> AIMetadataProposal {
         try input.validate()
-        let references = AIReadingReferences(reader: reader)
+        let references = AIReadingReferences(access: host.reading)
         var rename: AIMetadataRenameProposal?
         if let proposed = input.rename {
             let sha = try await references.sha(input.bookRef), entry = try await references.file(proposed.fileRef)
             guard !entry.directory, entry.metadata?.sha == sha else { throw AIToolError("permission_denied", field: "rename.fileRef") }
-            let source = try await reader.aiFileSnapshot(entry.location)
+            let source = try await host.fileSnapshot(entry.location)
             let value = AIMetadataRenameProposal(fileRef: proposed.fileRef, name: proposed.name.trimmingCharacters(in: .whitespacesAndNewlines), originalName: entry.name, source: source)
             _ = try value.filename(stem: value.name)
             rename = value
@@ -193,29 +201,29 @@ enum AIResolvedSource: Sendable, Identifiable {
         return .init(proposalRef: UUID().uuidString, bookRef: input.bookRef, author: input.author, synopsis: input.synopsis,
                      tags: input.tags, tagsMode: input.tagsMode, readingStatus: input.readingStatus, sourceRefs: input.sourceRefs, rename: rename)
     }
-    func prepare(_ snapshot: AIProposalSnapshot, owner: String) async throws -> AIToolResponse<AIProposalSnapshot> {
-        let references = AIReadingReferences(reader: reader)
+    public func prepare(_ snapshot: AIProposalSnapshot, owner: String) async throws -> AIToolResponse<AIProposalSnapshot> {
+        let references = AIReadingReferences(access: host.reading)
         switch snapshot {
         case .metadata(let proposal):
-            _ = try await reader.details(sha: references.sha(proposal.bookRef))
+            _ = try await details(sha: references.sha(proposal.bookRef))
             if let refs = proposal.sourceRefs, !refs.isEmpty {
                 let produced = try await resolveSources(refs, owner: owner)
                 guard Set(produced.map(\.id)) == Set(refs) else { throw AIToolError("stale_reference", field: "sourceRefs") }
             }
         case .notes(let proposal):
             let id = try await references.available(proposal.bookRef)
-            if proposal.kind == .bookmark { _ = try await reader.paragraph(id, at: proposal.startUtf8) }
-            else { _ = try await reader.textRange(id, start: proposal.startUtf8, end: proposal.endUtf8) }
+            if proposal.kind == .bookmark { _ = try await host.reading.paragraph(id, proposal.startUtf8) }
+            else { _ = try await host.reading.textRange(id, proposal.startUtf8, proposal.endUtf8) }
         case .cover(let proposal): _ = try await AIImageStore.shared.attachment(owner: owner, ref: proposal.attachment.id)
         case .organization(let proposal):
             try proposal.input.validate()
             let location = try await references.location(proposal.input.scopeRef)
-            let plan = AIOrganizationPlan(proposal: proposal, scope: location, reader: reader)
+            let plan = AIOrganizationPlan(proposal: proposal, scope: location, host: host)
             try await plan.prepare()
         }
         return .init(data: snapshot)
     }
-    func resolveSources(_ refs: [String], owner: String) async throws -> [AIResolvedSource] {
+    public func resolveSources(_ refs: [String], owner: String) async throws -> [AIResolvedSource] {
         var produced: [String: AIResolvedSource] = [:]
         for entry in try await history(owner) where entry.message.object["role"] == .string("tool") {
             for part in entry.message.object["content"]?.array ?? [] {
@@ -240,7 +248,7 @@ enum AIResolvedSource: Sendable, Identifiable {
         var seen = Set<String>()
         return refs.compactMap { produced[$0] }.filter { seen.insert($0.id).inserted }
     }
-    func imageOrigin(owner: String, ref: String) async throws -> AIImageOrigin {
+    public func imageOrigin(owner: String, ref: String) async throws -> AIImageOrigin {
         for entry in try await history(owner) {
             if entry.message.object["role"] == .string("user") {
                 for attachment in entry.readingAttachments where attachment.kind == .image && attachment.attachmentRef == ref {
@@ -271,10 +279,10 @@ enum AIResolvedSource: Sendable, Identifiable {
         let id = try await references.ready(bookRef)
         // Paragraph boundaries own the UTF-8 alignment: from a few paragraphs before the position
         // to the end of the paragraph about 64 KB after it (a read_text page is at most 50 KB).
-        let size = try await reader.book(id).byteCount
-        let lower = try await reader.textContext(id, at: anchor, before: 5, after: 0).startUtf8
-        let upper = try await reader.paragraph(id, containing: min(anchor + 65536, size - 1)).endUtf8
-        let text = try await reader.textRange(id, start: lower, end: upper)
+        let size = try await host.reading.book(id).byteCount
+        let lower = try await host.reading.textContext(id, anchor, 5, 0).startUtf8
+        let upper = try await host.reading.paragraphContaining(id, min(anchor + 65536, size - 1)).endUtf8
+        let text = try await host.reading.textRange(id, lower, upper)
         let bytes = Array(text.text.utf8), needle = Array(quote.utf8)
         var found: [Int] = []
         if needle.count <= bytes.count {
@@ -291,16 +299,17 @@ enum AIResolvedSource: Sendable, Identifiable {
         let start = text.startUtf8 + UInt64(match)
         return (start, start + UInt64(needle.count))
     }
-    func definitions(owner: String, providers: AIConnectionService, makeTransport: @escaping @Sendable () -> AITransport) -> [AIAgentTool] {
-        let references = AIReadingReferences(reader: reader)
+    public func definitions(owner: String, providers: AIConnectionService, makeTransport: @escaping @Sendable () -> AITransport) -> [AIAgentTool] {
+        let references = AIReadingReferences(access: host.reading)
+        let parseCoverPage = host.parseCoverPage
         return [
             .init(name: "search_cover", description: "Search the web for cover images of a book with the configured search service. Returns candidates and their sources for the reader to review; no cover is applied.", input: AIFindCoverInput.self,
                 enabled: { providers.purposeSelection(.search) != nil }, execute: { input in
                     let sha = try await references.sha(input.bookRef)
-                    let details = try await self.reader.details(sha: sha)
+                    let details = try await self.details(sha: sha)
                     let title = details.book?.title ?? input.bookRef
                     let native = try await AINativeTools(providers: providers, owner: owner, makeTransport: makeTransport).search(.init(query: input.query ?? (title + " " + details.metadata.author + " 小说")))
-                    let fetcher = await AICoverImageFetcher(availability: providers.availability, parsePage: AICoverPageParser.extract)
+                    let fetcher = await AICoverImageFetcher(availability: providers.availability, parsePage: parseCoverPage)
                     let request = try await providers.trackNativeRequest(connectionID: native.data.connectionID, cancel: { fetcher.cancel() })
                     do {
                         let report = try await fetcher.candidates(sources: native.sources, title: title, bookRef: input.bookRef,
@@ -314,7 +323,7 @@ enum AIResolvedSource: Sendable, Identifiable {
                 }),
             .init(name: "propose_library_organization", description: "Propose folders and placements for user review. scopeRef declares this plan's scope; reading attachments are context, not a file allowlist. No deletion or overwrite. parentRef is an existing folder reference within the plan scope or a temporaryRef from this plan. Only explicit user application executes the reviewed plan.", input: AIOrganizationInput.self,
                 execute: { input in
-                    try await self.prepare(.organization(.init(proposalRef: UUID().uuidString, previewRef: UUID().uuidString, input: input)), owner: owner)
+                try await self.prepare(.organization(.init(proposalRef: UUID().uuidString, previewRef: UUID().uuidString, input: input)), owner: owner)
                 }),
             .init(name: "propose_book_metadata", description: "Propose only the requested metadata fields for user review. Attribute authors only from explicit filename attribution, existing metadata, front matter, body attribution or cited web sources; never infer authorship from characters or style. Extract or compose synopsis and tags as requested. Tag removals, replacements and clears require explicit user request. Never infer reading status; include it only when the user explicitly requested a status change. Omitted fields are unchanged, empty fields clear only by explicit request. Tags merge by default. Optionally propose rename {fileRef,name}: name is a filename stem and the original extension is retained. Only propose renaming to remove obvious author/site/format/completion noise from a filename, or on explicit user request. Do not rewrite, translate or infer the book title from prose. fileRef must belong to bookRef. User confirmation renames that real file without replacement, independently of metadata saving.", input: AIMetadataProposalInput.self, execute: { input in
                 try await self.prepare(.metadata(self.metadataProposal(input)), owner: owner)

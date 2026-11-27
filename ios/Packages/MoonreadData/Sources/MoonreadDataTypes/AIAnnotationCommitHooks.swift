@@ -18,7 +18,7 @@ public struct AIAnnotationCommitHooks {
         self.finish = finish
     }
 
-    let begin: @MainActor () throws -> AIAnnotationCommitTicket
-    let saved: @MainActor () -> Void
-    let finish: @MainActor (AIAnnotationCommitTicket) -> Void
+    public let begin: @MainActor () throws -> AIAnnotationCommitTicket
+    public let saved: @MainActor () -> Void
+    public let finish: @MainActor (AIAnnotationCommitTicket) -> Void
 }

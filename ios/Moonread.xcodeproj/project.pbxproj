@@ -143,16 +143,11 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 
 		E7470B2B8F69485A8E707336 /* AIQuickTaskEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D7959C9A0B549099FD007FB; };
 		8E2BEFD2EFA643EDB23DD5BB /* AIQuickTaskResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2117063F3A64081A7DB32FA; };
-		19EEE1FEFFC94415B88046FB /* AIProposals.swift in Sources */ = {isa = PBXBuildFile; fileRef = C140582B21A04A6588F553EA; };
-		6C0B92C59607479E88DB5F02 /* AIProposalReviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C7DC58DBE7F4DDB8E6A4CEA; };
-		14F4DEFD709845FC8AAAEA7F /* AIProposalTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E617B7FF31E43C3A0B7C1AF; };
-		29E8AF36983F4CF9BE988DE0 /* AIOrganization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29CD035636154B598B211DC3; };
+		14F4DEFD709845FC8AAAEA7F /* AIProposalHost+AppDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E617B7FF31E43C3A0B7C1AF; };
 
 		B2B2CB5D001B4F72BFAEBD3F /* BookAITestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E96BC33B1F24360B74F39AF /* BookAITestFixtures.swift */; };
 		1E29F78A7797494D83F655FD /* AITaskFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261A8A86E7F248BC959C51BC; };
-		19B30D2DE87E46ADA99B1F85 /* AIResults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97243FC88EB941CE8D7B8C5D; };
 		0824CF925F1146178BFD0FD1 /* AIRepositoryTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7773498FC5E46E7B6D20EE9 /* AIRepositoryTestFixtures.swift */; };
-		941D8F146D7A436D97BC6909 /* AIReviewActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63157555C51A4D79A42A3D88; };
 		338EBE51F11D4BDC98985D77 /* ReaderOpenBenchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A44BEF4C3D4FE0A71CCB03; };
 		FD64F53149DE5DBFB6AA04F1 /* ShareInbox in App Sources */ = { isa = PBXBuildFile; fileRef = AF3B627D29215FAB93FC0C44;  };
 		83C1F3DE49DE5AC693D3E8E8 /* ShareReceive strings in App Resources */ = { isa = PBXBuildFile; fileRef = 5DA1E57CF521587EAF48FEFB;  };
@@ -477,16 +472,11 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 
 		7D7959C9A0B549099FD007FB /* AIQuickTaskEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIQuickTaskEntry.swift"; sourceTree = "<group>"; };
 		A2117063F3A64081A7DB32FA /* AIQuickTaskResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIQuickTaskResult.swift"; sourceTree = "<group>"; };
-		C140582B21A04A6588F553EA /* AIProposals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIProposals.swift"; sourceTree = "<group>"; };
-		5C7DC58DBE7F4DDB8E6A4CEA /* AIProposalReviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIProposalReviews.swift"; sourceTree = "<group>"; };
-		7E617B7FF31E43C3A0B7C1AF /* AIProposalTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIProposalTools.swift"; sourceTree = "<group>"; };
-		29CD035636154B598B211DC3 /* AIOrganization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIOrganization.swift"; sourceTree = "<group>"; };
+		7E617B7FF31E43C3A0B7C1AF /* AIProposalHost+AppDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIProposalHost+AppDataService.swift"; sourceTree = "<group>"; };
 
 		6E96BC33B1F24360B74F39AF /* BookAITestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookAITestFixtures.swift"; sourceTree = "<group>"; };
 		261A8A86E7F248BC959C51BC /* AITaskFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AITaskFixtures.swift"; sourceTree = "<group>"; };
-		97243FC88EB941CE8D7B8C5D /* AIResults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIResults.swift"; sourceTree = "<group>"; };
 		F7773498FC5E46E7B6D20EE9 /* AIRepositoryTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIRepositoryTestFixtures.swift"; sourceTree = "<group>"; };
-		63157555C51A4D79A42A3D88 /* AIReviewActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReviewActions.swift"; sourceTree = "<group>"; };
 		23A44BEF4C3D4FE0A71CCB03 /* ReaderOpenBenchmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderOpenBenchmark.swift"; sourceTree = "<group>"; };
 		AF3B627D29215FAB93FC0C44 /* ShareInbox.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShareInbox.swift"; sourceTree = "<group>"; };
 		5DA1E57CF521587EAF48FEFB /* ShareReceive.xcstrings */ = { isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "ShareReceive.xcstrings"; sourceTree = "<group>"; };
@@ -1257,8 +1247,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		77CEB4FB85CF70669FE947D0 /* Proposals */ = {
 			isa = PBXGroup;
 			children = (
-				7E617B7FF31E43C3A0B7C1AF /* AIProposalTools.swift */,
-				63157555C51A4D79A42A3D88 /* AIReviewActions.swift */,
+				7E617B7FF31E43C3A0B7C1AF /* AIProposalHost+AppDataService.swift */,
 			);
 			path = "Proposals";
 			sourceTree = "<group>";
@@ -1410,9 +1399,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		CC4C83C2DD3F5C7261CC304F /* Proposals */ = {
 			isa = PBXGroup;
 			children = (
-				5C7DC58DBE7F4DDB8E6A4CEA /* AIProposalReviews.swift */,
-				C140582B21A04A6588F553EA /* AIProposals.swift */,
-				97243FC88EB941CE8D7B8C5D /* AIResults.swift */,
 			);
 			path = "Proposals";
 			sourceTree = "<group>";
@@ -1497,7 +1483,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			children = (
 				9088342039FAD969B5501EED /* Reading */,
 				77CEB4FB85CF70669FE947D0 /* Proposals */,
-				29CD035636154B598B211DC3 /* AIOrganization.swift */,
 
 			);
 			path = "Tools";
@@ -1816,12 +1801,7 @@ CAA8B00EBC8041F6A299A6A5,
 B792EA92E8204EEDB7AA1450,
 				1E29F78A7797494D83F655FD /* AITaskFixtures.swift */,
 
-				29E8AF36983F4CF9BE988DE0 /* AIOrganization.swift */,
-				14F4DEFD709845FC8AAAEA7F /* AIProposalTools.swift */,
-				941D8F146D7A436D97BC6909 /* AIReviewActions.swift */,
-				6C0B92C59607479E88DB5F02 /* AIProposalReviews.swift */,
-				19EEE1FEFFC94415B88046FB /* AIProposals.swift */,
-				19B30D2DE87E46ADA99B1F85 /* AIResults.swift */,
+				14F4DEFD709845FC8AAAEA7F /* AIProposalHost+AppDataService.swift */,
 				8E2BEFD2EFA643EDB23DD5BB /* AIQuickTaskResult.swift */,
 				B399C5AB3B2D4E7385E053AC /* AITaskSheet.swift */,
 				DC581CB64D964BDC81C14C4B /* AIMetadataReviewView.swift */,
