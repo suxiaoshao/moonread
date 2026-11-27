@@ -1,0 +1,61 @@
+import MoonreadDesign
+import SwiftUI
+
+public struct AIReadingConversationContent<Chat: View>: View {
+    public init(context: AIEntryContext, close: @escaping () -> Void, selected: Binding<String?>,
+                openingIsActive: @escaping () -> Bool, @ViewBuilder chat: @escaping (String) -> Chat) {
+        self.context = context
+        self.close = close
+        self._selected = selected
+        self.openingIsActive = openingIsActive
+        self.chat = chat
+    }
+
+    @Environment(AIService.self) private var ai
+    let context: AIEntryContext
+    let close: () -> Void
+    @Binding var selected: String?
+    let openingIsActive: () -> Bool
+    private let chat: (String) -> Chat
+    @State private var visible = false
+    @State private var notice: AIActionNotice?
+    public var body: some View {
+        NavigationStack {
+            Group {
+                if let id = selected { chat(id) }
+                else { ContentUnavailableView("新对话", systemImage: "bubble.left.and.bubble.right") }
+            }.toolbar {
+                ToolbarItem(placement: .principal) {
+                    AIConversationTitleMenu(currentID: selected, create: { Task { await createConversation() } },
+                                            select: { selected = $0; seed() })
+                }
+                ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close, action: close).labelStyle(.iconOnly).toolbarGlyph().accessibilityIdentifier("closeAIChat") }
+            }
+        }
+        .onAppear { visible = true }.onDisappear { visible = false; notice = nil }
+        .onReceive(MainActorNotifications.publisher(for: .aiActionFailed)) { notification in
+            guard visible, selected == nil, let event = notification.object as? AIActionNotice, event.sessionID == nil else { return }
+            notice = event
+        }
+        .alert("暂时无法完成", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+            Button("知道了", role: .cancel) { notice = nil }
+        } message: { Text(notice?.message ?? "") }
+        .task {
+            await ai.load()
+            guard !Task.isCancelled, openingIsActive() else { return }
+            if selected.flatMap({ ai.conversation($0) }) == nil { await createConversation() }
+            seed()
+        }
+    }
+    private func createConversation() async {
+        guard !Task.isCancelled, openingIsActive() else { return }
+        let previous = selected
+        guard let value = await ai.create(context: context.association, noticeOwner: previous),
+              !Task.isCancelled, openingIsActive(), selected == previous else { return }
+        selected = value.id; seed()
+    }
+    private func seed() {
+        if let selected { ai.seedReadingDraft(selected, attachments: context.attachments) }
+    }
+
+}
