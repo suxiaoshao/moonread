@@ -1,6 +1,6 @@
 import Foundation
 
-public enum AIProcessExpansionID: Hashable { case group(String), reasoning(String) }
+public enum AIProcessExpansionID: Hashable { case turn(String), group(String), reasoning(String) }
 public typealias AIProcessExpansionHandler = @MainActor @Sendable (AIProcessExpansionID) -> Void
 
 /// A conversation owns its presentation cache across viewport updates and history windows.
@@ -20,7 +20,8 @@ public typealias AIProcessExpansionHandler = @MainActor @Sendable (AIProcessExpa
 public struct AIMessageViewportRow: Identifiable, Equatable {
     public enum Kind: Equatable {
         case block(message: String?), input(text: String), image(width: Double, height: Double)
-        case confirmation, result, header, processToggle, other
+        case processToggle(expanded: Bool, completed: Bool)
+        case confirmation, result, header, other
     }
 
     public struct NativeText: Equatable {

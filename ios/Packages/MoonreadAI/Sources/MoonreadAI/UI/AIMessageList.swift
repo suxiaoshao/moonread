@@ -90,7 +90,10 @@ private final class AIHostedMessageCell: UITableViewCell {
     private var host: UIHostingController<AnyView>?
     private var height: CGFloat = 0
     private weak var parentController: UIViewController?
-    func configure(_ content: AnyView, height: CGFloat, parent: UIViewController) {
+    private(set) var rowID: String?
+    var processToggleLabelFrame: CGRect?
+    func configure(_ content: AnyView, row: AIMessageViewportRow, height: CGFloat, parent: UIViewController) {
+        if rowID != row.id { processToggleLabelFrame = nil; rowID = row.id }
         self.height = height; parentController = parent
         if let host { host.rootView = content }
         else {
@@ -100,7 +103,9 @@ private final class AIHostedMessageCell: UITableViewCell {
             contentView.addSubview(host.view)
             self.host = host
         }
-        contentView.clipsToBounds = true
+        // The compact toggle borrows 2pt of the following row's top spacing.
+        if case .processToggle = row.kind { contentView.clipsToBounds = false }
+        else { contentView.clipsToBounds = true }
         attachHost()
         setNeedsLayout(); layoutIfNeeded()
     }
@@ -157,6 +162,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     private var applying = false
     private var expansionAnimationPending = false
     private var animatingExpansion = false
+    private var animatingProcessRows = false
     private var expansionHeights: [String: CGFloat] = [:]
     private var pendingResizes = DeferredRowMeasurements()
     private var adjusting = false
@@ -290,39 +296,51 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             }
             let cell = table.dequeueReusableCell(withIdentifier: "message", for: path) as! AIHostedMessageCell
             if let self, let row = rows[id] {
-                cell.configure(hostedContent(id, observingResultHeight: true), height: hostedHeight(row), parent: self)
+                cell.configure(hostedContent(id, displayedIn: cell), row: row, height: hostedHeight(row), parent: self)
             }
             cell.selectionStyle = .none; cell.backgroundColor = .clear
             return cell
         }
+        source.defaultRowAnimation = .top
         anchoredTable.beforeLayout = { [weak self] in
-            guard let self, !adjusting, !animatingExpansion else { return }
+            guard let self, !adjusting, !animatingExpansion, !animatingProcessRows else { return }
             if following {
                 adjusting = true; followBottom(); adjusting = false
             } else if !applying { layoutAnchor = expansionAnchor ?? stableAnchor ?? captureAnchor() }
         }
         anchoredTable.afterLayout = { [weak self] in
             guard let self, !adjusting, !animatingExpansion else { return }
+            if animatingProcessRows { alignAnimatingProcess(); return }
             if applying {
                 if following { adjusting = true; followBottom(); adjusting = false }
                 else if let expansionAnchor { settle(anchor: expansionAnchor) }
             } else { settle(anchor: layoutAnchor) }
         }
-        let tap = UITapGestureRecognizer(target: self, action: #selector(tappedBackground))
+        let tap = UITapGestureRecognizer(target: self, action: #selector(tappedTable))
         tap.cancelsTouchesInView = false; tap.delegate = self
         tableView.addGestureRecognizer(tap)
     }
-    private func hostedContent(_ id: String, observingResultHeight: Bool = false) -> AnyView {
+    private func hostedContent(_ id: String, displayedIn cell: AIHostedMessageCell? = nil) -> AnyView {
+        let processToggle: Bool
+        if case .processToggle? = rows[id]?.kind { processToggle = true } else { processToggle = false }
         let content = render?(id, { [weak self] item in
             self?.toggleProcessItem(rowID: id, item: item)
         }).id(id)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
+            .padding(.horizontal, LayoutTokens.content).padding(.top, LayoutTokens.compact)
+            .padding(.bottom, processToggle ? AIProcessToggleHitShape.replyGap - LayoutTokens.compact : LayoutTokens.compact)
             .environment(\.moonreadReduceMotion, reducedMotion)
+        if processToggle, let cell {
+            return AnyView(content.coordinateSpace(.named(AIProcessToggleHitShape.rowSpace))
+                .environment(\.aiProcessToggleLabelFrame, { [weak cell] frame in
+                    guard cell?.rowID == id else { return }
+                    cell?.processToggleLabelFrame = frame
+                }))
+        }
         // Result cards can resize without a new row version. Only the displayed
         // content observes those changes; the offscreen sizer uses sizeThatFits.
-        guard observingResultHeight, let row = rows[id], case .result = row.kind else { return AnyView(content) }
+        guard cell != nil, let row = rows[id], case .result = row.kind else { return AnyView(content) }
         let version = row.version
         return AnyView(content.onGeometryChange(for: CGSize.self, of: { $0.size }) { [weak self] size in
             DispatchQueue.main.async { [weak self] in
@@ -370,10 +388,29 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         }
         if needsLayout { UIView.performWithoutAnimation { tableView.performBatchUpdates(nil) } }
     }
-    @objc private func tappedBackground() { dismissKeyboard?() }
+    @objc private func tappedTable(_ tap: UITapGestureRecognizer) {
+        let point = tap.location(in: tableView)
+        if let target = processToggleOverflow(at: point) {
+            toggleProcessItem(rowID: target.row, item: .turn(target.turn))
+        } else if tableView.indexPathForRow(at: point) == nil { dismissKeyboard?() }
+    }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         // Interactive cell contents keep taps, links, text selection and their own menus.
-        tableView.indexPathForRow(at: touch.location(in: tableView)) == nil
+        let point = touch.location(in: tableView)
+        return tableView.indexPathForRow(at: point) == nil || processToggleOverflow(at: point) != nil
+    }
+    private func processToggleOverflow(at point: CGPoint) -> (row: String, turn: String)? {
+        // UIKit hit-testing stops at row bounds. Forward only the part of the
+        // SwiftUI interaction shape that falls outside the toggle's own cell.
+        for path in tableView.indexPathsForVisibleRows ?? [] {
+            guard let id = source.itemIdentifier(for: path), let row = rows[id], case .processToggle = row.kind,
+                  let turn = row.turnID, !tableView.rectForRow(at: path).contains(point),
+                  let cell = tableView.cellForRow(at: path) as? AIHostedMessageCell, cell.rowID == id,
+                  let label = cell.processToggleLabelFrame, !label.isEmpty,
+                  cell.convert(AIProcessToggleHitShape.target(for: label), to: tableView).contains(point) else { continue }
+            return (id, turn)
+        }
+        return nil
     }
 
     func update(rows nextRows: [AIMessageViewportRow], render: @escaping AIMessageRowRenderer, background: UIColor,
@@ -439,12 +476,19 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         let ids = nextRows.map(\.id)
         let previous = source.snapshot().itemIdentifiers
         let existing = Set(previous)
+        let processChange = previous != ids && searchTarget == nil
+            ? processExpansionChange(nextRows, old: old, previous: previous) : nil
+        if let processChange, processChange.automatic,
+           let reply = nextRows.last(where: { $0.turnID == processChange.turn && $0.nativeText != nil }),
+           let replyAnchor = captureAnchor(where: { $0 == reply.id }) {
+            pinExpansion(to: replyAnchor)
+        }
         let anchor = expansionAnchor
             ?? stableAnchor.flatMap { rows[$0.id] == nil ? nil : $0 }
             ?? captureAnchor(where: { rows[$0] != nil })
         var completionAnchor: Anchor?
         if following && smoothFollowing && streamVisible && !reducedMotion && previous != ids {
-            // A completed turn can insert its process control above visible prose.
+            // The process control can first appear above visible prose.
             let completedTurns = Set(nextRows.compactMap { row -> String? in
                 guard !existing.contains(row.id), case .processToggle = row.kind else { return nil }
                 return row.turnID
@@ -464,7 +508,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             if let text = rows[id]?.nativeText { return force || old[id]?.nativeText != text }
             return force || old[id] != rows[id]
         }
-        if expansionAnimationPending, previous == ids, let anchor = expansionAnchor, changed == [anchor.id],
+        if expansionAnimationPending, previous == ids, let anchor = expansionAnchor, changed == [anchor.id], let row = rows[anchor.id],
            let path = source.indexPath(for: anchor.id), let cell = tableView.cellForRow(at: path) {
             expansionAnimationPending = false
             applying = true; animatingExpansion = true
@@ -475,12 +519,12 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             })
             let content = hostedContent(anchor.id)
             let height = measureHosted(content)
-            if let row = rows[anchor.id] { storeMeasuredHeight(height, for: heightKey(row)) }
+            storeMeasuredHeight(height, for: heightKey(row))
             let oldHeight = tableView.rectForRow(at: path).height
             expansionHeights = [anchor.id: oldHeight]
             CATransaction.begin()
             UIView.performWithoutAnimation {
-                (cell as? AIHostedMessageCell)?.configure(content, height: height, parent: self)
+                (cell as? AIHostedMessageCell)?.configure(content, row: row, height: height, parent: self)
                 tableView.performBatchUpdates { expansionHeights[anchor.id] = height }
                 expansionHeights = [:]
                 tableView.layoutIfNeeded()
@@ -536,34 +580,71 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
         snapshot.appendSections([0]); snapshot.appendItems(ids); snapshot.reconfigureItems(changed)
         applying = true
-        UIView.performWithoutAnimation {
-            source.apply(snapshot, animatingDifferences: false) { [weak self] in
-                guard let self else { return }
-                tableView.layoutIfNeeded()
-                applying = false
-                replayPendingResizes()
-                settle(anchor: expansionAnchor ?? anchor, followingInsertion: completionAnchor)
-                completionAnchor = nil
-                let next = pendingUpdate; pendingUpdate = nil; next?()
-            }
+        let finish = { [weak self] in
+            guard let self else { return }
+            tableView.layoutIfNeeded()
+            animatingProcessRows = false
+            applying = false
+            replayPendingResizes()
+            settle(anchor: expansionAnchor ?? anchor, followingInsertion: completionAnchor)
+            completionAnchor = nil
+            let next = pendingUpdate; pendingUpdate = nil; next?()
+        }
+        if processChange != nil && streamVisible && !reducedMotion {
+            animatingProcessRows = true
+            source.apply(snapshot, animatingDifferences: true, completion: finish)
+            tableView.layoutIfNeeded()
+            if animatingProcessRows { alignAnimatingProcess() }
+        } else {
             // The completion can run on the next turn of the run loop. Finish
             // visible sizing and following before this update reaches the screen.
-            tableView.layoutIfNeeded()
-            if searchTarget == nil {
-                settle(anchor: expansionAnchor ?? anchor, followingInsertion: completionAnchor)
-                completionAnchor = nil
+            UIView.performWithoutAnimation {
+                source.apply(snapshot, animatingDifferences: false, completion: finish)
+                tableView.layoutIfNeeded()
+                if searchTarget == nil {
+                    settle(anchor: expansionAnchor ?? anchor, followingInsertion: completionAnchor)
+                    completionAnchor = nil
+                }
             }
         }
     }
 
+    private func processExpansionChange(_ nextRows: [AIMessageViewportRow], old: [String: AIMessageViewportRow],
+                                        previous: [String]) -> (turn: String, automatic: Bool)? {
+        for row in nextRows {
+            guard case .processToggle(let expanded, let completed) = row.kind, let turn = row.turnID else { continue }
+            if case .processToggle(let wasExpanded, let wasCompleted)? = old[row.id]?.kind {
+                if expanded != wasExpanded { return (turn, completed && !wasCompleted && !expanded) }
+            } else if completed && !expanded && previous.contains(where: { rows[$0] == nil && old[$0]?.turnID == turn }) {
+                // The control may first appear when a turn leaves a waiting state.
+                return (turn, true)
+            }
+        }
+        return nil
+    }
+
     func toggleProcessItem(rowID: String, item: AIProcessExpansionID) {
         guard let path = source.indexPath(for: rowID), let toggleProcess else { return }
-        following = false; scrollVelocity = 0; searchTarget = nil
         let anchor = Anchor(id: rowID, offset: tableView.rectForRow(at: path).minY - tableView.adjustedContentInset.top - tableView.contentOffset.y)
-        expansionAnchor = anchor; stableAnchor = anchor; layoutAnchor = anchor
-        expansionAnimationPending = true
-        tableView.selfSizingInvalidation = .disabled
+        pinExpansion(to: anchor)
+        switch item {
+        case .turn: break
+        case .group, .reasoning:
+            expansionAnimationPending = true
+            tableView.selfSizingInvalidation = .disabled
+        }
         toggleProcess(item)
+    }
+
+    private func pinExpansion(to anchor: Anchor) {
+        following = false; scrollVelocity = 0; searchTarget = nil
+        expansionAnchor = anchor; stableAnchor = anchor; layoutAnchor = anchor
+    }
+    private func alignAnimatingProcess() {
+        guard let expansionAnchor else { return }
+        adjusting = true
+        move(to: expansionAnchor)
+        adjusting = false
     }
 
     private var minimumOffset: CGFloat { -tableView.adjustedContentInset.top }
@@ -573,6 +654,10 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         let y = min(bottomOffset, max(minimumOffset, offset))
         guard abs(tableView.contentOffset.y - y) > 0.25 else { return }
         tableView.setContentOffset(CGPoint(x: 0, y: y), animated: false)
+    }
+    private func move(to anchor: Anchor) {
+        guard let path = source.indexPath(for: anchor.id) else { return }
+        move(to: tableView.rectForRow(at: path).minY - tableView.adjustedContentInset.top - anchor.offset)
     }
     private func captureAnchor(where includes: (String) -> Bool = { _ in true }) -> Anchor? {
         let top = tableView.contentOffset.y + tableView.adjustedContentInset.top
@@ -585,7 +670,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         return nil
     }
     private func settle(anchor: Anchor?, followingInsertion: Anchor? = nil) {
-        guard !adjusting, !animatingExpansion, source != nil else { return }
+        guard !adjusting, !animatingExpansion, !animatingProcessRows, source != nil else { return }
         adjusting = true
         UIView.performWithoutAnimation {
             if let id = searchTarget, let path = source.indexPath(for: id) {
@@ -594,13 +679,9 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
             } else if following {
                 // Restore the same visible prose once after an insertion above it.
                 // Trailing growth and the final bottom gap still use the stream clock.
-                if let followingInsertion, let path = source.indexPath(for: followingInsertion.id) {
-                    move(to: tableView.rectForRow(at: path).minY - tableView.adjustedContentInset.top - followingInsertion.offset)
-                }
+                if let followingInsertion { move(to: followingInsertion) }
                 followBottom()
-            } else if let anchor, let path = source.indexPath(for: anchor.id) {
-                move(to: tableView.rectForRow(at: path).minY - tableView.adjustedContentInset.top - anchor.offset)
-            }
+            } else if let anchor { move(to: anchor) }
         }
         if let anchor = expansionAnchor, let path = source.indexPath(for: anchor.id) {
             // A bottom clamp may legitimately lower this row after collapse. Keep that
@@ -678,6 +759,9 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         case .image(let width, let height): return min(320, max(80, (tableView.bounds.width - 32) * height / max(1, width))) + 16
         case .confirmation, .result: return 160
         case .header: return 100
+        case .processToggle:
+            let font = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
+            return ceil(font.lineHeight + AIProcessToggleHitShape.replyGap)
         default: return 48
         }
     }

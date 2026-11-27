@@ -343,6 +343,88 @@ final class AIConversationProjectionAIReadingMoonTests: AIReadingMoonFixture {
 }
 
 final class AIConversationProjectionConversationTests: ConversationFixture {
+  func testCompletedTurnAutomaticallyCollapsesItsProcessAndKeepsTheReply() throws {
+    let (conversation, entry) = runningProcessTurn()
+    XCTAssertEqual(processToggle(in: conversation), true)
+    XCTAssertTrue(hasReasoning(in: conversation))
+    let reply = try XCTUnwrap(conversation.messageRows.first { $0.nativeText != nil })
+
+    setProcessOutcome(.completed, for: conversation, entry: entry)
+
+    XCTAssertEqual(processToggle(in: conversation), false)
+    XCTAssertFalse(hasReasoning(in: conversation))
+    XCTAssertEqual(conversation.messageRows.first { $0.nativeText != nil }?.id, reply.id)
+  }
+
+  func testCompletedTurnKeepsAnExplicitProcessChoiceUntilReopened() {
+    for expanded in [false, true] {
+      let (conversation, entry) = runningProcessTurn()
+      conversation.toggleProcessItem(.turn(entry.turn))
+      XCTAssertEqual(processToggle(in: conversation), false)
+      if expanded { conversation.toggleProcessItem(.turn(entry.turn)) }
+      XCTAssertEqual(processToggle(in: conversation), expanded)
+
+      setProcessOutcome(.completed, for: conversation, entry: entry)
+
+      XCTAssertEqual(processToggle(in: conversation), expanded)
+      XCTAssertEqual(hasReasoning(in: conversation), expanded)
+      conversation.beginMessagePresentation()
+      XCTAssertEqual(processToggle(in: conversation), false)
+    }
+  }
+
+  func testFailureStopAndConfirmationKeepTheProcessVisible() {
+    for outcome in [AIAgentStatus.failed, .stopped, .waitingConfirmation] {
+      let (conversation, entry) = runningProcessTurn()
+      conversation.toggleProcessItem(.turn(entry.turn))
+      XCTAssertFalse(hasReasoning(in: conversation))
+
+      setProcessOutcome(outcome, for: conversation, entry: entry)
+
+      XCTAssertTrue(hasReasoning(in: conversation), outcome.rawValue)
+      XCTAssertNil(processToggle(in: conversation), outcome.rawValue)
+    }
+  }
+
+  private func runningProcessTurn() -> (AIConversation, AIAgentEntry) {
+    let conversation = AIConversation(.init(id: "conversation", title: "Process"))
+    let entry = AIAgentEntry(
+      sequence: 0, turn: "turn", provider: "fixture", model: "fixture",
+      message: .object(["role": .string("assistant"), "content": .object(["parts": .array([
+        .object(["type": .string("reasoning"), "text": .string("Check the source")]),
+        .object(["type": .string("text"), "text": .string("Answer")]),
+        .object(["type": .string("tool-call"), "toolCallId": .string("call"),
+                 "toolName": .string("search_text"), "input": .object([:])]),
+      ])])]))
+    conversation.head.currentTurn = entry.turn
+    conversation.head.status = .running
+    conversation.running = true
+    conversation.mergeEntries([entry])
+    return (conversation, entry)
+  }
+
+  private func setProcessOutcome(_ outcome: AIAgentStatus, for conversation: AIConversation, entry: AIAgentEntry) {
+    var entry = entry
+    entry.outcome = outcome
+    conversation.head.status = outcome
+    conversation.running = outcome == .waitingConfirmation
+    conversation.mergeEntries([entry])
+  }
+
+  private func processToggle(in conversation: AIConversation) -> Bool? {
+    for row in conversation.messageRows {
+      if case .processToggle(let expanded, _) = row.content { return expanded }
+    }
+    return nil
+  }
+
+  private func hasReasoning(in conversation: AIConversation) -> Bool {
+    conversation.messageRows.contains { row in
+      guard case .block(let block, _, _) = row.content else { return false }
+      return block.items.contains { $0.kind == .reasoning }
+    }
+  }
+
   // S164: 会话搜索只命中可见消息并打开正确历史页，不读未授权私有准备。
   func testConversationSearchMatchesVisibleMessagesAndOpensHistoryWindows() async throws {
     let (service, _, connection, suite) = try await fixture()

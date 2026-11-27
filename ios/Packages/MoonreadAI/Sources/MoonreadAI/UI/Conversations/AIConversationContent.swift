@@ -15,7 +15,7 @@ struct AIConversationTurn: Identifiable, Equatable {
     var model: String?
     var thinking: String?
     var answer: String { process.last(where: { $0.kind == .text })?.text ?? "" }
-    var finalTextID: String? { process.last?.kind == .text ? process.last?.id : nil }
+    var finalTextID: String? { process.last(where: { $0.kind == .text })?.id }
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.process == rhs.process && lhs.resultPayloads == rhs.resultPayloads
             && lhs.results.map(\.id) == rhs.results.map(\.id) && lhs.outcome == rhs.outcome

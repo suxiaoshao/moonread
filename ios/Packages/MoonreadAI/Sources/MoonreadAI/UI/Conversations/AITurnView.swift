@@ -382,6 +382,50 @@ private struct AIGeneratedImageView: View {
     }
 }
 
+struct AIProcessToggleHitShape: Shape {
+    static let replyGap: CGFloat = 6
+    static let rowSpace = "aiProcessToggleRow"
+
+    static func target(for label: CGRect) -> CGRect {
+        let extra = max(0, LayoutTokens.hit - label.height)
+        let below = min(replyGap, extra / 2)
+        return CGRect(x: label.minX, y: label.minY - (extra - below),
+                      width: label.width, height: label.height + extra)
+    }
+
+    func path(in rect: CGRect) -> Path { Path(Self.target(for: rect)) }
+}
+
+extension EnvironmentValues {
+    @Entry var aiProcessToggleLabelFrame: (CGRect) -> Void = { _ in }
+}
+
+private struct AIProcessToggle: View {
+    let expanded: Bool
+    let action: () -> Void
+    @Environment(\.theme) private var theme
+    @Environment(\.moonreadReduceMotion) private var reduceMotion
+    @Environment(\.aiProcessToggleLabelFrame) private var reportFrame
+
+    var body: some View {
+        Button(action: action) {
+            Label {
+                Text("查看过程")
+            } icon: {
+                Image(systemName: "chevron.right")
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .animation(reduceMotion ? nil : .default, value: expanded)
+            }
+            .font(.subheadline)
+            .foregroundStyle(Color(uiColor: theme.secondary))
+            .contentShape(.interaction, AIProcessToggleHitShape())
+            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(AIProcessToggleHitShape.rowSpace)) }, action: reportFrame)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("aiTurnProcess")
+    }
+}
+
 /// One hosting cell is one presentation block. Navigation and previews remain SwiftUI.
 struct AIMessageRowView: View {
     let row: AIMessageRow
@@ -413,11 +457,10 @@ struct AIMessageRowView: View {
                     .contextMenu { Button("取消发送", systemImage: "xmark") { ai.cancelQueued(conversationID, inputID: input.id) } }
             case .block(let block, let outcome, let expansion): AIProcessBlockView(block: block, outcome: outcome, conversationID: conversationID,
                                    expansion: expansion, toggle: toggleProcessItem, searchSummary: host.searchSummary)
-            case .processToggle(let expanded):
-                Button { if let turn = row.turnID { ai.conversation(conversationID)?.toggleProcess(turn) } } label: {
-                    Label("查看过程", systemImage: expanded ? "chevron.down" : "chevron.right")
-                        .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)).frame(minHeight: LayoutTokens.hit)
-                }.buttonStyle(.plain).accessibilityIdentifier("aiTurnProcess")
+            case .processToggle(let expanded, _):
+                if let turn = row.turnID {
+                    AIProcessToggle(expanded: expanded) { toggleProcessItem(.turn(turn)) }
+                }
             case .waiting(let status):
                 HStack(spacing: LayoutTokens.compact) {
                     if status == .compacting {

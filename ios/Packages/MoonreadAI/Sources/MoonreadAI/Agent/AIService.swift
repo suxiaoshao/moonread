@@ -35,7 +35,6 @@ import AISDKProviderUtils
     }
     public var processExpansion: [String: Bool] = [:]
     var processItemExpansion = Set<AIProcessExpansionID>()
-    @ObservationIgnored var presentedActiveTurns = Set<String>()
     @ObservationIgnored var messageTurnCache: [String: AIMessageTurnCache] = [:]
     @ObservationIgnored var messageVersions: [String: AIMessageRow] = [:]
     @ObservationIgnored var messageRevision = 0
