@@ -248,6 +248,46 @@ final class AIProposalTests: BookAIFixture {
     XCTAssertTrue(model.canApply)
   }
 
+  // #378: 已保存对话里的旧工具名启动时一次性改成新名，参数和结果不动，只跑一次。
+  func testSavedConversationToolNamesMigrateOnce() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = directory.appendingPathComponent("ai-\(UUID().uuidString).store")
+    let marker = "Moonread.ai.toolNames." + store.lastPathComponent
+    defer { UserDefaults.standard.removeObject(forKey: marker) }
+    let owner = UUID().uuidString
+    do {
+      let repository = try await AIRepository.open(url: store)
+      try await repository.create(.init(id: owner, title: "Old", listed: false))
+      let output: JSONValue = .object(["status": .string("ok"), "data": .object(["text": .string("原文")])])
+      try await append(entry(output, name: "rg", sequence: 0), repository: repository, owner: owner)
+      try await append(entry(output, name: "get_mark", sequence: 1), repository: repository, owner: owner)
+      let flat: JSONValue = .object(["filter": .object([
+        "nodes": .array([.object(["kind": .string("group"), "relation": .string("all")]),
+                         .object(["kind": .string("tag"), "parent": .number(0), "relation": .string("any"), "values": .array([.string("推理")])])]),
+        "sorts": .array([.object(["field": .string("recent"), "descending": .bool(true)])])])])
+      let call = AIAgentEntry(sequence: 2, turn: "turn-2", provider: "fixture", model: "fixture", message: .object([
+        "role": .string("assistant"), "content": .array([.object([
+          "type": .string("tool-call"), "toolCallId": .string("old-filter"), "toolName": .string("query_books_by_filter"), "input": flat])])]))
+      try await append(call, repository: repository, owner: owner)
+    }
+    UserDefaults.standard.removeObject(forKey: marker)  // as if the old store came from 1.9
+    let migrated = try await AIRepository.open(url: store)
+    let names = try await migrated.history(owner, limit: nil).flatMap { entry in
+      (entry.message.object["content"]?.array ?? []).compactMap { $0.object["toolName"]?.string }
+    }
+    XCTAssertEqual(names, ["search_text", "list_marks", "find_books"])
+    let input = try await migrated.history(owner, limit: nil).last?.message.object["content"]?.array?.first?.object["input"]
+    XCTAssertEqual(input?.object["filter"]?.object["match"], .string("all"), "Old flat filters are rewritten to the nested form")
+    XCTAssertEqual(input?.object["filter"]?.object["rules"]?.array?.first?.object["tags"], .array([.string("推理")]))
+    XCTAssertEqual(input?.object["sorts"]?.array?.first?.object["field"], .string("recent"))
+    let text = try await migrated.history(owner, limit: nil).first?.message.object["content"]?.array?.first?
+      .object["output"]?.object["value"]?.object["data"]?.object["text"]
+    XCTAssertEqual(text, .string("原文"), "Outputs are kept as saved")
+    XCTAssertEqual(UserDefaults.standard.integer(forKey: marker), AIToolNameMigration.version)
+  }
+
   // S104: 笔记建议未确认不写入，重开丢弃草稿并进入同一业务编辑入口。
   func testNoteReviewReopenDiscardsDraftAndUsesSharedEditorOnce() async throws {
     let (root, reader, book, _, _) = try await fixture()

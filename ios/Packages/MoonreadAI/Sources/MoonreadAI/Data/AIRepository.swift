@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import AISDKProvider
 
 public struct AISessionValue: Codable, Sendable, Identifiable {
     public let id: String
@@ -83,6 +84,9 @@ public struct AIStagedAsset: Sendable {
                 location = directory.appending(path: session.map { "ai-ui-\($0).store" } ?? "ai-conversations.store")
             }
             configuration = ModelConfiguration(schema: schema, url: location, cloudKitDatabase: .none)
+            let container = try ModelContainer(for: schema, configurations: [configuration])
+            try AIToolNameMigration.run(container, store: location)
+            return AIRepository(modelContainer: container)
         }
         return AIRepository(modelContainer: try ModelContainer(for: schema, configurations: [configuration]))
     }
@@ -201,5 +205,133 @@ public struct AIStagedAsset: Sendable {
         if let limit { query.fetchLimit = min(max(limit, 1), 50) }
         let rows = try modelContext.fetch(query).map { try JSONDecoder().decode(AIAgentEntry.self, from: $0.payload) }
         return limit != nil && after < 0 ? Array(rows.reversed()) : rows
+    }
+}
+
+/// 1.10 renamed and merged the AI tools (#378). Saved conversations are rewritten once to the
+/// new names, and saved book-filter arguments to the nested form, so the model does not copy the
+/// old shape back from history. Other inputs and all outputs are kept as saved.
+enum AIToolNameMigration {
+    static let renamed: [String: String] = [
+        "ls": "list_shelf", "search_books": "find_books", "query_books_by_filter": "find_books",
+        "list_filter_options": "list_filter_values", "show_book_list": "show_books", "get_book": "get_book_info",
+        "get_chapters": "list_chapters", "read": "read_text", "rg": "search_text",
+        "get_marks": "list_marks", "get_mark": "list_marks", "get_environment": "get_current_time", "find_cover": "search_cover",
+    ]
+    static let version = 3
+
+    static func run(_ container: ModelContainer, store: URL, defaults: UserDefaults = .standard) throws {
+        let key = "Moonread.ai.toolNames." + store.lastPathComponent
+        guard defaults.integer(forKey: key) < version else { return }
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        for row in try context.fetch(FetchDescriptor<AIAgentEntryRecord>()) {
+            if let payload = rewritten(row.payload) { row.payload = payload }
+        }
+        for row in try context.fetch(FetchDescriptor<AIAgentHeadRecord>()) {
+            if let payload = rewritten(row.payload, key: "name", under: "pendingCalls") { row.payload = payload }
+        }
+        try context.save()
+        defaults.set(version, forKey: key)
+    }
+
+    /// The payload with old tool names (and old filter arguments) replaced, or nil when nothing changed.
+    static func rewritten(_ payload: Data, key: String = "toolName", under parent: String? = nil) -> Data? {
+        guard let value = try? JSONDecoder().decode(JSONValue.self, from: payload) else { return nil }
+        var changed = false
+        func walk(_ value: JSONValue, inside: Bool) -> JSONValue {
+            switch value {
+            case .object(var fields):
+                if key == "toolName", fields["type"] == .string("tool-call"), case .string(let tool)? = fields["toolName"],
+                   let input = fields["input"], let nested = nestedFilterInput(tool: renamed[tool] ?? tool, input) {
+                    fields["input"] = nested; changed = true
+                }
+                var result: [String: JSONValue] = [:]
+                for (name, field) in fields {
+                    if name == key, inside || parent == nil, case .string(let old) = field, let new = renamed[old] {
+                        result[name] = .string(new); changed = true
+                    } else {
+                        result[name] = walk(field, inside: inside || name == parent)
+                    }
+                }
+                return .object(result)
+            case .array(let items): return .array(items.map { walk($0, inside: inside) })
+            default: return value
+            }
+        }
+        let result = walk(value, inside: false)
+        return changed ? try? JSONEncoder().encode(result) : nil
+    }
+
+    /// Old find_books/propose_book_filter arguments in the nested form; nil when already nested
+    /// or deeper than the two levels the model may write (those stay as saved).
+    static func nestedFilterInput(tool: String, _ input: JSONValue) -> JSONValue? {
+        guard case .object(var fields) = input else { return nil }
+        switch tool {
+        case "propose_book_filter":
+            guard let nodes = fields["nodes"]?.array, let filter = nested(nodes) else { return nil }
+            fields["nodes"] = nil
+            if filter != .null { fields["filter"] = filter }
+            return .object(fields)
+        case "find_books":
+            if let old = fields["filter"]?.object, let nodes = old["nodes"]?.array {
+                guard let filter = nested(nodes) else { return nil }
+                fields["filter"] = filter == .null ? nil : filter
+                if let sorts = old["sorts"], sorts != .array([]) { fields["sorts"] = sorts }
+                return .object(fields)
+            }
+            // Old search_books fields become conditions of the same filter.
+            var rules: [JSONValue] = []
+            if let author = fields.removeValue(forKey: "author"), case .string(let name) = author, !name.isEmpty { rules.append(.object(["authors": .array([.string(name)])])) }
+            if let tags = fields.removeValue(forKey: "tags"), case .array(let names) = tags, !names.isEmpty { rules.append(.object(["tags": .array(names), "tagMatch": .string("all")])) }
+            if let status = fields.removeValue(forKey: "readingStatus"), case .string(let name) = status { rules.append(.object(["status": .array([.string(name)])])) }
+            let sort = fields.removeValue(forKey: "sort")
+            guard !rules.isEmpty || sort != nil else { return nil }
+            if !rules.isEmpty { fields["filter"] = .object(["match": .string("all"), "rules": .array(rules)]) }
+            if case .string(let field)? = sort { fields["sorts"] = .array([.object(["field": .string(field), "descending": .bool(field == "recent")])]) }
+            return .object(fields)
+        default: return nil
+        }
+    }
+
+    /// Flat nodes (parents first, root at index 0) as {match, exclude?, rules}; .null for no nodes, nil when deeper than two levels.
+    static func nested(_ nodes: [JSONValue]) -> JSONValue? {
+        if nodes.isEmpty { return .null }
+        func condition(_ node: [String: JSONValue]) -> JSONValue? {
+            var rule: [String: JSONValue] = [:]
+            let values = node["values"] ?? .array([])
+            switch node["kind"]?.string {
+            case "status": rule["status"] = values
+            case "tag": rule["tags"] = values; rule["tagMatch"] = node["relation"] ?? .string("any")
+            case "untagged": rule["untagged"] = .bool(true)
+            case "author": rule["authors"] = values
+            case "shelf": rule["shelves"] = values
+            default: return nil
+            }
+            if node["excluded"] == .bool(true) { rule["exclude"] = .bool(true) }
+            return .object(rule)
+        }
+        let objects = nodes.compactMap(\.object)
+        guard objects.count == nodes.count, objects[0]["kind"] == .string("group") else { return nil }
+        var rules: [JSONValue] = []
+        for (index, node) in objects.enumerated().dropFirst() {
+            guard node["parent"]?.int == 0 else { continue }
+            if node["kind"] == .string("group") {
+                var children: [JSONValue] = []
+                for child in objects where child["parent"]?.int == index {
+                    guard child["kind"] != .string("group"), let value = condition(child) else { return nil }
+                    children.append(value)
+                }
+                var group: [String: JSONValue] = ["match": node["relation"] ?? .string("all"), "rules": .array(children)]
+                if node["excluded"] == .bool(true) { group["exclude"] = .bool(true) }
+                rules.append(.object(group))
+            } else {
+                guard let value = condition(node) else { return nil }
+                rules.append(value)
+            }
+        }
+        var root: [String: JSONValue] = ["match": objects[0]["relation"] ?? .string("all"), "rules": .array(rules)]
+        if objects[0]["excluded"] == .bool(true) { root["exclude"] = .bool(true) }
+        return .object(root)
     }
 }

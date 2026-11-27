@@ -48,7 +48,7 @@ struct AIConversationTurn: Identifiable, Equatable {
                         turns[i].process.append(.init(id: partID(turn: entry.turn, step: entry.step, part: partIndex), kind: p["type"]?.string == "text" ? .text : .reasoning, text: p["text"]?.string ?? ""))
                         partIndex += 1
                     case "tool-call":
-                        if let callID = p["toolCallId"]?.string { turns[i].process.append(.init(id: callID, kind: .tool, name: p["toolName"]?.string ?? "", input: p["input"] ?? .null, callSequence: entry.sequence)) }
+                        if let callID = p["toolCallId"]?.string, !AIToolPresentation.isHidden(p["toolName"]?.string ?? "") { turns[i].process.append(.init(id: callID, kind: .tool, name: p["toolName"]?.string ?? "", input: p["input"] ?? .null, callSequence: entry.sequence)) }
                     default: break
                     }
                 }
@@ -84,7 +84,8 @@ struct AIConversationTurn: Identifiable, Equatable {
                 turns[index].process.append(.init(id: partID(turn: head.currentTurn, step: step, part: partIndex), kind: part.kind == .text ? .text : .reasoning, text: part.text, isRunning: part.kind == .reasoning && position == activeReasoning && reasoningActive && running))
                 partIndex += 1
             case .tool:
-                if let call = head.pendingCalls.first(where: { $0.id == part.spanID }), !turns[index].process.contains(where: { $0.id == call.id }) {
+                if let call = head.pendingCalls.first(where: { $0.id == part.spanID }), !AIToolPresentation.isHidden(call.name),
+                   !turns[index].process.contains(where: { $0.id == call.id }) {
                     turns[index].process.append(.init(id: call.id, kind: .tool, name: call.name, input: call.input, output: call.output))
                 }
             }

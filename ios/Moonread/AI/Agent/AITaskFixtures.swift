@@ -83,7 +83,7 @@ extension AIService {
         }
         let links = coverSnapshots.compactMap { if case .cover(let candidate) = $0 { candidate.origin.webSource } else { nil } } + [AIWebSource.make(title: "只有网页的来源示例", url: "https://example.com/book")!]
         let findResult = AIFindCoverResult(bookRef: bookRef, candidates: coverSnapshots.compactMap { if case .cover(let candidate) = $0 { candidate } else { nil } }, answer: "找到封面候选及相关网页，请检查来源。", sources: links)
-        try await installFixtureSession(cover, entries: try fixtureTimeline([try fixtureOutput(AIToolResponse(data: findResult), name: "find_cover")], purpose: AITaskKind.cover(mode: .find).purpose))
+        try await installFixtureSession(cover, entries: try fixtureTimeline([try fixtureOutput(AIToolResponse(data: findResult), name: "search_cover")], purpose: AITaskKind.cover(mode: .find).purpose))
         let scopeRef = AIReadingTools.scopeRef(shelfID: "builtin", path: "")
         let organization = AISessionValue(id: "ui-ai-organization-" + session, title: "整理", origin: .init(scopeRef: scopeRef), kind: .organization, listed: false)
         let op = AIOrganizationProposal(proposalRef: "ui-organization-" + session, previewRef: "ui-preview-" + session,

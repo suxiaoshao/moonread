@@ -81,10 +81,10 @@ enum AICommittedResultDecoder {
                   let call = part.object["toolCallId"]?.string, let output = part.object["output"]?.object["value"],
                   output.object["status"] == .string("ok"), let data = try? JSONEncoder().encode(output) else { return nil }
             let body: AIResultValue.Body
-            if name == "find_cover" {
+            if name == "search_cover" {
                 guard let result = try? JSONDecoder().decode(AIToolResponse<AIFindCoverResult>.self, from: data) else { return nil }
                 body = .findCover(result.data)
-            } else if name == "show_book_list" {
+            } else if name == "show_books" {
                 guard let result = try? JSONDecoder().decode(AIToolResponse<AIShownBooksResult>.self, from: data),
                       let books = entry.bookLists?[call], !books.isEmpty,
                       books.map(\.book) == result.data.items else { return nil }

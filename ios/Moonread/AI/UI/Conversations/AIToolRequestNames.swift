@@ -36,18 +36,19 @@ struct AIToolRequestNames: Equatable {
             let data = output.object["data"] ?? .null
             let rows = data.object["items"]?.array ?? []
             switch item.name {
-            case "ls": rows.forEach(file)
-            case "search_books", "query_books_by_filter", "show_book_list": rows.forEach(book)
-            case "get_book": book(data)
-            case "get_chapters":
+            case "list_shelf": rows.forEach(file)
+            case "find_books", "show_books": rows.forEach(book)
+            case "get_book_info": book(data)
+            case "list_chapters":
                 if let bytes = try? JSONEncoder().encode(data), let saved = try? JSONDecoder().decode(AIChaptersResult.self, from: bytes) {
                     for chapter in saved.items {
                         remember(chapter.chapterRef, chapter.title)
                         chapters[saved.bookRef, default: [:]][chapter.chapterRef] = chapter
                     }
                 }
-            case "get_marks", "get_mark":
-                for mark in item.name == "get_marks" ? rows : [data] {
+            case "list_marks":
+                // A single mark arrives in items; older single-mark results were the data itself.
+                for mark in data.object["items"] == nil ? [data] : rows {
                     let fields = mark.object
                     remember(fields["markRef"]?.string, AIToolResultDetails.snippet(fields["noteText"]?.string ?? fields["note"]?.string ?? fields["excerpt"]?.string))
                     for variant in fields["variants"]?.array ?? [] {
@@ -58,7 +59,7 @@ struct AIToolRequestNames: Equatable {
                 for image in data.object["attachments"]?.array ?? [] {
                     remember(image.object["attachmentRef"]?.string, String(localized: "生成的图片"))
                 }
-            case "find_cover":
+            case "search_cover":
                 for cover in data.object["candidates"]?.array ?? [] {
                     remember(cover.object["attachment"]?.object["attachmentRef"]?.string, String(localized: "候选封面"))
                 }
@@ -93,12 +94,10 @@ struct AIToolRequestNames: Equatable {
             for ref in values { names.references[ref] = history[ref] }
             let books = input["bookRefs"]?.array ?? []
             if let book = input["bookRef"]?.string ?? (books.count == 1 ? books.first?.string : nil),
-               let offset = (input["contextOffsetUtf8"] ?? input["offsetUtf8"]
-                   ?? (input["endUtf8"] == nil ? nil : input["startUtf8"]))?.int, offset >= 0,
+               let offset = ["around", "at", "near"].lazy.compactMap({ input[$0]?.string.flatMap(AIPosition.offset(of:)) }).first,
                let saved = chapters[book] {
                 let matches = saved.values.filter { chapter in
-                    chapter.level != 0 && chapter.range.startUtf8 <= UInt64(offset) && UInt64(offset) < chapter.range.endUtf8
-                        && (input["endUtf8"]?.int.map { $0 >= 0 && UInt64($0) <= chapter.range.endUtf8 } ?? true)
+                    chapter.level != 0 && chapter.range.startUtf8 <= offset && offset < chapter.range.endUtf8
                 }
                 if matches.count == 1 { names.chapterAtPosition = matches.first?.title }
             }

@@ -110,7 +110,7 @@ struct AIToolResultDetails {
     private var code: String? { result.object["error"]?.object["code"]?.string }
     /// Search and image services save a reader-facing reason (sign-in, connection, provider failure).
     private var serviceMessage: String? {
-        guard ["web_search", "find_cover", "generate_image"].contains(item.name),
+        guard ["web_search", "search_cover", "generate_image"].contains(item.name),
               let message = result.object["error"]?.object["message"]?.string, !message.isEmpty else { return nil }
         return message
     }
@@ -124,9 +124,10 @@ struct AIToolResultDetails {
         input = item.input.object
         data = result.object["data"] ?? .null
         bytes = try? JSONEncoder().encode(data)
+        // The stored card keeps the flat form; a request writes the nested form that find_books and propose_book_filter accept.
         bookFilterInput = switch item.name {
-        case "propose_book_filter": item.input
-        case "query_books_by_filter": input["filter"]
+        case "propose_book_filter": (item.output?.object["data"]?.object["filter"]).flatMap { $0 == .null ? nil : $0 } ?? Self.storedFilter(item.input)
+        case "find_books": input["filter"] == nil && input["sorts"] == nil ? nil : Self.storedFilter(item.input)
         default: nil
         }
         if let bookFilterInput { requestedFilter = Self.filterSummary(bookFilterInput) }
@@ -163,8 +164,8 @@ struct AIToolResultDetails {
     var statusTitle: String {
         if state == .empty {
             switch item.name {
-            case "search_books": return String(localized: "没有找到匹配的小说")
-            case "rg": return String(localized: "已搜索范围内没有命中")
+            case "find_books": return String(localized: "没有找到匹配的小说")
+            case "search_text": return String(localized: "已搜索范围内没有命中")
             default: break
             }
         }
@@ -186,7 +187,7 @@ struct AIToolResultDetails {
         case .denied: return String(localized: "未同意准备所需内容，此调用没有执行。")
         case .stopped: return nil
         case .failed:
-            if item.name == "show_book_list" {
+            if item.name == "show_books" {
                 let field = result.object["error"]?.object["field"]?.string
                 let index = field.flatMap { value in
                     value.hasPrefix("refs[") && value.hasSuffix("]") ? Int(value.dropFirst(5).dropLast()) : nil
@@ -198,8 +199,8 @@ struct AIToolResultDetails {
                 }
                 if code == "invalid_argument" { return String(localized: "书单须包含 1–5 个不同的书目引用。") }
             }
-            if item.name == "query_books_by_filter", code == "invalid_argument",
-               result.object["error"]?.object["field"]?.string == "shelf" {
+            if item.name == "find_books", code == "invalid_argument",
+               ["shelf", "shelves"].contains(result.object["error"]?.object["field"]?.string) {
                 return String(localized: "有多个同名书架，无法确定要查哪一个。")
             }
             return switch code {
@@ -252,41 +253,37 @@ struct AIToolResultDetails {
         let chapterName = names[field("chapterRef")] ?? names.chapterAtPosition
         let maximum = String(localized: "最多项数")
         switch item.name {
-        case "ls":
+        case "list_shelf":
             put("directory", String(localized: "目录"), field("parentRef") == nil ? String(localized: "书架根目录") : names[field("parentRef")])
             if field("kind") == "folders" { put("kind", String(localized: "类型"), String(localized: "文件夹")) }
             if field("kind") == "books" { put("kind", String(localized: "类型"), book) }
             sort()
             limit("limit", label: maximum)
-        case "search_books":
+        case "find_books":
             query()
             target(String(localized: "范围"), "scopeRef")
-            put("author", String(localized: "作者"), field("author"))
-            put("tags", String(localized: "同时包含的标签"), list(strings(input["tags"])))
-            put("status", String(localized: "阅读状态"), readingStatus(field("readingStatus")))
-            sort()
             limit("limit", label: String(localized: "最多本数"))
-        case "list_filter_options":
+        case "list_filter_values":
             put("kind", String(localized: "类型"), filterField)
             query()
-        case "get_book":
+        case "get_book_info":
             target(book, "bookRef")
             target(String(localized: "文件"), "fileRef")
             if input["prepare"] == .bool(true) { put("operation", String(localized: "操作"), String(localized: "准备文件")) }
-        case "get_chapters":
+        case "list_chapters":
             query()
             target(book, "bookRef")
             limit("limit", label: maximum)
-        case "read":
+        case "read_text":
             target(book, "bookRef")
             put("chapter", String(localized: "章节"), chapterName)
-            if input["contextOffsetUtf8"]?.int != nil {
+            if input["around"]?.string != nil {
                 let before = input["beforeParagraphs"]?.int ?? 3
                 let after = input["afterParagraphs"]?.int ?? 3
                 put("scope", String(localized: "范围"), before == after ? String(localized: "前后各 \(before) 段") :
                     String(localized: "前 \(before) 段、后 \(after) 段"))
             }
-        case "rg":
+        case "search_text":
             query()
             let refs = strings(input["bookRefs"])
             let known = refs.compactMap { names[$0] }
@@ -298,9 +295,9 @@ struct AIToolResultDetails {
                     String(localized: "不区分大小写") : String(localized: "区分大小写"))
             }
             limit("maxHits", label: String(localized: "最多命中数"))
-        case "get_marks", "get_mark":
+        case "list_marks":
             target(book, "bookRef")
-            if item.name == "get_marks" {
+            if input["markRef"] == nil {
                 let type = switch field("kind") {
                 case "bookmark": String(localized: "书签")
                 case "annotation": String(localized: "批注")
@@ -323,7 +320,7 @@ struct AIToolResultDetails {
                 put("view", String(localized: "视图"), statisticsHeading)
             }
             limit("limit", label: maximum)
-        case "get_environment":
+        case "get_current_time":
             let fields = Set(strings(input["fields"]))
             if fields == ["time"] { put("fields", String(localized: "内容"), String(localized: "本地时间")) }
             if fields == ["locale"] { put("fields", String(localized: "内容"), String(localized: "语言与地区")) }
@@ -334,7 +331,7 @@ struct AIToolResultDetails {
             put("prompt", String(localized: "提示词"), field("prompt"))
             let count = strings(input["referenceAttachmentRefs"]).count
             if count > 0 { put("referenceImages", String(localized: "参考图"), String(localized: "\(count) 张图")) }
-        case "find_cover":
+        case "search_cover":
             query()
             target(book, "bookRef")
         case "propose_cover":
@@ -370,11 +367,7 @@ struct AIToolResultDetails {
                     $0.object["name"]?.string ?? names[$0.object["fileRef"]?.string]
                 }))
             }
-        case "query_books_by_filter":
-            if let limit = input["limit"]?.int {
-                put("limit", String(localized: "数量上限"), String(localized: "\(limit) 本"))
-            }
-        case "show_book_list":
+        case "show_books":
             let shown = decode(AIShownBooksResult.self)?.items ?? []
             rows = (input["refs"]?.strings ?? []).compactMap { ref in
                 guard let title = shown.first(where: { $0.ref == ref })?.title ?? names[ref] else { return nil }
@@ -457,22 +450,22 @@ struct AIToolResultDetails {
 
     private mutating func project() {
         switch item.name {
-        case "ls": library()
-        case "search_books": books()
-        case "list_filter_options": filterOptions()
-        case "get_book": book()
-        case "get_chapters":
+        case "list_shelf": library()
+        // Older search outputs listed books without match counts.
+        case "find_books": if decode(AIFilteredBooksResult.self) != nil { filteredBooks() } else { books() }
+        case "list_filter_values": filterOptions()
+        case "get_book_info": book()
+        case "list_chapters":
             if let value = decode(AIChaptersResult.self) { chapters(value) }
-        case "read": read()
-        case "rg": hits()
-        case "get_marks", "get_mark": marks()
+        case "read_text": read()
+        case "search_text": hits()
+        case "list_marks": marks()
         case "get_reading_statistics": statistics()
-        case "get_environment": environment()
-        case "web_search", "find_cover": web()
+        case "get_current_time": environment()
+        case "web_search", "search_cover": web()
         case "generate_image": images()
         case "propose_book_filter": filterProposal()
-        case "query_books_by_filter": filteredBooks()
-        case "show_book_list": shownBooks()
+        case "show_books": shownBooks()
         case "propose_cover", "propose_book_metadata", "propose_note", "propose_bookmark", "propose_library_organization": proposal()
         default: break
         }
@@ -615,8 +608,8 @@ struct AIToolResultDetails {
     }
 
     private mutating func marks() {
-        if item.name == "get_marks" {
-            guard let value = decode(AIMarksResult.self) else { return }
+        let list = decode(AIMarksResult.self)
+        if input["markRef"] == nil, let value = list {
             let bookmarks = value.items.filter { $0.kind == "bookmark" }.count
             let annotations = value.items.filter { $0.kind == "annotation" }.count
             let onlyMark = value.items.count == 1 ? value.items.first : nil
@@ -626,7 +619,7 @@ struct AIToolResultDetails {
             ], separator: String(localized: "、"))
             empty = value.items.isEmpty
             add(["marks"], String(localized: "书签与批注"), value.items.map(markRow))
-        } else if let mark = decode(AIMarkResult.self) {
+        } else if let mark = list?.items.first ?? decode(AIMarkResult.self) {
             let variants = mark.variants ?? []
             let note = mark.noteText ?? mark.note
             fact = variants.isEmpty ? (Self.snippet(note) ?? Self.snippet(mark.excerpt) ?? markKind(mark)) :
@@ -706,7 +699,7 @@ struct AIToolResultDetails {
         let answer = data.object["answer"]?.string
         if let answer, !answer.isEmpty { add(["answer"], String(localized: "搜索回答"), [.init(key: ["answer"], text: answer)]) }
         add(["web"], String(localized: "网页来源"), sources.map { .init(key: ["url", $0.url], text: $0.title, subtitle: URL(string: $0.url)?.host, web: $0) })
-        if item.name == "find_cover", let value = decode(AIFindCoverResult.self) {
+        if item.name == "search_cover", let value = decode(AIFindCoverResult.self) {
             let candidates = value.candidates.count
             let count = sources.count
             fact = candidates > 0 ? String(localized: "\(candidates) 张候选封面") : String(localized: "\(count) 个网页来源")
@@ -754,6 +747,13 @@ struct AIToolResultDetails {
         return (try? encoder.encode(original)) == (try? encoder.encode(suggestion))
     }
 
+    private static func storedFilter(_ value: JSONValue) -> JSONValue? {
+        if value.object["nodes"] != nil { return value }
+        if let filter = value.object["filter"], filter.object["nodes"] != nil { return filter }
+        guard let arguments = try? JSONDecoder().decode(AIBookFilterArguments.self, from: JSONEncoder().encode(value)),
+              let stored = try? arguments.stored(), let data = try? JSONEncoder().encode(stored) else { return nil }
+        return try? JSONDecoder().decode(JSONValue.self, from: data)
+    }
     private static func filterSummary(_ value: JSONValue) -> FilterSummary? {
         if let filter = try? JSONDecoder().decode(AIBookFilterInput.self, from: JSONEncoder().encode(value)),
            let configuration = try? filter.configuration(resolveShelf: { $0 }) {

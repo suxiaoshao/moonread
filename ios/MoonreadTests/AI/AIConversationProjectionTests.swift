@@ -134,7 +134,7 @@ final class AIToolHistoryPresentationTests: XCTestCase {
       let bytes = Data(json.utf8)
       XCTAssertNoThrow(try JSONDecoder().decode(AIMarkResult.self, from: bytes))
       let payload = try JSONDecoder().decode(JSONValue.self, from: bytes)
-      let item = AIProcessItem(id: "mark", kind: .tool, name: "get_mark",
+      let item = AIProcessItem(id: "mark", kind: .tool, name: "list_marks",
         output: .object(["status": .string("ok"), "data": payload]))
       let detail = AIToolResultDetails(item: item, outcome: .completed, hasReplyResult: false)
       XCTAssertTrue(detail.opensDetail)
@@ -149,13 +149,13 @@ final class AIToolHistoryPresentationTests: XCTestCase {
       #"{"status":"ok","data":{"bookRef":"b","outlineComplete":true,"items":[{"chapterRef":"chapter","title":"Earlier chapter","level":1,"range":{"startUtf8":0,"endUtf8":10},"wordCount":2,"countComplete":true}]}}"#.utf8))
     let readInput: JSONValue = .object(["bookRef": .string("b"), "chapterRef": .string("chapter"),
                                        "maxBytes": .number(99), "cursor": .string("hidden")])
-    let search = AIProcessItem(id: "search", kind: .tool, name: "search_books", output: bookOutput,
+    let search = AIProcessItem(id: "search", kind: .tool, name: "find_books", output: bookOutput,
                                callSequence: 1, resultSequence: 2)
-    let chapters = AIProcessItem(id: "chapters", kind: .tool, name: "get_chapters", output: chapterOutput,
+    let chapters = AIProcessItem(id: "chapters", kind: .tool, name: "list_chapters", output: chapterOutput,
                                  callSequence: 3, resultSequence: 5)
-    let parallel = AIProcessItem(id: "parallel", kind: .tool, name: "read", input: readInput,
+    let parallel = AIProcessItem(id: "parallel", kind: .tool, name: "read_text", input: readInput,
                                  callSequence: 3)
-    let later = AIProcessItem(id: "later", kind: .tool, name: "read", input: readInput, callSequence: 6)
+    let later = AIProcessItem(id: "later", kind: .tool, name: "read_text", input: readInput, callSequence: 6)
     let names = AIToolRequestNames.preceding([search, chapters, parallel, later])
     let request = { (item: AIProcessItem, names: AIToolRequestNames) in
       AIToolResultDetails(item: item, outcome: .completed, hasReplyResult: false, names: names).request.map(\.text)
@@ -169,7 +169,7 @@ final class AIToolHistoryPresentationTests: XCTestCase {
   func testChapterResultKeepsZeroWordChapterAndOmitsVolumeCount() throws {
     let output = try JSONDecoder().decode(JSONValue.self, from: Data(
       #"{"status":"ok","data":{"bookRef":"b","outlineComplete":true,"items":[{"chapterRef":"vol","title":"Volume","level":0,"range":{"startUtf8":0,"endUtf8":10},"wordCount":0,"countComplete":true},{"chapterRef":"ch","parentChapterRef":"vol","title":"Chapter","level":1,"range":{"startUtf8":1,"endUtf8":10},"wordCount":0,"countComplete":true}]},"page":{"complete":false}}"#.utf8))
-    let item = AIProcessItem(id: "chapters", kind: .tool, name: "get_chapters",
+    let item = AIProcessItem(id: "chapters", kind: .tool, name: "list_chapters",
                              input: .object(["limit": .number(2)]), output: output)
     let detail = AIToolResultDetails(item: item, outcome: .completed, hasReplyResult: false)
     let rows = try XCTUnwrap(detail.sections.first).rows
@@ -190,7 +190,7 @@ final class AIToolHistoryPresentationTests: XCTestCase {
         "range":{"startUtf8":1,"endUtf8":2},"sourceRef":"s"}],"coverage":[\(coverage)],"truncated":true},
         "page":{"complete":false}}
       """
-      let item = AIProcessItem(id: "rg", kind: .tool, name: "rg",
+      let item = AIProcessItem(id: "search_text", kind: .tool, name: "search_text",
         input: .object(["query": .string("text"), "bookRefs": .array([.string("a"), .string("b")])]),
         output: try JSONDecoder().decode(JSONValue.self, from: Data(saved.utf8)))
       return AIToolResultDetails(item: item, outcome: .completed, hasReplyResult: false)
@@ -234,7 +234,7 @@ final class AIToolHistoryPresentationTests: XCTestCase {
       "range": .object(["startUtf8": .number(0), "endUtf8": .number(Double(text.utf8.count))]),
       "text": .string(text)
     ])])
-    let item = AIProcessItem(id: "read", kind: .tool, name: "read", output: output)
+    let item = AIProcessItem(id: "read_text", kind: .tool, name: "read_text", output: output)
     let detail = AIToolResultDetails(item: item, outcome: .completed, hasReplyResult: false)
     XCTAssertEqual(detail.state, .available)
     XCTAssertEqual(detail.sections.flatMap(\.rows).map(\.text), [text])

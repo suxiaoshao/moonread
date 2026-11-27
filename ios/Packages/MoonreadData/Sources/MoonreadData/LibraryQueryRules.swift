@@ -197,10 +197,16 @@ extension LibraryQueryRules {
                   spec.author.map({ $0.isEmpty || metadata?.author.localizedCaseInsensitiveContains($0) == true }) ?? true,
                   spec.tags.allSatisfy({ metadata?.tags.contains($0) == true }),
                   spec.status.map({ status in metadata.map { statusName($0.status) == status } ?? false }) ?? true else { return nil }
+            // AI find_books combines keywords with the search page's filter: one evaluation for both.
+            if spec.configuration.booksOnly {
+                let truth = evaluate(spec.configuration.root, candidate: candidate)
+                if truth == .unknown { unknownCount += 1 }
+                guard truth == .yes else { return nil }
+            }
             return (candidate, row, 0, nil)
         }
         let entries = ranked.sorted { a, b in
-            if literal && !spec.configuration.sorts.isEmpty {
+            if !spec.configuration.sorts.isEmpty {
                 for key in spec.configuration.sorts {
                     var order: ComparisonResult = .orderedSame
                     switch key.field {
