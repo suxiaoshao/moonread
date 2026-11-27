@@ -19,6 +19,7 @@ enum LibraryRoute: Hashable {
     #endif
     /// A contextual search pushed on the current stack, with its own session.
     case search(AppSearchScope)
+    case author(AuthorCredit)
     /// A conversation opened from search, anchored at the matching message.
     case conversation(String, anchor: AIConversationAnchor?)
     var readerOpeningID: UUID? { if case .reader(let request) = self { request.id } else { nil } }

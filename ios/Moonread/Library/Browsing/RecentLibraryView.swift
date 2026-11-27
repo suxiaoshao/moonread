@@ -5,38 +5,12 @@ struct RecentLibraryView: View {
     @State private var recentUse: RecentReadingUse?
     private var entries: [RecentReadingRead.Card] { model.recentReading.value?.recentReading ?? [] }
 
-    @ScaledMetric(relativeTo: .body) private var minimumBookWidth = 96.0
-
     var body: some View {
-        Group {
-            if model.layout == .grid {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumBookWidth), spacing: LayoutTokens.content)],
-                              alignment: .leading, spacing: LayoutTokens.section) {
-                        ForEach(entries, id: \.file.id) { card in
-                            if let entry = try? card.libraryEntry() {
-                                RecentCoverTile(model: model, entry: entry, fillsColumn: true) {
-                                    RecentBookActions(model: model, entry: entry)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, LayoutTokens.page)
-                    .padding(.vertical, LayoutTokens.compact)
-                }
-            } else {
-                List(entries, id: \.file.id) { card in
-                    if let entry = try? card.libraryEntry() {
-                        RecentBookRow(model: model, entry: entry, inFullList: true)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                            .alignmentGuide(.listRowSeparatorLeading) { _ in 56 } // 44-point cover + 12-point gap
-                            .contextMenu { RecentBookActions(model: model, entry: entry) }
-                            .listRowBackground(Color.clear)
-                    }
-                }
-                .listStyle(.plain)
-            }
-        }
+        LibraryCollection(model: model, host: .main, sections: [
+            .init(id: .recent, content: .files(entries.compactMap { try? $0.libraryEntry() }, .recent))
+        ], hasTopAccessory: model.recentReading.failure != nil, onRefresh: {
+            await model.refresh(showIndicator: false, userInitiated: true)
+        })
         .themedPage()
         .navigationTitle("最近阅读")
         .toolbar {
@@ -44,7 +18,6 @@ struct RecentLibraryView: View {
                 LibraryDisplayMenu(selection: $model.layout)
             }
         }
-        .refreshable { await model.refresh(showIndicator: false, userInitiated: true) }
         .overlay {
             if model.recentReading.value == nil, model.recentReading.failure == nil {
                 ProgressView("正在加载")
@@ -91,5 +64,103 @@ struct RecentReadingRetry: View {
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
         .background(Color(uiColor: theme.canvas))
+    }
+}
+
+private struct RecentBookRow: View {
+    let model: LibraryModel
+    let entry: LibraryEntry
+    static let coverSize = CGSize(width: 44, height: 62)
+    @Environment(\.theme) private var theme
+    var body: some View {
+        let label = LibraryItemLabel(entry: entry, theme: theme)
+        let chapter = RecentBookItem.chapter(entry)
+        let progress = RecentBookItem.progress(entry)
+        HStack(spacing: 15) {
+            Color.clear.frame(width: Self.coverSize.width, height: Self.coverSize.height)
+            VStack(alignment: .leading, spacing: 7) {
+                label.title().font(.body.weight(.medium)).lineLimit(1)
+                HStack {
+                    chapter.lineLimit(1)
+                    Spacer(minLength: 8)
+                    progress
+                }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+            }
+        }
+        .padding(.vertical, 6)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .background {
+            LibraryCoverButton(entry: entry, size: Self.coverSize, detail: Text("\(chapter), \(progress)")) {
+                model.open(entry)
+            } cover: {
+                label.cover(compact: true)
+                    .frame(width: Self.coverSize.width, height: Self.coverSize.height)
+                    .overlay { LibraryFileAvailability(entry: entry, compact: true) }
+            } actions: {
+                RecentBookActions(model: model, entry: entry)
+            }
+        }
+    }
+}
+
+/// The home preview and full collection share recent-book actions and labels.
+struct RecentBookItem: View {
+    let model: LibraryModel
+    let entry: LibraryEntry
+    let layout: LibraryLayout
+    var fullPage = false
+    @Environment(\.theme) private var theme
+    @ScaledMetric(relativeTo: .body) private var coverWidth = 96.0
+
+    var body: some View {
+        if layout == .list {
+            RecentBookRow(model: model, entry: entry)
+        } else {
+            VStack(alignment: .leading, spacing: fullPage ? nil : 2) {
+                VStack(alignment: .leading, spacing: fullPage ? nil : LayoutTokens.compact) {
+                    Color.clear.aspectRatio(0.7, contentMode: .fit)
+                    LibraryItemLabel(entry: entry, theme: theme).title().font(.subheadline.weight(.medium))
+                        .lineLimit(2, reservesSpace: !fullPage)
+                }.fixedSize(horizontal: false, vertical: true)
+                if fullPage {
+                    LibraryGridStatus(status: Self.progress(entry), showsMenu: true)
+                } else {
+                    Self.progress(entry).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                }
+            }
+            .frame(width: fullPage ? nil : coverWidth)
+            .frame(maxWidth: fullPage ? .infinity : nil, alignment: .leading)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .background {
+                LibraryCoverButton(entry: entry, detail: Self.progress(entry)) {
+                    model.open(entry)
+                } cover: {
+                    LibraryItemLabel(entry: entry, theme: theme).cover(compact: false)
+                        .aspectRatio(0.7, contentMode: .fit)
+                        .overlay { LibraryFileAvailability(entry: entry) }
+                } actions: {
+                    actions
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if fullPage {
+                    LibraryItemMore(entry: entry) { actions }
+                        .padding(.bottom, LibraryCollectionSection.gridFooterSpacing)
+                }
+            }
+        }
+    }
+
+    private var actions: some View { RecentBookActions(model: model, entry: entry) }
+
+    static func chapter(_ entry: LibraryEntry) -> Text {
+        Text(entry.chapterTitle ?? String(localized: "继续阅读"))
+    }
+
+    static func progress(_ entry: LibraryEntry) -> Text {
+        Text(ReadingProgress.fraction(entry.positionUtf8, of: entry.byteCount), format: .percent.precision(.fractionLength(1)))
+            .monospacedDigit()
     }
 }

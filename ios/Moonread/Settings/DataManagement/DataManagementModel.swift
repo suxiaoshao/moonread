@@ -5,6 +5,7 @@ import SwiftUI
     let service: AppDataService
     let backupExport: DataExchangeTask<Void, URL>
     let backupImport: BackupImportTask
+    @ObservationIgnored private(set) lazy var readingDeletion = makeReadingDeletionTask()
     var showingBackupImport = false
     private enum InventoryResult {
         case ready(ReadingDataInventory)
@@ -30,30 +31,18 @@ import SwiftUI
             }
         }
     }
-    private enum OperationResult {
-        case deleted(cacheCleaned: Bool)
-        case cacheCleaned(removed: Int, retained: Int)
-
-        var message: String? {
-            switch self {
-            case .deleted(let cleaned):
-                String(localized: cleaned ? "阅读数据已清除，小说文件未变" : "阅读数据已清除，部分本机缓存未清理", table: "DataManagement")
-            case .cacheCleaned(let removed, let retained):
-                String(localized: "已清理 \(removed) 本缓存，保留 \(retained) 本", table: "DataManagement")
-            }
-        }
+    static func deletionMessage(cacheCleaned: Bool) -> String {
+        String(localized: cacheCleaned ? "阅读数据已清除，小说文件未变" : "阅读数据已清除，部分本机缓存未清理", table: "DataManagement")
     }
     private enum DataOperation {
         case idle, promoting, preparingPending
         case deleting(Set<String>)
-        case cleaningCache
-        case completed(OperationResult)
+        case completed(String)
         case failed(String)
 
         var working: String? {
             switch self {
             case .deleting: String(localized: "正在清除…", table: "DataManagement")
-            case .cleaningCache: String(localized: "正在清理缓存…", table: "DataManagement")
             case .promoting: String(localized: "正在关联阅读数据…", table: "DataManagement")
             case .preparingPending: String(localized: "正在准备正文", table: "DataManagement")
             default: nil
@@ -64,11 +53,7 @@ import SwiftUI
     private var dataOperation = DataOperation.idle
     var inventory: ReadingDataInventory { dataLoad.result?.inventory ?? .init(items: [], pending: 0, unsupported: 0) }
     private(set) var issueCount: Int?
-    private(set) var cache: CacheSummary?
-    private(set) var cacheError: String?
-    @ObservationIgnored private var cacheLoad: Task<Void, Never>?
-    @ObservationIgnored private var cacheRefreshRequested = false
-    var busy: Bool { working != nil }
+    var busy: Bool { working != nil || readingDeletion.phase == .running }
     var loading: Bool { if case .loading = dataLoad { true } else { false } }
     var loaded: Bool { dataLoad.result != nil }
     private var inventoryLoad: Task<Void, Never>?
@@ -80,7 +65,7 @@ import SwiftUI
         return nil
     }
     var message: String? {
-        if case .completed(let result) = dataOperation { result.message } else { nil }
+        if case .completed(let message) = dataOperation { message } else { nil }
     }
     func showError(_ message: String) { dataOperation = .failed(message) }
     func clearError() {
@@ -99,22 +84,6 @@ import SwiftUI
     var deleting: DeletionRequest?
     var issueErrors: [String: String] = [:]
     private(set) var duplicateNames: [String: (index: Int, count: Int)] = [:]
-    private var operationTask: Task<Void, Never>?
-    var canCancel: Bool { operationTask != nil }
-    func cancel() { operationTask?.cancel() }
-    private func runCancellable(_ operation: DataOperation, _ action: @escaping @MainActor () async throws -> DataOperation) async {
-        guard !busy else { return }
-        dataOperation = operation
-        let task = Task {
-            do {
-                try Task.checkCancellation()
-                dataOperation = try await action()
-            } catch is CancellationError {
-                dataOperation = .idle
-            } catch { dataOperation = .failed(ReaderMessages.error(error)) }
-        }
-        operationTask = task; await task.value; operationTask = nil
-    }
     private var nameOrder: [String] = []
     private var recentOrder: [String] = []
     init(service: AppDataService = .shared) {
@@ -156,25 +125,6 @@ import SwiftUI
             } while inventoryRefreshRequested
         }
         inventoryLoad = task
-        await task.value
-    }
-    func loadCache() async {
-        if let cacheLoad {
-            cacheRefreshRequested = true
-            await cacheLoad.value
-            return
-        }
-        let task = Task { @MainActor in
-            defer { cacheLoad = nil }
-            repeat {
-                cacheRefreshRequested = false
-                do {
-                    cache = try await service.cacheSummary()
-                    cacheError = nil
-                } catch { cacheError = ReaderMessages.error(error) }
-            } while cacheRefreshRequested
-        }
-        cacheLoad = task
         await task.value
     }
     func updateInventory(_ value: ReadingDataInventory) {
@@ -231,11 +181,29 @@ import SwiftUI
     func sceneDidEnterBackground() {
         backupImport.sceneDidEnterBackground()
         backupExport.sceneDidEnterBackground()
+        readingDeletion.sceneDidEnterBackground()
     }
     func requestDelete(_ keys: Set<String>) {
         guard !busy, !keys.isEmpty else { return }
         guard let configuration = inventory.configuration else { showError(ReadingDataError.changed.localizedDescription); return }
         deleting = .init(keys: keys, configuration: configuration)
+    }
+    private func makeReadingDeletionTask() -> DataExchangeTask<DeletionRequest, Bool> {
+        DataExchangeTask(service: service, usesSystemExecution: service === AppDataService.shared,
+                         kind: "reading-delete", title: String(localized: "清除阅读数据", table: "DataManagement"),
+                         subtitle: String(localized: "正在清除…", table: "DataManagement"), commitsChanges: true) { [weak self, service] request, _ in
+            let cleaned = try await service.deleteReadingData(request.keys, configuration: request.configuration)
+            await self?.load()
+            return cleaned
+        }
+    }
+    func startReadingDeletion(_ request: DeletionRequest) {
+        guard !busy, readingDeletion.phase == .idle, !request.keys.isEmpty else { return }
+        deleting = nil
+        dataOperation = .idle
+        selecting = false
+        selected.removeAll()
+        readingDeletion.start(request)
     }
     func deleteConfirmed(_ request: DeletionRequest) async {
         let keys = request.keys
@@ -246,16 +214,8 @@ import SwiftUI
             let cleaned = try await service.deleteReadingData(keys, configuration: request.configuration)
             selected.subtract(keys)
             if loaded { await load() }
-            await loadCache()
-            dataOperation = .completed(.deleted(cacheCleaned: cleaned))
+            dataOperation = .completed(Self.deletionMessage(cacheCleaned: cleaned))
         } catch { dataOperation = .failed(ReaderMessages.error(error)) }
-    }
-    func clearCache() async {
-        await runCancellable(.cleaningCache) {
-            let result = try await self.service.clearRebuildableCaches()
-            await self.loadCache()
-            return .completed(.cacheCleaned(removed: result.removed, retained: result.retained))
-        }
     }
     func chooseBackup() -> URL? {
         #if DEBUG
@@ -288,10 +248,10 @@ import SwiftUI
     }
 
     private let service: AppDataService
-    @ObservationIgnored private let systemExecution = MetadataSystemExecution()
+    @ObservationIgnored private let systemExecution = DataExchangeSystemExecution()
     @ObservationIgnored private var work: Task<Void, Never>?
     private var retryStep: Step?
-    private var interruption: MetadataExchangeModel.PauseReason?
+    private var interruption: DataExchangeSystemExecution.PauseReason?
     private(set) var phase = Phase.idle
     private(set) var stopping = false
     var canRetry: Bool { retryStep != nil }

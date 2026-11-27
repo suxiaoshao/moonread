@@ -34,6 +34,7 @@ extension AppDataService {
 
     func prepareUserIndex(_ index: ReaderIndex, progress: (@Sendable (LegacyImportProgress) -> Void)? = nil) throws {
         try index.session.prepareUsers(index.lease, progress: progress) {
+            guard index.session.releasedLayout != .otherEnvironment else { return nil }
             let source = try publishedUserSource()
             guard source == index.lease.scope else { return nil }
             let deviceState: LegacyUserSnapshot.DeviceState
@@ -85,10 +86,7 @@ extension AppDataService {
         let handoff = try dataDirectoryURL().appending(path: "CloudHandoff", directoryHint: .isDirectory)
         do { try FileManager.default.removeItem(at: handoff) }
         catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {}
-        let source = try publishedUserSource()
-        if source != .local, cloudSyncIntent.approvedScopeKey == nil {
-            cloudSyncIntent.approve(source)
-        }
+        try approveReadingCloudDuringLegacyCleanup()
         Self.removeLegacyLocalDefaults(sourceDefaults, domain: domain)
         try index.write { try $0.execute(sql: "UPDATE main.library_device_state SET legacy_cleanup_done=1 WHERE id=1") }
     }
@@ -187,7 +185,7 @@ extension AppDataService {
         dataChanged()
     }
 
-    func writePosition(_ id: String, offset: UInt64, expectedConfiguration: UUID? = nil,
+    func writePosition(_ id: String, offset: UInt64, at now: Int64? = nil, expectedConfiguration: UUID? = nil,
                        admission offered: DataSessionLease? = nil) async throws {
         let admission = try offered ?? indexStore().lease
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
@@ -197,7 +195,7 @@ extension AppDataService {
         guard admission == index.lease else { throw CancellationError() }
         try promoteUserDataLocked(id, index: index)
         try index.writeReadingPosition(bookID: id, offset: offset, hint: positionSourceHint(id), file: readingSourceIDs[id],
-                                       device: userDevice, now: readingClock, token: UUID().uuidString)
+                                       device: userDevice, now: now ?? readingClock, token: UUID().uuidString)
         dataChanged()
     }
 

@@ -210,7 +210,7 @@ enum LibrarySearchRead {
             guard let result = indexed[hit.id] else { throw ReaderError.SourceChanged }
             return ai ? withAIFields(result, metadata: hit.metadata) : result
         }
-        return .init(entries: ordered, unknownCount: found.unknownCount)
+        return .init(entries: ordered, unknownCount: found.unknownCount, matches: found.matches)
     }
 
     static func withAIFields(_ entry: LibraryEntry, metadata: BookMetadata?) -> LibraryEntry {
@@ -222,9 +222,19 @@ enum LibrarySearchRead {
 
 extension ReaderIndex {
     func searchCatalogue(_ catalogue: CatalogueScope, spec: LibraryQueryRules.SearchSpec) throws -> LibraryQueryRules.SearchOutcome {
+        try withSearchOutcome(catalogue, spec: spec, aiReadable: spec.profile == .ai) { db, found, _ in
+            let cards = try FolderRead.hitCards(db, scope: self.lease.scope, ids: found.entries.map(\.id))
+            return try LibrarySearchRead.hydrate(found, cards: cards, ai: spec.profile == .ai)
+        }
+    }
+
+    private func withSearchOutcome<Value: Sendable>(
+        _ catalogue: CatalogueScope, spec: LibraryQueryRules.SearchSpec, aiReadable: Bool,
+        project: @Sendable (Database, LibraryQueryRules.SearchOutcome, LibrarySearchRead.Match) throws -> Value
+    ) throws -> Value {
         let scope = lease.scope
         let readMatch: @Sendable (Database) throws -> LibrarySearchRead.Match = { db in
-            if spec.profile == .ai { try LibrarySearchRead.requireAIReadable(db, scope: scope, catalogue: .all) }
+            if aiReadable { try LibrarySearchRead.requireAIReadable(db, scope: scope, catalogue: .all) }
             return try LibrarySearchRead.matches(db, scope: scope, catalogue: catalogue, spec: spec)
         }
         while true {
@@ -232,14 +242,46 @@ extension ReaderIndex {
             let match = try session.readUsers(lease, readMatch)
             let found = LibraryQueryRules.searchOutcome(try LibrarySearchRead.candidates(match, profile: spec.profile), spec: spec)
             try Task.checkCancellation()
-            let cards = try session.readUsers(lease) { db -> FolderRead.Page? in
+            let snapshot = try session.readUsers(lease) { db -> Value? in
                 // Recheck under the very snapshot used to hydrate hit IDs.
                 // Matching/pinyin never runs under the writer or lifecycle lock.
                 let current = try readMatch(db)
                 guard LibrarySearchRead.sameInputs(match,current) else { return nil }
-                return try FolderRead.hitCards(db, scope: self.lease.scope, ids: found.entries.map(\.id))
+                return try project(db, found, current)
             }
-            if let cards { return try LibrarySearchRead.hydrate(found, cards: cards, ai: spec.profile == .ai) }
+            if let snapshot { return snapshot }
+        }
+    }
+
+    func aiFilteredBookPage(_ configuration: BookSearchConfiguration, offset: Int, limit: Int) throws
+        -> (books: [FilteredBookHit], count: Int, unknownCount: Int) {
+        let spec = LibraryQueryRules.SearchSpec(profile: .library, configuration: configuration)
+        return try withSearchOutcome(.all, spec: spec, aiReadable: true) { db, found, match in
+            let ids = found.entries.dropFirst(offset).prefix(limit).map(\.id)
+            let cards = try FolderRead.hitCards(db, scope: self.lease.scope, ids: ids)
+            let entries = try FolderRead.entries(cards)
+            let keys = Set(entries.compactMap(\.readingKey))
+            var statuses: [String: String] = [:]
+            if !keys.isEmpty {
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT m.book_key,s.value_text FROM json_each(?) k
+                    JOIN usr.metadata_current m ON m.book_key=k.value
+                    JOIN usr.metadata_text_candidate s ON s.partition=m.source_partition AND s.record_id=m.status_id
+                    """, arguments: [try UserSyncJSON.encode(keys.sorted())])
+                for row in rows { statuses[row["book_key"] as String] = row["value_text"] }
+            }
+            let byID = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
+            let positioned = Set(match.searchCandidates.lazy.filter(\.hasPosition).map(\.file.id))
+            let books = try ids.map { id -> FilteredBookHit in
+                guard let entry = byID[id] else { throw ReaderError.SourceChanged }
+                let stored = entry.readingKey.flatMap { statuses[$0] }
+                let formal = entry.readingIdentity?.formalSHA256 != nil
+                let status = formal || stored != nil
+                    ? BookStatusRead.resolve(stored: stored, hasPosition: formal && positioned.contains(id))
+                    : nil
+                return .init(entry: entry, status: status)
+            }
+            return (books, found.entries.count, found.unknownCount)
         }
     }
 
@@ -263,7 +305,17 @@ extension ReaderIndex {
     }
 }
 
+struct FilteredBookHit: Sendable {
+    let entry: LibraryEntry
+    let status: BookReadingStatus?
+}
+
 extension AppDataService {
+    func aiFilteredBookPage(_ configuration: BookSearchConfiguration, offset: Int, limit: Int) async throws
+        -> (books: [FilteredBookHit], count: Int, unknownCount: Int) {
+        try await fixedReaderRead { try $0.aiFilteredBookPage(configuration, offset: offset, limit: limit) }
+    }
+
     func libraryCatalogueSearch(_ scope: CatalogueScope, spec: LibraryQueryRules.SearchSpec) async throws -> LibraryQueryRules.SearchOutcome {
         try await fixedReaderRead { try $0.searchCatalogue(scope, spec: spec) }
     }

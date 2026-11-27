@@ -6,12 +6,6 @@ import Testing
 @testable import Moonread
 
 struct DataV2MigrationTests {
-    private func sandbox() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appending(path: "DataV2Tests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
     private func scope(_ name: String, _ environment: DataScope.Environment = .production) throws -> DataScope {
         try .confirmed(container: "test.invalid", environment: environment, recordName: name)
     }
@@ -37,10 +31,10 @@ struct DataV2MigrationTests {
     }
 
     @Test func copiesReleasedIndexAndLeavesOriginalUntouched() async throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
-        let oldURL = root.appending(path: "reader source.sqlite3")
+        let oldURL = root.appending(path: "reader.sqlite3")
         let old = try DatabaseQueue(path: oldURL.path)
         try await old.write { db in
             try db.execute(sql: DataV2Schema.sql("schema"))
@@ -61,7 +55,9 @@ struct DataV2MigrationTests {
 
         let owner = try DataSession(layout: layout)
         let (lease, _) = try await owner.activate(.unknown)
+        #expect(try owner.importedLegacyIndexFiles(lease).isEmpty)
         try await owner.importLegacyIndex(oldURL, token: lease)
+        #expect(try owner.importedLegacyIndexFiles(lease).isEmpty)
         let result = try await owner.read(lease) { db in
             let text = try String.fetchOne(db, sql: "SELECT text FROM main.chunks WHERE book_id='reading'")
             let bookmark = try Data.fetchOne(db, sql: "SELECT bookmark FROM main.library_shelves")
@@ -73,6 +69,9 @@ struct DataV2MigrationTests {
         #expect(result.1 == Data([1,2,3,0]))
         #expect(result.2 == "reading" && result.3 == 17 && result.4 == "local")
         #expect(result.5 == 0)
+        try owner.prepareIndex(oldURL, token: lease)
+        let obsolete = try owner.importedLegacyIndexFiles(lease)
+        #expect(obsolete.contains { $0.url.path == oldURL.standardizedFileURL.path })
         await #expect(throws: DataV2Error.migrationAlreadyComplete) { try await owner.importLegacyIndex(oldURL, token: lease) }
         try await owner.close()
         let check = try DatabaseQueue(path: oldURL.path)
@@ -82,7 +81,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func upgradesReleasedPausedImportAndCleansDefaultsAfterInterruptedCommit() async throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         let suite = "PausedImportMigration-" + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer {
@@ -140,7 +139,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func copiesKnownVersion23WorkAndRejectsFutureTarget() async throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
         let oldURL = root.appending(path: "reader.sqlite3")
@@ -184,7 +183,7 @@ struct DataV2MigrationTests {
 
     @Test(arguments: [7, 8])
     func upgradesUserStoreForUnfetchedHistoryDeletes(from oldVersion: Int) throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
         let first = try DataSession(layout: layout)
@@ -289,7 +288,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func swiftDataRoutesAllModelFamiliesAndPreservesIsolation() async throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
         let formal = try container(), pending = try container()
@@ -417,7 +416,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func resolvedCoverAttachmentsPermitLocalClaim() async throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let owner = try DataSession(layout: DataLayout(applicationSupport: root))
         let formal = try container(), pending = try container()
@@ -457,7 +456,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func corruptCacheAndAmbiguousCoverKeepMissingEvidence() async throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let owner = try DataSession(layout: DataLayout(applicationSupport: root))
         let formal = try container(), source = ModelContext(formal)
@@ -495,7 +494,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func claimsLocalOnlyOnConfirmationAndKeepsAccountsIsolated() async throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
         let a = try scope("A"), b = try scope("B"), dev = try scope("A", .development)
@@ -541,7 +540,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func retiresCloudCallbacksWithoutClosingSameAccountReaders() async throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let a = try scope("A"), b = try scope("B")
         let owner = try DataSession(layout: .init(applicationSupport: root), confirmedLegacyOwner: a)
@@ -590,7 +589,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func rebindsWALIndexToFreshAccountBeforeOpeningReaders() throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
         let a = try scope("A"), b = try scope("B")
@@ -622,7 +621,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func requiresVerifiedUserIntakeAndCommitsPositionWithDeviceBaseline() throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
         let session = try DataSession(layout: layout)
@@ -659,7 +658,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func pendingPromotionRollsBackBeforeReclaimingItsIndexAlias() throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let session = try DataSession(layout: .init(applicationSupport: root))
         let (lease, _) = try session.activate(.unknown)
@@ -712,7 +711,7 @@ struct DataV2MigrationTests {
     }
 
     @Test func recoversCommittedLocalClaimBeforeSelectingAnotherAccount() async throws {
-        let root = try sandbox()
+        let root = try dataV2MigrationSandbox()
         defer { try? FileManager.default.removeItem(at: root) }
         let layout = DataLayout(applicationSupport: root)
         let a = try scope("A"), b = try scope("B")
@@ -774,4 +773,10 @@ struct DataV2MigrationTests {
         try await after.close()
     }
 
+}
+
+func dataV2MigrationSandbox() throws -> URL {
+    let url = FileManager.default.temporaryDirectory.appending(path: "DataV2Tests-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
 }

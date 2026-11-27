@@ -24,115 +24,21 @@ extension PreparationState {
     }
 }
 
-struct ReadingWindow: Equatable, Sendable {
-    struct FrameIdentity: Equatable, Sendable {
-        let bookID: String
-        let generation: UInt64
-        let revision: UInt64
-
-        init(_ frame: ReadingFrame) {
-            bookID = frame.snapshot.book.id
-            generation = frame.snapshot.generation
-            revision = frame.projectionRevision
-        }
-    }
-    enum Origin: Equatable, Sendable { case source(FrameIdentity), preview }
-    struct Projection: Equatable, Sendable {
-        let anchor: UInt64?
-        let status: ReadingWindowStatus
-    }
-    struct Edge: Equatable, Sendable {
-        enum Leading: Equatable, Sendable { case beginning, more(UInt64), unavailable }
-        enum Trailing: Equatable, Sendable { case more(UInt64), preparedTail, deferred, end, unavailable }
-        var leading: Leading
-        var trailing: Trailing
-        init(frame: ReadingFrame) {
-            leading = frame.previousCursor.map(Leading.more) ?? .beginning
-            if frame.status == .deferred { trailing = .deferred }
-            else if frame.isEndOfBook { trailing = .end }
-            else if let cursor = frame.nextCursor { trailing = .more(cursor) }
-            else if frame.status == .awaiting || !frame.snapshot.preparation.isComplete { trailing = .preparedTail }
-            else { trailing = .unavailable }
-        }
-        init(leading: Leading, trailing: Trailing) { self.leading = leading; self.trailing = trailing }
-    }
-
-    let origin: Origin
-    private(set) var chunks: [TextChunk]
-    private(set) var paragraphs: [ReadingParagraph]
-    private(set) var omitted: [SourceSpan]
-    private(set) var bounds: SourceSpan
-    let projection: Projection
-    private(set) var edge: Edge
-
-    var start: UInt64 { bounds.startUtf8 }
-    var end: UInt64 { bounds.endUtf8 }
-    var projectionAnchor: UInt64? { projection.anchor }
-    var status: ReadingWindowStatus { projection.status }
-    var revision: UInt64 { if case .source(let frame) = origin { frame.revision } else { 0 } }
-    var isStartOfBook: Bool { edge.leading == .beginning }
-    var isEndOfBook: Bool { edge.trailing == .end }
-    var isPreparedTail: Bool { edge.trailing == .preparedTail }
-    var nextCursor: UInt64? { if case .more(let cursor) = edge.trailing { cursor } else { nil } }
-    var previousCursor: UInt64? { if case .more(let cursor) = edge.leading { cursor } else { nil } }
-
-    init(frame: ReadingFrame) {
-        origin = .source(FrameIdentity(frame))
-        chunks = frame.chunks; paragraphs = frame.paragraphs; omitted = frame.omitted
-        bounds = .init(startUtf8: frame.sourceStart, endUtf8: frame.sourceEnd)
-        projection = .init(anchor: frame.projectionAnchor, status: frame.status)
-        edge = .init(frame: frame)
-    }
-
-    static func preview(chunks: [TextChunk], paragraphs: [ReadingParagraph] = [],
-                        trailing: Edge.Trailing = .unavailable) -> Self {
-        Self(chunks: chunks, paragraphs: paragraphs, trailing: trailing)
-    }
-
-    private init(chunks: [TextChunk], paragraphs: [ReadingParagraph], trailing: Edge.Trailing) {
-        origin = .preview
-        self.chunks = chunks; self.paragraphs = paragraphs; omitted = []
-        let start = chunks.first?.startUtf8 ?? 0
-        bounds = .init(startUtf8: start, endUtf8: chunks.last?.endUtf8 ?? start)
-        projection = .init(anchor: nil, status: .ready)
-        edge = .init(leading: start == 0 && !chunks.isEmpty ? .beginning : .unavailable, trailing: trailing)
-    }
-
-    func sharesProjection(with frame: ReadingFrame) -> Bool { origin == .source(FrameIdentity(frame)) }
-
-    func retainingContent(availability frame: ReadingFrame, direction: ReadingDirection) -> Self {
-        guard sharesProjection(with: frame), frame.status != .deferred, frame.status != .ready else { return self }
-        var result = self
-        if direction == .forward {
-            result.edge.trailing = Edge(frame: frame).trailing
-        } else {
-            result.edge.leading = .beginning
-        }
-        return result
-    }
-
-    func extendingScroll(_ previous: Self, chunks: [TextChunk], paragraphs: [ReadingParagraph]) -> Self? {
-        guard previous.origin == origin else { return nil }
-        var combined = self
-        combined.chunks = chunks; combined.paragraphs = paragraphs
-        combined.bounds.startUtf8 = previous.start; combined.omitted = previous.omitted + omitted
-        combined.edge.leading = previous.edge.leading
-        return combined
-    }
-}
-
 /// Kept by the reader until all of its asynchronous work has released it.
 /// Merely hiding the view (for settings, for example) does not end this lease.
 final class ReadingLease: Sendable {
     let id: String
     let writeAdmission: DataSessionLease?
     let service: AppDataService
+    let released: AsyncStream<Void>
+    private let releaseSignal: AsyncStream<Void>.Continuation
     init(id: String, service: AppDataService, writeAdmission: DataSessionLease? = nil) {
         self.id = id; self.service = service; self.writeAdmission = writeAdmission
+        (released, releaseSignal) = AsyncStream.makeStream(of: Void.self)
     }
     deinit {
-        let id = id, service = service
-        Task { await service.releaseReading(id) }
+        let id = id, service = service, releaseSignal = releaseSignal
+        Task { await service.releaseReading(id); releaseSignal.finish() }
     }
 }
 
@@ -374,6 +280,7 @@ actor AppDataService {
     }
     func identityMayRun() -> Bool { foregroundHolds.isEmpty }
     func cacheProtectedBookIDs() -> [String] { Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs)) }
+    func cacheImportBookIDs() -> [String] { Array(Set(imports.keys).union(pendingPromotionIDs)) }
     func activeReadingIDsForDeletion() throws -> Set<String> {
         guard foregroundHolds.keys.allSatisfy({ $0.hasPrefix("book:") }) else { throw ReadingDataError.busy }
         return Set(readers.keys)
@@ -417,17 +324,31 @@ actor AppDataService {
             let session = old.session
             let destination = try session.destination(status)
             if let approval {
-                guard case .confirmed(let scope, true) = status, approval.scope == scope, scope != .local else {
+                guard case .confirmed(let scope, true, _) = status, approval.scope == scope, scope != .local else {
                     throw ReaderError.CloudAccountChanged
                 }
             }
+            let releasedChange: ReadingDataLayoutUpgrade.AccountChange?
+            let inheritedApproval: DataScope?
+            if case .confirmed(let scope, _, let recordName?) = status {
+                releasedChange = try releasedAccountChange(to: scope, recordName: recordName)
+                inheritedApproval = releasedApproval(for: scope, change: releasedChange)
+            } else {
+                releasedChange = nil
+                inheritedApproval = nil
+            }
+            let accountChange = try releasedChange.flatMap { change in
+                let ownsAccount = try session.stillUsesReleasedAccount(change.old)
+                return ownsAccount || (try? publishedUserSource()) == change.old ? change : nil
+            }
             let claim = old.lease.scope == .local ? approval?.scope : nil
-            let rebind = claim != nil || old.lease.scope != destination.scope
+            let rebind = accountChange != nil || claim != nil || old.lease.scope != destination.scope
             let preparePresentation = beforeRebind ?? prepareUserScopePresentation
             let finishPresentation = afterRebind ?? finishUserScopePresentation
             if !rebind, approval == nil {
                 try cancellation.check()
                 let (_, selected) = try session.activate(status)
+                if let inheritedApproval { cloudSyncIntent.approve(inheritedApproval) }
                 updateReadingScopePublication(status, selected)
                 return selected
             }
@@ -457,6 +378,11 @@ actor AppDataService {
                     }
                     try cancellation.check()
                     guard intent.requested else { throw CancellationError() }
+                } else if let accountChange {
+                    guard case .confirmed(let current) = await lookup(), current.scope == accountChange.new else {
+                        throw ReaderError.CloudAccountChanged
+                    }
+                    try cancellation.check()
                 }
 
                 if rebind {
@@ -473,6 +399,7 @@ actor AppDataService {
                     // D1 recovery; never hand out the old invalidated index.
                     core = nil
                 }
+                if let accountChange { try session.changeReleasedAccount(accountChange) }
                 if let claim {
                     _ = try session.activate(.confirmed(claim, syncRequested: false))
                     try session.claimLocal(for: claim)
@@ -494,6 +421,8 @@ actor AppDataService {
                     try cancellation.check()
                     guard intent.requested else { throw CancellationError() }
                     intent.approve(approval.scope)
+                } else if let inheritedApproval {
+                    intent.approve(inheritedApproval)
                 }
                 updateReadingScopePublication(status, selected)
                 releaseUserDataOperation()
@@ -714,6 +643,13 @@ actor AppDataService {
         return try dataSession.legacyUserScope()
     }
 
+    var releasedReadingLayout: ReadingDataLayoutUpgrade.Source? { dataSession?.releasedLayout }
+
+    func removeAdoptedReleasedStoreAfterStartup() {
+        guard !Task.isCancelled else { return }
+        dataSession?.removeAdoptedReleasedStoreAfterStartup()
+    }
+
     private func legacyBootstrapScope() throws -> DataScope? {
         guard let value = sourceDefaults.object(forKey: "Moonread.userOwner") else { return nil }
         guard let name = value as? String, !name.isEmpty else { throw DataV2Error.invalidOwnerState }
@@ -731,7 +667,8 @@ actor AppDataService {
         if let dataSession { session = dataSession }
         else {
             session = try DataSession(layout: DataLayout(applicationSupport: directory, environment: readingCloudEnvironment),
-                                      confirmedLegacyOwner: try legacyBootstrapScope())
+                                      confirmedLegacyOwner: try legacyBootstrapScope(),
+                                      releasedDevelopmentApproval: cloudSyncIntent.releasedDevelopmentApproval)
             dataSession = session
         }
         let (lease, _) = try session.activate(.unknown)
@@ -790,10 +727,10 @@ actor AppDataService {
     }
     func rebuildChapters(_ id: String) throws -> ChapterRebuild { try indexStore().rebuildChapters(bookId: id) }
     func advanceRebuild(_ job: ChapterRebuild) throws -> ChapterRebuildProgress { try job.nextBatch() }
-    func rebuildPreview(_ job: ChapterRebuild, from offset: UInt64 = 0) throws -> [ChapterInfo] { try job.preview(fromUtf8: offset, limit: 80) }
+    func rebuildPreview(_ job: ChapterRebuild) throws -> [ChapterInfo] { try job.preview() }
     func applyRebuild(_ job: ChapterRebuild) throws { try job.apply(); dataChanged() }
-    func savePosition(bookID: String, offset: UInt64, admission: DataSessionLease? = nil) async throws {
-        try await writePosition(bookID, offset: offset, admission: admission)
+    func savePosition(bookID: String, offset: UInt64, at now: Int64? = nil, admission: DataSessionLease? = nil) async throws {
+        try await writePosition(bookID, offset: offset, at: now, admission: admission)
     }
 
     func window(book: BookInfo, offset: UInt64) async throws -> ReadingWindow {

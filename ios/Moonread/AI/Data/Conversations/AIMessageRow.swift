@@ -8,6 +8,8 @@ enum AIProcessExpansionID: Hashable { case group(String), reasoning(String) }
 struct AIProcessExpansionState: Equatable {
     var group = false
     var reasoning = Set<String>()
+    var replyResultCalls = Set<String>()
+    var requestNames: [String: AIToolRequestNames] = [:]
 }
 
 /// Identity is independent of content and of the live/committed boundary.
@@ -49,7 +51,20 @@ struct AIMessageRow: Identifiable, Equatable {
     static func project(_ turn: AIConversationTurn, active: Bool, confirmations: [AIAgentConfirmation], expanded: Bool, itemExpansion: Set<AIProcessExpansionID> = []) -> [Self] {
         var rows: [Self] = []
         func add(_ id: String, _ content: Content) { rows.append(.init(id: id, turnID: turn.id, content: content)) }
+        var resultCalls = Set(turn.results.map(\.callID))
+        var images = Set<String>()
+        var imageRows: [(String, AIImageAttachment)] = []
+        for item in turn.process where item.name == "generate_image" && item.resultID != nil {
+            for value in item.output?.object["data"]?.object["attachments"]?.array ?? [] {
+                if let data = try? JSONEncoder().encode(value), let image = try? JSONDecoder().decode(AIImageAttachment.self, from: data),
+                   images.insert(image.id).inserted {
+                    imageRows.append((turn.id + "/image/" + image.id, image))
+                    resultCalls.insert(item.id)
+                }
+            }
+        }
         let collapsible = turn.outcome == .completed && turn.process.contains { $0.kind != .input && $0.id != turn.finalTextID }
+        let requestNames = !collapsible || expanded ? AIToolRequestNames.preceding(turn.process) : [:]
         var insertedProcessToggle = false
         for block in AIProcessBlock.project(turn.process) {
             if collapsible && !insertedProcessToggle && block.items[0].entry == nil {
@@ -59,7 +74,11 @@ struct AIMessageRow: Identifiable, Equatable {
             if let entry = block.items[0].entry { add(block.id, .user(entry)) }
             else {
                 let state = AIProcessExpansionState(group: itemExpansion.contains(.group(block.id)),
-                    reasoning: Set(block.items.filter { itemExpansion.contains(.reasoning($0.id)) }.map(\.id)))
+                    reasoning: Set(block.items.filter { itemExpansion.contains(.reasoning($0.id)) }.map(\.id)),
+                    replyResultCalls: resultCalls.intersection(block.items.map(\.id)),
+                    requestNames: Dictionary(uniqueKeysWithValues: block.items.compactMap { item in
+                        requestNames[item.id].map { (item.id, $0) }
+                    }))
                 add(block.id, .block(block, turn.outcome, state))
             }
         }
@@ -68,14 +87,7 @@ struct AIMessageRow: Identifiable, Equatable {
         }
         for confirmation in confirmations { add(turn.id + "/confirm/" + confirmation.id, .confirmation(confirmation)) }
         if active && !turn.answer.isEmpty { add(turn.id + "/generating", .generating) }
-        var images = Set<String>()
-        for item in turn.process where item.name == "generate_image" && item.resultID != nil {
-            for value in item.output?.object["data"]?.object["attachments"]?.array ?? [] {
-                if let data = try? JSONEncoder().encode(value), let image = try? JSONDecoder().decode(AIImageAttachment.self, from: data), images.insert(image.id).inserted {
-                    add(turn.id + "/image/" + image.id, .image(image))
-                }
-            }
-        }
+        for (id, image) in imageRows { add(id, .image(image)) }
         for result in turn.results { add("result/" + result.id, .result(result, turn.resultPayloads)) }
         if let error = turn.error { add(turn.id + "/error", .error(error)) }
         let ended = [.completed, .stopped, .interrupted, .failed, .limitReached].contains(turn.outcome)

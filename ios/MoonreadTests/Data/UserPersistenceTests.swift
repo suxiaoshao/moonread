@@ -58,10 +58,12 @@ final class UserPersistenceUserDataTests: UserDataFixture {
       UIColor.blue.setFill()
       $0.fill(CGRect(x: 0, y: 0, width: 8, height: 12))
     }
-    let cover = try await service.makeCover(image)
+    let draft = try await service.makeCover(image)
     let base = try await service.details(bookID: book.id).metadata
-    var changed = base; changed.cover = cover
+    var changed = base; changed.cover = draft
     try await service.saveMetadata(base: base, edited: changed)
+    let committed = try await service.details(bookID: book.id).metadata
+    let cover = try XCTUnwrap(committed.cover)
     let edit = try await service.prepareAnnotation(book.id, start: 0, end: 8)
     _ = try await service.saveNote(edit, text: "Saved note")
     let bytes = try await service.coverBytes(cover)

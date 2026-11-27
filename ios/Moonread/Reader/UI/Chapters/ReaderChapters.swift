@@ -73,8 +73,6 @@ struct ChapterEditor: View {
     private(set) var job: ChapterRebuild?
     var progress: ChapterRebuildProgress?
     var headings: [ChapterInfo] = []
-    var hasMore: Bool { headings.count < Int(progress?.count ?? 0) }
-    var loadingMore = false
     var applying = false
     private(set) var invalid = false
     #if DEBUG
@@ -84,20 +82,20 @@ struct ChapterEditor: View {
     var actionError: String?
     @ObservationIgnored private var loadingTask: Task<Void, Never>?
     private var started = false
-    var canApply: Bool { job != nil && progress?.done == true && progress?.cancelled != true && !invalid && !applying && !loadingMore }
+    var canApply: Bool { job != nil && progress?.done == true && progress?.cancelled != true && !invalid && !applying }
     @ObservationIgnored private let start: @MainActor (String) async throws -> ChapterRebuild
     @ObservationIgnored private let advance: @MainActor (ChapterRebuild) async throws -> ChapterRebuildProgress
-    @ObservationIgnored private let preview: @MainActor (ChapterRebuild, UInt64) async throws -> [ChapterInfo]
+    @ObservationIgnored private let preview: @MainActor (ChapterRebuild) async throws -> [ChapterInfo]
     @ObservationIgnored private let commit: @MainActor (ChapterRebuild) async throws -> Void
     init(bookID: String, reader: AppDataService = .shared,
          start: (@MainActor (String) async throws -> ChapterRebuild)? = nil,
          advance: (@MainActor (ChapterRebuild) async throws -> ChapterRebuildProgress)? = nil,
-         preview: (@MainActor (ChapterRebuild, UInt64) async throws -> [ChapterInfo])? = nil,
+         preview: (@MainActor (ChapterRebuild) async throws -> [ChapterInfo])? = nil,
          commit: (@MainActor (ChapterRebuild) async throws -> Void)? = nil) {
         self.bookID = bookID
         self.start = start ?? { try await reader.rebuildChapters($0) }
         self.advance = advance ?? { try await reader.advanceRebuild($0) }
-        self.preview = preview ?? { try await reader.rebuildPreview($0, from: $1) }
+        self.preview = preview ?? { try await reader.rebuildPreview($0) }
         self.commit = commit ?? { try await reader.applyRebuild($0) }
     }
     func load() async {
@@ -110,9 +108,23 @@ struct ChapterEditor: View {
             while !Task.isCancelled {
                 let result = try await advance(value)
                 guard !Task.isCancelled else { cancel(); return }
-                progress = result
                 if result.cancelled { invalid = true; return }
-                if result.done { await loadMore(); return }
+                if result.done {
+                    do {
+                        let rows = try await preview(value)
+                        guard !invalid, !Task.isCancelled else { cancel(); return }
+                        headings = rows
+                    } catch is CancellationError {
+                        cancel(); return
+                    } catch {
+                        guard !invalid, !Task.isCancelled else { cancel(); return }
+                        actionError = ReaderMessages.error(error)
+                    }
+                    progress = result
+                    return
+                }
+                headings.append(contentsOf: result.newHeadings)
+                progress = result
                 try await Task.sleep(for: .milliseconds(15))
             }
             cancel()
@@ -124,14 +136,6 @@ struct ChapterEditor: View {
         loadingTask = Task { await load() }
     }
     func cancel() { invalid = true; loadingTask?.cancel(); loadingTask = nil; job?.cancel() }
-    func loadMore() async {
-        guard let job, !loadingMore, !invalid else { return }
-        loadingMore = true; actionError = nil; defer { loadingMore = false }
-        do {
-            let rows = try await preview(job, headings.last.map { $0.startUtf8 + 1 } ?? 0)
-            headings += rows
-        } catch { actionError = ReaderMessages.error(error) }
-    }
     func apply() async -> Bool {
         guard canApply, let job else { return false }
         applying = true; actionError = nil; defer { applying = false }
@@ -159,44 +163,48 @@ struct ChapterRebuildView: View {
     init(model: ChapterRebuildModel, applied: @escaping () async -> Void) {
         self.model = model; self.applied = applied
     }
+    private var status: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                if model.progress?.done != true && model.rebuildError == nil { LoadingActivity(size: 28, fraction: model.progress?.fraction) }
+                VStack(alignment: .leading, spacing: 4) {
+                    if model.applying {
+                        InlineTaskProgress(title: Text("正在应用目录")).font(.headline)
+                    } else {
+                        Text(model.rebuildError != nil ? "识别未完成" : (model.progress?.done == true ? "识别完成" : "正在识别目录")).font(.headline)
+                    }
+                    Text("已识别 \(Int(model.progress?.count ?? 0)) 章").monospacedDigit().foregroundStyle(Color(uiColor: theme.secondary))
+                }
+            }
+            if let error = model.rebuildError ?? model.actionError {
+                Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("chapterRebuildError")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LayoutTokens.content + LayoutTokens.compact)
+        .padding(.vertical, LayoutTokens.compact)
+    }
     private var fields: some View {
         List {
-            Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
-                        if model.progress?.done != true && model.rebuildError == nil { LoadingActivity(size: 28, fraction: model.progress?.fraction) }
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(model.rebuildError != nil ? "识别未完成" : (model.progress?.done == true ? "识别完成" : "正在识别目录")).font(.headline)
-                            Text("已识别 \(Int(model.progress?.count ?? 0)) 章").monospacedDigit().foregroundStyle(Color(uiColor: theme.secondary))
-                        }
-                        Spacer()
-                    }
-                    if let error = model.rebuildError ?? model.actionError {
-                        Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("chapterRebuildError")
-                    }
-                }.padding(.vertical, 8)
-            }.listRowBackground(Color.clear).listRowSeparator(.hidden)
             Section {
                 ForEach(model.headings, id: \.startUtf8) { heading in
                     Text(heading.title).font(heading.level == 0 ? .headline : .body)
                         .padding(.leading, heading.level == 0 ? 0 : 12).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 }
-                if model.hasMore {
-                    HStack {
-                        Button("显示更多章节") { Task { await model.loadMore() } }.disabled(model.loadingMore)
-                        Spacer()
-                        if model.loadingMore { LoadingActivity(size: 22, waitingLabel: "正在加载") }
-                    }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                }
             }
         }
-        .themedPage()
+        .listStyle(.insetGrouped)
+        .contentMargins(.top, 0, for: .scrollContent)
     }
     var body: some View {
-        fields.navigationTitle("目录预览").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { applyButton } }
+        VStack(spacing: 0) {
+            status
+            fields
+        }
+        .themedPage()
+        .navigationTitle("目录预览").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { applyButton } }
         .onAppear { model.startIfNeeded() }
-        .overlay { if model.applying { LoadingActivity(size: 32, waitingLabel: "正在应用目录") } }
     }
     private var applyButton: some View {
         SystemToolbarButton("应用目录", role: .confirm) {

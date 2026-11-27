@@ -2,7 +2,6 @@ import MoonreadAI
 import SwiftUI
 import ImageIO
 import AISDKProvider
-import AISDKProviderUtils
 
 /// The person's own words: trailing and content-hugging on the accent tint.
 /// The leading reserve shrinks at accessibility sizes so long text stays comfortable.
@@ -57,6 +56,7 @@ typealias AIProcessExpansionHandler = @MainActor @Sendable (AIProcessExpansionID
 private struct AIProcessBlockView: View {
     let block: AIProcessBlock
     let outcome: AIAgentStatus
+    let conversationID: String
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     let expansion: AIProcessExpansionState
@@ -77,7 +77,8 @@ private struct AIProcessBlockView: View {
                 Text(block.items[0].text).textSelection(.enabled)
             }
         } else if block.items.count == 1 {
-            AIProcessRow(item: block.items[0], outcome: outcome, expanded: expansion.reasoning.contains(block.items[0].id), toggle: toggle)
+            AIProcessRow(item: block.items[0], outcome: outcome, conversationID: conversationID,
+                                     hasReplyResult: expansion.replyResultCalls.contains(block.items[0].id), requestNames: expansion.requestNames[block.items[0].id] ?? .init(), expanded: expansion.reasoning.contains(block.items[0].id), toggle: toggle)
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 Button { toggle(.group(block.id)) } label: {
@@ -102,7 +103,8 @@ private struct AIProcessBlockView: View {
                     .aiProcessHeaderGeometry("group-" + block.id)
                 if expansion.group {
                     ForEach(block.items) { item in
-                        AIProcessRow(item: item, outcome: outcome, expanded: expansion.reasoning.contains(item.id), toggle: toggle)
+                        AIProcessRow(item: item, outcome: outcome, conversationID: conversationID,
+                                     hasReplyResult: expansion.replyResultCalls.contains(item.id), requestNames: expansion.requestNames[item.id] ?? .init(), expanded: expansion.reasoning.contains(item.id), toggle: toggle)
                     }
                 }
             }.accessibilityElement(children: .contain)
@@ -115,9 +117,12 @@ struct AIProcessRow: View {
     let outcome: AIAgentStatus
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
+    var conversationID: String? = nil
+    var hasReplyResult = false
+    var requestNames = AIToolRequestNames()
     var expanded = false
     let toggle: AIProcessExpansionHandler
-    @State private var detail: AIProcessItem?
+    @State private var showingDetail = false
     var body: some View {
         Group {
             if item.kind == .reasoning && !item.text.isEmpty {
@@ -140,148 +145,175 @@ struct AIProcessRow: View {
                     }
                 }.accessibilityElement(children: .contain)
             } else if item.kind == .tool {
-                Button { detail = item } label: {
-                    HStack(spacing: 8) {
-                        rowLabel
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Color(uiColor: theme.secondary))
-                    }.contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier("aiTool-\(item.name)")
+                let result = AIToolResultDetails(item: item, outcome: outcome, hasReplyResult: hasReplyResult, names: requestNames)
+                if result.opensDetail {
+                    Button { showingDetail = true } label: { toolLabel(result) }
+                        .buttonStyle(.plain).accessibilityIdentifier("aiTool-\(item.name)")
+                        .sheet(isPresented: $showingDetail) {
+                            AIToolDetailView(item: item, result: result, conversationID: conversationID)
+                        }
+                } else {
+                    toolLabel(result).accessibilityIdentifier("aiTool-\(item.name)")
+                }
             } else {
                 rowLabel
             }
-        }.sheet(item: $detail) { _ in AIToolDetailView(item: item, outcome: outcome) }
+        }
     }
+
+    private func toolLabel(_ result: AIToolResultDetails) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: AIToolPresentation.symbol(item.name, input: item.input, output: item.output))
+                .foregroundStyle(Color(uiColor: result.state == .failed ? theme.destructive : theme.secondary))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(AIToolPresentation.title(item.name, output: item.output))
+                    .foregroundStyle(Color(uiColor: theme.ink))
+                if !result.summary.isEmpty {
+                    Text(result.summary)
+                        .lineLimit(2).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            if item.isRunning { AIProcessLoading() }
+            if result.opensDetail {
+                Image(systemName: "chevron.right").font(.caption2)
+                    .foregroundStyle(Color(uiColor: theme.secondary)).accessibilityHidden(true)
+            }
+        }
+        .font(.subheadline).padding(.vertical, 4)
+        .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
+        .contentShape(.rect).accessibilityElement(children: .combine)
+    }
+
     private var rowLabel: some View {
         HStack(spacing: 8) {
-            Image(systemName: item.kind == .reasoning ? "sparkles" : AIToolPresentation.symbol(item.name, input: item.input, output: item.output))
-            Text(item.kind == .reasoning ? (item.text.isEmpty ? (item.isRunning ? String(localized: "思考中") : String(localized: "已思考")) : item.text) : AIToolPresentation.title(item.name, output: item.output))
+            Image(systemName: "sparkles")
+            Text(item.text.isEmpty ? (item.isRunning ? String(localized: "思考中") : String(localized: "已思考")) : item.text)
                 .lineLimit(1).truncationMode(.tail)
-                .foregroundStyle(Color(uiColor: failed ? theme.destructive : item.isRunning ? theme.ink : theme.secondary))
+                .foregroundStyle(Color(uiColor: item.isRunning ? theme.ink : theme.secondary))
             Spacer(minLength: 0)
             if item.isRunning { AIProcessLoading() }
-            else if item.kind == .tool && item.output?.object["status"]?.string != "ok" {
-                Text(AIToolPresentation.status(item.output, outcome: outcome)).font(.footnote)
-            }
-        }.font(.subheadline).foregroundStyle(Color(uiColor: failed ? theme.destructive : theme.secondary)).frame(minHeight: 32)
+        }.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)).frame(minHeight: 32)
     }
-    private var failed: Bool { item.output?.object["status"]?.string == "error" }
 }
 
 struct AIToolDetailView: View {
-    static func webSources(_ output: JSONValue, tool: String) -> [AIWebSource] {
-        AIWebSource.committed(in: output, tool: tool)
-    }
     let item: AIProcessItem
-    let outcome: AIAgentStatus
+    let result: AIToolResultDetails
+    let conversationID: String?
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
-    @State private var sourcePreview: AIResultSource?
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    HStack(spacing: 8) {
-                        if item.isRunning { AIProcessLoading() }
-                        Text(AIToolPresentation.status(item.output, outcome: outcome))
-                    }.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("调用参数").font(.headline)
-                        AIValueView(value: item.input)
+                VStack(alignment: .leading, spacing: LayoutTokens.section) {
+                    if let filter = result.requestedFilter {
+                        filterCards(filter, title: "筛选条件")
                     }
-                    if let output = item.output, item.name == "find_cover", output.object["status"]?.string != "error" {
-                        AIFindCoverDetail(output: output)
-                    } else if let output = item.output {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("结果").font(.headline)
-                            AIValueView(value: output)
-                            // web_search lists sources at the top level; find_cover nests them in data.
-                            ForEach(Self.webSources(output, tool: item.name)) { source in
-                                if let url = URL(string: source.url), ["https", "http"].contains(url.scheme) {
-                                    Link(destination: url) { Label(source.title, systemImage: "globe") }
-                                }
+                    if let request = result.requestSection {
+                        detailSection(request, showTitle: result.requestedFilter == nil, secondaryTitle: true)
+                    }
+                    if result.state != .available {
+                        if result.sections.isEmpty || result.state == .empty {
+                            ContentUnavailableView {
+                                Label(result.statusTitle, systemImage: result.state.symbol)
+                            } description: {
+                                if let explanation = result.explanation { Text(explanation) }
                             }
-                            ForEach(AIResultSource.all(in: output)) { source in
-                                Button { sourcePreview = source } label: {
-                                    Label(source.title.isEmpty ? String(localized: "查看原文") : source.title, systemImage: "book")
-                                }.padding(.vertical, 4)
+                        } else {
+                            VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+                                Label(result.statusTitle, systemImage: result.state.symbol).font(.headline)
+                                if let explanation = result.explanation { Text(explanation).font(.subheadline) }
+                            }.foregroundStyle(Color(uiColor: theme.secondary))
+                        }
+                    }
+                    if let suggestion = result.suggestedFilter {
+                        filterCards(suggestion, title: "筛选建议")
+                    }
+                    if let books = result.bookResult {
+                        BookSearchSummaryCard {
+                            VStack(alignment: .leading, spacing: LayoutTokens.control) {
+                                Text(verbatim: books.title).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                                ForEach(books.rows) { row in
+                                    if row.id != books.rows.first?.id { Divider() }
+                                    rowText(row).textSelection(.enabled)
+                                }
                             }
                         }
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding([.horizontal, .top], 20).padding(.bottom)
-                    .foregroundStyle(Color(uiColor: theme.ink))
+                    if result.state != .empty {
+                        ForEach(result.sections) { section in
+                            detailSection(section, showTitle: result.sections.count > 1 || section.isEntity)
+                        }
+                    }
+                    if let notice = result.notice {
+                        Text(notice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding()
+                .foregroundStyle(Color(uiColor: theme.ink))
             }.themedPage().navigationTitle(AIToolPresentation.title(item.name, output: item.output))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) {
                     SystemToolbarButton("关闭", role: .close) { dismiss() }.labelStyle(.iconOnly)
                 } }
-                .sheet(item: $sourcePreview) { AISourcePreview(source: $0) }
         }.tint(Color(uiColor: theme.accent)).preferredColorScheme(theme.scheme)
             .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
     }
-}
 
-/// Cover search reads as a search: the service's answer and the pages it cited first, then what
-/// became candidates. Candidates themselves are reviewed in the cover result, not here.
-private struct AIFindCoverDetail: View {
-    @Environment(\.theme) private var theme
-    let output: JSONValue
-    var body: some View {
-        let data = output.object["data"]?.object ?? [:]
-        let candidates = data["candidates"]?.array ?? []
-        let sources = AIToolDetailView.webSources(output, tool: "find_cover")
-        VStack(alignment: .leading, spacing: 20) {
-            if let answer = data["answer"]?.string, !answer.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("搜索回答").font(.headline)
-                    Text(verbatim: answer).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                }
+    @ViewBuilder private func filterCards(_ filter: AIToolResultDetails.FilterSummary, title: LocalizedStringKey) -> some View {
+        if let root = filter.root {
+            BookSearchRuleCard(root: root, title: title, shelfTitle: { $0 }) { EmptyView() } footer: { EmptyView() }
+        }
+        BookSearchSortCard(sorts: filter.sorts)
+    }
+
+    private func detailSection(_ section: AIToolResultDetails.Section, showTitle: Bool, secondaryTitle: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: LayoutTokens.control) {
+            if showTitle {
+                Text(section.title).font(secondaryTitle ? .footnote : .headline)
+                    .foregroundStyle(Color(uiColor: secondaryTitle ? theme.secondary : theme.ink))
+                    .accessibilityAddTraits(.isHeader)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("网页来源").font(.headline)
-                if sources.isEmpty {
-                    Text("没有网页来源").foregroundStyle(Color(uiColor: theme.secondary))
-                } else {
-                    ForEach(sources) { source in
-                        if let url = URL(string: source.url), ["https", "http"].contains(url.scheme) {
-                            Link(destination: url) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Label(source.title, systemImage: "globe")
-                                    Text(verbatim: url.host ?? source.url).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                                }.frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading).contentShape(Rectangle())
-                            }
-                        }
-                    }
-                }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("封面候选").font(.headline)
-                Text(candidates.isEmpty ? String(localized: "没有图片候选") : String(localized: "\(candidates.count) 张图片可在封面结果中查看"))
-                    .foregroundStyle(Color(uiColor: theme.secondary))
+            ForEach(section.rows) { row in
+                detailRow(row).padding(.leading, CGFloat(row.indent) * LayoutTokens.content)
             }
         }
     }
-}
 
-private struct AIValueView: View {
-    let value: JSONValue
-    var body: some View {
-        // A selectable structured document, without an extra hierarchy of disclosure controls.
-        Text(Self.describe(value)).textSelection(.enabled).font(.subheadline)
-    }
-    private static func describe(_ value: JSONValue, depth: Int = 0) -> String {
-        switch value {
-        case .object(let object): object.keys.sorted().filter { !["sourceRef", "bookRef", "fileRef", "markRef", "chapterRef", "ref", "attachmentRef", "proposalRef", "previewRef", "nextCursor", "parentRef", "cursor", "startUtf8", "endUtf8", "contextOffsetUtf8", "range", "visibleRange", "maxBytes"].contains($0) }.map { key in
-            let label = labels[key] ?? key
-            return label + ": " + describe(object[key]!, depth: depth + 1)
-        }.joined(separator: "\n")
-        case .array(let values): values.map { describe($0, depth: depth + 1) }.joined(separator: "\n\n")
-        case .string(let text): text
-        case .number(let value): value.formatted()
-        case .bool(let value): value ? String(localized: "是") : String(localized: "否")
-        case .null: "—"
+    @ViewBuilder private func detailRow(_ row: AIToolResultDetails.Row) -> some View {
+        if let image = row.image, let conversationID {
+            VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+                AIGeneratedImageView(owner: conversationID, attachment: image)
+                rowText(row).textSelection(.enabled)
+                if let web = row.web, let url = URL(string: web.url) {
+                    Link(destination: url) { Label(web.title, systemImage: "globe") }
+                }
+            }
+        } else if let web = row.web, let url = URL(string: web.url) {
+            Link(destination: url) { rowText(row, accessory: "arrow.up.right") }
+        } else {
+            rowText(row).textSelection(.enabled)
         }
     }
-    private static let labels = ["title": String(localized: "书名"), "text": String(localized: "正文"), "query": String(localized: "搜索"), "note": String(localized: "批注"), "excerpt": String(localized: "摘录"), "sources": String(localized: "来源"), "status": String(localized: "状态"), "items": String(localized: "条目"), "total": String(localized: "总计")]
+
+    private func rowText(_ row: AIToolResultDetails.Row, accessory: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if let label = row.label {
+                LabeledContent {
+                    Text(verbatim: row.text).foregroundStyle(Color(uiColor: theme.ink))
+                } label: { Text(verbatim: label).foregroundStyle(Color(uiColor: theme.secondary)) }
+            } else if let accessory {
+                Label { Text(verbatim: row.text) } icon: { Image(systemName: accessory) }
+            } else {
+                Text(verbatim: row.text)
+            }
+            if let subtitle = row.subtitle {
+                Text(verbatim: subtitle).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+            }
+        }.font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
 extension AIConversation {
     var activityTitle: String {
@@ -309,68 +341,6 @@ extension AIConversation {
             guard item.kind == .tool, item.name.hasPrefix("propose_"), let output = item.output else { return false }
             return !["denied", "error"].contains(output.object["status"]?.string ?? "")
         } ?? false
-    }
-}
-
-struct AIResultSource: Identifiable {
-    init(id: String, book: ReadingToolTarget.BookReference, start: UInt64, end: UInt64, title: String) {
-        self.id = id; self.book = book; self.start = start; self.end = end; self.title = title
-    }
-    let id: String
-    let book: ReadingToolTarget.BookReference
-    let start: UInt64
-    let end: UInt64
-    let title: String
-    static func all(in output: JSONValue) -> [AIResultSource] {
-        let data = output.object["data"] ?? .null
-        let items = (data.object["items"]?.array ?? []).map { item -> JSONValue in
-            var value = item.object
-            value["bookRef"] = value["bookRef"] ?? data.object["bookRef"]
-            return .object(value)
-        }
-        let values = [data] + (output.object["sources"]?.array ?? [])
-            + (data.object["hits"]?.array ?? []) + items
-        var seen = Set<String>()
-        return values.compactMap(Self.init).filter { seen.insert($0.id).inserted }
-    }
-    init?(_ value: JSONValue) {
-        let object = value.object
-        guard let id = object["sourceRef"]?.string, let rawBook = object["bookRef"]?.string,
-              let book = try? AIReadingReferences.parseBookReference(rawBook),
-              let start = object["range"]?.object["startUtf8"]?.int,
-              let end = object["range"]?.object["endUtf8"]?.int,
-              start >= 0, end > start,
-              id == AIReadingTools.ref("source", "\(rawBook):\(start):\(end)") else { return nil }
-        self.id = id; self.book = book; self.start = UInt64(start); self.end = UInt64(end)
-        title = object["title"]?.string ?? object["chapterTitle"]?.string ?? ""
-    }
-}
-struct AISourcePreview: View {
-    let source: AIResultSource
-    @Environment(\.dismiss) private var dismiss
-    @State private var text: String?
-    @State private var error: String?
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                if let text { Text(text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
-                else if let error { Text(error).padding() }
-                else { ProgressView().padding() }
-            }.themedPage().navigationTitle(source.title.isEmpty ? String(localized: "原文") : source.title).navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() } } }
-        }.presentationDetents([.medium, .large]).task(id: source.id) {
-            do {
-                let reader = AppDataService.shared
-                let sha = source.book.sha
-                let id = try await reader.aiBookID(sha: sha)
-                let snapshot = try await reader.snapshot(id)
-                guard snapshot.book.readingKey.formalSHA256 == sha else { throw AIToolError("stale_reference") }
-                // Inspect the exact, bounded, SHA-keyed source; never write reading position/statistics.
-                guard source.end - source.start <= 65_536 else { throw AIToolError("resource_limit") }
-                let range = try await reader.textRange(id, start: source.start, end: source.end)
-                text = range.text
-            } catch { self.error = String(localized: "此处原文暂时不可用。") }
-        }
     }
 }
 
@@ -420,6 +390,7 @@ struct AIMessageRowView: View {
     let preview: (AIReadingAttachment) -> Void
     let loadEarlier: () -> Void
     let openFilter: (AIBookFilterSuggestion) -> Void
+    let openBook: (StatisticsRoute) -> Void
     let toggleProcessItem: AIProcessExpansionHandler
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
@@ -440,7 +411,8 @@ struct AIMessageRowView: View {
                     .accessibilityValue(input.mode == .steering ? "排队中，调整当前任务" : "排队中，完成后发送")
                     .accessibilityAction(named: "取消发送") { ai.cancelQueued(conversationID, inputID: input.id) }
                     .contextMenu { Button("取消发送", systemImage: "xmark") { ai.cancelQueued(conversationID, inputID: input.id) } }
-            case .block(let block, let outcome, let expansion): AIProcessBlockView(block: block, outcome: outcome, expansion: expansion, toggle: toggleProcessItem)
+            case .block(let block, let outcome, let expansion): AIProcessBlockView(block: block, outcome: outcome, conversationID: conversationID,
+                                   expansion: expansion, toggle: toggleProcessItem)
             case .processToggle(let expanded):
                 Button { if let turn = row.turnID { ai.conversation(conversationID)?.toggleProcess(turn) } } label: {
                     Label("查看过程", systemImage: expanded ? "chevron.down" : "chevron.right")
@@ -470,10 +442,14 @@ struct AIMessageRowView: View {
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: LayoutTokens.inputRadius))
             case .image(let image): AIGeneratedImageView(owner: conversationID, attachment: image)
             case .result(let result, _):
-                if case .bookFilter(let suggestion, let summary) = result.body {
+                switch result.body {
+                case .bookFilter(let suggestion, let summary):
                     AIBookFilterCard(suggestion: suggestion, configuration: summary) { openFilter(suggestion) }
                         .accessibilityIdentifier("aiResult-\(result.id)")
-                } else {
+                case .bookList(let books):
+                    AIBookListCard(owner: result.sessionID, books: books, openBook: openBook)
+                        .accessibilityIdentifier("aiResult-\(result.id)")
+                default:
                     AIResultCard(result: result)
                 }
             case .error(let text): Label(text, systemImage: "exclamationmark.circle").font(.subheadline).foregroundStyle(Color(uiColor: theme.destructive))

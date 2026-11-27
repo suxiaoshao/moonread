@@ -281,11 +281,12 @@ jobs:
           start=$SECONDS
           nix develop --no-update-lock-file -c xcodebuild \
             -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
-            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/DerivedData -showBuildTimingSummary \
             -packageCachePath "$GITHUB_WORKSPACE/$SWIFTPM_CACHE" \
             -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/$SWIFTPM_WORKSPACE" \
             -onlyUsePackageVersionsFromResolvedFile \
+            ARCHS=arm64 \
             COMPILATION_CACHE_ENABLE_CACHING=YES COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES \
             "COMPILATION_CACHE_CAS_PATH=$GITHUB_WORKSPACE/build/DerivedData/CompilationCache.noindex" \
             -only-testing:MoonreadTests -parallel-testing-enabled NO \
@@ -355,6 +356,10 @@ jobs:
         run: printf 'key=%s\n' "$CACHE_KEY" >> "$GITHUB_OUTPUT"
         env:
           CACHE_KEY: ${{ steps.cache-key.outputs.key }}
+      - name: Wait for the selected simulator to finish booting
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+        run: xcrun simctl bootstatus "$SIMULATOR_UDID" -b
       - name: Run all current MoonreadTests
         env:
           SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}

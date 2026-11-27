@@ -51,15 +51,6 @@ struct LibraryDisplayMenu: View {
     }
 }
 
-/// Content headings scroll with the books, without List's pinned section gap.
-struct LibraryListHeading: ViewModifier {
-    func body(content: Content) -> some View {
-        content.textCase(nil).listRowSeparator(.hidden).listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: LayoutTokens.compact, leading: LayoutTokens.page,
-                                     bottom: 4, trailing: LayoutTokens.page))
-    }
-}
-
 extension LibraryEntry {
     var libraryDetail: String {
         if case .folder(let folder) = item { return String(localized: "\(folder.childBookCount) 本小说") }
@@ -67,10 +58,17 @@ extension LibraryEntry {
         guard readingIdentity != nil, positionUtf8 > 0 else { return String(localized: "未读") }
         return libraryProgress + (chapterTitle.map { " · " + $0 } ?? "")
     }
-    var libraryProgress: String {
+    var libraryProgress: String { Self.progressLabel(needsDownload: needsDownload, fraction: libraryProgressFraction) }
+
+    var libraryProgressFraction: Double? {
+        guard readingIdentity != nil, positionUtf8 > 0 else { return nil }
+        return ReadingProgress.fraction(positionUtf8, of: byteCount)
+    }
+
+    static func progressLabel(needsDownload: Bool, fraction: Double?) -> String {
         if needsDownload { return String(localized: "待下载") }
-        guard readingIdentity != nil, positionUtf8 > 0 else { return String(localized: "未读") }
-        return ReadingProgress.fraction(positionUtf8, of: byteCount).formatted(.percent.precision(.fractionLength(1)))
+        guard let fraction else { return String(localized: "未读") }
+        return fraction.formatted(.percent.precision(.fractionLength(1)))
     }
 }
 
@@ -118,65 +116,64 @@ struct LibraryBookTile: View {
     let model: LibraryModel
     let entry: LibraryEntry
     var showPath = false
+    var match: LibraryQueryRules.SearchMatch?
     let interaction: LibraryItemInteraction
     @Environment(\.theme) private var theme
+    private var label: LibraryItemLabel { .init(entry: entry, theme: theme, match: match) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button { interaction.activate(entry, in: model) } label: {
-                VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-                    Group {
-                        if case .folder(let folder) = entry.item {
-                            LibraryFolderCover(previews: folder.coverPreviews).aspectRatio(0.7, contentMode: .fit)
-                        } else { BookCoverView(title: entry.title, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).aspectRatio(0.7, contentMode: .fit) }
-                    }
-                        .overlay {
-                            if interaction.isSelected {
-                                RoundedRectangle(cornerRadius: entry.directory ? 7 : 6)
-                                    .fill(Color(uiColor: theme.accent).opacity(0.12)).allowsHitTesting(false)
-                            }
-                        }
-                        .overlay(alignment: .bottomTrailing) {
-                            if interaction.isEditing {
-                                Image(systemName: interaction.isSelected ? "checkmark.circle.fill" : "circle")
-                                    .font(.title3).foregroundStyle(Color(uiColor: theme.accent))
-                                    .padding(LayoutTokens.compact)
-                            }
-                        }
-                    Text(verbatim: entry.title).font(.subheadline.weight(.medium))
-                        .foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2, reservesSpace: true)
-                }.contentShape(.rect)
-            }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
-                .accessibilityAddTraits(interaction.isSelected ? .isSelected : [])
-                .overlay(alignment: .top) {
-                    if !interaction.isEditing && !entry.directory {
-                        LibraryFileAvailability(entry: entry).aspectRatio(0.7, contentMode: .fit)
-                    }
-                }
-            HStack(spacing: 0) {
-                Text(verbatim: entry.directory ? entry.libraryDetail : entry.libraryProgress).font(.caption)
-                    .foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
-                Spacer(minLength: 0)
-                if let host = interaction.menuHost {
-                    Menu {
-                        LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
-                    } label: {
-                        Image(systemName: "ellipsis").foregroundStyle(Color(uiColor: theme.secondary))
-                            .frame(width: LayoutTokens.hit, height: LayoutTokens.hit)
-                    }.accessibilityLabel(String(localized: "\(entry.name)的操作"))
+        VStack(alignment: .leading) {
+            VStack(alignment: .leading) {
+                Color.clear.aspectRatio(0.7, contentMode: .fit)
+                label.title().font(.subheadline.weight(.medium)).lineLimit(2)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            LibraryGridStatus(status: label.gridStatus, showsMenu: interaction.menuHost != nil)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .background {
+            LibraryCoverButton(entry: entry, detail: label.gridStatus) {
+                interaction.activate(entry, in: model)
+            } cover: {
+                cover
+            } actions: {
+                actions
+            }
+            .accessibilityAddTraits(interaction.isSelected ? .isSelected : [])
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if interaction.menuHost != nil {
+                LibraryItemMore(entry: entry) { actions }
+                    .padding(.bottom, LibraryCollectionSection.gridFooterSpacing)
+            }
+        }
+    }
+
+    private var cover: some View {
+        label.cover(compact: false).aspectRatio(0.7, contentMode: .fit)
+            .overlay {
+                if interaction.isSelected {
+                    RoundedRectangle(cornerRadius: entry.directory ? 7 : 6)
+                        .fill(Color(uiColor: theme.accent).opacity(0.12)).allowsHitTesting(false)
+                } else if !interaction.isEditing && !entry.directory {
+                    LibraryFileAvailability(entry: entry)
                 }
             }
-            .frame(minHeight: LayoutTokens.hit)
-            if showPath {
-                Text(verbatim: entry.parentPath.isEmpty ? model.shelfTitle(entry.shelfId) : entry.parentPath)
-                    .font(.caption2).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
-            }
-        }.frame(maxWidth: .infinity, alignment: .topLeading)
-            .contextMenu {
-                if let host = interaction.menuHost {
-                    LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
+            .overlay(alignment: .bottomTrailing) {
+                if interaction.isEditing {
+                    Image(systemName: interaction.isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3).foregroundStyle(Color(uiColor: theme.accent))
+                        .padding(LayoutTokens.compact)
                 }
             }
+    }
+
+    @ViewBuilder private var actions: some View {
+        if let host = interaction.menuHost {
+            LibraryItemMenu(model: model, entry: entry, host: host, showsLocation: showPath)
+        }
     }
 }
 
@@ -210,22 +207,7 @@ struct LibraryNameGroup: Identifiable, Sendable {
     }
 }
 
-struct LibraryNativeIndexLabel: ViewModifier {
-    let letter: String
-    @ViewBuilder func body(content: Content) -> some View {
-        if #available(iOS 26, *) { content.sectionIndexLabel(letter) }
-        else { content }
-    }
-}
-struct LibraryNativeIndexVisibility: ViewModifier {
-    static var available: Bool { if #available(iOS 26, *) { true } else { false } }
-    @ViewBuilder func body(content: Content) -> some View {
-        if #available(iOS 26, *) { content.listSectionIndexVisibility(.visible) }
-        else { content.padding(.trailing, 20) }
-    }
-}
-
-/// SwiftUI's section index is List-only. Grid uses the same section destinations,
+/// Grid uses the same section destinations as the collection's native list index,
 /// with tap, scrub and VoiceOver buttons in a narrow rail clear of the tiles.
 struct LibraryAlphabetIndex: View {
     let letters: [String]

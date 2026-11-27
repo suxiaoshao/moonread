@@ -6,7 +6,7 @@ enum DataScope: Codable, Equatable, Sendable {
     case local
     case account(String)
 
-    enum Environment: String, Sendable { case development, production }
+    enum Environment: String, Codable, Sendable { case development, production }
 
     static func confirmed(container: String, environment: Environment, recordName: String) throws -> Self {
         guard !container.isEmpty, !recordName.isEmpty else { throw DataV2Error.invalidOwnerState }
@@ -16,6 +16,8 @@ enum DataScope: Codable, Equatable, Sendable {
     var key: String {
         switch self { case .local: "local"; case .account(let key): key }
     }
+
+    var metadataImportKey: String { self == .local ? key : "account:" + key }
 
     var valid: Bool {
         switch self {
@@ -55,7 +57,7 @@ enum DataIdentityStatus: Sendable {
     case paused
     case unknown
     case signedOut
-    case confirmed(DataScope, syncRequested: Bool)
+    case confirmed(DataScope, syncRequested: Bool, verifiedRecordName: String? = nil)
 }
 
 struct DataScopeSelection: Equatable, Sendable {
@@ -64,13 +66,16 @@ struct DataScopeSelection: Equatable, Sendable {
 }
 
 struct DataLayout: Sendable {
-    let root: URL
+    let applicationSupport: URL
+    let environment: DataScope.Environment
+
     init(applicationSupport: URL, environment: DataScope.Environment = .production) {
-        let base = applicationSupport.appending(path: "Data/v2", directoryHint: .isDirectory)
-        // Each environment imports the same released source once, with its
-        // own ownership, index, pending import tasks and checkpoints.
-        root = environment == .development ? base.appending(path: "development", directoryHint: .isDirectory) : base
+        self.applicationSupport = applicationSupport
+        self.environment = environment
     }
+
+    var parent: URL { applicationSupport.appending(path: "Data/v3", directoryHint: .isDirectory) }
+    var root: URL { parent.appending(path: environment.rawValue, directoryHint: .isDirectory) }
 
     var index: URL { root.appending(path: "index.sqlite") }
     var ownerState: URL { root.appending(path: "owner-state") }
@@ -135,6 +140,7 @@ struct DataCloudLease: Equatable, Sendable {
 final class DataSession: @unchecked Sendable {
     private let lifecycle = NSLock()
     let layout: DataLayout
+    let releasedLayout: ReadingDataLayoutUpgrade.Source
     private let bundle: Bundle
     private var owner: DataOwnerState
     private var pool: DatabasePool?
@@ -147,18 +153,44 @@ final class DataSession: @unchecked Sendable {
     private var usersReady = false
     private var historyReady = false
 
-    /// The optional bootstrap owner is accepted only before any v2 owner
+    /// The optional bootstrap owner is accepted only before any owner
     /// decision exists. It comes from a positively attributed legacy store,
     /// not simply from the system's current login.
-    init(layout: DataLayout, bundle: Bundle = .main, confirmedLegacyOwner: @autoclosure () throws -> DataScope? = nil) throws {
+    init(layout: DataLayout, bundle: Bundle = .main, confirmedLegacyOwner: @autoclosure () throws -> DataScope? = nil,
+         releasedDevelopmentApproval: String? = nil) throws {
         self.layout = layout; self.bundle = bundle
+        releasedLayout = try ReadingDataLayoutUpgrade.prepare(layout, developmentApproval: releasedDevelopmentApproval)
+        try ReadingDataLayoutUpgrade.finishAccountChange(in: layout)
         var state = try DataOwnerState.load(at: layout.ownerState)
-        if !FileManager.default.fileExists(atPath: layout.ownerState.path), let confirmedLegacyOwner = try confirmedLegacyOwner() {
+        if releasedLayout != .otherEnvironment, !FileManager.default.fileExists(atPath: layout.ownerState.path),
+           let confirmedLegacyOwner = try confirmedLegacyOwner() {
             guard confirmedLegacyOwner.valid, confirmedLegacyOwner != .local else { throw DataV2Error.invalidOwnerState }
             state.current = confirmedLegacyOwner
             state.lastConfirmed = confirmedLegacyOwner
         }
         owner = state
+    }
+
+    func removeAdoptedReleasedStoreAfterStartup() {
+        lifecycle.withLock {
+            guard indexReady, usersReady else { return }
+            ReadingDataLayoutUpgrade.removeAdoptedSource(in: layout)
+        }
+    }
+
+    func changeReleasedAccount(_ change: ReadingDataLayoutUpgrade.AccountChange) throws {
+        try lifecycle.withLock {
+            try closeLocked()
+            try ReadingDataLayoutUpgrade.changeAccount(change, in: layout)
+            owner = try DataOwnerState.load(at: layout.ownerState)
+        }
+    }
+
+    func stillUsesReleasedAccount(_ scope: DataScope) throws -> Bool {
+        try lifecycle.withLock {
+            if owner.current == scope || owner.lastConfirmed == scope || owner.move?.target == scope { return true }
+            return try ReadingDataLayoutUpgrade.exists(layout.directory(scope))
+        }
     }
 
     private func saveOwner(_ next: DataOwnerState) throws {
@@ -199,7 +231,7 @@ final class DataSession: @unchecked Sendable {
             verified = nil
             state.lastConfirmed = nil
             next = .init(scope: .local, maySync: false)
-        case .confirmed(let scope, let requested):
+        case .confirmed(let scope, let requested, _):
             guard scope.valid, scope != .local else { throw DataV2Error.invalidOwnerState }
             verified = scope
             if owner.lastConfirmed == nil {
@@ -220,6 +252,13 @@ final class DataSession: @unchecked Sendable {
 
     func activate(_ status: DataIdentityStatus) throws -> (DataSessionLease, DataScopeSelection) {
         lifecycle.lock(); defer { lifecycle.unlock() }
+        // A failed write can leave an already verified layout change to finish
+        // on this session's next activation, before it opens either account.
+        if try ReadingDataLayoutUpgrade.hasPendingAccountChange(in: layout) {
+            try closeLocked()
+            try ReadingDataLayoutUpgrade.finishAccountChange(in: layout)
+            owner = try DataOwnerState.load(at: layout.ownerState)
+        }
         try recoverLocalMove()
         let (next, verified, planned) = try plan(status)
         var state = planned
@@ -301,18 +340,17 @@ final class DataSession: @unchecked Sendable {
         if imported == nil {
             guard !owner.ownedIndex else { throw DataV2Error.migrationNotVerified }
             let sourceExists: Bool
-            do {
-                _ = try FileManager.default.attributesOfItem(atPath: legacyFile.path)
-                sourceExists = true
-            } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
-                // An access or metadata error is not evidence the source is absent.
+            if releasedLayout == .otherEnvironment {
                 sourceExists = false
+            } else {
+                sourceExists = try ReadingDataLayoutUpgrade.exists(legacyFile)
             }
             if sourceExists {
                 try importLegacyIndexLocked(legacyFile, token: token, defaults: legacyDefaults)
             } else {
                 try writer.write { db in
-                    try IndexImport.migrateLocalState(db, defaults: legacyDefaults, legacyUserScope: token.scope.key, cleanupDone: true)
+                    try IndexImport.migrateLocalState(db, defaults: releasedLayout == .otherEnvironment ? [:] : legacyDefaults,
+                                                      legacyUserScope: token.scope.key, cleanupDone: true)
                     try db.execute(sql: "INSERT INTO main.index_import_state VALUES(1,0)")
                 }
             }
@@ -477,6 +515,91 @@ final class DataSession: @unchecked Sendable {
             let writer = try active(token)
             guard usersReady else { throw DataV2Error.migrationNotVerified }
             return try writer.write(body)
+        }
+    }
+
+    func importedLegacyIndexFiles(_ token: DataSessionLease) throws -> [StorageFile] {
+        try lifecycle.withLock {
+            let writer = try active(token)
+            guard indexReady, releasedLayout != .otherEnvironment,
+                  let version = try writer.read({ try Int.fetchOne($0, sql: "SELECT legacy_version FROM main.index_import_state WHERE id=1") }),
+                  (20...23).contains(version) else { return [] }
+            return try StorageDatabaseFiles.group(layout.applicationSupport.appending(path: "reader.sqlite3"))
+        }
+    }
+
+    func organizeUserDatabase(_ token: DataSessionLease) throws -> StorageDatabaseResult {
+        try lifecycle.withLock {
+            let writer = try active(token), file = try layout.user(token.scope)
+            guard usersReady, token.scope == .local || verifiedAccount == token.scope else { throw StorageMaintenanceError.busy }
+            return try writer.barrierWriteWithoutTransaction { db in
+                let before = try StorageDatabaseFiles.bytes(file)
+                var removed: (count: Int, copies: [UserValueRows.CoverCopy]) = (0, [])
+                try db.inTransaction {
+                    removed = try UserValueRows.reclaimUnreferencedCovers(db)
+                    return .commit
+                }
+                do {
+                    let free = try Int.fetchOne(db, sql: "PRAGMA usr.freelist_count") ?? 0
+                    if removed.count > 0 || free > 0 {
+                        try db.execute(sql: "VACUUM usr")
+                    }
+                    try db.checkpoint(.truncate, on: "usr")
+                    guard try String.fetchAll(db, sql: "PRAGMA usr.quick_check") == ["ok"],
+                          try Row.fetchOne(db, sql: "PRAGMA usr.foreign_key_check") == nil else {
+                        throw DataV2Error.migrationNotVerified
+                    }
+                    let after = try StorageDatabaseFiles.bytes(file)
+                    return .init(coversRemoved: removed.count, bytesRecovered: before > after ? before - after : 0,
+                                 incomplete: false, reclaimedCopies: removed.copies)
+                } catch {
+                    guard removed.count > 0 else { throw error }
+                    return .init(coversRemoved: removed.count, bytesRecovered: 0, incomplete: true, reclaimedCopies: removed.copies)
+                }
+            }
+        }
+    }
+
+    func obsoleteMetadataPackages(_ token: DataSessionLease, directory: URL, remove: [StorageDirectory] = [])
+    throws -> StorageMetadataPackages {
+        try lifecycle.withLock {
+            let writer = try active(token)
+            guard indexReady else { throw DataV2Error.migrationNotVerified }
+            func taskIDs(_ db: Database) throws -> [String] {
+                guard try db.tableExists("metadata_import_task", in: "main") else { return [] }
+                return try String.fetchAll(db, sql: "SELECT task_id FROM main.metadata_import_task")
+            }
+            var ids = Set(try writer.read { try taskIDs($0).map { $0.uppercased() } })
+            let support = layout.applicationSupport
+            let alternate = [DataScope.Environment.development, .production].map { DataLayout(applicationSupport: support, environment: $0).index }
+            let released = ["Data/v2/index.sqlite", "Data/v2/development/index.sqlite",
+                            "Data/v3/.development-upgrade/index.sqlite", "Data/v3/.production-upgrade/index.sqlite"]
+                .map { support.appending(path: $0) }
+            var canVerify = true
+            for file in alternate + released where file != layout.index {
+                do {
+                    guard try StorageFile.file(at: file) != nil else { continue }
+                    var configuration = Configuration()
+                    configuration.readonly = true
+                    let reader = try DatabaseQueue(path: file.path, configuration: configuration)
+                    try ids.formUnion(reader.read { try taskIDs($0).map { $0.uppercased() } })
+                } catch { canVerify = false }
+            }
+            var result = StorageMetadataPackages()
+            result.unverified = !canVerify
+            for child in try StorageFile.children(of: directory) {
+                let package = try StorageDirectory(child)
+                if canVerify, let id = UUID(uuidString: child.lastPathComponent), !ids.contains(id.uuidString) {
+                    result.obsolete.append(package)
+                } else {
+                    result.retained += package.bytes
+                }
+            }
+            let obsolete = Set(result.obsolete.map(\.url))
+            for directory in remove where obsolete.contains(directory.url) {
+                result.removed += (try? directory.removeIfUnchanged()) ?? 0
+            }
+            return result
         }
     }
 

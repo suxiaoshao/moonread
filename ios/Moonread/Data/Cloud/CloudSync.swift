@@ -90,14 +90,15 @@ struct CloudSyncStatus: Sendable {
 final class CloudSyncIntent: @unchecked Sendable {
     private let scopeKey: String
     private let defaults: UserDefaults
+    static let releasedDevelopmentApprovalKey = "Moonread.readingCloudApprovedScope.v1.development"
     init(defaults: UserDefaults, environment: DataScope.Environment) {
         self.defaults = defaults
-        let base = "Moonread.readingCloudApprovedScope.v1"
-        scopeKey = environment == .development ? base + ".development" : base
+        scopeKey = environment == .development ? "Moonread.readingCloudApprovedScope.v3.development" : "Moonread.readingCloudApprovedScope.v1"
     }
     var requested: Bool { defaults.bool(forKey: "Moonread.userCloudEnabled") }
     func set(_ enabled: Bool) { defaults.set(enabled, forKey: "Moonread.userCloudEnabled") }
     var approvedScopeKey: String? { defaults.string(forKey: scopeKey) }
+    var releasedDevelopmentApproval: String? { defaults.string(forKey: Self.releasedDevelopmentApprovalKey) }
     func approve(_ scope: DataScope) { defaults.set(scope.key, forKey: scopeKey) }
 }
 
@@ -189,7 +190,7 @@ actor CloudSyncCoordinator {
                                                                beforeClear: beforeRebind, afterClear: afterRebind)
                 })
             }
-            return .init(lookup: lookup, isApproved: { await service.isReadingCloudApproved($0.scope) },
+            return .init(lookup: lookup, isApproved: { await service.isReadingCloudApproved($0) },
                   select: { status, approved in
                       try await service.selectReadingCloudScope(status, approval: approved, lookup: lookup,
                                                                beforeRebind: beforeRebind, afterRebind: afterRebind)
@@ -229,6 +230,13 @@ actor CloudSyncCoordinator {
         self.service = service; self.runtime = runtime
     }
     func currentStatus() -> CloudSyncStatus { status }
+
+    func organizeReadingDatabase(session: DataSession, lease: DataSessionLease) throws -> StorageDatabaseResult {
+        guard transition == nil, turn == nil, !status.syncing else { throw StorageMaintenanceError.busy }
+        // Keep coordinator admission while the session drains its readers.
+        // The engine is manually driven, so no new sync turn can enter here.
+        return try session.organizeUserDatabase(lease)
+    }
 
     nonisolated func persistIntent(_ enabled: Bool) { service.cloudSyncIntent.set(enabled) }
 
@@ -332,7 +340,8 @@ actor CloudSyncCoordinator {
                 let enabled = requested && (explicitlyApproved || approvedBefore)
                 if !enabled || transport?.account != account { stop() }
                 guard current(token) else { return }
-                let selected = try await runtime.select(.confirmed(account.scope, syncRequested: enabled),
+                let selected = try await runtime.select(.confirmed(account.scope, syncRequested: enabled,
+                                                                  verifiedRecordName: account.identity.recordName),
                                                         requested && explicitlyApproved ? account : nil)
                 guard current(token) else { return }
                 identityNeedsVerification = false
@@ -460,13 +469,62 @@ actor CloudSyncCoordinator {
 extension AppDataService {
     func cloudSyncRequested() -> Bool { cloudSyncIntent.requested }
     func setCloudSyncRequested(_ requested: Bool) { cloudSyncIntent.set(requested) }
+    func approveReadingCloudDuringLegacyCleanup() throws {
+        // The mislabelled store may still carry its released Development key.
+        // Production consent is resolved only after verifying the account.
+        if case .mislabelledProduction = releasedReadingLayout { return }
+        let source = try publishedUserSource()
+        if source != .local, cloudSyncIntent.approvedScopeKey == nil {
+            cloudSyncIntent.approve(source)
+        }
+    }
+
     func hasPreviouslyApprovedReadingAccount() -> Bool {
         if cloudSyncIntent.approvedScopeKey != nil { return true }
+        switch releasedReadingLayout {
+        case .mislabelledProduction(approvedScope: .some), .releasedDevelopment(approvedScope: .some): return true
+        default: break
+        }
         return if case .account = try? publishedUserSource() { true } else { false }
     }
+    func isReadingCloudApproved(_ account: CloudSyncCoordinator.Account) -> Bool {
+        if isReadingCloudApproved(account.scope) { return true }
+        guard let change = try? releasedAccountChange(to: account.scope, recordName: account.identity.recordName) else { return false }
+        return inheritsReleasedApproval(change)
+    }
+
+    func releasedAccountChange(to scope: DataScope, recordName: String) throws -> ReadingDataLayoutUpgrade.AccountChange? {
+        guard case .mislabelledProduction = releasedReadingLayout else { return nil }
+        let container = CloudConfiguration.containerID
+        guard scope == (try DataScope.confirmed(container: container, environment: .production, recordName: recordName)) else {
+            throw ReaderError.CloudAccountChanged
+        }
+        let old = try DataScope.confirmed(container: container, environment: .development, recordName: recordName)
+        return .init(old: old, new: scope)
+    }
+
+    private func inheritsReleasedApproval(_ change: ReadingDataLayoutUpgrade.AccountChange) -> Bool {
+        guard cloudSyncIntent.approvedScopeKey == nil,
+              case .mislabelledProduction(let approval) = releasedReadingLayout else { return false }
+        if let approval { return approval == change.old.key }
+        return (try? publishedUserSource()) == change.old
+    }
+
+    func releasedApproval(for scope: DataScope, change: ReadingDataLayoutUpgrade.AccountChange?) -> DataScope? {
+        guard cloudSyncIntent.approvedScopeKey == nil else { return nil }
+        if let change, inheritsReleasedApproval(change) { return scope }
+        if case .releasedDevelopment(let approved) = releasedReadingLayout, scope.key == approved { return scope }
+        return nil
+    }
+
     func isReadingCloudApproved(_ scope: DataScope) -> Bool {
         guard scope != .local else { return false }
         if let approved = cloudSyncIntent.approvedScopeKey { return scope.key == approved }
+        switch releasedReadingLayout {
+        case .mislabelledProduction(approvedScope: .some): return false
+        case .releasedDevelopment(let approved?): return scope.key == approved
+        default: break
+        }
         // The previous owner proves consent for the released source as
         // attributed to this installation's environment.
         return (try? publishedUserSource()) == scope

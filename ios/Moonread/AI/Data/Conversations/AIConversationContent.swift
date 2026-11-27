@@ -47,7 +47,7 @@ struct AIConversationTurn: Identifiable, Equatable {
                         turns[i].process.append(.init(id: partID(turn: entry.turn, step: entry.step, part: partIndex), kind: p["type"]?.string == "text" ? .text : .reasoning, text: p["text"]?.string ?? ""))
                         partIndex += 1
                     case "tool-call":
-                        if let callID = p["toolCallId"]?.string { turns[i].process.append(.init(id: callID, kind: .tool, name: p["toolName"]?.string ?? "", input: p["input"] ?? .null)) }
+                        if let callID = p["toolCallId"]?.string { turns[i].process.append(.init(id: callID, kind: .tool, name: p["toolName"]?.string ?? "", input: p["input"] ?? .null, callSequence: entry.sequence)) }
                     default: break
                     }
                 }
@@ -55,6 +55,7 @@ struct AIConversationTurn: Identifiable, Equatable {
                 for part in object["content"]?.array ?? [] {
                     let p = part.object
                     if let index = turns[i].process.firstIndex(where: { $0.id == p["toolCallId"]?.string }) {
+                        turns[i].process[index].resultSequence = entry.sequence
                         turns[i].process[index].resultID = entry.id + "/" + (p["toolCallId"]?.string ?? "")
                         let result = p["output"]?.object ?? [:]
                         turns[i].process[index].output = result["type"]?.string?.hasPrefix("error-") == true
@@ -109,6 +110,8 @@ struct AIProcessItem: Identifiable, Equatable {
     var input: JSONValue = .null
     var output: JSONValue?
     var resultID: String?
+    var callSequence: Int?
+    var resultSequence: Int?
     var isRunning = false
     var entry: AIAgentEntry?
 }

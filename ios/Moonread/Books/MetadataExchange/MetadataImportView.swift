@@ -213,7 +213,7 @@ struct MetadataImportView: View {
         let writes = pending.filter { !$0.changedMetadataFields.isEmpty }.count
         let renames = pending.filter { $0.renameName != nil }.count
         if pending.isEmpty, !model.invalidSelection {
-            finishReview()
+            finishButton()
         } else {
             Button { confirm = true } label: {
                 Group {
@@ -227,8 +227,11 @@ struct MetadataImportView: View {
         }
     }
 
-    private func finishReview(prominent: Bool = true) -> some View {
-        Button { model.clear(); dismiss() } label: {
+    private func finishButton(prominent: Bool = true) -> some View {
+        Button {
+            model.clear()
+            if model.phase == .idle { dismiss() }
+        } label: {
             Text("完成", tableName: "MetadataExchange").frame(maxWidth: .infinity)
         }.buttonStyle(MetadataActionButtonStyle(prominent: prominent))
     }
@@ -302,7 +305,7 @@ struct MetadataImportView: View {
                     if case .unselected? = completion {
                         primary(Text("查看逐书预览", tableName: "MetadataExchange")) { inspectingPreview = true }
                     }
-                    finishReview(prominent: completion == .unchanged)
+                    finishButton(prominent: completion == .unchanged)
                 }
             })
         case .review:
@@ -492,10 +495,11 @@ struct MetadataImportView: View {
         let issues = model.result?.outcomes.filter { $0.message != nil } ?? []
         let unwritten = model.result?.remaining ?? []
         let unrenamed = model.result?.remainingRenames ?? []
-        if model.error != nil || !issues.isEmpty || !unwritten.isEmpty || !unrenamed.isEmpty || model.onlyRenameIssueSummary {
+        let error = model.phase == .completed ? nil : model.error
+        if error != nil || !issues.isEmpty || !unwritten.isEmpty || !unrenamed.isEmpty || model.onlyRenameIssueSummary {
             DisclosureGroup {
                 VStack(alignment: .leading, spacing: 8) {
-                    if let error = model.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
+                    if let error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
                     ForEach(issues) { item in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(verbatim: item.title).fontWeight(.medium)
@@ -549,10 +553,13 @@ struct MetadataImportView: View {
         }.modifier(MetadataTaskBar {
             MetadataTaskActions {
                 if model.phase == .completed {
+                    if let error = model.error {
+                        Text(verbatim: error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
+                    }
                     if canStartFreshPreview {
                         Button { model.reviewAgain() } label: { Text("重新预览", tableName: "MetadataExchange") }
                     }
-                    primary(Text("完成", tableName: "MetadataExchange")) { dismiss() }
+                    finishButton()
                 } else if model.canContinue {
                     primary(Text(model.renameOnlyContinuation ? "查看剩余改名" : model.continuingPreparation ? "继续准备" : "继续导入", tableName: "MetadataExchange")) {
                         if model.continueNeedsRenameConfirmation { confirmContinue = true }

@@ -440,7 +440,10 @@ final class ReaderSession {
               !audioOwnedPosition || listeningOwnsPosition else { return }
         guard let progress else { return }
         do { try await service.savePosition(bookID: progress.bookID, offset: progress.offset, admission: admission) }
-        catch { reportAutomaticReadingError(error) }
+        catch {
+            if isLeaving { self.error = ReaderMessages.error(error) }
+            else { reportAutomaticReadingError(error) }
+        }
     }
 
     @discardableResult
@@ -483,6 +486,13 @@ final class ReaderSession {
         clearBrowse()
         selectionStart = nil; editor = nil; navigation = nil
         chapterDraft = nil
+    }
+
+    func relinquishClosingBody() -> AsyncStream<Void>? {
+        guard case .closing(let closing) = openingState else { return nil }
+        let released = closing.reading?.lease.released
+        openingState = .closing(.init(reading: nil, progress: nil))
+        return released
     }
 
     /// Automatic refreshes/saves must not repeatedly interrupt a read-only session.

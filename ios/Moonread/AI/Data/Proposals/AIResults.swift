@@ -7,6 +7,7 @@ struct AIResultValue: Sendable, Identifiable {
     enum Body: Sendable {
         case metadata(AIMetadataProposal), note(AINoteProposal), cover(AICoverProposal)
         case findCover(AIFindCoverResult), organization(AIOrganizationProposal)
+        case bookList([AIBookListPresentation])
         case bookFilter(AIBookFilterSuggestion, summary: BookSearchConfiguration)
     }
     let id: String
@@ -80,6 +81,11 @@ enum AICommittedResultDecoder {
             if name == "find_cover" {
                 guard let result = try? JSONDecoder().decode(AIToolResponse<AIFindCoverResult>.self, from: data) else { return nil }
                 body = .findCover(result.data)
+            } else if name == "show_book_list" {
+                guard let result = try? JSONDecoder().decode(AIToolResponse<AIShownBooksResult>.self, from: data),
+                      let books = entry.bookLists?[call], !books.isEmpty,
+                      books.map(\.book) == result.data.items else { return nil }
+                body = .bookList(books)
             } else if name == "propose_book_filter" {
                 guard let result = try? JSONDecoder().decode(AIToolResponse<AIBookFilterSuggestion>.self, from: data),
                       let summary = try? result.data.filter.configuration(resolveShelf: { $0 }) else { return nil }

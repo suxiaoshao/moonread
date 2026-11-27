@@ -153,6 +153,8 @@ struct MoonreadApp: App {
                     if rebound { Task { await themes?.load() } }
                 })
                 try Task.checkCancellation()
+                await service.removeAdoptedReleasedStoreAfterStartup()
+                try Task.checkCancellation()
                 startup = .ready
                 if let request = startupSystemRequest {
                     startupSystemRequest = nil
@@ -195,7 +197,6 @@ struct MoonreadApp: App {
                     library.systemReading.receiveIntent(); library.systemReading.resume()
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-test-store-screenshots") {
-                        library.layout = .list
                         await themes.load()
                         await openPageShot()
                         return
@@ -322,6 +323,33 @@ struct MoonreadApp: App {
                 switch scene {
                 case .shelf: library.shell.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
                 case .backup: library.shell.openSettings(target: .data)
+                case .resumeHome:
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
+                    await library.savedFilters.load()
+                    guard await library.savedFilters.change(.create(fixture.storeShotSavedShelf)) else {
+                        throw ReadingDataError.changed
+                    }
+                case .librarySearch:
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
+                    library.layout = .list
+                    library.shell.search.configuration = fixture.storeShotSearch
+                    library.shell.selectedTab = .search
+                case .homeEditor:
+                    library.homeSections = .init(hidden: [LibraryHomeSection.saved.rawValue])
+                case .storageOverview:
+                    _ = try await library.service.exportReadingData()
+                    await library.shell.settingsNavigation.storage.loadOverview()
+                    library.shell.openSettings(target: .storage)
+                case .author:
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
+                    guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
+                        .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
+                    library.shell.libraryPath = [.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))]
+                case .backupReview:
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
+                    library.shell.openSettings(target: .data)
+                    let url = try await library.service.makeStoreShotBackupReview(fixture)
+                    library.shell.dataManagement.receiveBackup(url)
                 case .statistics: library.shell.selectedTab = .statistics
                 case .recap:
                     let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
@@ -594,6 +622,7 @@ struct LibraryDestination: View {
         case .screenshotReaderSettings: PageShotReaderSettings()
         #endif
         case .search(let scope): AppSearchPage(model: library, scope: scope, host: host)
+        case .author(let credit): AuthorLibraryView(model: library, credit: credit, host: host)
         }
     }
 }

@@ -11,7 +11,7 @@
 | Rust 文本核心 | `crates/moonread-core`：`encoding_rs` 解码、规范化、字素分块、SHA-256、章节扫描、`regex` 单书搜索 |
 | Swift 索引与任务 | `DataSession` 的 GRDB 池保存正文、自动章节、来源索引与导入任务；Rust 接收有界值并计算，不打开正文索引库 |
 | Swift 用户数据 | 当前账户 user.sqlite 保存事实、批注候选、小说信息、配色及正式位置，通过 CKSyncEngine 同步。设备偏好独立 |
-| Swift 关系库迁入 | `Data/Database/DataSession.swift`：`Data/v2` 的版本化正文索引与独立本机/账户用户文件，由一个 GRDB 池挂载；完成正文和用户迁入后才挂载正常 App 根界面；页面与备份使用同一权威；Development 使用独立子目录，两个环境分别只读迁入同一旧源 |
+| Swift 关系库迁入 | `Data/Database/DataSession.swift` 管理按环境分开的 `Data/v3`，用一个 GRDB 池挂载正文索引及本机或账户用户库。完成迁入后才挂载正常 App 根界面。页面与备份使用同一权威。`Data/Database/ReadingDataLayoutUpgrade.swift` 负责原子接管已发布的关系库和经核实的账户键换算 |
 | Swift 平台适配 | `Data/AppDataService.swift`、`Library/Sources/LibraryService.swift`：目录授权、bookmark、协调扫描与真实文件操作、目录变动通知、生命周期和异步工作调度 |
 | 页面状态 | `Library/LibraryModel/LibraryModel.swift` 与领域扩展保存书架和文件任务；`App/AppShellModel.swift` 保存各标签导航栈、搜索和唯一设置会话（任务路径、配色草稿与预览）；`Reader/Session/ReaderSession/ReaderSession.swift` 与同类型领域扩展保存现有阅读会话状态与任务 |
 | SwiftUI 页面 | `Library/Browsing/LibraryView.swift`、`Reader/UI/ReaderScreen/ReaderScreen.swift`、`Reader/UI/Presentation/ReaderLibrarySheet.swift` / `ReaderSearchContent.swift` / `NoteEditor.swift`：书架、阅读、工具面板与编辑器呈现 |
@@ -63,10 +63,11 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 文件夹列表、计数与封面候选 | Swift `Data/Queries/FolderQuery.swift` / `FolderStore.swift`；Rust `library/order.rs` 保留原自然行序 | 直系成员和子树在单个读快照中计算；活动和最多四张预览按有效位置时间，不读 opened 时间。经已核实别名合并位置，直接书卡定点补位置/章/作者/封面，只补入选预览的作者/封面。移动选择器按原顺序单次读取文件夹，不补书卡或封面 | 页面各自观察；单次查询不建观察 |
 | 书目、名称与标签分组 | Swift `Data/Queries/CatalogueQuery.swift` / `CatalogueStore.swift`；Rust `library/order.rs` / `catalogue_cards.rs` | 与目录共用已核实身份、位置和窄卡读取；名称模式不读标签，标签模式同快照定点取可见成员。自然顺序和特殊分组沿发布规则，标签通过文件 ID 引用单份卡片，实体副本不合并。换分组保留已显示结果直到新值到达 | 本页观察；目录、名称和标签共用卡片规则 |
 | 单书详情、来源与阅读状态 | Swift `Data/Queries/BookInformationQuery.swift` / `BookInformationModel`，来源行序沿用 Rust `library/order.rs` | 从明确书键读取已结算资料、有效位置与正文/章概况；未读副本按修改时间，已读副本按自然名称、路径、ID，显式文件优先。正式资料隔离禁用编辑并随观察重验；详情不读事实或覆盖，统计仍独立取数 | 页面各自观察；准备编辑和单次消费者复用固定读 |
-| 搜索与筛选按用途取数 | Swift `LibrarySearchQuery.swift` / `FolderQuery.swift` / `LibraryQueryRules.swift`；Apollo 生成固定结果类型 | 筛选取当前作者及标签，选项查询按正文身份一次汇总标签用量；普通搜索按条件选列，匹配在事务外执行，再核对输入并只给命中项补卡。AI 保留简介与正式资料兼容屏障。两者沿用写入时结算的 pending 整对象覆盖 | 搜索与选择页按需观察 |
+| 搜索与筛选按用途取数 | Swift `LibrarySearchQuery.swift` / `FolderQuery.swift` / `LibraryQueryRules.swift`；Apollo 生成固定结果类型 | 筛选取当前作者及标签，选项查询按正文身份一次汇总标签用量；普通搜索按条件选列，匹配在事务外执行，再核对输入并只给命中项补卡。AI 资料搜索保留简介与正式资料兼容屏障。AI 按条件查找沿用普通筛选求值和排序，加同一 AI 读取屏障，复核快照后只给当页的条目补状态与作者。两者沿用写入时结算的 pending 整对象覆盖 | 搜索与选择页按需观察 |
 | 标签选择页的浏览分组与顺序 | Swift `Library/Search/BookTagCategories.swift` | 原词查随包词表，按标签使用本数和拼音分组排序。计数复用选项查询，两种入口共享展示规则，查询与存储仍使用原词 | 仅展示，不写用户数据 |
 | AI 工具输入/schema/输出契约与执行 | Swift `AI/Tools/Reading/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 只拆契约、执行和 `AppDataService+AIReading.swift` 平台适配的物理文件；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
 | AI 对话筛选建议 | 包内 `AIBookFilterContracts` 与宿主 `AIReadingTools`、`AICommittedResultDecoder` | 候选与手动筛选同源；宿主复用 `BookSearchConfiguration` 校验与查询。建议随成功工具结果保存，用户点击才打开独立搜索。书架 ID 与歧义选择留在本机 | 搜索、排序与虚拟书架由原领域持有 |
+| AI 对话固定书单 | 包内 `AIBookFilterContracts`、宿主 `AIReadingReferences`、`AICommittedResultDecoder` | 现有文件与正式正文身份同批解析，只补选中书目；本地封面缩略图、精简状态和引用随工具会话提交，模型仍只接收宿主核实的引用与书目名称。用相同解析检查当前是否可打开，保留历史快照 | 不写书库、不下载正文、共享详情路由与书目行 |
 | AI b: 引用协议 | Swift `AI/Tools/Reading/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验。外部字符串解码为书或文件引用，准备权限独立；共享准备由 AppDataService 持有，最后一个等待者释放工作 | 共享引用解析 |
 | v2 导入、搜索、重建及计时纯计算 | Rust `reading/compute.rs`、`reading/input/text.rs`、`library/tools/search_compute.rs`、`user/statistics/mod.rs` | 每步消费前态。导入共享发布规范化与原文／正文 SHA；搜索按显式范围每步最多 50 条；章节复用发布扫描器。计时新接口拒绝单步超过一天；生产采集调用连续段接口，旧切片入口仅供历史数据和 DEBUG 夹具 | 正文三项已由 Swift 用显式票据调用 |
 | v2 文件归属、连接池与本机归户 | Swift `Data/Database/DataSession.swift`、`LocalScopeImport.swift` | 唯一会话 owner 决定 `index.sqlite` 和所挂 `usr`；失去账户确认时仍可本机读写、不同步；明确登出使用 local。首次确认启用时冻结后合并目标证据，由目标同事务结算非事实当前值并写完成标记，成功后独立清理源；旧会话代次不得访问另一账户 | 归户后由当前用户库接入同步 |
@@ -103,7 +104,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | AI 目录来源、字段与连接预算 | Swift `AIModelDirectoryPolicy` / `AIModelDirectoryDecoder` / `AIModelCatalog.option/resolve`，`AIConnectionService` 编排刷新 | A/S 完整结果决定自动发现集合，首次失败空列表；P 仅精确补已有型号规格，只有 metadata-only 预设用 P 生成列表，显式 false 不覆盖成 true；M 保留预算并与连接明确上限取小值；ChatGPT 独立。目录缓存不进 CloudKit；无来源的旧目录与已取回快照分开，授权与目录失败独立，Keychain 编码保持旧字段；用途与端点适配仍由 `AINativeCapabilities` 单源判断，见[模型目录](../ai/model-catalog.md) | 单源解析与裁决 |
 | AI 连接余额与额度 | Swift `AIConnectionUsageService` / `AIUsageAdapter` | 查询能力、官方端点及字段语义由 adapter 单源决定；usage service 独占详情访问、刷新、快照、冷却和迟到响应校验。凭据、代际及网络准入继续由 `AIConnectionService` / `AIAvailability` 管理；列表不触发查询，快照只在内存。见[连接余额与额度](../ai/providers.md#连接余额与额度) | 单一查询 owner |
 | 查询范围、身份/metadata 关联、目录后代最近时间、最近副本选择 | 2c Swift 固定查询 | 数据库事实需要完整范围；不能从限量 recents 反推目录，不复建旧 TEMP 或通用查询门面 | 旧 Rust 查询已移除 |
-| 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `LibraryQueryRules`（`Library/Search/LibraryQueryRules.swift` 与共享系统元数据 profile） | 条件树区分组与对应类型的谓词，搜索、编辑草稿与虚拟书架共用此结构；三值求值、无标签、自定义多键排序与摘要使用同一查询；书架书名/作者的全拼与首字母复用共享 `pinyinSpellings`，与 Entity/Spotlight 使用同一系统默认普通话转写，不加词典或 Rust 副本；UI 原文匹配与 AI/建议模式显式保留，64 项上限仅属于系统词表 | 单源匹配与排序 |
+| 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `LibraryQueryRules`（`Library/Search/LibraryQueryRules.swift` 与共享系统元数据 profile） | 条件树区分组与对应类型的谓词，搜索、编辑草稿与虚拟书架共用此结构；三值求值、无标签、自定义多键排序与摘要使用同一查询；书架书名/作者的全拼与首字母复用共享 `pinyinSpellings`，与 Entity/Spotlight 使用同一系统默认普通话转写，不加词典或 Rust 副本；普通搜索随结果带回命中来源和首个真实字面范围，列表与网格共用并沿用旧搜索快照；作者入口取同批作者命中按 UTF-8 去重，作品用全库精确作者条件；AI/建议匹配模式独立，64 项上限仅属于系统词表 | 单源匹配与排序 |
 | 虚拟书架的保存和删改 | Swift `SavedFilters` / user.sqlite `local_saved_filter` | 仅当前在本机打开的账户用户库。保留结构化条件与排序，复用 `LibraryQueryRules` 实时打开结果；搜索输入仍在会话内 | 本机定义与查询分离 |
 | 文件自然比较、目录/全书/标签自然排序 | Rust `library/order.rs`（从 bookshelf 提取） | 已服务 SQL 查询和目录；按完整快照一次计算 | Swift 搜索使用批量 ordinal 和同名分档，不复制自然 comparator |
 | 搜索排名组合、AI 名称字典序/recent 平手顺序 | Swift `LibraryQueryRules.swift` | 与匹配结果一同完成，AI 原生字符串比较不迁语言 | 单源组合排序 |
@@ -124,7 +125,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 听书播放、跟随与瞬时高亮 | Swift `Reader/Session/Listening/`、`ReaderSession+Listening`、`ReadingController+Listening` / `ReadingLayoutManager` | AVSpeech/Now Playing 的单一 Session 控制播放；既有 TextCoordinates 映射语音范围，音频锚点与内存浏览分离，渲染只画临时范围；正文/规范化和统计规则仍归 Rust | 不新增位置、CloudKit、备份字段；声音不计阅读统计 |
 | 阅读工具意图、关闭与输入 | Swift `ReaderToolSession` / `ReaderPresentationHost`、`ReaderBottomPanel` | ReaderSession 每次打开持有一个工具 owner。工具通过带 opening、访问 ID 和版本的动作修改 SurfaceIntent；根工具关闭统一从当前有效会话裁决恢复。宿主只记录物理安装和对应快照，同一快照驱动内容与真实页脚；旧回调只能释放原安装 | 不改公共导航、正文容量或存储 |
 | 阅读执行、搜索与听书门禁 | Swift `ReaderExecution`（由 `ReaderSession` 持有）、`ReaderToolsModel`、`ReaderToolSession` / 原生呈现适配 | ReaderExecution 只持有当前执行主体，搜索任务独立于收起或展开；ReaderToolSession 从位置动作、选区和实际原生层的来源裁决一次播放资格。统计和自动阅读继续按正文可读性独立判断 | 均为会话状态；不持久化 |
-| v2 统计总览、书目、时段和 Widget 固定读 | Swift `StatisticsHistoryRead`；Apollo 生成结果类型 | 期间总时长、日历和书目读 `reading_day`，按记录的自然日精确归并 UInt64；每书只定点补历史标题、作者与封面引用。时段从两种 current 读取起止、结算时长、类型 ID、首位置与历史标题。未知事实标不完整，相交未知清除阻止出数；覆盖仍由 Rust 计算 | 快捷指令仅取日量 |
+| v2 统计总览、书目、时段和 Widget 固定读 | Swift `StatisticsHistoryRead`；Apollo 生成结果类型 | 期间总时长、日历和书目读 `reading_day`，按记录的自然日精确归并 UInt64；作者页按当前作品确认正文键批量选取同一总览，纳入已验证旧键并复用书目、总时长和正式阅读顺序；每书只定点补历史标题、作者与封面引用。时段从两种 current 读取起止、结算时长、类型 ID、首位置与历史标题。未知事实标不完整，相交未知清除阻止出数；覆盖仍由 Rust 计算 | 快捷指令仅取日量 |
 | 有效阅读日 | Swift `Data/Queries/StatisticsQuery.swift::activeDayCount` | 在已筛选的日记录中按当地 day ID 对正结算时长的日期去重；App 统计和 AI 用总览的日记录，邀评复用同一规则并独立读取全书全期日量 | 单书累计日数与 Widget 连续日沿用各自查询 |
 | 章节结构与覆盖加载 | Swift `ReaderChapterQuery.swift` / `ReaderToolsModel`，Rust `user/statistics/coverage.rs` | 目录结构先发布，不取事实。当前消费者只读目标书有效头、曝光文本与端点块；Rust 解码并裁去清除前缀，按连续停留算字节覆盖，再映射至非空白字符前缀。账户、正文边界或选中头变化时淘汰旧计算；兼容性阻断不显示 0%。离开后释放覆盖 | 无派生范围表或跨请求缓存 |
 | 目录/临时跳转与正式续读保存 | Swift `ReaderSession`、`ReaderToolsModel` / Rust `ReadingFrame` | 目录断 visit 并 enqueue，不等统计 writer drain、不预读笔记；跳转 frame/章节标题在 Rust 同一读取事务中返回并一起发布；临时原点只在会话内存，原已接受保存走现有 saveTask；明确采用浏览位置或同步进度共用位置交还，结束听书后提交新位置，旧 flush 不得回写旧位置 | 不改正式位置格式 |
@@ -137,15 +138,16 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 备份 ZIP 布局、受限解包、路径/摘要与正文缓存 SQL 驱逐 | Rust `storage/maintenance/backup_archive.rs` 管 ZIP；Swift `ReaderIndex` 管缓存驱逐 | 缓存驱逐使用同一个 GRDB 池，保留索引/授权/任务 | 单源 |
 | 来源栈 Tab 显隐 | Swift `LibrarySourceTabVisibility` | 按该栈路径中的阅读器及当前叶子目录的选择 preference 统一判定；目录只上报选择位置，不另提交相反显隐策略，不持久化全局选择标志 | 单一 owner |
 | 笔记快照与可读导出 | Swift `NoteDocument.swift`、批注当前头、定点章节和正文长度读取 | 三入口共用摘录/出处与 TXT/Markdown 输出；快照不压缩候选，未知记录按范围阻止不完整导出；出处只取选中正文位置和可证的完整字节数 | 不增同步格式 |
-| 用户备份 envelope、非事实恢复、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift`；同步删除状态由 `CloudTransportRows` 和 `CloudCallbackJournal` 持有 | 归档核验和字节准备先于写事务；恢复以候选及附件为输入，通过各领域同事务更新 current。只读预览复用各领域裁决，按正文 SHA 聚合差异并单列全局记录，无待恢复内容就跳过写事务。预览与写事务共用历史 ID 删除检查。同 ID 待发删除须先确认，再完整拉取本区后才放行 | 导出从同一用户库快照读取可携带的候选、附件及历史；无法完整编码时明确阻止导出 |
-| 受保护来源的 bookmark 解析、安全作用域、协调读取与物理路径边界 | Swift `Data/Sources/ProtectedFileAccess.swift` | 开书、导入、索引、恢复、缓存和备份共用；沿用 `.withoutUI` 与可解析的陈旧书签，不增加拒绝条件；作用域覆盖各阶段，accessor 内不等待 actor | 平台边界 |
+| 用户备份 envelope、非事实恢复、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift`；同步删除状态由 `CloudTransportRows` 和 `CloudCallbackJournal` 持有 | 归档核验和字节准备先于写事务；恢复以候选及附件为输入，通过各领域同事务更新 current。封面附件只按合并后的候选引用入库，导出的封面取自实际导出的候选。只读预览复用各领域裁决，按正文 SHA 聚合差异并单列全局记录，无待恢复内容就跳过写事务。预览与写事务共用历史 ID 删除检查。同 ID 待发删除须先确认，再完整拉取本区后才放行 | 导出从同一用户库快照读取可携带的候选、附件及历史；无法完整编码时明确阻止导出 |
+| 受保护来源的 bookmark 解析、安全作用域、协调读取与物理路径边界 | Swift `Data/Sources/ProtectedFileAccess.swift` | 开书、导入、索引、恢复和备份共用；沿用 `.withoutUI` 与可解析的陈旧书签，不增加拒绝条件；作用域覆盖各阶段，accessor 内不等待 actor | 平台边界 |
 | 本机来源下载可用性与目录发布 | Swift `AppDataService.prepareSourceFile`、`LibraryService`、`IndexSources` | 协调访问成功后只改同位置现有行；旧源准入复核及通知由服务负责 | 唯一索引 writer |
-| 缓存来源可读性证明与清理准入 | Swift `CacheManagement.swift` | 借用公共文件访问组件，证明期内调用 Rust 重验事务；页面不判断可清性 | 平台边界 |
+| 正文缓存清理准入 | Swift `CacheManagement.swift`、`ReaderIndex` | 盘点读取缓存索引。打开的阅读请求先按正常退出流程保存并释放 lease。执行时复核当前活动持有者、缓存目标和导入任务 | 只操作派生正文 |
+| 存储盘点与数据库维护 | Swift `StorageManagement`、`DataSession` 和 `CloudSyncCoordinator` | 文件按容器归类、去重，删除资格由各数据所有者给出；手动整理只操作当前附加用户库，排除在途同步。附件回收与同字节封面复用归 `UserValueRows`。提交后由缓存清理与封面加载器移除闲置读出副本，盘点时核对共用目录对应的各本机库 | 不改变持久化格式 |
 
 维护约定：新增规则先查本表；已存在则调用 owner。新增或改变归属必须在同一 PR 更新表、实现入口及测试位置。两个策略若故意不同，命名其输入/输出契约；不能仅以语言或调用入口不同为理由再实现一份。
 
 
-备份容器布局、受限解包与路径/摘要验证由 Rust `storage/maintenance/backup_archive.rs` 负责；用户备份 envelope 和非事实接入由 Swift `UserDataBackup.swift` 调用各领域关系 writer。`ReadingDataManagement.swift` 只编排本机事务交接，`ProtectedFileAccess.swift` 负责 bookmark、安全作用域和协调读取；`CacheManagement.swift` 保留清理准入与可读性证明；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
+备份容器布局、受限解包与路径/摘要验证由 Rust `storage/maintenance/backup_archive.rs` 负责；用户备份 envelope 和非事实接入由 Swift `UserDataBackup.swift` 调用各领域关系 writer。`ReadingDataManagement.swift` 只编排本机事务交接，`ProtectedFileAccess.swift` 负责 bookmark、安全作用域和协调读取；`CacheManagement.swift` 负责缓存清理准入与活动保护，`StorageManagement.swift` 汇总存储空间；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
 
 ## Rust 源码目录
 
@@ -176,7 +178,7 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 | `Reader/Rendering` | `ReadingView` 是 SwiftUI 适配入口；`ReadingController/` 汇集原控制器及 Pages/Scroll/Navigation/Selection 扩展，`Pages/` 保存叶页/扉页控制器，`Text/` 保存排版装配、坐标、原生正文与背景；ReadingPagination、ReadingViewport 和设备控制保留原入口/owner |
 | `Books` | 小说详情与完整 `BookMetadata`；封面展示、加载及服务私有辅助保留原文件边界 |
 | `Statistics` | `StatisticsView` 保留总览/单书详情的状态和路由；models、书目列表与统计设置保留入口，`Charts/` 汇集时长条/节奏/时段图，`Details/` 保存日期与时段详情；`ReadingStatistics` 的 writer、recorder 与日期辅助保持原 owner |
-| `Settings` | `SettingsView` 只保留首页与私有入口辅助；`Reading/` 汇集阅读偏好、唯一 store/缓存与预览，`Reading/Fonts/` 保存系统/导入字体；`Appearance/` 汇集应用外观与配色选择/预览/编辑，`Cloud/` 汇集云设置和状态，`About/` 汇集关于及许可；`DataManagement/` 按现有类型分别保存唯一 `DataManagementModel`、根页、阅读数据列表及待处理页，根页保留缓存／备份小视图；专题入口和原 owner 不变 |
+| `Settings` | `SettingsView` 只保留首页与私有入口辅助；`Reading/` 汇集阅读偏好、唯一 store/缓存与预览，`Reading/Fonts/` 保存系统/导入字体；`Appearance/` 汇集应用外观与配色选择/预览/编辑，`Cloud/` 汇集云设置和状态，`About/` 汇集关于及许可；`DataManagement/` 按现有类型分别保存唯一 `DataManagementModel`、根页、阅读数据列表及待处理页，根页保留备份小视图和存储空间入口；专题入口和原 owner 不变 |
 | `Data` | `AppDataService`、GRDB 用户数据及同步协调；`UserData/` 中 UserDataModels/UserDataValues 保留原模型与载荷，UserDataStore 的事务/存储留在同目录 UserData.swift，Values/Annotations/Statistics/Projection/Transfer 只物理拆分方法；UserDataService/Backup/SyncJSON/Themes 归入同目录，`Cloud/` 汇集云同步，`Restoration/` 汇集续读恢复，`Management/` 汇集备份/缓存编排，`Sources/` 汇集受保护访问与编码解析；正文准备、导入、云目录 owner 与紧耦合私有类型仍在 `AppDataService` |
 | `SystemIntegration` / `SystemIntegrationShared` | 主 App 派生快照、系统入口路由与平台更新；共享部分只有稳定链接、只读 DTO、最小 Entity/配置与无状态文字卡片。Widget/Control 目标不含数据库/正文服务；任意队列系统回调显式 nonisolated / @Sendable 后再交接 |
 | `Shared` | `Theme`、`MoonView`/`MoonCharacter`/`BrandSeal`、输入焦点及跨功能错误文案 `ReaderMessages` |
@@ -188,7 +190,7 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 
 拆分保留现有类型、状态 owner 和 actor 隔离；SwiftUI 的 `@State` / `@FocusState` 留在原父视图，目录子视图只接收 Binding 和回调。UIKit 控制器跨文件扩展共用状态与方法时，仅将必要成员调整为模块内访问，其余保持 private，不增加 public API。原有 Sources UUID 与 target membership 保留，新增拆分文件显式加入应用 target。设置和统计按完整 View/model 类型移动，原有私有状态和 actor 标注保持；共享的页面与图表 helper 只在必要时由文件私有调整为模块内访问。
 
-`AppDataService` 当前协调小说来源、Swift 索引与 Rust 正文计算、用户阅读数据、配色与同步，不仅服务阅读页；`ReaderSession` 才是阅读会话状态 owner。其扩展已随领域位于 Library、Books、Statistics 和 AI，Data 保存用户事实、备份/缓存及同步协调。名称仍为 `AppDataService`，领域扩展共用同一 actor 的串行边界；文件目录不改变数据权威和存储归属。
+`AppDataService` 当前协调小说来源、Swift 索引与 Rust 正文计算、用户阅读数据、配色与同步，不仅服务阅读页；`ReaderSession` 才是阅读会话状态 owner。其扩展已随领域位于 Library、Books、Statistics 和 AI，Data 保存用户事实、备份/缓存及同步协调。`Data/Management` 内的 `UserBackupRestore` 负责预览与还原，`RelationalReadingData` 负责清单与导出，`DataExchangeTask` 承载小说信息和阅读数据共用的后台任务执行。名称仍为 `AppDataService`，领域扩展共用同一 actor 的串行边界；文件目录不改变数据权威和存储归属。
 
 ## 原文件与平台访问
 
@@ -231,9 +233,9 @@ Swift 关系库是本机用户数据权威；旧阅读 SwiftData 库仅以只读
 
 从 1.0.0 发布基线开始，SQLite、SwiftData/CloudKit、UserDefaults、Keychain、同步 payload 与缓存的格式变更必须保持已有数据可读。持久化枚举只增加、不删除或更改已有 raw value；退役功能可停止展示，不能用未知值使整个集合读取失败。新增字段使用可选值或明确默认值；结构调整须带版本、升级路径与迁移测试（旧数据、重复打开、失败回滚、降级拒绝），不能以删除重装代替升级。内部非持久化接口仍可直接整理，不要求保留无用的重复实现。
 
-1.6 的旧索引采用 SQLite user_version 20–23。v21 增加导入任务目的，v22 增加全量索引，v23 登记手选编码迁移输入。1.7 启动迁入规则如下。
+`Data/v3` 是目录布局的版本。`index.sqlite` 和 `user.sqlite` 独立版本化，当前分别为 v2 和 v9，遇到不支持的版本不覆盖。1.7.1 的用户库为 v7，升级时先经 v8 新增本机虚拟书架表，再经 v9 新增已获删除回执、尚待拉取的历史记录表。
 
-`Data/v2` 的 `index.sqlite` 和 `user.sqlite` 独立版本化，当前分别为 v2 和 v7；遇到不支持的版本不覆盖。发布升级只保证 1.6 到最终 1.7，不迁移 1.7 开发中的表结构。位置 token／批注操作仍在后继 SAVE 精确回执后放行前驱 DELETE；撤回压缩删除时不额外保留前驱归属。索引迁入器只读接入旧 v20–23 的文件、保留旧源，复用发布 SQL 形状并在目标事务内核对行键、关系及字节；只迁入升级时已确认 raw SHA 的旧编码映射。用户数据迁入通过 SwiftData 发布模型读取，结构迁入完成标记不等于已满足云附件和切换门槛。账户 local 并入先提交目标用户文件，续做需要的索引任务归属更新，再清冻结源；三个文件写入各自提交，不依赖 ATTACH/WAL 跨库原子性。
+1.6 旧库继续沿用 1.7 发布时的迁入规则。旧索引采用 SQLite user_version 20–23。v21 增加导入任务目的，v22 增加全量索引，v23 登记手选编码迁移输入。索引迁入器只读接入这些文件、保留旧源，复用发布 SQL 形状并在目标事务内核对行键、关系及字节；只迁入升级时已确认 raw SHA 的旧编码映射。用户数据迁入通过 SwiftData 发布模型读取，结构迁入完成标记不等于已满足云附件和切换门槛。位置 token／批注操作仍在后继 SAVE 精确回执后放行前驱 DELETE；撤回压缩删除时不额外保留前驱归属。账户 local 并入先提交目标用户文件，续做需要的索引任务归属更新，再清冻结源；三个文件写入各自提交，不依赖 ATTACH/WAL 跨库原子性。
 
 AI 连接、共享授权、用途默认值逐条解码，失败条目跳过并记录不含正文/凭据的日志；会话列表逐行容错，存储读取错误仍向上抛出。读取不修复、不回写。显式保存时按稳定 ID/用途键更新可识别项，保留不可识别的原始 JSON 元素与未知对象字段；用户可删除可识别项，不能顺带删掉未知项。JSON 整体损坏时拒绝覆盖并报告失败。用途字典既读取此前 Codable 的键值交替数组，也读取对象，显式保存统一为字符串键对象。授权撤销另更新连接 generation，保留的未知授权不能绕过该边界；日志只记录集合键和序号。同步 payload 采用独立的版本/隔离契约，见[同步专题](../data/sync.md#同步-payload-的-v1-边界与隔离)。
 
@@ -256,7 +258,7 @@ AI 连接、共享授权、用途默认值逐条解码，失败条目跳过并�
 
 ## 正文接口与业务查询归属
 
-2b 已移除 Rust `ReaderCore`、`ReaderQuery` 及正文库的 SQL/迁移。Swift `DataSession` 按当前作用域独占 `Data/v2/index.sqlite`，挂载对应 `usr`；来源扫描、解码策略、导入、章节暂存、搜索和缓存驱逐共用这一池。慢速文件协调和 Rust 计算在数据库闭包外。资料包的私有暂存 `inspection.sqlite` 与归档文件 I/O 由 Swift 管理；Rust 保留交换格式和预算。
+2b 已移除 Rust `ReaderCore`、`ReaderQuery` 及正文库的 SQL/迁移。Swift `DataSession` 独占当前环境的 `Data/v3/<environment>/index.sqlite`，按作用域挂载对应的 `usr`。来源扫描、解码策略、导入、章节暂存、搜索和缓存驱逐共用这一池。慢速文件协调和 Rust 计算在数据库闭包外。资料包的私有暂存 `inspection.sqlite` 与归档文件 I/O 由 Swift 管理；Rust 保留交换格式和预算。
 
 导入从实际 EOF 或 64 KiB 加一字节识别编码，每步最多读 8192 个新字节。中止后新建 Rust 状态，从头读并按连续窗口验证至多 16 个既有块。允许有界合并多步输出；只有提交才推进已发布进度，提交失败丢弃整批未提交输出和工作状态。2b 仍在每个产出步骤后提交。若连失败或暂停状态也写不进去，Swift 在当前 lease、书 ID 与代次内保留终态；下一代任务或切换会话不继承旧终态。章节暂存到最终 apply 才替换正式内容。
 

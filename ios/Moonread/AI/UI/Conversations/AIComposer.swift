@@ -16,6 +16,10 @@ struct AIComposer: View {
     @Binding var attachmentPreview: AIReadingAttachment?
     var inputFocused: FocusState<Bool>.Binding
     var onSend: () -> Void = {}
+    private var bottomPadding: CGFloat {
+        if #available(iOS 26, *) { 0 } else { LayoutTokens.compact }
+    }
+
     var body: some View {
         let hasText = !conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return VStack(alignment: .leading, spacing: LayoutTokens.compact) {
@@ -65,7 +69,7 @@ struct AIComposer: View {
             RoundedRectangle(cornerRadius: LayoutTokens.floatingRadius)
                 .strokeBorder(Color(uiColor: inputFocused.wrappedValue ? theme.focus : theme.border), lineWidth: LayoutTokens.border)
         }
-        .padding(.horizontal, LayoutTokens.content).padding(.bottom, LayoutTokens.compact)
+        .padding(.horizontal, LayoutTokens.content).padding(.bottom, bottomPadding)
         .disabled(conversation.submitting || conversation.deleting)
     }
 

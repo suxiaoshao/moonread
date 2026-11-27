@@ -410,6 +410,17 @@ struct ThemedEmptyState: View {
 }
 
 extension View {
+    /// The UIKit scroll view keeps its content insets while its viewport reaches the bar.
+    func underNavigationBar(when enabled: Bool = true, onEarlierSystems: Bool = false) -> some View {
+        let extendsTop: Bool
+        if #available(iOS 26, *) {
+            extendsTop = enabled
+        } else {
+            extendsTop = enabled && onEarlierSystems
+        }
+        return ignoresSafeArea(.container, edges: extendsTop ? .top : [])
+    }
+
     func themedPage() -> some View { modifier(ThemedPage()) }
     func toolbarGlyph() -> some View { modifier(ToolbarGlyph()) }
     func themeScope(_ theme: ThemeSurface) -> some View {
