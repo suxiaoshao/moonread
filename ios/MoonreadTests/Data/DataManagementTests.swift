@@ -158,6 +158,40 @@ import XCTest
         }
     }
 
+    func testShortcutBackupAppliesWithoutPreviewAndYieldsToSettingsTasks() async throws {
+        let (sourceRoot, source, book, sourceRows) = try await editorFixture()
+        let (targetRoot, target, _, targetRows) = try await editorFixture()
+        defer {
+            for fixture in [sourceRows, targetRows] { try? fixture.index.session.close() }
+            for root in [sourceRoot, targetRoot] { try? FileManager.default.removeItem(at: root) }
+        }
+        let sha = book.fixtureSHA256
+        try sourceRows.seedPosition(sha, offset: 12, time: 20, token: "restored-position")
+        try targetRows.seedPosition(sha, offset: 4, time: 10, token: "previous-position")
+        // A Shortcuts export must not replace the export Settings is still showing.
+        let shown = await source.activeBackupExport
+        let data = try await source.shortcutReadingBackup()
+        let current = await source.activeBackupExport
+        XCTAssertEqual(current, shown)
+        let archive = targetRoot.appendingPathComponent("shortcut.moonread-backup")
+        try data.write(to: archive)
+
+        let applied = try await target.importShortcutReadingBackup(archive)
+        XCTAssertEqual(applied.updatedTitles.count, 1)
+        XCTAssertEqual(try targetRows.positionToken(sha), "restored-position")
+        let repeated = try await target.importShortcutReadingBackup(archive)
+        XCTAssertTrue(repeated.updatedTitles.isEmpty)
+
+        // A Settings import holding its staged file keeps Shortcuts out instead of queueing.
+        let staged = try await target.stageReadingBackup(.init(selectedFile: archive))
+        defer { try? FileManager.default.removeItem(at: staged.ownedRoot) }
+        do {
+            _ = try await target.importShortcutReadingBackup(archive)
+            XCTFail("Shortcuts import ran beside a Settings import")
+        } catch is ShortcutBackupBusy {}
+        withExtendedLifetime(staged) {}
+    }
+
     func testBackupReplacesPendingDeletionWithRestoredPosition() async throws {
         let account = try DataScope.confirmed(container: "fixture.invalid", environment: .production, recordName: "backup-account")
         let (sourceRoot, source, book, sourceRows) = try await editorFixture()

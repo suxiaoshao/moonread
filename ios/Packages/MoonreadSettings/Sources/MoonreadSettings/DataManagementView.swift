@@ -38,6 +38,7 @@ public struct DataManagementView<Metadata: View>: View {
             }
             backupImportStatus
             backupExportStatus
+            ShortcutBackupImportSummary()
         } issues: {
             ReadingDataIssuesView(model: model, processingFiles: processingFiles, reconnectShelf: reconnectShelf)
         } records: {

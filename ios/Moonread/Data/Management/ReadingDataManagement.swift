@@ -224,7 +224,9 @@ extension AppDataService {
             }
         }.value
     }
-    func exportReadingData() async throws -> URL {
+    /// Settings keeps its export until the user shares or closes the result;
+    /// a Shortcuts export (`retain: false`) is read once and removed by its caller.
+    func exportReadingData(retain: Bool = true) async throws -> URL {
         let revision = userCloudConfigurationRevision
         try cleanupOldBackupExports()
         // Drain before acquiring the operation: the writer itself saves through
@@ -244,7 +246,7 @@ extension AppDataService {
             try Task.checkCancellation()
             guard revision == userCloudConfigurationRevision else { throw ReadingDataError.changed }
             try FileManager.default.removeItem(at: stage)
-            activeBackupExport = directory
+            if retain { activeBackupExport = directory }
             return output
         } catch { try? FileManager.default.removeItem(at: directory); throw error }
     }
@@ -322,3 +324,41 @@ extension AppDataService {
         NotificationCenter.default.post(name: .bookMetadataChanged, object: nil)
     }
 }
+
+// MARK: - Shortcuts
+
+/// The outcome of one Shortcuts backup import, kept on this device for review in Settings.
+struct ShortcutBackupImportOutcome: Sendable {
+    let updatedTitles: [String?]
+    let kept: Int
+    let globalUpdated: Bool
+}
+
+extension AppDataService {
+    /// Shortcuts never queue behind, or replace, a Settings export/import task.
+    var readingBackupBusy: Bool { !inFlightBackupDirectories.isEmpty || activeBackupImport != nil }
+
+    func shortcutReadingBackup() async throws -> Data {
+        guard !readingBackupBusy else { throw ShortcutBackupBusy() }
+        let output = try await exportReadingData(retain: false)
+        // Same actor turn as the export's return: no cleanup can interleave before the read.
+        defer { try? FileManager.default.removeItem(at: output.deletingLastPathComponent()) }
+        return try Data(contentsOf: output)
+    }
+
+    /// Applies the backup with the existing merge rules and no preview confirmation.
+    func importShortcutReadingBackup(_ archive: URL) async throws -> ShortcutBackupImportOutcome {
+        guard !readingBackupBusy else { throw ShortcutBackupBusy() }
+        let staging = try await stageReadingBackup(.init(selectedFile: archive))
+        let preview = try await previewReadingBackup(staging)
+        let review = preview.review
+        try await importReadingBackup(preview)
+        return .init(updatedTitles: review.books.filter { $0.disposition == .restore }.map(\.title),
+                     kept: review.kept, globalUpdated: review.hasGlobalChanges)
+    }
+}
+
+struct ShortcutBackupBusy: LocalizedError {
+    var errorDescription: String? { String(localized: "月读正在导入或导出阅读数据，请稍后再试。", table: "DataManagement") }
+}
+

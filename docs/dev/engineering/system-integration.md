@@ -58,6 +58,8 @@ App Group `SystemReading/v1/` 同目录暂存后分别原子替换。书目在�
 
 **App Entity / Shortcuts / Control：**显式选书使用 catalog；元数据匹配由 Swift LibraryQueryRules 的具名 systemMetadata profile 统一处理（书名/作者/标签、有效 NLTokenizer 分词、无声调拼音全拼和首字母；去空白、去重，最多 64 项，不生成前缀碎片或单字分词），Entity 做部分匹配，Spotlight 使用同一份检索词；不用 AI 简介匹配。注册三语短语，Control 只有继续阅读；不自动替用户添加控件。不承诺任意自然语言都能识别，不为此采用不匹配的 Books schema。
 
+**阅读数据导出与导入（快捷指令）：**两个只在「快捷指令」App 使用的动作，不注册 Siri 短语。「导出阅读数据」返回整库阅读数据备份文件，「导入阅读数据」接收备份文件并返回结果摘要；文件存到哪里由用户的快捷指令决定。格式、导出快照与合并规则复用[阅读数据备份](../data/backup-and-cleanup.md)，不新增格式或裁决：导入不经过预览，直接按备份合并规则写入，旧位置不覆盖较新位置；导入较早的备份会恢复本机已删除、备份里仍有的数据。快捷指令导出不占用设置里的导出结果。设置里的备份导出或导入在进行（含等待确认的预览）时，快捷指令直接报「请稍后再试」，不排队。每次快捷指令导入在本机保存最近一次记录（时间、文件名、更新的书），在数据管理的备份区查看。动作在后台执行，不打开 App；超出系统给快捷指令的时长时由系统中止，本次不写入。
+
 **Spotlight 与建议：**本机默认开启，书架排除默认空，无 onboarding。一个命名 CSSearchableIndex，填写 title/author/keywords、thumbnailData 和 contentDescription（作者 · 当前章节 · 已知进度）。缩略图从用户已有封面读取，缺失时按既有 book:SHA 引用渲染 App 同款预设装帧（含已知作者）；只在主 App 内查询资产描述，不给 Widget 增加权限或数据。未知章节/进度省略；不填 textContent、正文 URL、简介、批注、精确时间或路径。按 ID/domain 做更新/删除与可重建处理，点击走共用 router；不同时启用另一套 IndexedEntity 自动全属性捐赠。
 
 Spotlight 另记 `contentFormatVersion`（当前 8）：提交字段、关键词或缩略图表达变化时递增。启动/后续 catalog 刷新发现版本不同就清空自身命名索引并全量重提，仅所有批次成功回调后标完成；失败或 scope/许可变化不误记完成。这是同一用户数据版本内的可重建缓存失效，不是数据迁移。填写 title/displayName/contentType；每批最多 50 本，独立于 Siri donation 工作链，普通位置更新不反复中断同 scope 全量提交。
