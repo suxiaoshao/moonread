@@ -278,7 +278,7 @@ public struct AIFindBooksInput: AIReadingInput {
 
     public static var constraints: [String: [String: JSONValue]] {
         ["filter": AIBookFilter.schema.object, "sorts": AIBookFilterArguments.sortSchema,
-         "query": ["type": .string("string"), "description": .string("Keywords matched against title, author, synopsis and tags.")],
+         "query": ["type": .string("string"), "description": .string("Keywords matched against title, author and synopsis.")],
          "limit": ["maximum": .number(100), "default": .number(20)]]
     }
     public func stored() throws -> AIBookFilterInput? {

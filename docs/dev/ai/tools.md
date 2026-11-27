@@ -46,14 +46,14 @@
 
 | 字段 | 类型与规则 |
 | --- | --- |
-| query? | 关键词，匹配书名、作者、简介与标签（AI 搜索 profile）；不暗示语义向量搜索 |
+| query? | 关键词，匹配书名、作者与简介（AI 搜索 profile）；不暗示语义向量搜索。不给关键词、筛选和排序时列出范围内全部书 |
 | scopeRef? | 授权 shelfRef/folderRef；省略所有授权书架 |
 | filter? | 与 `propose_book_filter` 同形的两层筛选（见下） |
 | sorts? | `[{field:recent/name/author, descending}]`，按优先级 |
 | limit? | 1–100，默认 20 |
 | cursor? | 后续页，其他字段保持一致 |
 
-关键词与筛选可单用或同用，共用普通搜索的筛选、排序和资料未知语义；作者、标签按原始 UTF-8 匹配，书架同名有歧义时返回参数错误。结果 `data={totalMatches,unknownCount,items:[{title,author?,readingStatus?,availability,fileRef,bookRef?,tags?}]}`，每个真实文件一项，不按 SHA 去重隐藏来源；`unknownCount>0` 时 status 为 partial。只用现有索引，不为筛选下载正文；简介等完整资料由 get_book_info 获取。
+关键词与筛选可单用或同用；筛选求值、排序和资料未知语义与搜索页同一实现（`LibraryQueryRules.searchOutcome` 的 AI 分支也按同一配置求值和排序）；作者、标签按原始 UTF-8 匹配，书架同名有歧义时返回参数错误。结果 `data={totalMatches,unknownCount,items:[{title,author?,readingStatus?,availability,fileRef,bookRef?,tags?}]}`，每个真实文件一项，不按 SHA 去重隐藏来源；`unknownCount>0` 时 status 为 partial。只用现有索引，不为筛选下载正文；简介等完整资料由 get_book_info 获取。
 
 依据：`ReaderIndex.aiFilteredBookPage(_:query:catalogue:offset:limit:)` 一次取得匹配页、总数和资料未知数。替代 1.9 的 `search_books` 与 `query_books_by_filter`。
 
@@ -118,7 +118,7 @@
 
 ### 8. 已并入的工具
 
-1.9 的 `search_books`／`query_books_by_filter` 并入 `find_books`，`get_marks`／`get_mark` 并入 `list_marks`。已保存对话在 1.10 首次打开 AI 数据库时一次性改成新工具名（`AIToolNameMigration`，按存储文件记版本），调用参数和结果按原样保留；结果详情按当前结构解码，旧结构解不出的部分退回通用显示。
+1.9 的 `search_books`／`query_books_by_filter` 并入 `find_books`，`get_marks`／`get_mark` 并入 `list_marks`。已保存对话在 1.10 首次打开 AI 数据库时一次性改成新工具名（`AIToolNameMigration`，按存储文件记版本）。`find_books`／`propose_book_filter` 的旧筛选参数（扁平节点、旧 search_books 的作者／标签／状态／排序）同时转成两层嵌套形式，避免模型照着历史写回旧格式；超过两层的保留原样。其余调用参数和全部结果按原样保留；结果详情按当前结构解码，旧结构解不出的部分退回通用显示。
 
 ### 9. `get_reading_statistics` — 阅读记录与汇总
 
@@ -159,7 +159,7 @@
 | `generate_image` | prompt:string（非空）, referenceAttachmentRefs?:string[] | attachments:{attachmentRef,mimeType,width,height}、实际执行来源；默认生图配置执行，参考图要求实际编辑能力 |
 | `search_cover` | bookRef, query?:string | bookRef、candidates（proposalRef、attachment:{attachmentRef,mimeType,width,height}、source、generated）、answer 与 sources；只获取本次搜索返回的来源及其页面显式声明的一层图片；无图片可返回空候选，不猜 URL、不冒充官方封面 |
 | `propose_book_metadata` | bookRef, author?:string, synopsis?:string, tags?:string[], tagsMode?:`merge/replace`, readingStatus?:`unread/reading/finished/paused`, sourceRefs?:string[], rename?:{fileRef,name} | 至少一个建议字段；省略/null不改，明确空字符串表示建议清空；tags 默认 merge，replace（含空数组清空）须有用户明确要求且默认不选。readingStatus 仅接受用户明确要求的状态修改，绝不推断；默认“完善资料”快捷任务不提出阅读状态。每条结果一本书；审阅页显示最终效果，变化文本默认采用建议、可切换原内容并编辑；新增标签默认选中，replace 移除标签默认保留、由用户逐项选择。按钮按实际写入项计数（标签整体一项）；proposalRef 不变，无 baseRevision。书名不属于 BookMetadata；rename 对指定来源文件真实改名，name 为主干并保留扩展名。fileRef 必须属于 bookRef，仅明显文件名噪声或用户明确要求时建议，不改写/翻译书名或按正文猜测。用户在审阅页确认，应用校验原文件快照并以 replace:false 改名；冲突不覆盖、不自动换名。重命名与 metadata 独立执行并分别报告，不影响按正文 SHA 保存的阅读数据 |
-| `propose_note` | bookRef, near:positionRef, quote:string, note:string, markRef? | 新增/编辑批注预览；应用在 near 前 4 KiB 至后 64 KiB 内查找 quote 的原文，恰好一处才得到范围，找不到或多处返回 quote 参数错误；交叉标注按既定合并规则，出现冲突进入既有编辑页，不自动覆盖候选 |
+| `propose_note` | bookRef, near:positionRef, quote:string, note:string, markRef? | 新增/编辑批注预览；应用在 near 所在段前 5 段起、至其后约 64 KB 处段尾的范围内查找 quote 的原文（两端按段落边界取），恰好一处才得到范围，找不到或多处返回 quote 参数错误；交叉标注按既定合并规则，出现冲突进入既有编辑页，不自动覆盖候选 |
 | `propose_bookmark` | bookRef, at:positionRef | 预览已存在/新增，确认是“确保存在”，不调用 toggle 导致已有书签被删 |
 | `propose_cover` | bookRef, attachmentRef | 确认替换预览；必须是此任务可访问的有效图片附件，应用后转为用户封面资源 |
 | `propose_library_organization` | scopeRef, folders:[{temporaryRef,parentRef,name}], placements:[{fileRef,parentRef,name?}] | 虚拟目录树、变更、冲突、previewRef；应用捕获源原始 SHA 与父目录状态快照，不接受模型提供的 baseRevision。parentRef 只能是本方案 scopeRef 范围内目录或本方案 temporaryRef；名称校验，禁止循环/重复归属/删除/覆盖；未提到对象保持原样 |

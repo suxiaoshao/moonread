@@ -26,7 +26,7 @@ extension AIReadingToolActions {
       .init(
         name: "find_books",
         description: """
-          Find books in the library. query matches title, author, synopsis and tags; filter selects by reading status, tags, authors or shelves, in the same form as propose_book_filter. Use either or both. totalMatches counts matching files; unknownCount counts files whose details could not be checked. Use list_filter_values for exact tag, author or shelf names. Answer with the books in your reply; use show_books when the reader wants to open specific ones. This tool shows no card.
+          Find books in the library. query matches title, author and synopsis; filter selects by reading status, tags, authors or shelves, in the same form as propose_book_filter. Use either or both. totalMatches counts matching files; unknownCount counts files whose details could not be checked. Use list_filter_values for exact tag, author or shelf names. Answer with the books in your reply; use show_books when the reader wants to open specific ones. This tool shows no card.
           """,
         input: AIFindBooksInput.self, execute: { try await self.findBooks($0) }),
       .init(

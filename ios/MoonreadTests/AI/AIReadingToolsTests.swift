@@ -43,6 +43,12 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let stale = try await invoke(tools, "find_books", ["sorts": sorts, "cursor": cursor])
     XCTAssertEqual(stale.object["error"]?.object["code"], .string("stale_cursor"))
 
+    let everything = try await invoke(tools, "find_books", [:])
+    XCTAssertGreaterThanOrEqual(everything.object["data"]?.object["totalMatches"]?.int ?? 0, search.entries.count,
+      "Without keywords, filter or sorts the whole library is listed")
+    let excluded = try await invoke(tools, "find_books", ["query": .string(search.entries[0].title),
+      "filter": .object(["match": .string("all"), "rules": .array([.object(["status": .array([.string("finished")])])])])])
+    XCTAssertEqual(excluded.object["data"]?.object["totalMatches"]?.int, 0, "Keywords never bypass the filter")
     let generalSearch = try await invoke(tools, "find_books", ["query": .string(search.entries[0].title)])
     let formal = try XCTUnwrap(generalSearch.object["data"]?.object["items"]?.array?.first?.object["bookRef"])
     let contents = try await invoke(tools, "list_shelf", ["parentRef": .string(AIReference.make("d", shelfID + "/Subfolder"))])

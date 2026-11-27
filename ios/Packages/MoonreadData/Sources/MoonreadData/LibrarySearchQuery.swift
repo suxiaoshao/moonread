@@ -258,11 +258,12 @@ extension ReaderIndex {
         }
     }
 
-    /// AI find_books: optional keywords (AI profile, including synopsis) and an optional filter, in one page.
+    /// AI find_books: optional keywords (title, author, synopsis) and an optional filter and sorts, in one page.
+    /// The AI profile lists every book when nothing narrows it, unlike the search page's empty query.
     public func aiFilteredBookPage(_ configuration: BookSearchConfiguration, query: String = "", catalogue: CatalogueScope = .all,
                                    offset: Int, limit: Int) throws
         -> (books: [FilteredBookHit], count: Int, unknownCount: Int) {
-        let spec = LibraryQueryRules.SearchSpec(profile: query.isEmpty ? .library : .ai, query: query, configuration: configuration)
+        let spec = LibraryQueryRules.SearchSpec(profile: .ai, query: query, configuration: configuration)
         return try withSearchOutcome(catalogue, spec: spec, aiReadable: true) { db, found, match in
             let ids = found.entries.dropFirst(offset).prefix(limit).map(\.id)
             let cards = try FolderRead.hitCards(db, scope: self.lease.scope, ids: ids)

@@ -269,14 +269,12 @@ enum AIResolvedSource: Sendable, Identifiable {
         let sha = try references.sha(bookRef)
         let anchor = try AIPosition.offset(near, bookSHA: sha, field: "near")
         let id = try await references.ready(bookRef)
+        // Paragraph boundaries own the UTF-8 alignment: from a few paragraphs before the position
+        // to the end of the paragraph about 64 KB after it (a read_text page is at most 50 KB).
         let size = try await reader.book(id).byteCount
-        var lower = anchor > 4096 ? anchor - 4096 : 0, upper = min(size, anchor + 65536)
-        var text: TextRange?
-        for _ in 0..<4 where text == nil {
-            do { text = try await reader.textRange(id, start: lower, end: upper) }
-            catch ReaderError.InvalidRange { lower = lower == 0 ? 0 : lower + 1; upper = upper == size ? size : upper - 1 }
-        }
-        guard let text else { throw AIToolError("stale_reference", field: "near") }
+        let lower = try await reader.textContext(id, at: anchor, before: 5, after: 0).startUtf8
+        let upper = try await reader.paragraph(id, at: min(anchor + 65536, size - 1)).endUtf8
+        let text = try await reader.textRange(id, start: lower, end: upper)
         let bytes = Array(text.text.utf8), needle = Array(quote.utf8)
         var found: [Int] = []
         if needle.count <= bytes.count {

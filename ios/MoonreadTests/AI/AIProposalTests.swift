@@ -263,13 +263,25 @@ final class AIProposalTests: BookAIFixture {
       let output: JSONValue = .object(["status": .string("ok"), "data": .object(["text": .string("原文")])])
       try await append(entry(output, name: "rg", sequence: 0), repository: repository, owner: owner)
       try await append(entry(output, name: "get_mark", sequence: 1), repository: repository, owner: owner)
+      let flat: JSONValue = .object(["filter": .object([
+        "nodes": .array([.object(["kind": .string("group"), "relation": .string("all")]),
+                         .object(["kind": .string("tag"), "parent": .number(0), "relation": .string("any"), "values": .array([.string("推理")])])]),
+        "sorts": .array([.object(["field": .string("recent"), "descending": .bool(true)])])])])
+      let call = AIAgentEntry(sequence: 2, turn: "turn-2", provider: "fixture", model: "fixture", message: .object([
+        "role": .string("assistant"), "content": .array([.object([
+          "type": .string("tool-call"), "toolCallId": .string("old-filter"), "toolName": .string("query_books_by_filter"), "input": flat])])]))
+      try await append(call, repository: repository, owner: owner)
     }
     UserDefaults.standard.removeObject(forKey: marker)  // as if the old store came from 1.9
     let migrated = try await AIRepository.open(url: store)
     let names = try await migrated.history(owner, limit: nil).flatMap { entry in
       (entry.message.object["content"]?.array ?? []).compactMap { $0.object["toolName"]?.string }
     }
-    XCTAssertEqual(names, ["search_text", "list_marks"])
+    XCTAssertEqual(names, ["search_text", "list_marks", "find_books"])
+    let input = try await migrated.history(owner, limit: nil).last?.message.object["content"]?.array?.first?.object["input"]
+    XCTAssertEqual(input?.object["filter"]?.object["match"], .string("all"), "Old flat filters are rewritten to the nested form")
+    XCTAssertEqual(input?.object["filter"]?.object["rules"]?.array?.first?.object["tags"], .array([.string("推理")]))
+    XCTAssertEqual(input?.object["sorts"]?.array?.first?.object["field"], .string("recent"))
     let text = try await migrated.history(owner, limit: nil).first?.message.object["content"]?.array?.first?
       .object["output"]?.object["value"]?.object["data"]?.object["text"]
     XCTAssertEqual(text, .string("原文"), "Outputs are kept as saved")
