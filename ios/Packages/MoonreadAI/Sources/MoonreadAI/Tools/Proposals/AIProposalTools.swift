@@ -167,8 +167,7 @@ public enum AIResolvedSource: Sendable, Identifiable {
                 let reading = try await references.available(p.bookRef)
                 let text = try await noteText(p, reading: reading)
                 if value.preview == nil {
-                    let chapter = try await host.reading.detailsByID(reading).currentChapter
-                    value.preview = .init(chapter: chapter, excerpt: String(text.prefix(160)))
+                    value.preview = await notePreview(p, reading: reading, text: text)
                 }
                 if p.kind == .bookmark {
                     let marks = try await host.reading.aiMarks(references.sha(p.bookRef))
@@ -233,14 +232,17 @@ public enum AIResolvedSource: Sendable, Identifiable {
     private func prepareNote(_ proposal: AINoteProposal) async throws -> (AIToolResponse<AIProposalSnapshot>, AINotePreview) {
         let reading = try await AIReadingReferences(access: host.reading).available(proposal.bookRef)
         let text = try await noteText(proposal, reading: reading)
-        let chapter = try? await host.chapterTitle(reading, proposal.startUtf8)
-        return (.init(data: .notes(proposal)), .init(chapter: chapter, excerpt: String(text.prefix(160))))
+        return (.init(data: .notes(proposal)), await notePreview(proposal, reading: reading, text: text))
     }
 
     func legacyNotePreview(_ proposal: AINoteProposal) async throws -> AINotePreview {
         let reading = try await AIReadingReferences(access: host.reading).available(proposal.bookRef)
         let text = try await noteText(proposal, reading: reading)
-        let chapter = try await host.reading.detailsByID(reading).currentChapter
+        return await notePreview(proposal, reading: reading, text: text)
+    }
+
+    private func notePreview(_ proposal: AINoteProposal, reading: String, text: String) async -> AINotePreview {
+        let chapter = try? await host.chapterTitle(reading, proposal.startUtf8)
         return .init(chapter: chapter, excerpt: String(text.prefix(160)))
     }
 

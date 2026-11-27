@@ -20,7 +20,7 @@ struct AINoteSuggestionsCard: View {
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right").font(.caption).accessibilityHidden(true)
                     }
-                    Text(verbatim: preview?.chapter ?? String(localized: "原文"))
+                    AINoteSuggestionChapter(kind: first.proposal.kind, chapter: preview?.chapter)
                         .font(.subheadline.weight(.medium)).lineLimit(1, reservesSpace: true)
                     Text(verbatim: preview?.excerpt ?? " ")
                         .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
@@ -50,6 +50,25 @@ struct AINoteSuggestionsCard: View {
         if bookmarks == 0 { return Text("另有 \(notes) 条批注") }
         if notes == 0 { return Text("另有 \(bookmarks) 个书签") }
         return Text("另有 \(notes) 条批注、\(bookmarks) 个书签")
+    }
+}
+
+private struct AINoteSuggestionChapter: View {
+    @Environment(\.theme) private var theme
+    let kind: AINoteProposal.Kind
+    let chapter: String?
+
+    var body: some View {
+        let title = chapter ?? String(localized: "原文")
+        let type = kind == .bookmark ? String(localized: "书签") : String(localized: "批注")
+        HStack(alignment: .firstTextBaseline, spacing: LayoutTokens.compact) {
+            Image(systemName: kind == .bookmark ? "bookmark" : "highlighter")
+                .foregroundStyle(Color(uiColor: theme.accent))
+                .accessibilityHidden(true)
+            Text(verbatim: title)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: "\(type) \(title)"))
     }
 }
 
@@ -189,6 +208,8 @@ private struct AINoteSuggestionRow: View {
     let edit: (String) -> Void
     let openSource: () -> Void
 
+    private let quoteInset = LayoutTokens.control
+
     var body: some View {
         HStack(alignment: .top, spacing: LayoutTokens.compact) {
             if multiple && review.canSave {
@@ -213,7 +234,7 @@ private struct AINoteSuggestionRow: View {
                     Text(verbatim: excerpt)
                         .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, LayoutTokens.control)
+                        .padding(.leading, quoteInset)
                         .overlay(alignment: .leading) {
                             Rectangle().fill(Color(uiColor: theme.separator)).frame(width: 2)
                         }
@@ -226,7 +247,11 @@ private struct AINoteSuggestionRow: View {
                         guard case .note(let current) = ai.proposals.review(suggestion.id)?.body else { return review.draft }
                         return current.draft
                     }, set: edit), axis: .vertical)
-                    .textFieldStyle(.roundedBorder).lineLimit(2...8)
+                    .textFieldStyle(.plain).lineLimit(2...8)
+                    .padding(.vertical, 8).padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(uiColor: theme.input), in: .rect(cornerRadius: 10))
+                    .padding(.leading, quoteInset)
                     .disabled(!review.canSave || busy)
                     .accessibilityIdentifier("aiNoteDraft-\(suggestion.id)")
                 }
@@ -237,9 +262,8 @@ private struct AINoteSuggestionRow: View {
     private var sourceButton: some View {
         Button(action: openSource) {
             HStack {
-                Text(verbatim: review.preview?.chapter ?? String(localized: "原文"))
+                AINoteSuggestionChapter(kind: suggestion.proposal.kind, chapter: review.preview?.chapter)
                     .font(.subheadline.weight(.semibold))
-                Text(suggestion.proposal.kind == .bookmark ? "书签" : "批注").font(.caption)
                 Image(systemName: "chevron.right").font(.caption2).accessibilityHidden(true)
             }.frame(minHeight: LayoutTokens.hit, alignment: .leading).contentShape(.rect)
         }
