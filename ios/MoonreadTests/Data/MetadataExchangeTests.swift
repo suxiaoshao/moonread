@@ -53,10 +53,10 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         let model = MetadataExchangeModel(service: service)
         let coverOnly = try inventory.confirmation(selected: [key, other], fields: [.cover])
         model.review(try await service.previewMetadata(exported.file.urls[0]))
-        do { _ = try await model.cleanMetadata(coverOnly); XCTFail("An import preview must exclude cleanup") }
+        do { _ = try await model.cleanMetadata(coverOnly, service: service); XCTFail("An import preview must exclude cleanup") }
         catch MetadataCleanupError.busy {}
         model.clear()
-        let cleared = try await model.cleanMetadata(coverOnly)
+        let cleared = try await model.cleanMetadata(coverOnly, service: service)
         XCTAssertEqual(cleared, 1)
         let afterCover = try await service.details(sha: key)
         XCTAssertNil(afterCover.metadata.cover)
@@ -73,11 +73,11 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         var newer = afterCover.metadata
         newer.author = "Newer fixture author"
         try await service.saveMetadata(base: afterCover.metadata, edited: newer)
-        do { _ = try await model.cleanMetadata(stale); XCTFail("A stale confirmation must never erase a newer edit") }
+        do { _ = try await model.cleanMetadata(stale, service: service); XCTFail("A stale confirmation must never erase a newer edit") }
         catch ReadingDataError.changed {}
         let fresh = try await service.metadataCleanupInventory()
         let all = try fresh.confirmation(selected: [key, other], fields: Set(MetadataCleanupInventory.fields))
-        let restoredToDefaults = try await model.cleanMetadata(all)
+        let restoredToDefaults = try await model.cleanMetadata(all, service: service)
         XCTAssertEqual(restoredToDefaults, 1)
         let after = try await service.details(sha: key)
         XCTAssertEqual(after.metadata.status, .reading, "The default state still derives from position")

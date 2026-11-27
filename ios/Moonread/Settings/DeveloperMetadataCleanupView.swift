@@ -9,6 +9,7 @@ import SwiftUI
 
 struct DeveloperMetadataCleanupView: View {
     let task: MetadataExchangeModel
+    let service: AppDataService
     let openDataManagement: () -> Void
     @Environment(CloudStore.self) private var cloud
     @Environment(\.theme) private var theme
@@ -197,7 +198,7 @@ struct DeveloperMetadataCleanupView: View {
 
     private func load() async {
         do {
-            let updated = try await task.service.metadataCleanupInventory()
+            let updated = try await service.metadataCleanupInventory()
             guard !Task.isCancelled else { return }
             if updated.lease != inventory?.lease { selection = [] }
             else { selection.formIntersection(updated.books.map(\.id)) }
@@ -209,7 +210,7 @@ struct DeveloperMetadataCleanupView: View {
 
     private func clean(_ confirmation: MetadataCleanupConfirmation) async {
         error = nil
-        do { completed = try await task.cleanMetadata(confirmation) }
+        do { completed = try await task.cleanMetadata(confirmation, service: service) }
         catch let change as ReadingDataError {
             await load()
             error = ReaderMessages.error(change)

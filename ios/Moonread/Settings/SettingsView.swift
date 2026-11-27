@@ -159,7 +159,7 @@ struct SettingsTaskContent: View {
         case .support: TipJarView()
         case .metadataCleanup:
             #if MOONREAD_INTERNAL_TOOLS
-            DeveloperMetadataCleanupView(task: .shared, openDataManagement: { navigation.select(.data) })
+            DeveloperMetadataCleanupView(task: .shared, service: library.service, openDataManagement: { navigation.select(.data) })
             #else
             EmptyView()
             #endif

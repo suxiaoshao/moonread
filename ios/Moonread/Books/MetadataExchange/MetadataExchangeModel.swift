@@ -19,9 +19,9 @@ extension MetadataExchangeModel {
     }
 
     #if MOONREAD_INTERNAL_TOOLS
-    func cleanMetadata(_ confirmation: MetadataCleanupConfirmation) async throws -> Int {
+    func cleanMetadata(_ confirmation: MetadataCleanupConfirmation, service: AppDataService) async throws -> Int {
         try await withMetadataCleanup(unavailable: MetadataCleanupError.busy) {
-            try await AppDataService.shared.cleanMetadata(confirmation)
+            try await service.cleanMetadata(confirmation)
         }
     }
     #endif
