@@ -10,7 +10,7 @@
 <p class="tagline">{% if zh %}安静地读，<br>你自己的小说。{% else %}A quiet place<br>for your own books.{% endif %}</p>
 <p class="lede">{% if zh %}把 TXT 放进书架，调成喜欢的模样。<br>从上次停下的地方，接着读。{% else %}Bring your TXT files. Make the page your own.<br>Pick up where you left off.{% endif %}</p>
 <div class="download">
-<a class="badge-link" href="https://apps.apple.com/app/id6823849812">
+<a class="badge-link" data-app-store href="{% if zh %}https://apps.apple.com/cn/app/id6823849812{% else %}https://apps.apple.com/app/id6823849812{% endif %}">
 <img src="{{ get_url(path='images/app-store-' ~ section.lang ~ '.svg') }}" alt="{% if zh %}在 App Store 下载{% else %}Download on the App Store{% endif %}">
 </a>
 <span class="download-note">{% if zh %}免费 · 无广告 · 开源<br>iOS / iPadOS 18 及以上{% else %}Free · No ads · Open source<br>iOS / iPadOS 18 or later{% endif %}</span>
@@ -107,7 +107,17 @@
 <section class="final-cta">
 <span aria-hidden="true">☾</span>
 <h2>{% if zh %}今晚，从一本自己的书开始。{% else %}Tonight, start with a book of your own.{% endif %}</h2>
-<a href="https://apps.apple.com/app/id6823849812">{% if zh %}在 App Store 查看月读 →{% else %}Find Moonread on the App Store →{% endif %}</a>
+<a data-app-store href="{% if zh %}https://apps.apple.com/cn/app/id6823849812{% else %}https://apps.apple.com/app/id6823849812{% endif %}">{% if zh %}在 App Store 查看月读 →{% else %}Find Moonread on the App Store →{% endif %}</a>
 </section>
 {% include "screenshot-script.html" %}
+<script>
+// The App Store website sends visitors to their own storefront's home page and drops
+// the app path when a link names another storefront, so pick the link by the visitor's
+// time zone: mainland China needs the /cn link, everywhere else the storefront-free one.
+(() => {
+  const china = /^Asia\/(Shanghai|Urumqi|Chongqing|Harbin)$/.test(Intl.DateTimeFormat().resolvedOptions().timeZone || "");
+  const link = china ? "https://apps.apple.com/cn/app/id6823849812" : "https://apps.apple.com/app/id6823849812";
+  for (const a of document.querySelectorAll("a[data-app-store]")) a.href = link;
+})();
+</script>
 {% endblock content %}
