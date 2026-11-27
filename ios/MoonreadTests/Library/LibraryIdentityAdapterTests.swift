@@ -1,3 +1,7 @@
+@testable import MoonreadReader
+@testable import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Observation
 import SQLite3
 import SwiftData
@@ -145,7 +149,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
     try await service.savePosition(bookID: restarted.id, offset: 20)
     let snapshot = try await service.snapshot(restarted.id)
     let preference = try core.session.readUsers(core.lease) {
-      try LocalReadingRows.preferredFile($0, book: snapshot.book.fixtureSHA256)
+      try LocalReadingRead.preferredFile($0, book: snapshot.book.fixtureSHA256)
     }
     XCTAssertEqual(preference, second.id)
     let recent = try await service.recentLibrary()

@@ -1,3 +1,5 @@
+@testable import MoonreadData
+import MoonreadCoreBindings
 import GRDB
 import CryptoKit
 import SwiftData

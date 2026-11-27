@@ -1,3 +1,5 @@
+import MoonreadSettings
+import MoonreadLibrary
 import SwiftUI
 
 @MainActor @Observable

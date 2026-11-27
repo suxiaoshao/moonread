@@ -1,3 +1,7 @@
+import MoonreadReader
+import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import CloudKit
 import Foundation
 import Synchronization
@@ -42,7 +46,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     static let testContainer = "iCloud.dev.moonread.SyncProbe"
     #endif
     static let ownZone = CKRecordZone.ID(zoneName: ReadingHistoryTransport.zone, ownerName: CKCurrentUserDefaultName)
-    nonisolated static let attachmentLimit = 16 * 1024 * 1024
+    nonisolated static let attachmentLimit = CloudAttachmentLimits.bytes
 
     enum Failure: Error {
         case inactive, accountChanged, busy, wrongIdentity, invalidSystemFields, zoneNotReady

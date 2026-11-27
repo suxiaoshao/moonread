@@ -1,3 +1,5 @@
+import MoonreadLibrary
+import MoonreadCoreBindings
 import UniformTypeIdentifiers
 import XCTest
 
@@ -32,13 +34,13 @@ final class ShareInboxTests: ShareInboxFixture {
     XCTAssertEqual(batch.manifest.skippedNames, ["photo.pdf"])
     XCTAssertEqual(batch.files.count, 2)
     XCTAssertEqual(try Data(contentsOf: first.url(in: batch.directory)), original)
-    do { _ = LibraryImportFile(url: first.url(in: batch.directory), inbox: (batch, first)) }
+    do { _ = LibraryImportFile(url: first.url(in: batch.directory)) { batch.discard(first) } }
     XCTAssertTrue(
       FileManager.default.fileExists(atPath: first.url(in: batch.directory).path),
       "Releasing an owner is not user cancellation")
-    LibraryImportFile(url: first.url(in: batch.directory), inbox: (batch, first)).finish()
+    LibraryImportFile(url: first.url(in: batch.directory)) { batch.discard(first) }.finish()
     XCTAssertEqual(try inbox.scan().batches.first?.files, [second])
-    LibraryImportFile(url: second.url(in: batch.directory), inbox: (batch, second)).finish()
+    LibraryImportFile(url: second.url(in: batch.directory)) { batch.discard(second) }.finish()
     XCTAssertTrue(try inbox.scan().batches.isEmpty)
     XCTAssertEqual(try Data(contentsOf: source), original)
     let provider = NSItemProvider()
@@ -64,7 +66,7 @@ final class ShareInboxTests: ShareInboxFixture {
     let recovered = try XCTUnwrap(try ShareInbox(root: inbox.root).scan().batches.first)
     for item in items {
       XCTAssertEqual(try Data(contentsOf: item.url(in: recovered.directory)), original)
-      LibraryImportFile(url: item.url(in: recovered.directory), inbox: (recovered, item)).finish()
+      LibraryImportFile(url: item.url(in: recovered.directory)) { recovered.discard(item) }.finish()
     }
     XCTAssertTrue(
       try inbox.scan().batches.isEmpty, "consuming again cannot rediscover the same manifest")

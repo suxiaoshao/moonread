@@ -1,3 +1,6 @@
+import MoonreadDesign
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -55,7 +58,7 @@ extension AppDataService {
     /// Configuration lookup is independent of publication: a slow/failed system
     /// request cannot prevent the App from publishing a usable catalogue.
     func refreshSystemWidgetConfigurations() {
-        guard libraryDirectoryOverride == nil, testSession == nil, let scope = systemCatalog?.scope else { return }
+        guard libraryDirectoryOverride == nil, testSession == nil, let scope = systemPublication.catalog?.scope else { return }
         Task { [weak self] in
             let ids: [String]? = await Self.configuredSystemWidgetBooks()
             guard let ids else { return }
@@ -70,24 +73,24 @@ extension AppDataService {
         }
     }
     private func acceptSystemWidgetConfigurations(_ ids: [String], scope: String) {
-        guard systemCatalog?.scope == scope, systemCatalog?.configuredBooks != ids else { return }
-        systemCatalog?.configuredBooks = ids; scheduleSystemReadingCatalog()
+        guard systemPublication.catalog?.scope == scope, systemPublication.catalog?.configuredBooks != ids else { return }
+        systemPublication.catalog?.configuredBooks = ids; scheduleSystemReadingCatalog()
     }
     func refreshSystemWidgetCalendarIfNeeded() {
-        if systemCatalog?.statisticsSnapshot?.statistics?.isCurrent(at: Date()) != true {
+        if systemPublication.catalog?.statisticsSnapshot?.statistics?.isCurrent(at: Date()) != true {
             scheduleSystemWidgetStatistics(immediate: true)
         }
     }
 
     func publishSystemWidgetStatistics(_ snapshot: SystemReadingStatisticsSnapshot, file: SystemReadingSnapshotFile) throws {
-        guard let current = systemCatalog, current.scope == snapshot.storeScope else { return }
+        guard let current = systemPublication.catalog, current.scope == snapshot.storeScope else { return }
         let previous = current.statisticsSnapshot
         let changed = previous == nil || previous?.appearance != snapshot.appearance
             || !SystemReadingWidgetModel.statisticsDisplayEqual(previous?.statistics, snapshot.statistics)
         // generatedAt alone isn't a display change, and needn't rewrite this file.
         guard changed else { return }
         try file.publishStatistics(snapshot)
-        systemCatalog?.statisticsSnapshot = snapshot
+        systemPublication.catalog?.statisticsSnapshot = snapshot
         requestSystemStatisticsWidgetReload(scope: snapshot.storeScope)
     }
 
@@ -99,7 +102,7 @@ extension AppDataService {
         }
     }
 
-    private func systemStatisticsScopeIsCurrent(_ scope: String) -> Bool { systemCatalog?.scope == scope }
+    private func systemStatisticsScopeIsCurrent(_ scope: String) -> Bool { systemPublication.catalog?.scope == scope }
     func systemWidgetAppearance() async -> SystemReadingSnapshot.Appearance? {
         guard let value = try? await themes() else { return nil }
         let preferredDark: Bool? = switch value.preferences.appMode { case .system: nil; case .light: false; case .dark: true }

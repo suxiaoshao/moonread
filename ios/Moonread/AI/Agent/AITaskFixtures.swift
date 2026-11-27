@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import MoonreadAI
 #if DEBUG
 import Foundation

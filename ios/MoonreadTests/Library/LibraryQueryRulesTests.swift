@@ -1,3 +1,8 @@
+@testable import MoonreadLibrary
+import MoonreadSearchText
+@testable import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import XCTest
 @testable import Moonread
 
@@ -59,7 +64,7 @@ final class LibraryQueryRulesTests: XCTestCase {
         let resolution: BookResolution = metadata.map {
             .resolved(record: .init(key: .formal(sha256: $0.sha), body: .absent, aliases: []))
         } ?? .unidentified(fileId: name)
-        let item: Moonread.LibraryItem = folder ? .folder(row: .init(childBookCount: 0, coverPreviews: []))
+        let item: MoonreadCoreBindings.LibraryItem = folder ? .folder(row: .init(childBookCount: 0, coverPreviews: []))
             : .book(row: .init(resolution: resolution, needsDownload: false, positionUtf8: 0, byteCount: 0,
                               chapterTitle: nil, preferred: false, metadata: metadata, cardMetadata: nil))
         let entry = LibraryEntry(id: name, shelfId: "s", shelfName: "Shelf", relativePath: name, parentPath: "", name: name,

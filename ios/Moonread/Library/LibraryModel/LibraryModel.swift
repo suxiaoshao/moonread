@@ -1,35 +1,11 @@
+import MoonreadSearchText
+import MoonreadData
+import MoonreadLibrary
+import MoonreadDesign
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import SwiftUI
 import UniformTypeIdentifiers
-
-enum LibraryHomeSection: String, CaseIterable, Identifiable {
-    case resume, shelves, saved, recent
-
-    var id: Self { self }
-    var title: LocalizedStringKey {
-        switch self {
-        case .resume: "继续阅读"
-        case .shelves: "我的书架"
-        case .saved: "虚拟书架"
-        case .recent: "最近阅读"
-        }
-    }
-}
-
-struct LibraryHomeSections {
-    var visible: [LibraryHomeSection]
-
-    init(visible: [String] = [], hidden: [String] = []) {
-        let hidden = Set(hidden.compactMap(LibraryHomeSection.init(rawValue:)))
-        var seen = hidden
-        self.visible = (visible.compactMap(LibraryHomeSection.init(rawValue:)) + LibraryHomeSection.allCases)
-            .filter { seen.insert($0).inserted }
-    }
-
-    var hidden: [LibraryHomeSection] { LibraryHomeSection.allCases.filter { !visible.contains($0) } }
-
-    mutating func hide(_ section: LibraryHomeSection) { visible.removeAll { $0 == section } }
-    mutating func show(_ section: LibraryHomeSection) { visible.append(section) }
-}
 
 @MainActor @Observable
 final class LibraryModel {

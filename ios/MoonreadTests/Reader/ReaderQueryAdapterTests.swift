@@ -1,3 +1,9 @@
+@testable import MoonreadReader
+import MoonreadSearchText
+import MoonreadLibrary
+@testable import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import CryptoKit
 import GRDB
 import Observation
@@ -35,7 +41,7 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
     let model = BookInformationModel(service: f.service)
     await model.load(
       StatisticsRoute(
-        target: .file(fileId: entry.id), title: entry.title))
+        target: .file(fileId: entry.id), title: entry.title).informationTarget)
     XCTAssertNil(model.error)
     XCTAssertEqual(model.entry?.positionUtf8, identity.utf8Bytes / 2)
     XCTAssertEqual(model.details?.metadata.tags, ["星港"])
@@ -57,9 +63,7 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
   }
 
   private func prepareFolder(at root: URL) throws -> ReaderIndex {
-    let fixtureBundle = Bundle(for: Self.self)
-    let resources: Bundle = fixtureBundle.url(forResource: "schema", withExtension: "sql") == nil ? .main : fixtureBundle
-    let session = try DataSession(layout: .init(applicationSupport: root), bundle: resources)
+    let session = try DataSession(layout: .init(applicationSupport: root))
     let lease = try session.activate(.unknown).0
     try session.prepareIndex(root.appending(path: "reader.sqlite3"), token: lease)
     try session.prepareUsers(lease) { nil }
@@ -672,8 +676,8 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
         }
       }
       try index.session.readUsers(index.lease) { db in
-        let body = try ReaderIndex.body(db, id: "body-scalars", scope: index.lease.scope.key)
-        let counts = try ReaderIndex.chapterCorrectionCounts(db, body: body, offset: titleOffset)
+        let body = try IndexedBookBody.fetch(db, id: "body-scalars", scope: index.lease.scope.key)
+        let counts = try ReaderChapterRead.chapterCorrectionCounts(db, body: body, offset: titleOffset)
         XCTAssertEqual(counts.start, 8)
         XCTAssertEqual(counts.body, 11)
         let chapter = SourceSpan(startUtf8: counts.body, endUtf8: 12)
@@ -781,8 +785,8 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
 }
 
 private extension AppDataService {
-  func installSystemReadingFixture(_ file: SystemReadingSnapshotFile) { systemCatalog = .init(file: file) }
-  func waitForStatisticsFixture() async { await systemCatalog?[.statistics].task?.value }
+  func installSystemReadingFixture(_ file: SystemReadingSnapshotFile) { systemPublication.catalog = .init(file: file) }
+  func waitForStatisticsFixture() async { await systemPublication.catalog?[.statistics].task?.value }
 
 }
 

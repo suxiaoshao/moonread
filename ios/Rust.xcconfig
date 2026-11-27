@@ -16,7 +16,7 @@ MOONREAD_RUST_TARGET_FLAGS[sdk=iphonesimulator*] = --target aarch64-apple-ios-si
 MOONREAD_BINDGEN_TARGET[sdk=iphoneos*] = aarch64-apple-ios
 MOONREAD_BINDGEN_TARGET[sdk=iphonesimulator*] = aarch64-apple-ios-sim
 
-MOONREAD_BINDINGS_DIR = $(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)
+MOONREAD_BINDINGS_DIR = $(SRCROOT)/Packages/MoonreadCoreBindings/Sources
 MOONREAD_BINDGEN_LIBRARY = $(SRCROOT)/../target/$(MOONREAD_BINDGEN_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a
 MOONREAD_AI_COVER_LIBRARY = $(SRCROOT)/../target/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_ai_cover.a
 LIBRARY_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../target/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)"

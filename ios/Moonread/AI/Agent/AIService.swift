@@ -1,3 +1,5 @@
+import MoonreadLibrary
+import MoonreadCoreBindings
 import MoonreadAI
 import Combine
 import Foundation
@@ -41,9 +43,7 @@ typealias JSONValue = AISDKProvider.JSONValue
     @ObservationIgnored var messageTurnCache: [String: AIMessageTurnCache] = [:]
     @ObservationIgnored var messageVersions: [String: AIMessageRow] = [:]
     @ObservationIgnored var messageRevision = 0
-    @ObservationIgnored let streamDisplay = AIStreamDisplayBuffer()
-    @ObservationIgnored let nativeMarkdown = AINativeMarkdownCache()
-    @ObservationIgnored var messageHeights: [AIMessageHeightKey: CGFloat] = [:]
+    @ObservationIgnored let messagePresentation = AIMessagePresentation()
     var running = false
     /// The latest visible message, from the newest page that connecting already loads.
     var preview: String {
@@ -90,7 +90,7 @@ typealias JSONValue = AISDKProvider.JSONValue
     /// Replaces the loaded history with one contiguous page window.
     func showWindow(_ page: [AIAgentEntry], newestSequence: Int) {
         entries = []; entryResults = [:]
-        messageTurnCache = [:]; messageVersions = [:]; messageHeights = [:]; nativeMarkdown.reset()
+        messageTurnCache = [:]; messageVersions = [:]; messagePresentation.resetHistory()
         mergeEntries(page, updatingExisting: false)
         hasEarlier = (entries.first?.sequence ?? 0) > 0
         hasLater = (entries.last?.sequence ?? -1) < newestSequence
@@ -118,29 +118,6 @@ struct AIActionNotice: Identifiable {
     let id = UUID()
     let sessionID: String?
     let message: String
-}
-
-struct AIConversationAnchor: Hashable {
-    let sequence: Int
-    let turn: String
-}
-
-struct AIConversationSearchHit: Identifiable {
-    let id: String
-    let title: String
-    /// One line around the newest matching message; nil when only the title matches.
-    let snippet: String?
-    let fromUser: Bool
-    let anchor: AIConversationAnchor?
-    static func snippet(_ text: String, term: String) -> String {
-        let line = text.split(whereSeparator: \.isNewline).map(String.init)
-            .first { $0.localizedStandardContains(term) } ?? text
-        let flat = line.trimmingCharacters(in: .whitespaces)
-        guard let range = flat.localizedStandardRange(of: term) else { return flat }
-        // Keep a little context before the match so the term stays on screen.
-        let start = flat.index(range.lowerBound, offsetBy: -12, limitedBy: flat.startIndex) ?? flat.startIndex
-        return (start > flat.startIndex ? "…" : "") + flat[start...]
-    }
 }
 
 struct AISessionSummary: Identifiable {

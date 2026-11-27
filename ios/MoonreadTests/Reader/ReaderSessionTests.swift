@@ -1,3 +1,8 @@
+@testable import MoonreadReader
+@testable import MoonreadData
+import MoonreadDesign
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Observation
 import SQLite3
 import SwiftData

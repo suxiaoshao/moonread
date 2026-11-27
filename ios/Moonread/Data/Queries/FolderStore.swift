@@ -1,6 +1,9 @@
+import MoonreadLibrary
+import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Combine
 import Foundation
-import GRDB
 import Observation
 
 extension AppDataService {
@@ -17,21 +20,7 @@ extension AppDataService {
     func folderUpdates(_ location: LibraryLocation, sort: LibrarySort) throws -> AsyncThrowingStream<[LibraryEntry], Error> {
         try Task.checkCancellation()
         try validateFolderRead(location)
-        let index = try relationalUserIndex()
-        let scope = index.lease.scope
-        let (stream, sink) = AsyncThrowingStream.makeStream(of: [LibraryEntry].self, bufferingPolicy: .bufferingNewest(1))
-        let observation = ValueObservation.tracking { try FolderRead.page($0, scope: scope, location: location) }
-            .removeDuplicates()
-        let token = try index.session.observeUsers(index.lease, observation) { result in
-            do {
-                // The observation receiver runs outside the database writer.
-                sink.yield(try FolderRead.entries(result.get(), sort: sort))
-            } catch {
-                sink.finish(throwing: error)
-            }
-        }
-        sink.onTermination = { _ in token.cancel() }
-        return stream
+        return try relationalUserIndex().folderUpdates(location, sort: sort)
     }
 
     private func validateFolderRead(_ location: LibraryLocation) throws {
@@ -45,51 +34,9 @@ extension AppDataService {
     }
 }
 
-/// One page owns one observation, with its lifetime tied to the page task.
-@MainActor @Observable
-final class FolderStore {
-    typealias Updates = @Sendable (LibraryLocation, LibrarySort) async throws -> AsyncThrowingStream<[LibraryEntry], Error>
-    private(set) var snapshot: [LibraryEntry]?
-    private(set) var failed = false
-    private(set) var requestRevision = 0
-    let loading = LoadingState()
-
-    @ObservationIgnored private let updates: Updates
-    @ObservationIgnored private var accountChange: AnyCancellable?
-
-    init(service: AppDataService) {
-        updates = { try await service.folderUpdates($0, sort: $1) }
-        accountChange = MainActorNotifications.observe(.readingContinuationInvalidated, object: service) { [weak self] in
-            guard let self else { return }
-            snapshot = nil
-            failed = false
-            requestRevision &+= 1
-        }
-    }
-
-    func retryIfFailed() {
-        if failed { requestRevision &+= 1 }
-    }
-
-    func observe(_ location: LibraryLocation, sort: LibrarySort = .reading,
-                 didLoad: ([LibraryEntry]) -> Void, didFail: (Error) -> Void) async {
-        let revision = requestRevision
-        let request = loading.begin(); defer { loading.finish(request) }
-        failed = false
-        do {
-            try await AppDataService.libraryTestLatency()
-            let stream = try await updates(location, sort)
-            for try await entries in stream {
-                guard !Task.isCancelled, requestRevision == revision else { return }
-                if snapshot != entries { snapshot = entries }
-                loading.finish(request)
-                didLoad(entries)
-            }
-        } catch is CancellationError { }
-        catch {
-            guard !Task.isCancelled, requestRevision == revision else { return }
-            failed = true
-            didFail(error)
-        }
+extension FolderStore {
+    convenience init(service: AppDataService) {
+        self.init(updates: { try await service.folderUpdates($0, sort: $1) }, beforeRead: AppDataService.libraryTestLatency,
+                  observeAccount: { MainActorNotifications.observe(.readingContinuationInvalidated, object: service, using: $0) })
     }
 }

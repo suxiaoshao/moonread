@@ -1,3 +1,9 @@
+import MoonreadReader
+import MoonreadLibrary
+import MoonreadDesign
+import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import MoonreadAI
 import SwiftUI
 
@@ -66,7 +72,7 @@ struct AIResultCard: View {
                 }.themeScope(theme)
             }
             .sheet(item: $editor) { request in
-                NoteEditor(edit: request.edit, aiCommit: ai.proposals.annotationHooks(result)) { editor = nil }
+                NoteEditor(edit: request.edit, service: AppDataService.shared, aiCommit: ai.proposals.annotationHooks(result)) { editor = nil }
                     .themeScope(theme).preferredColorScheme(theme.scheme)
             }
         }

@@ -1,3 +1,6 @@
+@testable import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import CryptoKit
 import SwiftData
 import SwiftUI

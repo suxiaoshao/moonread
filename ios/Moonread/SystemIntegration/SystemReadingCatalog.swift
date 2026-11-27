@@ -1,3 +1,6 @@
+import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Foundation
 
 struct SystemReadingBookID: Hashable, Sendable {
@@ -78,9 +81,28 @@ extension Notification.Name {
     static let systemReadingCatalogChanged = Notification.Name("Moonread.systemReadingCatalogChanged")
 }
 
+/// Publishing state follows the App service's existing actor. Account activation
+/// continues to revoke exposure before reusing the same data and publication lanes.
+struct SystemReadingPublication {
+    var catalog: SystemReadingCatalog?
+    var readingBatches = Set<UUID>()
+    var readingLastError: String?
+    var exposureTask: Task<Void, Never>?
+    var widgetReloadSnapshot: SystemReadingSnapshot?
+    var spotlightTask: Task<Void, Never>?
+    var spotlightSubmissionStatus: String?
+    var spotlightAdapter: SystemSpotlightAdapter?
+    var spotlightMetadata: [String: SystemSpotlightMetadata] = [:]
+    let spotlightThumbnails: NSCache<NSString, NSData> = {
+        let cache = NSCache<NSString, NSData>(); cache.totalCostLimit = 16 * 1024 * 1024; cache.countLimit = 128; return cache
+    }()
+    var spotlightThumbnailFailures = Set<String>()
+    var verifiedScopePublicationPending: Bool?
+}
+
 extension AppDataService {
     func startSystemReadingCatalog(file: SystemReadingSnapshotFile? = nil) {
-        guard systemCatalog == nil else { return }
+        guard systemPublication.catalog == nil else { return }
         #if DEBUG
         if file == nil, NSClassFromString("XCTestCase") != nil { return }
         #endif
@@ -94,9 +116,9 @@ extension AppDataService {
             } ?? SystemReadingSnapshotFile.shared())
             reportSystemSpotlightProgress(String(localized: "正在准备系统搜索…"))
             let scope = try indexStore().systemCatalogScope()
-            systemCatalog = SystemReadingCatalog(file: output, scope: scope,
-                accountPending: verifiedScopePublicationPending ?? (cloudSyncRequested() && hasPreviouslyApprovedReadingAccount()))
-            if systemCatalog?.accountPending == true { resetSystemReadingCatalog() }
+            systemPublication.catalog = SystemReadingCatalog(file: output, scope: scope,
+                accountPending: systemPublication.verifiedScopePublicationPending ?? (cloudSyncRequested() && hasPreviouslyApprovedReadingAccount()))
+            if systemPublication.catalog?.accountPending == true { resetSystemReadingCatalog() }
             else { resumeSystemReadingPublication(); refreshSystemWidgetConfigurations() }
         } catch { publishSystemCatalogError(error) }
     }
@@ -108,16 +130,16 @@ extension AppDataService {
         setSystemReadingAccountPending(cloudSyncRequested() && hasPreviouslyApprovedReadingAccount())
     }
     func setSystemReadingAccountPending(_ pending: Bool) {
-        guard systemCatalog?.accountPending != pending else { return }
-        systemCatalog?.accountPending = pending
+        guard systemPublication.catalog?.accountPending != pending else { return }
+        systemPublication.catalog?.accountPending = pending
         if pending { resetSystemReadingCatalog() }
         else { resumeSystemReadingPublication(); refreshSystemWidgetConfigurations() }
     }
     func resetSystemReadingCatalog() {
         // Scope transitions retire both artifacts and any queued old work.
         // Batch tokens already issued belong to the old configuration.
-        systemReadingBatches.removeAll()
-        guard var catalog = systemCatalog else { return }
+        systemPublication.readingBatches.removeAll()
+        guard var catalog = systemPublication.catalog else { return }
         for output in SystemReadingOutput.allCases {
             catalog[output].task?.cancel()
             catalog[output].observation?.cancel()
@@ -129,7 +151,7 @@ extension AppDataService {
         catalog.scope = UUID().uuidString
         do { try persistSystemCatalogScope(catalog.scope) }
         catch { publishSystemCatalogError(error) }
-        systemCatalog = catalog
+        systemPublication.catalog = catalog
 
         do { try publishSystemWidgetStatistics(.init(storeScope: catalog.scope), file: catalog.file) }
         catch {
@@ -140,8 +162,8 @@ extension AppDataService {
         do {
             let empty = SystemReadingSnapshot(storeScope: catalog.scope, exposurePolicy: systemExposurePolicy())
             try catalog.file.publish(empty)
-            systemCatalog?.publishedGeneration = empty.generation
-            systemCatalog?.displaySnapshot = empty
+            systemPublication.catalog?.publishedGeneration = empty.generation
+            systemPublication.catalog?.displaySnapshot = empty
             systemReadingSnapshotPublished(empty)
             NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
         } catch {
@@ -155,46 +177,46 @@ extension AppDataService {
     /// new directory build, and an already-running output loses publish rights.
     func beginSystemReadingBatch() -> UUID {
         let token = UUID()
-        if systemReadingBatches.isEmpty, systemCatalog?[.books].task != nil {
-            systemCatalog?[.books].request(immediate: false)
-            systemCatalog?[.books].task?.cancel()
+        if systemPublication.readingBatches.isEmpty, systemPublication.catalog?[.books].task != nil {
+            systemPublication.catalog?[.books].request(immediate: false)
+            systemPublication.catalog?[.books].task?.cancel()
         }
-        systemReadingBatches.insert(token)
+        systemPublication.readingBatches.insert(token)
         return token
     }
 
     func endSystemReadingBatch(_ token: UUID, committed: Bool) {
-        guard systemReadingBatches.remove(token) != nil else { return }
-        if committed { systemCatalog?[.books].request(immediate: false) }
+        guard systemPublication.readingBatches.remove(token) != nil else { return }
+        if committed { systemPublication.catalog?[.books].request(immediate: false) }
         pumpSystemReading(.books)
     }
 
     func resumeSystemReadingPublication() {
-        guard let catalog = systemCatalog, !catalog.accountPending else { return }
+        guard let catalog = systemPublication.catalog, !catalog.accountPending else { return }
         for output in SystemReadingOutput.allCases where catalog[output].observation == nil {
-            systemCatalog?[output].observation = Task(priority: .utility) { [weak self] in
+            systemPublication.catalog?[output].observation = Task(priority: .utility) { [weak self] in
                 await self?.observeSystemReading(output, scope: catalog.scope)
             }
         }
         if catalog[.books].observation != nil, catalog[.books].task == nil,
-           catalog.displaySnapshot == nil || systemReadingLastError != nil { scheduleSystemReadingCatalog(immediate: true) }
+           catalog.displaySnapshot == nil || systemPublication.readingLastError != nil { scheduleSystemReadingCatalog(immediate: true) }
         if catalog[.statistics].observation != nil { refreshSystemWidgetCalendarIfNeeded() }
     }
 
     private func observeSystemReading(_ output: SystemReadingOutput, scope: String) async {
-        defer { if systemCatalog?.scope == scope { systemCatalog?[output].observation = nil } }
+        defer { if systemPublication.catalog?.scope == scope { systemPublication.catalog?[output].observation = nil } }
         do {
-            guard systemCatalog?.scope == scope, !Task.isCancelled else { return }
+            guard systemPublication.catalog?.scope == scope, !Task.isCancelled else { return }
             let stream = try SystemReadingRead.changes(relationalUserIndex(), statistics: output == .statistics)
-            systemCatalog?[output].commits = stream.commits
+            systemPublication.catalog?[output].commits = stream.commits
             var initial = true
             for try await _ in stream.events {
-                guard systemCatalog?.scope == scope, !Task.isCancelled else { return }
+                guard systemPublication.catalog?.scope == scope, !Task.isCancelled else { return }
                 requestSystemReading(output, immediate: initial)
                 initial = false
             }
         } catch is CancellationError { }
-        catch { if output == .books, systemCatalog?.scope == scope { publishSystemCatalogError(error) } }
+        catch { if output == .books, systemPublication.catalog?.scope == scope { publishSystemCatalogError(error) } }
     }
 
     func scheduleSystemReadingCatalog(immediate: Bool = false) {
@@ -206,20 +228,20 @@ extension AppDataService {
     }
 
     private func requestSystemReading(_ output: SystemReadingOutput, immediate: Bool = false) {
-        guard systemCatalog?.accountPending == false else { return }
-        systemCatalog?[output].request(immediate: immediate)
+        guard systemPublication.catalog?.accountPending == false else { return }
+        systemPublication.catalog?[output].request(immediate: immediate)
         pumpSystemReading(output)
     }
 
     private func pumpSystemReading(_ output: SystemReadingOutput) {
-        guard let catalog = systemCatalog, !catalog.accountPending,
-              output != .books || systemReadingBatches.isEmpty else { return }
+        guard let catalog = systemPublication.catalog, !catalog.accountPending,
+              output != .books || systemPublication.readingBatches.isEmpty else { return }
         let lane = catalog[output]
         guard lane.task == nil, lane.dirty else { return }
         let id = UUID(), delay = lane.delay(now: Date())
-        systemCatalog?[output].taskID = id
-        systemCatalog?[output].waiting = delay > 0
-        systemCatalog?[output].task = Task(priority: .utility) { [weak self] in
+        systemPublication.catalog?[output].taskID = id
+        systemPublication.catalog?[output].waiting = delay > 0
+        systemPublication.catalog?[output].task = Task(priority: .utility) { [weak self] in
             if delay > 0 {
                 do { try await Task.sleep(for: .seconds(delay)) }
                 catch { /* Always clear the slot if this timer still owns it. */ }
@@ -229,18 +251,18 @@ extension AppDataService {
     }
 
     private func runSystemReading(_ output: SystemReadingOutput, id: UUID, scope: String) async {
-        guard let catalog = systemCatalog, catalog.scope == scope, catalog[output].taskID == id else { return }
+        guard let catalog = systemPublication.catalog, catalog.scope == scope, catalog[output].taskID == id else { return }
         defer {
-            if systemCatalog?.scope == scope, systemCatalog?[output].taskID == id {
-                systemCatalog?[output].task = nil
-                systemCatalog?[output].taskID = nil
-                systemCatalog?[output].waiting = false
+            if systemPublication.catalog?.scope == scope, systemPublication.catalog?[output].taskID == id {
+                systemPublication.catalog?[output].task = nil
+                systemPublication.catalog?[output].taskID = nil
+                systemPublication.catalog?[output].waiting = false
                 pumpSystemReading(output)
             }
         }
         guard !Task.isCancelled, !catalog.accountPending,
-              output != .books || systemReadingBatches.isEmpty else { return }
-        systemCatalog?[output].begin(at: Date())
+              output != .books || systemPublication.readingBatches.isEmpty else { return }
+        systemPublication.catalog?[output].begin(at: Date())
         let revision = catalog[output].revision, configuration = userCloudConfigurationRevision
         let commit = catalog[output].commits?.value
         do {
@@ -262,21 +284,21 @@ extension AppDataService {
     }
 
     private func canPublishSystemReading(_ output: SystemReadingOutput, scope: String, id: UUID, revision: UUID, commit: UInt64?, configuration: UUID) -> Bool {
-        guard let catalog = systemCatalog else { return false }
+        guard let catalog = systemPublication.catalog else { return false }
         return catalog.scope == scope && !catalog.accountPending && catalog[output].taskID == id
             && catalog[output].revision == revision && catalog[output].commits?.value == commit
             && userCloudConfigurationRevision == configuration
-            && !Task.isCancelled && (output != .books || systemReadingBatches.isEmpty)
+            && !Task.isCancelled && (output != .books || systemPublication.readingBatches.isEmpty)
     }
 
-    func waitForSystemReadingCatalog() async { await systemCatalog?[.books].task?.value }
-    func systemReadingCatalogError() -> String? { systemReadingLastError }
+    func waitForSystemReadingCatalog() async { await systemPublication.catalog?[.books].task?.value }
+    func systemReadingCatalogError() -> String? { systemPublication.readingLastError }
     static func systemReadingRefreshMessage(_ error: Error) -> String {
         if let error = error as? ReaderError { return ReaderMessages.error(error) }
         return String(localized: "系统搜索和小组件暂时无法刷新，请稍后重试。", table: "SystemReading")
     }
     private func publishSystemCatalogError(_ error: Error) {
-        systemReadingLastError = Self.systemReadingRefreshMessage(error)
+        systemPublication.readingLastError = Self.systemReadingRefreshMessage(error)
         NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
     }
     private func rebuildSystemReadingCatalog(_ catalog: SystemReadingCatalog, id: UUID, revision: UUID, commit: UInt64?, configuration: UUID) async throws {
@@ -348,27 +370,23 @@ extension AppDataService {
         defer { try? FileManager.default.removeItem(at: staged) }
         guard current(), systemExposurePolicy() == policy else { return }
         try catalog.file.publishStaged(staged)
-        systemCatalog?.spotlightCovers = covers
-        systemCatalog?.coverSizes = coverSizes.filter { size in books.contains { $0.coverThumbnail?.fileName == size.key } }
-        systemCatalog?.publishedGeneration = snapshot.generation
-        let previous = systemCatalog?.displaySnapshot
-        systemCatalog?.displaySnapshot = snapshot
+        systemPublication.catalog?.spotlightCovers = covers
+        systemPublication.catalog?.coverSizes = coverSizes.filter { size in books.contains { $0.coverThumbnail?.fileName == size.key } }
+        systemPublication.catalog?.publishedGeneration = snapshot.generation
+        let previous = systemPublication.catalog?.displaySnapshot
+        systemPublication.catalog?.displaySnapshot = snapshot
         catalog.file.cleanupCovers(current: Set(books.compactMap { $0.coverThumbnail?.fileName }),
                                   previous: Set(previous?.books.compactMap { $0.coverThumbnail?.fileName } ?? []))
         systemReadingSnapshotPublished(snapshot)
-        systemReadingLastError = nil
+        systemPublication.readingLastError = nil
         NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
     }
     func resolveSystemReadingBook(_ id: SystemReadingBookID, automatic: Bool = false) async throws -> LibraryEntry {
-        let sources = try await fixedReaderRead { index in
-            try index.session.readUsers(index.lease) {
-                try SystemReadingRead.sources($0, scope: index.lease.scope, sha: id.sha)
-            }
-        }
+        let sources = try await fixedReaderRead { try $0.systemBookSources(sha: id.sha) }
         guard !sources.isEmpty else { throw SystemReadingRouteError.unavailable }
         if automatic {
             let policy = systemExposurePolicy()
-            guard systemCatalog?.accountPending != true, policy.systemSearchEnabled,
+            guard systemPublication.catalog?.accountPending != true, policy.systemSearchEnabled,
                   Set(policy.excludedShelfIDs).isDisjoint(with: sources.map { $0.entry.shelfId })
             else { throw SystemReadingRouteError.searchDisabled }
         }

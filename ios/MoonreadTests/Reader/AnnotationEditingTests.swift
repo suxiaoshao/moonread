@@ -1,3 +1,5 @@
+@testable import MoonreadReader
+import MoonreadCoreBindings
 import CryptoKit
 import Observation
 import SQLite3
@@ -80,6 +82,7 @@ final class AnnotationEditingApplicationStateTests: ApplicationStateFixture {
   func testUndoCountsOnlyVisibleTimeAndRejectsCancelledOldTimer() async {
     let clock = ManualTestClock()
     let tools = ReaderToolsModel(
+      service: AppDataService.shared,
       uptime: { .seconds(clock.now.timeIntervalSince1970 - 1_800_000_000) },
       sleep: { duration in
         let value = duration.components

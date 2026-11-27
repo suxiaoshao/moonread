@@ -1,0 +1,287 @@
+import MoonreadCoreBindings
+import SwiftUI
+import UIKit
+
+/// Native grouped cells own their shape, including while swiping. Only these
+/// explicitly opted-in lists use this host; no appearance or private-view edits.
+public struct ThemedGroupedList: UIViewControllerRepresentable {
+    public struct Action {
+        var title: String
+        var symbol: String?
+        var destructive = false
+        var perform: () -> Void
+
+        public init(title: String, symbol: String? = nil, destructive: Bool = false, perform: @escaping () -> Void) {
+            self.title = title; self.symbol = symbol; self.destructive = destructive; self.perform = perform
+        }
+    }
+    public struct Row {
+        let id: String
+        let content: AnyView
+        var action: (() -> Void)?
+        var disclosure: Bool
+        var actions: [Action]
+        var clear: Bool
+        var reorderable: Bool
+        var allowsFullSwipe: Bool
+        var accessibilityID: String
+        public init<Content: View>(_ id: String, action: (() -> Void)? = nil, disclosure: Bool = false,
+                            actions: [Action] = [], clear: Bool = false, reorderable: Bool = false,
+                            allowsFullSwipe: Bool = true, accessibilityID: String? = nil,
+                            @ViewBuilder content: () -> Content) {
+            self.id = id; self.content = AnyView(content()); self.action = action
+            self.disclosure = disclosure; self.actions = actions; self.clear = clear; self.reorderable = reorderable
+            self.allowsFullSwipe = allowsFullSwipe; self.accessibilityID = accessibilityID ?? id
+        }
+    }
+    public struct Section {
+        let id: String
+        var title: String?
+        var footer: String?
+        public var rows: [Row]
+
+        public init(id: String, title: String? = nil, footer: String? = nil, rows: [Row]) {
+            self.id = id; self.title = title; self.footer = footer; self.rows = rows
+        }
+    }
+    var sections: [Section]
+    var theme: ThemeSurface
+    var topInset: CGFloat = 16
+    var bottomInset: CGFloat = 0
+    var selecting = false
+    var selected: Set<String> = []
+    var selectionChanged: ((Set<String>) -> Void)?
+    var reordered: (([String]) -> Void)?
+    var refresh: (() async -> Void)?
+    var header: AnyView?
+
+    public init(sections: [Section], theme: ThemeSurface, topInset: CGFloat = 16, bottomInset: CGFloat = 0,
+                selecting: Bool = false, selected: Set<String> = [], selectionChanged: ((Set<String>) -> Void)? = nil,
+                reordered: (([String]) -> Void)? = nil, refresh: (() async -> Void)? = nil, header: AnyView? = nil) {
+        self.sections = sections; self.theme = theme; self.topInset = topInset; self.bottomInset = bottomInset
+        self.selecting = selecting; self.selected = selected; self.selectionChanged = selectionChanged
+        self.reordered = reordered; self.refresh = refresh; self.header = header
+    }
+
+    public func makeUIViewController(context: Context) -> Controller { Controller() }
+    public func updateUIViewController(_ controller: Controller, context: Context) { controller.update(self) }
+
+    public final class Controller: UICollectionViewController {
+        private static let hostedHeaderKind = "themed-grouped-list-header"
+        private var value: ThemedGroupedList?
+        private var rows: [String: Row] = [:]
+        private var sections: [String: Section] = [:]
+        private var layoutNeedsUpdate = false
+        private var source: UICollectionViewDiffableDataSource<String, String>!
+        init() { super.init(collectionViewLayout: UICollectionViewFlowLayout()) }
+        public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        public override func viewDidLoad() {
+            super.viewDidLoad()
+            collectionView.keyboardDismissMode = .interactive
+            let cells = UICollectionView.CellRegistration<UICollectionViewListCell, String> { [weak self] cell, _, id in
+                self?.configure(cell, id: id)
+            }
+            source = UICollectionViewDiffableDataSource(collectionView: collectionView) { collection, path, id in
+                collection.dequeueConfiguredReusableCell(using: cells, for: path, item: id)
+            }
+            let header = supplementary(footer: false), footer = supplementary(footer: true)
+            let hostedHeader = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
+                elementKind: Self.hostedHeaderKind
+            ) { [weak self] cell, _, _ in self?.configureHeader(cell) }
+            source.supplementaryViewProvider = { collection, kind, path in
+                if kind == Self.hostedHeaderKind {
+                    return collection.dequeueConfiguredReusableSupplementary(using: hostedHeader, for: path)
+                }
+                return collection.dequeueConfiguredReusableSupplementary(using: kind == UICollectionView.elementKindSectionFooter ? footer : header, for: path)
+            }
+            source.reorderingHandlers.canReorderItem = { [weak self] id in self?.rows[id]?.reorderable == true }
+            source.reorderingHandlers.didReorder = { [weak self] transaction in
+                guard let self else { return }
+                self.value?.reordered?(transaction.finalSnapshot.itemIdentifiers.filter { self.rows[$0]?.reorderable == true })
+            }
+        }
+        private func configureHeader(_ cell: UICollectionViewListCell) {
+            guard let value, let header = value.header else { return }
+            cell.contentConfiguration = UIHostingConfiguration {
+                header.environment(\.theme, value.theme)
+                    .foregroundStyle(Color(uiColor: value.theme.ink))
+                    .tint(Color(uiColor: value.theme.accent))
+            }.margins(.all, 0)
+            cell.backgroundConfiguration = .clear()
+        }
+        private func supplementary(footer: Bool) -> UICollectionView.SupplementaryRegistration<UICollectionViewListCell> {
+            .init(elementKind: footer ? UICollectionView.elementKindSectionFooter : UICollectionView.elementKindSectionHeader) { [weak self] cell, _, path in
+                guard let self, let value = self.value else { return }
+                let section = self.section(at: path.section)
+                var content = footer ? UIListContentConfiguration.footer() : .header()
+                content.text = footer ? section?.footer : section?.title
+                content.textProperties.color = value.theme.secondary
+                cell.contentConfiguration = content
+                cell.backgroundConfiguration = .clear()
+                cell.accessibilityTraits = footer ? .staticText : .header
+            }
+        }
+        private func section(at index: Int) -> Section? {
+            source.sectionIdentifier(for: index).flatMap { sections[$0] }
+        }
+        private func layout() -> UICollectionViewLayout {
+            UICollectionViewCompositionalLayout { [weak self] index, environment in
+                guard let self, let value = self.value else { return nil }
+                // UIKit can query an outgoing section while the diffable snapshot is changing.
+                let section = self.section(at: index)
+                var config = UICollectionLayoutListConfiguration(appearance: .insetGrouped)
+                config.backgroundColor = value.theme.canvas
+                config.separatorConfiguration.color = value.theme.separator
+                config.headerMode = section?.title == nil ? .none : .supplementary
+                config.footerMode = section?.footer == nil ? .none : .supplementary
+                config.trailingSwipeActionsConfigurationProvider = { [weak self] path in self?.swipes(at: path) }
+                let result = NSCollectionLayoutSection.list(using: config, layoutEnvironment: environment)
+                if index == 0 {
+                    result.contentInsets.top = value.topInset
+                    if value.header != nil {
+                        let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(64))
+                        let header = NSCollectionLayoutBoundarySupplementaryItem(layoutSize: size, elementKind: Self.hostedHeaderKind, alignment: .top)
+                        header.pinToVisibleBounds = false
+                        result.boundarySupplementaryItems.append(header)
+                    }
+                }
+                return result
+            }
+        }
+        private func swipes(at path: IndexPath) -> UISwipeActionsConfiguration? {
+            guard let value, !value.selecting, let id = source.itemIdentifier(for: path), let row = rows[id], !row.actions.isEmpty else { return nil }
+            let actions = row.actions.map { item in
+                let action = UIContextualAction(style: item.destructive ? .destructive : .normal, title: item.title) { _, _, completion in
+                    // The page owns confirmation and mutation; never remove a
+                    // cell speculatively while a confirmation is still pending.
+                    completion(false)
+                    item.perform()
+                }
+                action.image = item.symbol.flatMap(UIImage.init(systemName:))
+                action.backgroundColor = item.destructive ? .systemRed : value.theme.accent
+                return action
+            }
+            let result = UISwipeActionsConfiguration(actions: actions)
+            result.performsFirstActionWithFullSwipe = row.allowsFullSwipe
+            return result
+        }
+        func update(_ value: ThemedGroupedList) {
+            loadViewIfNeeded()
+            let layoutChanged = self.value?.theme != value.theme || self.value?.topInset != value.topInset
+                || (self.value?.header != nil) != (value.header != nil)
+                || self.value?.sections.map { [$0.id, $0.title ?? "", $0.footer ?? ""] } != value.sections.map { [$0.id, $0.title ?? "", $0.footer ?? ""] }
+            layoutNeedsUpdate = layoutNeedsUpdate || layoutChanged
+            self.value = value
+            sections = Dictionary(uniqueKeysWithValues: value.sections.map { ($0.id, $0) })
+            rows = Dictionary(uniqueKeysWithValues: value.sections.flatMap(\.rows).map { ($0.id, $0) })
+            collectionView.backgroundColor = value.theme.canvas
+            collectionView.tintColor = value.theme.accent
+            collectionView.contentInset.bottom = value.bottomInset
+            collectionView.verticalScrollIndicatorInsets.bottom = value.bottomInset
+            collectionView.allowsSelectionDuringEditing = true
+            collectionView.allowsMultipleSelection = value.selecting
+            collectionView.allowsMultipleSelectionDuringEditing = value.selecting
+            collectionView.isEditing = value.selecting || value.reordered != nil
+            if value.refresh != nil, collectionView.refreshControl == nil {
+                let control = UIRefreshControl(); control.addTarget(self, action: #selector(refreshRequested), for: .valueChanged)
+                collectionView.refreshControl = control
+            }
+            var snapshot = NSDiffableDataSourceSnapshot<String, String>()
+            for section in value.sections {
+                snapshot.appendSections([section.id]); snapshot.appendItems(section.rows.map(\.id), toSection: section.id)
+            }
+            let previous = Set(source.snapshot().itemIdentifiers)
+            snapshot.reconfigureItems(snapshot.itemIdentifiers.filter { previous.contains($0) })
+            source.apply(snapshot, animatingDifferences: false) { [weak self] in
+                guard let self else { return }
+                if self.layoutNeedsUpdate {
+                    self.layoutNeedsUpdate = false
+                    self.collectionView.setCollectionViewLayout(self.layout(), animated: false)
+                }
+                if self.value?.header != nil {
+                    for view in self.collectionView.visibleSupplementaryViews(ofKind: Self.hostedHeaderKind) {
+                        if let cell = view as? UICollectionViewListCell { self.configureHeader(cell) }
+                    }
+                    self.collectionView.collectionViewLayout.invalidateLayout()
+                }
+                self.restoreSelection()
+            }
+        }
+        private func restoreSelection() {
+            guard let value else { return }
+            for path in collectionView.indexPathsForSelectedItems ?? [] {
+                if !value.selecting || !value.selected.contains(source.itemIdentifier(for: path) ?? "") {
+                    collectionView.deselectItem(at: path, animated: false)
+                }
+            }
+            if value.selecting {
+                for id in value.selected {
+                    if let path = source.indexPath(for: id) { collectionView.selectItem(at: path, animated: false, scrollPosition: []) }
+                }
+            }
+        }
+        @objc private func refreshRequested() {
+            Task { [weak self] in
+                await self?.value?.refresh?()
+                self?.collectionView.refreshControl?.endRefreshing()
+            }
+        }
+        private func configure(_ cell: UICollectionViewListCell, id: String) {
+            guard let row = rows[id], let value else { return }
+            cell.contentConfiguration = UIHostingConfiguration {
+                self.hostedContent(row, selecting: value.selecting).environment(\.theme, value.theme)
+                    .foregroundStyle(Color(uiColor: value.theme.ink)).tint(Color(uiColor: value.theme.accent))
+            }
+            cell.configurationUpdateHandler = { cell, state in
+                cell.backgroundConfiguration = themedListBackground(value.theme, state: state, clear: row.clear)
+            }
+            cell.setNeedsUpdateConfiguration()
+            cell.tintColor = value.theme.accent
+            cell.accessibilityIdentifier = row.accessibilityID
+            cell.accessories = value.selecting ? [.multiselect(displayed: .always)] : row.disclosure ? [.disclosureIndicator()] : []
+            if row.reorderable {
+                if row.actions.contains(where: \.destructive) {
+                    cell.accessories.append(.delete(displayed: .always, options: .init(tintColor: .systemRed)))
+                }
+                cell.accessories.append(.reorder(displayed: .always))
+            }
+            cell.accessibilityCustomActions = row.actions.map { item in
+                UIAccessibilityCustomAction(name: item.title) { _ in item.perform(); return true }
+            }
+        }
+        @ViewBuilder private func hostedContent(_ row: Row, selecting: Bool) -> some View {
+            if selecting {
+                row.content.accessibilityElement(children: .combine).accessibilityIdentifier(row.accessibilityID)
+            } else if let action = row.action {
+                row.content.accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton).accessibilityIdentifier(row.accessibilityID)
+                    .accessibilityAction { action() }
+            } else { row.content }
+        }
+        public override func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
+            guard let id = source.itemIdentifier(for: indexPath) else { return false }
+            return value?.selecting == true || rows[id]?.action != nil
+        }
+        public override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+            guard let id = source.itemIdentifier(for: indexPath) else { return }
+            if let value, value.selecting { value.selectionChanged?(value.selected.union([id])) }
+            else { collectionView.deselectItem(at: indexPath, animated: true); rows[id]?.action?() }
+        }
+        public override func collectionView(_ collectionView: UICollectionView, didDeselectItemAt indexPath: IndexPath) {
+            guard let value, value.selecting, let id = source.itemIdentifier(for: indexPath) else { return }
+            value.selectionChanged?(value.selected.subtracting([id]))
+        }
+        public override func collectionView(_ collectionView: UICollectionView, targetIndexPathForMoveOfItemFromOriginalIndexPath originalIndexPath: IndexPath, atCurrentIndexPath currentIndexPath: IndexPath, toProposedIndexPath proposedIndexPath: IndexPath) -> IndexPath {
+            // Sorting may reorder its keys, never the reset/add section.
+            guard proposedIndexPath.section == originalIndexPath.section else { return currentIndexPath }
+            return proposedIndexPath
+        }
+    }
+}
+
+public func themedListBackground(_ theme: ThemeSurface, state: UICellConfigurationState, clear: Bool = false) -> UIBackgroundConfiguration {
+    if clear { return .clear() }
+    var background = UIBackgroundConfiguration.listCell()
+    background.backgroundColor = theme.surface
+    return background.updated(for: state)
+}

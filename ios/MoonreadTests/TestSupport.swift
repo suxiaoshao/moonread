@@ -1,4 +1,8 @@
+@testable import MoonreadReader
+@testable import MoonreadData
+import MoonreadDataTypes
 @testable import MoonreadAI
+import MoonreadCoreBindings
 import GRDB
 import Foundation
 import Observation

@@ -1,3 +1,9 @@
+import MoonreadLibrary
+import MoonreadDesign
+import MoonreadSearchText
+import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import TipKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -85,7 +91,7 @@ enum LibraryItemInteraction {
     func title() -> Text {
         let range: Range<String.Index>?
         if case .title(let hit) = match { range = hit } else { range = nil }
-        return Text(Self.highlight(entry.title, range: range, theme: theme))
+        return Text(libraryMatchHighlight(entry.title, range: range, theme: theme))
             .foregroundColor(Color(uiColor: theme.ink))
     }
 
@@ -96,7 +102,7 @@ enum LibraryItemInteraction {
 
     func author() -> Text? {
         if case .author(let author, let range) = match {
-            return Text(Self.highlight(author, range: range, theme: theme))
+            return Text(libraryMatchHighlight(author, range: range, theme: theme))
         }
         guard let author = entry.displayMetadata?.author.trimmingCharacters(in: .whitespacesAndNewlines),
               !author.isEmpty else { return nil }
@@ -123,16 +129,6 @@ enum LibraryItemInteraction {
             BookCoverView(title: entry.title, compact: compact, cover: entry.displayMetadata?.cover,
                           contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author)
         }
-    }
-
-    static func highlight(_ value: String, range: Range<String.Index>?, theme: ThemeSurface) -> AttributedString {
-        var text = AttributedString(value)
-        if let range, let lower = AttributedString.Index(range.lowerBound, within: text),
-           let upper = AttributedString.Index(range.upperBound, within: text), lower < upper {
-            text[lower..<upper].backgroundColor = Color(uiColor: theme.search)
-            text[lower..<upper].foregroundColor = Color(uiColor: theme.accent)
-        }
-        return text
     }
 
 }

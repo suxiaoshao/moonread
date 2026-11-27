@@ -23,7 +23,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 项目级 [SwiftUI Expert skill](../../../.agents/skills/swiftui-expert-skill/SKILL.md) 用于 SwiftUI 开发与审阅。来源为 [AvdLee/SwiftUI-Agent-Skill](https://github.com/AvdLee/SwiftUI-Agent-Skill)，固定 `4.2.0` / `9692ec5c3e78a0acc7757de2dbe8e64e519a72fb`，保留上游 [MIT 许可](../../../.agents/skills/swiftui-expert-skill/LICENSE)；更新时显式选择版本。
 
-固定查询的 schema／操作文档在 `ios/GraphQL/`。修改后在 `ios/` 用 Apollo iOS CLI 2.5.0 执行 `apollo-ios-cli generate`；生成的 Swift 文件提交到 `Moonread/Data/Queries/Generated/`，新增文件加入 App 的 Sources。App 只链接 `ApolloAPI`，查询由 Swift 执行，不在构建时下载生成工具或启动 GraphQL 服务。
+固定查询的 schema／操作文档在 `ios/GraphQL/`。修改后在 `ios/` 用 Apollo iOS CLI 2.5.0 执行 `apollo-ios-cli generate`，将生成的 Swift 文件提交到 `ios/Packages/MoonreadQueries/Sources/MoonreadQueries/`。主 App 链接本地包 `MoonreadQueries`，该包只依赖 workspace 锁定的 `ApolloAPI` 2.5.0。`MoonreadData` 实现固定查询和持久化事务。主 App 的 `Data/Queries` 把这些读与观察接到当前账户、App 舞台和统计／系统呈现。生成器只在开发时运行，查询不经过 GraphQL 服务。
 
 ## 本地化
 
@@ -61,11 +61,16 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - 构建阶段先进入 Nix devShell，再在本机按 PATH、`$HOME/.cargo/bin/mbx` 的顺序寻找 mbx；找到时用 `mbx build`，否则用 `cargo build`。CI 始终直接用 Cargo。mbx 使用 devShell 中锁定的 Cargo/Rust（含 iOS targets），不选系统 rustup 工具链；UniFFI 绑定生成仍用 Cargo。
 - 构建阶段每次编译当前 Rust 库与 host bindgen 工具，再运行生成器；三段分别输出耗时。target、Debug/Release、链接路径声明在 [Rust.xcconfig](../../../ios/Rust.xcconfig)。
 - 主 App 的 `Prune unused math fonts` 阶段依赖 SwiftPM 已复制的资源 bundle，在 Release 签名前只保留 Latin Modern Math 的 OTF、metrics plist 与三份许可证；上游依赖不变。该阶段每次构建执行，防止增量复制恢复未用字体，缺少必需资源时构建失败。Debug 的 SwiftPM 资源 bundle 有独立临时签名，不做裁剪。
-- UniFFI 从 [uniffi.toml](../../../crates/moonread-core/uniffi.toml) 读取输出名称；使用 `--no-format` 写入临时目录；三个预期输出全部成功生成后逐文件 `cmp`，缺失或内容变化才替换正式文件，内容相同保留原 mtime。失败不能回退旧绑定，生成目录与 CI DerivedData 成套缓存；不跳过当前 Rust 构建。
+- UniFFI 绑定由本地 Swift 包 `ios/Packages/MoonreadCoreBindings` 编译。包内提交 Swift 接口、C 头和 module map。Xcode 构建使用锁定生成器和 [uniffi.toml](../../../crates/moonread-core/uniffi.toml)，对当前 SDK 的 Rust 静态库用 `--no-format` 重新生成到临时目录，逐文件比对。接口缺失或内容不一致会使构建失败。ABI 变动时，用同一生成命令更新包内三份接口并提交。
 - 链接明确指定 `libmoonread_core.a`，避免同目录动态库被优先选中或把 Mac 路径带进 iPhone。
 - 主 App 另外链接 `libmoonread_ai_cover.a`，由同一个 Nix 构建阶段编译。封面 crate 含网页解析，C 接口不参与正文 UniFFI 生成。Swift 包通过 App 注入的封面适配调用该接口。
-- `ios/Packages/MoonreadAI` 是 iOS 18 / Swift 6 本地包。Swift AI SDK、Litext、MarkdownView 版本在其清单声明，由 Xcode workspace 同一 `Package.resolved` 锁定。模型快照和品牌资源随包资源复制，测试继续由 Moonread scheme 运行。
-- Rust 输出位于仓库默认的 `target/`，绑定位于 `build/ios/Generated/<Configuration>/`，均不提交。模拟器使用 `aarch64-apple-ios-sim`（arm64）。`ios/Rust.xcconfig` 对模拟器 SDK 排除 x86_64，使 Xcode 在选择通用 iOS Simulator 目的地时也只链接 arm64。
+- `ios/Packages/MoonreadAI` 是 iOS 18 / Swift 6 本地包。Swift AI SDK、Litext、MarkdownView 版本在其清单声明，由 Xcode workspace 同一 `Package.resolved` 锁定。模型快照和品牌资源随包资源复制。对话列表、聊天布局、输入框、原生消息滚动与 Markdown、AI 设置列表和附件/原文预览界面也在此包，宿主注入路由、许可、实际授权读取和提案执行。测试继续由 Moonread scheme 运行。
+- `MoonreadStatistics` 是 iOS 18 / Swift 6 本地包。主 App 注入统计读取与观察、书籍导航和展示附件。统计图表使用 `MoonreadDesign` 的共用样式，日界和格式由 `MoonreadDataTypes` 中的 `StatisticsDates` 提供。统计仍查找 App 的 `Localizable.xcstrings`，保留与书籍详情及系统入口共用的翻译。
+- `MoonreadData` 拥有当前作用域的 `DataSession`、GRDB 池、`ReaderIndex`、账户和同步引擎 lease，以及 SQL、候选结算和事务。SQL 资源由 SwiftPM 随包复制，使用 `Bundle.module`。轻量 `MoonreadDataTypes` 共享书键、来源和作用域。`MoonreadSearchText` 共享普通搜索和系统实体用的文字匹配，Widget 只需这个轻量产品。
+- `MoonreadLibrary` 保存书架首页、列表和网格、目录及最近阅读、文件任务界面、索引呈现、搜索和虚拟书架、书架管理、作者页、书籍资料及交换界面。App 注入具体服务、封面和跨页路由。共用的中文、繁中和英文仍来自 App 的本地化表，书架标签词表由 `MoonreadLibrary` 通过 `Bundle.module` 加载。
+- `MoonreadReader` 是 iOS 18 / Swift 6 本地包。它拥有会话、阅读工具和 UIKit 渲染，并向设置提供排版和字体预览。App 继续通过主资源清单提供已有本地化表、封面图库和纸张纹理。App 与 Widget 都能使用 `MoonreadInstalledFonts`，Widget 只链接这份字体检查。
+- `MoonreadSettings` 拥有设置首页、引导、云同步设置、外观及配色编辑与选择、数据管理与存储空间各页及其状态、关于和打赏。App 提供场景导航、授权文件、备份读写和系统后台执行、存储维护、主题写入与跨功能目的地。现有本地化表和引导图片仍随 App。StoreKit 交易仍由 App 持有的唯一打赏实例监听。功能包之间的导航由 App 接线。
+- Rust 二进制输出位于仓库默认的 `target/`，构建产物不入库。模拟器使用 `aarch64-apple-ios-sim`（arm64）。`ios/Rust.xcconfig` 对模拟器 SDK 排除 x86_64，使 Xcode 在选择通用 iOS Simulator 目的地时也只链接 arm64。
 - Xcode 构建缓存只用两份：模拟器构建和测试统一 `-derivedDataPath build/DerivedData`，真机构建统一 `build/DeviceDerivedData`。不按任务另建缓存目录；任务的日志、截图等验证记录可以放在 `build/<任务名>/`，任务合并后删除。
 - 不使用 git worktree；在主目录切分支，共用 `target`、`build/DerivedData` 和 `build/DeviceDerivedData`。
 - Nix 默认路径为 `/nix/var/nix/profiles/default/bin/nix`；非标准安装可在本地 `LocalSigning.xcconfig` 覆盖 `MOONREAD_NIX`。
@@ -99,7 +104,7 @@ App 的营销版本（`MARKETING_VERSION`，用户可见）和构建号（`CURRE
 
 工具从设置末尾的「开发者 → 清理小说资料」进入。在表单选择已识别的小说及字段，按正文 SHA 去重，再点导航栏的「清理」确认。默认清理作者、简介、标签与封面引用，手动阅读状态需单独选中。清理保留小说文件、文件名、正文缓存、封面附件及阅读记录，之后可从原数据管理页重试导入。
 
-内测标记只决定是否编入工具。清理前按当前实际资料库提示范围。本机库只写入本机，账户库沿用原有同步，暂停同步的变更会在恢复后上传。普通 Debug、Release 及提审候选默认关闭工具。
+内测标记由 App 目标控制工具入口和本地化资源。数据包始终提供资料交换快照中的原始阅读状态，工具从 App 接入。清理前按当前实际资料库提示范围。本机库只写入本机，账户库沿用原有同步，暂停同步的变更会在恢复后上传。普通 Debug、Release 及提审候选默认关闭工具。
 
 ### 官网与商店原图（独立 DEBUG 测试）
 

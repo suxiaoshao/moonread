@@ -1,3 +1,8 @@
+import MoonreadDesign
+@testable import MoonreadData
+import MoonreadLibrary
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import GRDB
 import Observation
 import SQLite3
@@ -7,6 +12,7 @@ import UIKit
 import XCTest
 
 @testable import Moonread
+@testable import MoonreadStatistics
 
 final class StatisticsPresentationTests: ReaderIntegrationFixture {
 
@@ -33,34 +39,34 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     XCTAssertNil(entry.readingKey)
     XCTAssertNil(entry.bookId)
     let information = BookInformationModel(service: service)
-    let model = StatisticsModel(service: service)
+    let model = StatisticsModel(source: service.statisticsDataSource())
     let month = StatisticsWindow(period: .month, date: Date(timeIntervalSince1970: 1_800_000_000))
-    await information.load(route)
+    await information.load(route.informationTarget)
     XCTAssertNil(information.error)
-    let scope = model.scope(month, target: route)
+    let scope = model.scope(month, target: .book(route.target))
     let other = StatisticsRoute(target: .file(fileId: "other-file"), title: route.title)
-    XCTAssertNotEqual(scope, model.scope(month, target: other))
+    XCTAssertNotEqual(scope, model.scope(month, target: .book(other.target)))
     let observation = Task { await model.observe(scope) }
     defer { observation.cancel() }
     await awaitState { model.state(scope).content?.waitingForIdentity == true }
     XCTAssertTrue(model.state(scope).content?.waitingForIdentity == true)
 
-    information.prepareEditing(route)
+    information.prepareEditing(route.informationTarget)
     await awaitState { (information.draft != nil && model.state(scope).key != nil) || information.error != nil }
     XCTAssertNil(information.error)
     XCTAssertNotNil(information.draft)
-    let sha = try XCTUnwrap(information.contentSHA(for: route))
+    let sha = try XCTUnwrap(information.contentSHA(for: route.informationTarget))
     XCTAssertTrue(information.chapters.isEmpty, "Statistics must not wait for the separate chapter load")
-    await model.load(month, target: route)
-    XCTAssertEqual(model.scope(month, target: route), scope, "Preparation does not replace the original file target")
-    XCTAssertNotNil(model.state(month, target: route).overview)
-    XCTAssertNil(model.state(month, target: route).error)
-    XCTAssertEqual(model.state(month, target: route).key, sha)
+    await model.load(month, target: .book(route.target))
+    XCTAssertEqual(model.scope(month, target: .book(route.target)), scope, "Preparation does not replace the original file target")
+    XCTAssertNotNil(model.state(month, target: .book(route.target)).overview)
+    XCTAssertNil(model.state(month, target: .book(route.target)).error)
+    XCTAssertEqual(model.state(month, target: .book(route.target)).key, .formal(sha256: sha))
     let year = StatisticsWindow(period: .year, date: month.date)
-    await model.load(year, target: route)
-    XCTAssertNotNil(model.state(year, target: route).overview)
-    XCTAssertNil(model.state(year, target: route).error)
-    XCTAssertNil(information.contentSHA(for: other))
+    await model.load(year, target: .book(route.target))
+    XCTAssertNotNil(model.state(year, target: .book(route.target)).overview)
+    XCTAssertNil(model.state(year, target: .book(route.target)).error)
+    XCTAssertNil(information.contentSHA(for: other.informationTarget))
     await information.finishPreparationForDataDeletion()
   }
   @MainActor
@@ -75,7 +81,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     let restarted = expectation(description: "invalidated range restarted")
     var reads = 0
     var gates: [StatisticsModel.Scope: [CheckedContinuation<StatisticsModel.Content, Error>]] = [:]
-    let model = StatisticsModel(notifications: NotificationCenter(), fetch: { scope in
+    let model = StatisticsModel(source: AppDataService.shared.statisticsDataSource(notifications: NotificationCenter()), fetch: { scope in
       reads += 1
       return try await withCheckedThrowingContinuation { continuation in
         gates[scope, default: []].append(continuation)
@@ -198,9 +204,10 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
       XCTAssertEqual(
         years.map(\.durationMs), [10_000, 0, 210_000],
         "Every year from the first reading through now")
-      XCTAssertTrue(StatisticsBuckets.years([], today: today).isEmpty)
+      XCTAssertTrue(StatisticsBuckets.years([StatisticsDay](), today: today).isEmpty)
       let currentYear = days.filter { $0.day >= civil(2026, 1, 1) }
-      let rhythm = StatisticsRhythm(period: .all, bounds: 0...today, days: currentYear, today: today, book: nil) { _ in }
+      let rhythm = StatisticsRhythm(period: .all, bounds: 0...today, days: currentYear, today: today, book: nil,
+        theme: ThemeSurface.initial.statisticsAppearance) { _ in }
       XCTAssertTrue(rhythm.hasContent, "An all-time range with a single year still has a chart")
       XCTAssertEqual(
         StatisticsDates.axisSteps(72), [0, 30, 60, 90], "Gridlines stay on round minutes")
@@ -213,9 +220,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
 final class StatisticsFixedReadTests: XCTestCase {
   private func openHistory() throws -> (URL, ReaderIndex) {
     let root = FileManager.default.temporaryDirectory.appending(path: "StatisticsReads-\(UUID())")
-    let ownBundle = Bundle(for: Self.self)
-    let resources: Bundle = ownBundle.url(forResource: "schema", withExtension: "sql") == nil ? .main : ownBundle
-    let session = try DataSession(layout: .init(applicationSupport: root), bundle: resources)
+    let session = try DataSession(layout: .init(applicationSupport: root))
     let lease = try session.activate(.unknown).0
     try session.prepareIndex(root.appending(path: "reader.sqlite3"), token: lease)
     try session.prepareUsers(lease) { nil }

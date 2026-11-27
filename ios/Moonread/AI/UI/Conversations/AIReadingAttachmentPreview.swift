@@ -1,54 +1,25 @@
+import MoonreadDataTypes
+import MoonreadDesign
+import MoonreadSearchText
+import MoonreadData
+import MoonreadCoreBindings
 import MoonreadAI
 import SwiftUI
 import AISDKProvider
 import AISDKProviderUtils
 
+/// The attachment sheet presents existing excerpts. Only the host opens the session's image store.
 struct AIReadingAttachmentPreview: View {
     let attachment: AIReadingAttachment
     var owner: String? = nil
-    @State private var image: UIImage?
-    @State private var imageError: String?
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.theme) private var theme
+
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Label(attachment.summary, systemImage: attachment.symbol).font(.headline)
-                    if attachment.kind == .image {
-                        Text("用于图片修改")
-                            .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                        if let image { Image(uiImage: image).resizable().scaledToFit().accessibilityIdentifier("aiReferenceImagePreview") }
-                        else if let imageError { Text(verbatim: imageError).foregroundStyle(Color(uiColor: theme.destructive)) }
-                        else { ProgressView() }
-                    }
-                    if let chapter = attachment.chapter { Text(chapter).foregroundStyle(Color(uiColor: theme.secondary)) }
-                    if let progress = attachment.progress { Text(progress, format: .percent.precision(.fractionLength(1))).foregroundStyle(Color(uiColor: theme.secondary)) }
-                    if let text = attachment.excerpt, !text.isEmpty { Text(text).textSelection(.enabled) }
-                    if let note = attachment.note, !note.isEmpty { Text(note).textSelection(.enabled) }
-                    if let conflicts = attachment.conflictContents, !conflicts.isEmpty {
-                        Text("批注有冲突").font(.headline)
-                        ForEach(conflicts) { version in
-                            VStack(alignment: .leading) {
-                                if let value = version.content { Text(value.excerpt); Text(value.note) }
-                                else { Text("已移除") }
-                            }
-                                .padding().background(Color(uiColor: theme.raised), in: .rect(cornerRadius: 12))
-                        }
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding()
-            }.themedPage().navigationTitle("阅读附件").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() } } }
-        }.presentationDetents([.medium, .large])
-            .task(id: attachment.attachmentRef) {
-                guard attachment.kind == .image else { return }
-                do {
-                    guard let owner, let ref = attachment.attachmentRef else { throw AIToolError("not_found") }
-                    let bytes = try await AIImageStore.shared.read(owner: owner, ref: ref)
-                    guard let decoded = AIImageThumbnail.make(bytes, pixels: 1600) else { throw AIToolError("invalid_response") }
-                    image = decoded
-                } catch { imageError = String(localized: "参考图片已不可用。") }
-            }
+        AIChatAttachmentPreview(attachment: attachment) {
+            guard let owner, let ref = attachment.attachmentRef else { throw AIToolError("not_found") }
+            let bytes = try await AIImageStore.shared.read(owner: owner, ref: ref)
+            guard let decoded = AIImageThumbnail.make(bytes, pixels: 1600) else { throw AIToolError("invalid_response") }
+            return decoded
+        }
     }
 }
 

@@ -1,10 +1,7 @@
+import MoonreadReader
+import MoonreadDesign
+import MoonreadCoreBindings
 import SwiftUI
-
-let typographyControls = readerTypographyControls()
-
-extension ReaderNumberControl {
-    var range: ClosedRange<Double> { minimum...maximum }
-}
 
 /// Settings retain their own scroll and focus state while the preview covers them.
 struct ReadingSettingsControls: View {

@@ -1,3 +1,7 @@
+import MoonreadReader
+import MoonreadLibrary
+import MoonreadDesign
+import MoonreadCoreBindings
 import MoonreadAI
 import SwiftUI
 import ImageIO
@@ -50,8 +54,6 @@ private struct AIProcessLoading: View {
         }.frame(width: 16, height: 16).accessibilityLabel("进行中")
     }
 }
-
-typealias AIProcessExpansionHandler = @MainActor @Sendable (AIProcessExpansionID) -> Void
 
 private struct AIProcessBlockView: View {
     let block: AIProcessBlock
@@ -330,7 +332,7 @@ extension AIConversation {
     /// All tools and reasoning share one working state; activityTitle retains
     /// the precise operation for VoiceOver.
     var moonSnapshot: AIMoonSnapshot {
-        AIMoonSnapshot(conversationID: id, running: running, status: activity.status,
+        AIMoonSnapshot(conversationID: id, running: running, status: .init(activity.status),
             pose: .live(running: running, status: activity.status,
                         hasTools: head.pendingCalls.contains { $0.output == nil }, reasoning: activity.reasoningActive),
             label: running ? activityTitle : "")
@@ -498,3 +500,15 @@ private struct AIProcessHeaderGeometry: UIViewRepresentable {
 }
 
 #endif
+
+extension AIMoonSnapshot.Status {
+    init(_ activity: AIAgentStatus) {
+        switch activity {
+        case .waitingConfirmation: self = .waitingConfirmation
+        case .waitingDataSharing: self = .waitingDataSharing
+        case .completed: self = .completed
+        case .failed, .limitReached, .interrupted: self = .failed
+        case .idle, .running, .compacting, .stopped: self = .idle
+        }
+    }
+}

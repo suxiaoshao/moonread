@@ -1,3 +1,6 @@
+import MoonreadSearchText
+import MoonreadData
+import MoonreadCoreBindings
 import MoonreadAI
 import Foundation
 import AISDKProviderUtils

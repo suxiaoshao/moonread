@@ -1,3 +1,6 @@
+import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Foundation
 import SwiftData
 import CoreData
@@ -136,40 +139,6 @@ private final class UserProjectionChanges: @unchecked Sendable {
                 lock.lock(); value &+= 1; lock.unlock()
             })
         }
-    }
-}
-
-struct UserProjectionDomain: OptionSet, Sendable {
-    let rawValue: Int
-    static let position = Self(rawValue: 1)
-    static let metadata = Self(rawValue: 2)
-    static let chapter = Self(rawValue: 4)
-    static let statistics = Self(rawValue: 8)
-    static let opened = Self(rawValue: 16)
-    static let author = Self(rawValue: 32)
-    static let cover = Self(rawValue: 64)
-    static let tags = Self(rawValue: 128)
-    static let status = Self(rawValue: 256)
-    static let synopsis = Self(rawValue: 512)
-    static let fixedMetadata: [(String, Self)] = [("author", .author), ("cover", .cover), ("status", .status), ("synopsis", .synopsis)]
-    static func metadataField(_ name: String) -> Self {
-        if name.hasPrefix("tag-") { return .tags }
-        return fixedMetadata.first { $0.0 == name }?.1 ?? []
-    }
-    static let metadataFields: Self = [.author, .cover, .tags, .status, .synopsis]
-    static let card: Self = [.author, .cover]
-    static let reading: Self = [.position, .metadata, .chapter, .opened]
-    static let all: Self = [.reading, .statistics, .metadataFields]
-    static let revisionBits = [position, metadata, chapter, statistics, opened, author, cover, tags, status, synopsis].map(\.rawValue)
-}
-
-struct UserProjectionFilter: Sendable, Equatable {
-    var coverOnly: Set<String> = []
-    var openedAliasesOnly = false
-    var preserveMetadataWinner = false
-
-    var cacheKey: String {
-        "\(openedAliasesOnly)-\(preserveMetadataWinner)-" + coverOnly.sorted().joined(separator: ",")
     }
 }
 

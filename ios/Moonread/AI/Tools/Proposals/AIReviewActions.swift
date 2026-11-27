@@ -1,13 +1,12 @@
+import MoonreadReader
+import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import MoonreadAI
 import Foundation
 
 struct AINoteEditorRequest: Identifiable, Sendable { let id: String; let sessionID: String; var edit: AnnotationEdit }
-struct AIAnnotationCommitTicket { let owner: String; let token: UUID }
-struct AIAnnotationCommitHooks {
-    let begin: @MainActor () throws -> AIAnnotationCommitTicket
-    let saved: @MainActor () -> Void
-    let finish: @MainActor (AIAnnotationCommitTicket) -> Void
-}
+
 
 extension AIProposalRegistry {
     func editMetadata(_ id: String, kind: AIMetadataFieldKind, text: String? = nil, selected: Bool? = nil, tag: String? = nil) {

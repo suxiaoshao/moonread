@@ -1,3 +1,10 @@
+import MoonreadSettings
+import MoonreadReader
+import MoonreadDesign
+import MoonreadData
+import MoonreadLibrary
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import MoonreadAI
 import SwiftUI
 import CoreSpotlight
@@ -685,25 +692,7 @@ private struct MoonLaunchCover: View {
 
 
 /// Acquire synchronously on the background transition; release after saving or system expiration.
-@MainActor enum BackgroundSave {
-    static func perform(name: String, operation: @escaping @MainActor () async -> Void) {
-        let assertion = Assertion(name: name)
-        Task { defer { assertion.end() }; await operation() }
-    }
-    @MainActor private final class Assertion {
-        private var identifier = UIBackgroundTaskIdentifier.invalid
-        init(name: String) {
-            identifier = UIApplication.shared.beginBackgroundTask(withName: name) { @Sendable [weak self] in
-                Task { @MainActor [weak self] in self?.end() }
-            }
-        }
-        func end() {
-            guard identifier != .invalid else { return }
-            let active = identifier; identifier = .invalid
-            UIApplication.shared.endBackgroundTask(active)
-        }
-    }
-}
+
 
 /// One owner per source stack: selection replaces tabs; reading keeps them hidden.
 private struct LibrarySourceTabVisibility: ViewModifier {

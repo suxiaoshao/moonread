@@ -1,3 +1,6 @@
+import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import CloudKit
 import Foundation
 import Synchronization
@@ -36,9 +39,6 @@ enum CloudConfiguration {
     }
 }
 extension Notification.Name {
-    static let readingDataChanged = Notification.Name("Moonread.readingDataChanged")
-    static let cloudDataReceived = Notification.Name("Moonread.cloudDataReceived")
-    static let cloudStatusChanged = Notification.Name("Moonread.cloudStatusChanged")
     static let readingCloudStatusChanged = Notification.Name("Moonread.readingCloudStatusChanged")
 }
 enum CloudActivation: Sendable {
@@ -50,20 +50,13 @@ enum CloudActivation: Sendable {
     case unavailable(CloudSyncIssue)
 }
 
-enum CloudSyncIssue: Equatable, Sendable {
-    case offline, quota, unavailable, restricted, unsupportedBuild, paused, incomplete
-
+extension CloudSyncIssue {
     static func connection(_ error: any Error) -> Self {
         if (error as? CKError)?.code == .networkUnavailable
             || (error as? URLError)?.code == .notConnectedToInternet { return .offline }
         if (error as? CKError)?.code == .quotaExceeded { return .quota }
         return .unavailable
     }
-}
-
-struct CloudInitialUploadProgress: Equatable, Sendable {
-    let processed: Int
-    let total: Int
 }
 
 enum CloudSyncPhase: Equatable, Sendable {
@@ -197,11 +190,7 @@ actor CloudSyncCoordinator {
                   }, open: { account in
                       let bound = try await service.relationalUserIndex()
                       guard bound.lease.scope == account.scope else { throw DataV2Error.leaseExpired }
-                      try bound.session.readUsers(bound.lease) {
-                          if try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone) == .reset {
-                              throw CloudZoneRecoverySignal.resetComplete
-                          }
-                      }
+                      try bound.requireOpenCloudZone()
                       return try await open(account, bound)
                   }, zoneRecovery: recovery)
         }

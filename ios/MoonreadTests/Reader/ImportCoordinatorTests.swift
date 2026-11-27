@@ -1,3 +1,7 @@
+@testable import MoonreadReader
+import MoonreadLibrary
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Observation
 import SQLite3
 import SwiftData
@@ -181,8 +185,8 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
       }
       let target = StatisticsRoute(target: .cached(bookId: id), title: "暂停语义样本", origin: .reader())
       let model = BookInformationModel(service: service)
-      await model.load(target)
-      model.edit(target)
+      await model.load(target.informationTarget)
+      model.edit(target.informationTarget)
       try await waitForMetadataPreparation(model) { !model.preparing }
       XCTAssertNil(model.error)
       XCTAssertNotNil(model.draft)

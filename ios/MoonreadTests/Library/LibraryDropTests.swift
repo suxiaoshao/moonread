@@ -1,3 +1,6 @@
+@testable import MoonreadLibrary
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import UniformTypeIdentifiers
 import XCTest
 

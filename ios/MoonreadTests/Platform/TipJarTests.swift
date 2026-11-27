@@ -1,4 +1,6 @@
+@testable import MoonreadSettings
 @testable import MoonreadAI
+import MoonreadCoreBindings
 import Foundation
 import XCTest
 

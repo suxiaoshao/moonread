@@ -1,3 +1,5 @@
+@testable import MoonreadSettings
+import MoonreadCoreBindings
 import Foundation
 import StoreKitTest
 import XCTest

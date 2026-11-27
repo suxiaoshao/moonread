@@ -1,3 +1,8 @@
+import MoonreadDesign
+import MoonreadData
+import MoonreadLibrary
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import MoonreadAI
 import Foundation
 import CryptoKit
@@ -74,9 +79,7 @@ extension AppDataService {
     func metadataCleanupInventory() async throws -> MetadataCleanupInventory {
         let index = try relationalUserIndex()
         let lease = index.lease, configuration = userCloudConfigurationRevision
-        let inputs = try await index.session.readUsersForPublication(lease) {
-            try MetadataExchangeRows.read($0, request: .export(shelfId: nil), scope: lease.scope.key)
-        }
+        let inputs = try await index.metadataExchangeSnapshot(.export(shelfId: nil))
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         let counts = Dictionary(uniqueKeysWithValues: inputs.read.books.map { ($0.metadata.sha, $0.sourceCount) })
         var seen = Set<String>()
@@ -97,19 +100,15 @@ extension AppDataService {
         guard confirmation.configuration == userCloudConfigurationRevision,
               confirmation.lease == lease else { throw ReadingDataError.changed }
         let device = userDevice, now = userValueClock
-        let (plans, reclaimed) = try index.session.writeUsers(lease) { db in
-            let inputs = try MetadataExchangeRows.read(db, request: .import(shas: confirmation.selected.sorted()),
-                                                       scope: lease.scope.key)
+        let (plans, reclaimed) = try index.commitMetadataCleanup(shas: confirmation.selected.sorted(),
+                                                                  device: device, now: now) { inputs in
             let current = try MetadataCleanupInventory.selectedValues(from: inputs, selected: confirmation.selected,
                                                                       fields: confirmation.fields)
             guard current == confirmation.values else { throw ReadingDataError.changed }
             let fields = Set(confirmation.fields.map(\.metadataKey))
-            let plans = try confirmation.changes.map { base in
-                try metadataEditPlan(base: base, edited: MetadataCleanupInventory.empty(sha: base.sha), fields: fields)
+            return try confirmation.changes.map { base in
+                try BookMetadataEditPlan.make(base: base, edited: MetadataCleanupInventory.empty(sha: base.sha), fields: fields)
             }
-            let reclaimed = try UserValueRows.putMetadata(db, plans.map { .init(plan: $0, cover: nil) },
-                                                          device: device, now: now, scope: lease.scope)
-            return (plans, reclaimed)
         }
         publishMetadataCommit(plans)
         await removeReclaimedCoverCopies(reclaimed, index: index)
@@ -186,7 +185,7 @@ extension AppDataService {
         try manifestOutput.finish()
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
-        let file = try LibraryExport { directory in
+        let file = try ShareFiles { directory in
             if hasCovers {
                 try Data("Moonread metadata v1\nFormat: https://suxiaoshao.github.io/moonread/metadata-format/\nSchema: https://suxiaoshao.github.io/moonread/schema/moonread-metadata-v1.schema.json\nSkill: https://suxiaoshao.github.io/moonread/skills/moonread-metadata/SKILL.md\nAgent: https://suxiaoshao.github.io/moonread/agent.txt\nWhen editing this exported manifest, preserve content_sha256 and reference unchanged. New manifests may be generated directly from TXT using normalization-v1. Use the same text encoding as Moonread. Reference: https://suxiaoshao.github.io/moonread/skills/moonread-metadata/identity/README.md\nThis is not a reading-data backup.\n".utf8).write(to: stage.appendingPathComponent("README.txt"))
                 let output = directory.appendingPathComponent("Moonread.moonread-metadata")
@@ -320,7 +319,7 @@ extension AppDataService {
                         if field == .author { validation.author = text ?? "" }
                         if field == .description { validation.synopsis = text ?? "" }
                         if field == .tags { validation.tags = tags }
-                        do { _ = try metadataEditPlan(base: base, edited: validation) }
+                        do { _ = try BookMetadataEditPlan.make(base: base, edited: validation) }
                         catch {
                             let message = String(localized: "资料超出当前编辑限制，未采用该字段", table: "MetadataExchange")
                             item.messages.append(message)
@@ -349,7 +348,7 @@ extension AppDataService {
                 item.fields.append(.init(field: field, options: options, selected: selected))
             }
             item.messages += messagesBySHA[sha, default: []].map { String(localized: String.LocalizationValue($0.message), table: "MetadataExchange") }
-            item.messages = Array(Set(item.messages)).sorted(); item.validateSelection(using: self); books.append(item)
+            item.messages = Array(Set(item.messages)).sorted(); item.validateSelection(); books.append(item)
         }
         guard session.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
@@ -384,7 +383,7 @@ extension AppDataService {
 
     private func prepareMetadataBook(_ index: Int, _ book: MetadataPreviewBook) throws -> PreparedMetadataBook {
         guard let base = book.base, let edited = book.edited else { throw ReaderError.InvalidSettings }
-        let plan = try metadataEditPlan(base: base, edited: edited,
+        let plan = try BookMetadataEditPlan.make(base: base, edited: edited,
                                         fields: Set(book.fields.compactMap { $0.chosen == nil ? nil : $0.field.metadataKey }))
         guard !plan.values.isEmpty else { throw ReaderError.InvalidSettings }
         var text = 0
@@ -478,9 +477,7 @@ extension AppDataService {
                     try Task.checkCancellation()
                     try validateMetadataScope(confirmed, indices: prepared.map(\.index))
                     let writer = try relationalUserIndex()
-                    let reclaimed = try writer.session.writeUsers(confirmed.lease) {
-                        try UserValueRows.putMetadata($0, entries, device: userDevice, now: userValueClock, scope: confirmed.lease.scope)
-                    }
+                    let reclaimed = try writer.commitBookMetadata(entries, admission: confirmed.lease, device: userDevice, now: { userValueClock })
                     // A successful save is a fact even when a stop raced the return.
                     checkpoint.committed += prepared.count
                     wroteThisRun = true

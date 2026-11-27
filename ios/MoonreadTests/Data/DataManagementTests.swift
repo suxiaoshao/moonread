@@ -1,3 +1,8 @@
+@testable import MoonreadSettings
+@testable import MoonreadReader
+@testable import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import GRDB
 import UIKit
 import XCTest

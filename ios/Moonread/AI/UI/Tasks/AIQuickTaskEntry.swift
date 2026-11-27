@@ -1,3 +1,8 @@
+import MoonreadDesign
+import MoonreadLibrary
+import MoonreadDataTypes
+import MoonreadCoreBindings
+import MoonreadStatistics
 import MoonreadAI
 import SwiftUI
 
@@ -133,9 +138,9 @@ extension AIQuickTaskRequest {
     /// Captures the current period and optional book at sheet opening. A book page
     /// cannot silently fall back to an all-books attachment before its identity is ready.
     @MainActor static func statistics(window: StatisticsWindow, target: StatisticsRoute?, information: BookInformationModel) -> AIQuickTaskRequest? {
-        let sha = target.flatMap { information.contentSHA(for: $0) }
+        let sha = target.flatMap { information.contentSHA(for: $0.informationTarget) }
         guard target == nil || sha != nil else { return nil }
-        let bounds = window.bounds()
+        let bounds = window.bounds(today: StatisticsDates.day(StatisticsClock.now))
         let from = AIQuickTaskDates.iso(bounds.lowerBound), to = AIQuickTaskDates.iso(bounds.upperBound)
         let range = "\(StatisticsDates.dateLabel(bounds.lowerBound, full: true)) – \(StatisticsDates.dateLabel(bounds.upperBound, full: true))"
         return AIQuickTaskRequest(family: .statistics, origin: AITaskOrigin(from: from, to: to, bookSHA: sha),

@@ -1,3 +1,6 @@
+import MoonreadDesign
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import MoonreadAI
 import SwiftUI
 
@@ -64,29 +67,18 @@ struct AIResultSource: Identifiable {
 
 private struct AISourcePreview: View {
     let source: AIResultSource
-    @Environment(\.dismiss) private var dismiss
-    @State private var text: String?
-    @State private var error: String?
+
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                if let text { Text(text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding() }
-                else if let error { Text(error).padding() }
-                else { ProgressView().padding() }
-            }.themedPage().navigationTitle(source.title.isEmpty ? String(localized: "原文") : source.title).navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() } } }
-        }.presentationDetents([.medium, .large]).task(id: source.id) {
-            do {
-                let reader = AppDataService.shared
-                let sha = source.book.sha
-                let id = try await reader.aiBookID(sha: sha)
-                let snapshot = try await reader.snapshot(id)
-                guard snapshot.book.readingKey.formalSHA256 == sha else { throw AIToolError("stale_reference") }
-                // Inspect the exact, bounded, SHA-keyed source; never write reading position/statistics.
-                guard source.end - source.start <= 65_536 else { throw AIToolError("resource_limit") }
-                let range = try await reader.textRange(id, start: source.start, end: source.end)
-                text = range.text
-            } catch { self.error = String(localized: "此处原文暂时不可用。") }
+        AISourceExcerptSheet(id: source.id, title: source.title) {
+            let reader = AppDataService.shared
+            let sha = source.book.sha
+            let id = try await reader.aiBookID(sha: sha)
+            let snapshot = try await reader.snapshot(id)
+            guard snapshot.book.readingKey.formalSHA256 == sha else { throw AIToolError("stale_reference") }
+            // Inspect the exact, bounded, SHA-keyed source; never write reading position/statistics.
+            guard source.end - source.start <= 65_536 else { throw AIToolError("resource_limit") }
+            let range = try await reader.textRange(id, start: source.start, end: source.end)
+            return range.text
         }
     }
 }
@@ -129,7 +121,7 @@ struct AIMetadataResultReview: View {
                         }
                         if let tags = metadata.fields.first(where: { $0.kind == .tags }) { tagContent(tags) }
                         else if let tags = ai.proposals.liveMetadata[resultID]?.tags, !tags.isEmpty {
-                            AIFlowLayout { ForEach(tags, id: \.self) { tag in chip(tag, badge: nil, removed: false, changed: false, dashed: false) } }
+                            FlowLayout { ForEach(tags, id: \.self) { tag in chip(tag, badge: nil, removed: false, changed: false, dashed: false) } }
                         }
                         ForEach(metadata.fields.filter { $0.kind == .synopsis || $0.kind == .readingStatus }) { textContent($0) }
                         if !metadata.fields.contains(where: { $0.kind == .synopsis }), let synopsis = ai.proposals.liveMetadata[resultID]?.synopsis, !synopsis.isEmpty {
@@ -223,7 +215,7 @@ struct AIMetadataResultReview: View {
         let offered = Set(field.draft.split(separator: "\n").map(String.init))
         return VStack(alignment: .leading, spacing: LayoutTokens.compact) {
             Text("标签").font(.subheadline.weight(.semibold))
-            AIFlowLayout {
+            FlowLayout {
                 ForEach(current.sorted() + offered.subtracting(current).sorted(), id: \.self) { tag in
                     let added = !current.contains(tag)
                     let removal = field.tagsMode == .replace && !offered.contains(tag)

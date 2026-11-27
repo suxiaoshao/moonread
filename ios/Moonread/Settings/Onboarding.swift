@@ -1,39 +1,13 @@
+import MoonreadSettings
+import MoonreadDesign
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import SwiftUI
 import TipKit
 
-/// Static help: it never opens a reader or accesses a book's data.
 struct UsageGuideView: View {
     @Environment(AIHost.self) private var ai
-    @Environment(\.theme) private var theme
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                section("开始读", "在书架右上角点“＋”，选择“导入小说”，或从“文件”App 把 TXT 拖进“我的书架”。在书架文件夹里导入时，小说会留在当前文件夹。第一次打开大文件时，月读会边准备边显示正文。")
-                section("设置", "在书架、统计等主页面点右上角的齿轮，即可进入设置。阅读、外观、书架与同步都在这里调整。")
-                section("翻页和工具栏", "轻点屏幕中间，显示或隐藏阅读工具。分页模式下，点左右两侧或左右滑动翻页；滚动模式下，上下滑动即可。")
-                if ai.availability.isAvailable {
-                    section("选字", "长按正文选中文字，可以标注、写批注、拷贝、全文搜索或问 AI。跨页选取时，在起点选择“从这里跨页选取”，翻到终点再长按选字，然后选择拷贝或“批注到这里”。")
-                } else {
-                    section("选字", "长按正文选中文字，可以标注、写批注、拷贝或全文搜索。跨页选取时，在起点选择“从这里跨页选取”，翻到终点再长按选字，然后选择拷贝或“批注到这里”。")
-                }
-                section("目录、书签和搜索", "显示阅读工具后，可以打开目录和全文搜索；书签与批注在“更多”中。退出阅读时会自动保存位置。")
-                section("外观", "在阅读设置里调整字号、行距、段距和配色，上方会预览排版效果。")
-                if ai.availability.isAvailable {
-                    section("AI 助手", "在设置的“AI 助手”中添加连接并选择模型后，可以针对当前页面或选中的文字提问。只有你主动使用 AI 时，才会发送相应上下文。")
-                }
-                section("iCloud", "开启系统 iCloud Drive 后，“我的书架”的小说文件由 iCloud Drive 同步。阅读进度、书签和批注由设置中的“阅读数据 iCloud 同步”控制；更换账户时可能需要确认。")
-            }.padding().frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)
-        }.themedPage().navigationTitle("月读使用指南").navigationBarTitleDisplayMode(.inline)
-            .accessibilityIdentifier("usageGuide")
-    }
-    private func section(_ title: LocalizedStringKey, _ text: LocalizedStringKey) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).foregroundStyle(Color(uiColor: theme.ink)).font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
-            Text(text).font(.body).foregroundStyle(Color(uiColor: theme.ink)).fixedSize(horizontal: false, vertical: true)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(LayoutTokens.content)
-            .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: LayoutTokens.inputRadius))
-            .overlay { RoundedRectangle(cornerRadius: LayoutTokens.inputRadius).stroke(Color(uiColor: theme.border), lineWidth: LayoutTokens.border) }
-    }
+    var body: some View { SettingsUsageGuide(aiAvailable: ai.availability.isAvailable) }
 }
 
 struct ImportNovelTip: Tip {
@@ -161,211 +135,49 @@ struct ThemedTipCard: View {
     }
 }
 
-/// First-run configuration only. File discovery and both cloud transports remain
-/// owned by their existing services, including account-change confirmation.
+/// Wires the first-run UI to the current scene, account, and authorized bookshelf.
 struct FirstRunOnboarding: View {
     @Environment(LibraryModel.self) private var library
     @Environment(CloudStore.self) private var cloud
     @Environment(AIHost.self) private var ai
     @Environment(ThemeStore.self) private var themes
-    private var theme: ThemeSurface { themes.app }
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var page = 0
-    @State private var scrollPosition = ScrollPosition(edge: .top)
-    @State private var syncReadingData = true
-    @State private var enableAI = false
-    @State private var contents: [LibraryEntry]?
-    @State private var contentsKey: String?
-    @State private var directoryFailed = false
-    @State private var working = false
-    @State private var error: String?
-    @State private var showDiscoveryWait = false
-    private var hasCloudAccount: Bool { library.builtinDiscovery != .notRequired }
-    private var directoryKey: String { "\(library.homeReady)-\(library.revision)-\(library.discoveryGeneration)-\(library.discoveryRevision)" }
-    private var directoryLoaded: Bool { library.homeReady && contentsKey == directoryKey && contents != nil }
-    private var canFinishWithLibrary: Bool {
-        directoryFailed || (directoryLoaded && (hasBooks || library.builtinDiscovery == .ready || library.builtinDiscovery == .notRequired))
-    }
-    private var hasBooks: Bool { library.hasUserImportedBooks || (contents?.contains(where: \.directory) ?? false) }
-    private var title: LocalizedStringKey {
-        switch page {
-        case 0: "月读"
-        case 1: "书和进度存在哪里"
-        case 2: "AI 助手（可选）"
-        default: "开始阅读"
-        }
-    }
-    private var symbol: String {
-        switch page { case 1: hasCloudAccount ? "icloud" : "iphone"; case 2: "sparkles"; default: "book.closed" }
-    }
-    private var waitingForDiscovery: Bool { page == 3 && !canFinishWithLibrary && library.builtinDiscovery != .unavailable && error == nil }
+
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        if page == 0 {
-                            Image("LaunchSeal").resizable().scaledToFit().frame(width: 100, height: 100).accessibilityHidden(true)
-                        } else {
-                            Image(systemName: symbol).resizable().scaledToFit().frame(width: 100, height: 100, alignment: .topLeading).foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
-                        }
-                        Text(title).font(.largeTitle.bold()).accessibilityAddTraits(.isHeader).accessibilityIdentifier("introductionTitle")
-                        pageContent
-                        if scrollsProgress { progress }
-                    }
-                    .foregroundStyle(Color(uiColor: theme.ink))
-                    .padding(.horizontal, 24)
-                    .padding(.top, dynamicTypeSize.isAccessibilitySize ? 24 : 64)
-                    .padding(.bottom, 24)
-                    .frame(maxWidth: 600, alignment: .leading).frame(maxWidth: .infinity)
+        SettingsIntroduction(theme: themes.app, aiAllowed: ai.availability.regionAllowsAI, actions: .init(
+            directory: {
+                let discovery: IntroductionDirectory.Discovery = switch library.builtinDiscovery {
+                case .notRequired: .notRequired
+                case .discovering: .discovering
+                case .ready: .ready
+                case .unavailable: .unavailable
                 }
-                .scrollPosition($scrollPosition)
-                actions
-            }
-            .onChange(of: page) { _, _ in scrollPosition.scrollTo(edge: .top) }
-            .onChange(of: ai.availability.regionAllowsAI) { _, allowed in if !allowed && page == 2 { page = 3 } }
-            .themedPage()
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarVisibility(.visible, for: .navigationBar)
-            .toolbar {
-                if page > 0 {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("返回", systemImage: "chevron.left") { page = page == 3 && !ai.availability.regionAllowsAI ? 1 : page - 1 }.accessibilityIdentifier("introductionBack").disabled(working)
-                    }
-                }
-            }
-            .task { if !themes.loaded { await themes.load() } }
-            .task(id: directoryKey) { await loadDirectory() }
-            .task(id: waitingForDiscovery) {
-                showDiscoveryWait = false
-                guard waitingForDiscovery else { return }
-                do {
-                    try await Task.sleep(for: .seconds(1))
-                    try Task.checkCancellation()
-                    showDiscoveryWait = true
-                } catch { }
-            }
-            .alert("暂时无法完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-                Button("知道了", role: .cancel) { error = nil }
-            } message: { Text(error ?? "") }
-        }
-        .themeScope(theme)
-        .preferredColorScheme(theme.scheme)
-    }
-    @ViewBuilder private var pageContent: some View {
-        switch page {
-        case 0:
-            Text("安静阅读你的 TXT 小说。没有广告，不需要账号。")
-        case 1:
-            if hasCloudAccount {
-                Text("你的书保存在 iCloud 云盘的“月读”文件夹，在你的设备间同步。")
-                Toggle("同步阅读进度、书签和批注", isOn: $syncReadingData)
-                    .accessibilityIdentifier("introductionReadingSync")
-            } else {
-                Text("书保存在本机。登录 iCloud 后会自动同步书架，并可在设置中开启阅读数据同步。")
-            }
-        case 2:
-            Text("可以连接你自己选择的 AI 服务，讨论书中内容。第一次发送前会征得你同意。")
-            Toggle("启用 AI 功能", isOn: $enableAI).accessibilityIdentifier("introductionAI")
-            Text("以后可在设置中更改。").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-        default:
-            Text("导入自己的 TXT，或先读一篇原创示例故事。")
-                .accessibilityIdentifier("introductionReadingExplanation")
-            if !canFinishWithLibrary {
-                if library.builtinDiscovery == .unavailable || error != nil {
-                    Text("暂未完成书架发现，可先导入小说或重试。").foregroundStyle(Color(uiColor: theme.secondary))
-                    Button("重试") { library.retryCloudDiscovery() }
-                }
+                return IntroductionDirectory(homeReady: library.homeReady, libraryRevision: library.revision,
+                    generation: library.discoveryGeneration, snapshotRevision: library.discoveryRevision,
+                    discovery: discovery, hasImportedBooks: library.hasUserImportedBooks)
+            },
+            loadTheme: { if !themes.loaded { await themes.load() } },
+            readDirectory: { try await AppDataService.shared.libraryEntries(LibraryLocation(shelfID: "builtin")) },
+            acknowledgeDirectory: { library.builtinDirectoryLoaded(generation: $0, snapshotRevision: $1) },
+            retryDiscovery: { library.retryCloudDiscovery() },
+            deliverTestDiscovery: {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--ui-test-onboarding-cloud"),
-                   !ProcessInfo.processInfo.arguments.contains("--ui-test-introduction-screenshots") {
-                    Button("交付云端测试快照") { library.receiveCloudDiscovery(.init(generation: library.discoveryGeneration, revision: 1, gathered: true, items: [])) }
-                        .accessibilityIdentifier("introductionDeliverCloud")
-                }
+                library.receiveCloudDiscovery(.init(generation: library.discoveryGeneration, revision: 1, gathered: true, items: []))
                 #endif
-            }
-        }
-    }
-    private var scrollsProgress: Bool { dynamicTypeSize.isAccessibilitySize && page == 3 }
-    private var progress: some View {
-        VStack(spacing: 16) {
-            if waitingForDiscovery && showDiscoveryWait {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small).tint(Color(uiColor: theme.secondary))
-                    Text("正在发现书架").font(.footnote)
+            },
+            welcomeStory: { try await library.welcomeStoryForIntroduction() },
+            selectLibrary: { library.shell.selectedTab = .library },
+            complete: { destination, syncReadingData, enableAI in
+                let route: Onboarding.Destination = switch destination {
+                case .importBook: .importBook
+                case .story(let entry): .story(entry)
+                case .library: .library
                 }
-                .foregroundStyle(Color(uiColor: theme.secondary))
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("introductionDiscoveryWait")
-            }
-            HStack(spacing: 8) {
-                ForEach((0..<4).filter { ai.availability.regionAllowsAI || $0 != 2 }, id: \.self) { step in
-                    Circle().fill(Color(uiColor: step == page ? theme.accent : theme.secondary).opacity(step == page ? 1 : 0.3))
-                        .frame(width: 6, height: 6)
+                Onboarding.shared.completeIntroduction(destination: route) {
+                    if let syncReadingData { cloud.saveIntroductionChoice(syncReadingData) }
+                    ai.availability.saveIntroductionChoice(enableAI)
                 }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text("第 \(page + 1 - (!ai.availability.regionAllowsAI && page > 2 ? 1 : 0)) 步，共 \(ai.availability.regionAllowsAI ? 4 : 3) 步"))
-            .accessibilityIdentifier("introductionProgress")
-        }
-    }
-    private var actions: some View {
-        VStack(spacing: 16) {
-            if !scrollsProgress { progress }
-            if page < 3 {
-                Button(action: next) { Text(page == 0 ? "开始" : "onboarding.continue").frame(maxWidth: .infinity).fixedSize(horizontal: false, vertical: true) }
-                    .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).frame(maxWidth: .infinity)
-                    .accessibilityIdentifier("introductionContinue")
-            } else {
-                Button { Task { await finishImport() } } label: {
-                    Text("导入第一本书").frame(maxWidth: .infinity).fixedSize(horizontal: false, vertical: true)
-                }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("introductionImport")
-                Button { Task { await finishSample() } } label: {
-                    Text(hasBooks || directoryFailed ? "打开书架" : "先读示例故事").frame(maxWidth: .infinity).fixedSize(horizontal: false, vertical: true)
-                }.buttonStyle(ThemedSecondaryButtonStyle()).controlSize(.large).disabled(!canFinishWithLibrary)
-                    .accessibilityIdentifier("introductionSample")
-            }
-        }.fixedSize(horizontal: false, vertical: true).disabled(working).tint(Color(uiColor: theme.accent))
-            .padding(24).frame(maxWidth: 600).frame(maxWidth: .infinity)
-            .background(Color(uiColor: theme.canvas))
-    }
-    private func next() { page += page == 1 && !ai.availability.regionAllowsAI ? 2 : 1 }
-    private func complete(destination: Onboarding.Destination) {
-        Onboarding.shared.completeIntroduction(destination: destination) {
-            if hasCloudAccount { cloud.saveIntroductionChoice(syncReadingData) }
-            ai.availability.saveIntroductionChoice(enableAI)
-        }
-    }
-    private func finishImport() async {
-        guard !working else { return }
-        working = true; defer { working = false }
-        complete(destination: .importBook)
-        library.shell.selectedTab = .library
-    }
-    private func finishSample() async {
-        guard canFinishWithLibrary, !working else { return }
-        working = true; defer { working = false }
-        do {
-            let entry = hasBooks || directoryFailed ? nil : try await library.welcomeStoryForIntroduction()
-            library.shell.selectedTab = .library
-            complete(destination: entry.map { .story($0) } ?? .library)
-        } catch { self.error = ReaderMessages.error(error) }
-    }
-    private func loadDirectory() async {
-        guard library.homeReady else { return }
-        // A revision may advance while a directory read is suspended.
-        // Keep reading until a current snapshot can be acknowledged.
-        while !Task.isCancelled {
-            let key = directoryKey, generation = library.discoveryGeneration, revision = library.discoveryRevision
-            do {
-                let entries = try await AppDataService.shared.libraryEntries(LibraryLocation(shelfID: "builtin"))
-                try Task.checkCancellation()
-                guard key == directoryKey else { continue }
-                contents = entries; contentsKey = key; directoryFailed = false
-                library.builtinDirectoryLoaded(generation: generation, snapshotRevision: revision)
-                return
-            } catch is CancellationError { return }
-            catch { directoryFailed = true; self.error = ReaderMessages.error(error); return }
-        }
+            },
+            errorMessage: { ReaderMessages.error($0) }
+        ))
     }
 }

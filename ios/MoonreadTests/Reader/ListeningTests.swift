@@ -1,3 +1,6 @@
+@testable import MoonreadReader
+@testable import MoonreadData
+import MoonreadCoreBindings
 import AVFoundation
 import XCTest
 import UIKit

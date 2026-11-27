@@ -1,5 +1,7 @@
+import MoonreadSearchText
+import MoonreadData
+import MoonreadCoreBindings
 import CoreSpotlight
-import GRDB
 import Foundation
 import UniformTypeIdentifiers
 import SwiftUI
@@ -98,89 +100,45 @@ private final class SystemSpotlightAcknowledgement: @unchecked Sendable {
         })
     }
 }
-struct SystemSubmissionState: Sendable {
-    var scope: String
-    var contentVersion = 0
-    var ids: [String] = []
-}
-
-extension ReaderIndex {
-    func systemSubmission(_ kind: String) throws -> SystemSubmissionState {
-        try read { db in
-            guard let row = try Row.fetchOne(db, sql: """
-                SELECT scope,format FROM main.system_submission_state WHERE kind=?
-                """, arguments: [kind]) else { return .init(scope: "") }
-            let ids = try String.fetchAll(db, sql: """
-                SELECT item_id FROM main.system_submission_item WHERE kind=? ORDER BY item_id
-                """, arguments: [kind])
-            return .init(scope: row["scope"], contentVersion: row["format"], ids: ids)
-        }
-    }
-
-    func saveSystemSubmission(_ kind: String, state: SystemSubmissionState) throws {
-        try write { db in
-            try db.execute(sql: """
-                INSERT INTO main.system_submission_state VALUES(?,?,?)
-                ON CONFLICT(kind) DO UPDATE SET scope=excluded.scope, format=excluded.format
-                """, arguments: [kind,state.scope,state.contentVersion])
-            try db.execute(sql: "DELETE FROM main.system_submission_item WHERE kind=?", arguments: [kind])
-            for id in state.ids {
-                try db.execute(sql: "INSERT INTO main.system_submission_item VALUES(?,?)", arguments: [kind,id])
-            }
-        }
-    }
-
-    func systemCatalogScope() throws -> String {
-        try write { db in
-            if let scope = try String.fetchOne(db, sql: "SELECT scope FROM main.system_catalog_state") { return scope }
-            let scope = UUID().uuidString
-            try db.execute(sql: "INSERT INTO main.system_catalog_state VALUES(1,?)", arguments: [scope])
-            return scope
-        }
-    }
-
-
-}
-
 extension AppDataService {
     func clearLegacySpotlight() async throws {
         let native = await SystemSpotlightNative(reindex: {}, thumbnail: { _ in nil })
         try await native.adapter.deleteAll()
     }
-    func systemSpotlightProgress() -> String? { systemSpotlightSubmissionStatus }
+    func systemSpotlightProgress() -> String? { systemPublication.spotlightSubmissionStatus }
     func reportSystemSpotlightProgress(_ message: String) {
-        systemSpotlightSubmissionStatus = message
+        systemPublication.spotlightSubmissionStatus = message
         NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
     }
 
     private func systemSpotlightThumbnail(_ book: SystemSpotlightMetadata) async -> Data? {
         // Image inputs exclude chapter/progress: a text-only update reuses the same bytes.
-        let scope = systemCatalog?.scope ?? ""
+        let scope = systemPublication.catalog?.scope ?? ""
         let lastKey = "last-" + scope + "-" + book.id
         let key = [scope, book.id, book.title, book.author ?? "",
                    book.cover?.id ?? "", book.cover?.sha256 ?? "", book.thumbnailRevision ?? ""].joined(separator: "\u{0}")
-        if let value = systemSpotlightThumbnails.object(forKey: key as NSString) { return value as Data }
+        if let value = systemPublication.spotlightThumbnails.object(forKey: key as NSString) { return value as Data }
         let image: UIImage?
         if let cover = book.cover {
             image = try? await coverImage(cover, pixels: 384)
-            guard systemCatalog?.scope == scope else { return nil }
+            guard systemPublication.catalog?.scope == scope else { return nil }
             if image == nil {
-                systemSpotlightThumbnailFailures.insert(book.id)
-                return systemSpotlightThumbnails.object(forKey: lastKey as NSString).map { $0 as Data }
+                systemPublication.spotlightThumbnailFailures.insert(book.id)
+                return systemPublication.spotlightThumbnails.object(forKey: lastKey as NSString).map { $0 as Data }
             }
         } else { image = nil }
         let result = await SystemSpotlightMetadata.thumbnail(title: book.title, author: book.author, contentSHA256: SystemReadingLink.contentSHA256(bookID: book.id), image: image)
-        guard systemCatalog?.scope == scope else { return nil }
+        guard systemPublication.catalog?.scope == scope else { return nil }
         if let result {
-            systemSpotlightThumbnailFailures.remove(book.id)
-            systemSpotlightThumbnails.setObject(result as NSData, forKey: key as NSString, cost: result.count)
-            systemSpotlightThumbnails.setObject(result as NSData, forKey: lastKey as NSString, cost: result.count)
+            systemPublication.spotlightThumbnailFailures.remove(book.id)
+            systemPublication.spotlightThumbnails.setObject(result as NSData, forKey: key as NSString, cost: result.count)
+            systemPublication.spotlightThumbnails.setObject(result as NSData, forKey: lastKey as NSString, cost: result.count)
         }
         return result
     }
 
     func requestSystemSpotlightReindex() async {
-        systemSpotlightMetadata.removeAll()
+        systemPublication.spotlightMetadata.removeAll()
         scheduleSystemReadingCatalog(immediate: true)
         await waitForSystemReadingCatalog()
         // Acknowledge after the catalogue/client state is ready. Waiting on the
@@ -190,23 +148,23 @@ extension AppDataService {
         guard systemSnapshotIsCurrent(snapshot), snapshot.exposurePolicy == systemExposurePolicy() else { return }
         let adapter: SystemSpotlightAdapter
         if let suppliedAdapter { adapter = suppliedAdapter }
-        else if let existing = systemSpotlightAdapter { adapter = existing }
+        else if let existing = systemPublication.spotlightAdapter { adapter = existing }
         else {
             adapter = await SystemSpotlightNative(reindex: { [weak self] in await self?.requestSystemSpotlightReindex() },
                 thumbnail: { [weak self] book in await self?.systemSpotlightThumbnail(book) }).adapter
-            systemSpotlightAdapter = adapter
+            systemPublication.spotlightAdapter = adapter
         }
         let index = try indexStore()
         var state = try index.systemSubmission("spotlight")
         if state.scope != snapshot.storeScope || state.contentVersion != SystemSpotlightMetadata.contentFormatVersion {
             try await adapter.deleteAll()
             state = .init(scope: snapshot.storeScope)
-            systemSpotlightMetadata.removeAll(); systemSpotlightThumbnails.removeAllObjects(); systemSpotlightThumbnailFailures.removeAll()
+            systemPublication.spotlightMetadata.removeAll(); systemPublication.spotlightThumbnails.removeAllObjects(); systemPublication.spotlightThumbnailFailures.removeAll()
             try index.saveSystemSubmission("spotlight", state: state)
         }
         let metadata = snapshot.books.filter(\.allowsAutomaticExposure).map {
             SystemSpotlightMetadata(id: $0.id, title: $0.title, author: $0.author, tags: $0.tags,
-                chapterLabel: $0.chapterLabel, progress: $0.progress, cover: systemCatalog?.spotlightCovers[$0.id], thumbnailRevision: $0.coverThumbnail?.revision)
+                chapterLabel: $0.chapterLabel, progress: $0.progress, cover: systemPublication.catalog?.spotlightCovers[$0.id], thumbnailRevision: $0.coverThumbnail?.revision)
         }
         let desired = Set(metadata.map(\.id))
         let obsolete = Set(state.ids).subtracting(desired)
@@ -214,9 +172,9 @@ extension AppDataService {
             try await adapter.delete(Array(obsolete).sorted())
             state.ids.removeAll { obsolete.contains($0) }
             try index.saveSystemSubmission("spotlight", state: state)
-            for id in obsolete { systemSpotlightMetadata[id] = nil }
+            for id in obsolete { systemPublication.spotlightMetadata[id] = nil }
         }
-        let changed = metadata.filter { systemSpotlightMetadata[$0.id] != $0 }
+        let changed = metadata.filter { systemPublication.spotlightMetadata[$0.id] != $0 }
         // Record attempted IDs before the asynchronous API: failed/interrupted
         // submissions can still be deleted after permission changes or a restart.
         state.ids = Array(Set(state.ids).union(desired)).sorted()
@@ -226,14 +184,14 @@ extension AppDataService {
             // Position-only publications must not keep cancelling a full-format
             // rebuild. The serial index chain applies the latest snapshot next;
             // account and exposure changes still invalidate this work immediately.
-            guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
+            guard systemPublication.catalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
             let batch = Array(changed[start..<min(start + 50, changed.count)])
             try await adapter.index(batch)
-            guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
-            for item in batch where !systemSpotlightThumbnailFailures.contains(item.id) { systemSpotlightMetadata[item.id] = item }
+            guard systemPublication.catalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
+            for item in batch where !systemPublication.spotlightThumbnailFailures.contains(item.id) { systemPublication.spotlightMetadata[item.id] = item }
             reportSystemSpotlightProgress(String(localized: "正在提交系统搜索：\(start + batch.count) / \(changed.count) 本"))
         }
-        guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
+        guard systemPublication.catalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
         // Only a fully journaled submission marks this content format complete.
         state.contentVersion = SystemSpotlightMetadata.contentFormatVersion
         try index.saveSystemSubmission("spotlight", state: state)
@@ -246,16 +204,16 @@ extension AppDataService {
         sourceDefaults.set(Array(Set(excludedShelfIDs)).sorted(), forKey: "Moonread.systemSearchExcludedShelves.v1")
         // Revoke automatic exposure locally first. Explicit widgets/entities keep
         // the same readable book catalogue while its new policy is being rebuilt.
-        if let catalog = systemCatalog, let old = try? catalog.file.read() {
+        if let catalog = systemPublication.catalog, let old = try? catalog.file.read() {
             let restricted = old.restrictingAutomaticExposure(to: systemExposurePolicy())
             try catalog.file.publish(restricted)
-            systemCatalog?.publishedGeneration = restricted.generation
-            systemCatalog?.displaySnapshot = restricted
+            systemPublication.catalog?.publishedGeneration = restricted.generation
+            systemPublication.catalog?.displaySnapshot = restricted
             systemReadingSnapshotPublished(restricted)
         }
         scheduleSystemReadingCatalog(immediate: true)
         await waitForSystemReadingCatalog()
-        await systemSpotlightTask?.value
-        await systemExposureTask?.value
+        await systemPublication.spotlightTask?.value
+        await systemPublication.exposureTask?.value
     }
 }

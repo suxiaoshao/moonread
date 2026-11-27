@@ -1,4 +1,5 @@
 @testable import MoonreadAI
+import MoonreadCoreBindings
 import XCTest
 
 @testable import Moonread

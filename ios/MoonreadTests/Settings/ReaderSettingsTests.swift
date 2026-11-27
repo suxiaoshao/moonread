@@ -1,3 +1,6 @@
+import MoonreadDataTypes
+@testable import MoonreadReader
+import MoonreadCoreBindings
 import CryptoKit
 import Observation
 import SQLite3

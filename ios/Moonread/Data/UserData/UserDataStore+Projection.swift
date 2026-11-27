@@ -1,3 +1,6 @@
+import MoonreadReader
+import MoonreadData
+import MoonreadCoreBindings
 import Foundation
 import SwiftData
 import CoreData

@@ -1,4 +1,8 @@
+import MoonreadReader
+import MoonreadDesign
+import MoonreadDataTypes
 #if READER_OPEN_DIAGNOSTICS
+import MoonreadCoreBindings
 import SwiftUI
 
 /// Isolated storage; native Button -> LibraryModel.open -> real navigation destination.

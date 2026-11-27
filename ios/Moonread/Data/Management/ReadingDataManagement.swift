@@ -1,44 +1,10 @@
+import MoonreadDesign
+import MoonreadReader
+import MoonreadLibrary
+import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Foundation
-
-final class BackupStaging: Sendable {
-    let directory: URL
-    let manifest: BackupManifest
-    let configuration: UUID
-    let ownedRoot: URL
-    init(directory: URL, manifest: BackupManifest, configuration: UUID, ownedRoot: URL? = nil) { self.directory = directory; self.manifest = manifest; self.configuration = configuration; self.ownedRoot = ownedRoot ?? directory }
-    deinit { let directory = ownedRoot; Task.detached { try? FileManager.default.removeItem(at: directory) } }
-}
-struct ReadingBackupReview: Sendable {
-    struct Book: Identifiable, Sendable {
-        let id: String
-        let title: String?
-        let linked: Bool
-        let changes: Set<BackupChange>
-        var disposition: BackupDisposition {
-            changes.map(\.disposition).max { $0.rawValue < $1.rawValue } ?? .same
-        }
-    }
-
-    let books: [Book]
-    let global: Set<BackupChange>
-
-    var updates: Int { books.count(where: { $0.disposition == .restore }) }
-    var same: Int { books.count(where: { $0.disposition == .same }) }
-    var kept: Int { books.count - updates - same }
-    var hasGlobalChanges: Bool { global.contains { $0.disposition == .restore } }
-    var needsRestore: Bool { updates > 0 || hasGlobalChanges }
-    var isEmpty: Bool { books.isEmpty && global.isEmpty }
-    var keepsLocal: Bool { kept > 0 || global.contains { $0.disposition == .keepLocal } }
-}
-
-struct ReadingBackupPreview: Sendable {
-    let staging: BackupStaging
-    let review: ReadingBackupReview
-}
-
-extension BackupCancellation {
-    func check() throws { if isCancelled() { throw CancellationError() } }
-}
 
 extension AppDataService {
     /// Serializes only local writes/pending transfer/deletion across actor awaits.
@@ -83,7 +49,7 @@ extension AppDataService {
     func readingDataInventory() async throws -> ReadingDataInventory {
         let configuration = userCloudConfigurationRevision
         let core = try relationalUserIndex()
-        var value = try await core.session.readUsersForPublication(core.lease) { try RelationalReadingData.inventory($0) }
+        var value = try await core.readingDataInventory()
         for i in value.items.indices {
             let key = value.items[i].id
             do {
@@ -182,7 +148,7 @@ extension AppDataService {
     func continuePendingReadingData(_ key: String) async throws {
         let item = try pendingReadingData(key)
         let index = try relationalUserIndex()
-        try index.session.readUsers(index.lease) { try RelationalReadingData.requirePendingReadable($0, key: key) }
+        try index.requirePendingReadable(key)
         guard item.canResume else { throw ReadingDataError.changed }
         try resumeImport(item.bookID)
     }
@@ -239,11 +205,9 @@ extension AppDataService {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         let index = try relationalUserIndex()
-        return try await index.session.readUsersForPublication(index.lease) {
-            try RelationalReadingData.export($0, directory: directory, writerVersion: writerVersion)
-        }
+        return try await index.exportReadingDataSnapshot(directory: directory, writerVersion: writerVersion)
     }
-    func readingBackupShareCopy(_ url: URL) async throws -> LibraryExport {
+    func readingBackupShareCopy(_ url: URL) async throws -> ShareFiles {
         let source = url.deletingLastPathComponent()
         backupShareCopies[source, default: 0] += 1
         defer {
@@ -253,7 +217,7 @@ extension AppDataService {
         // Reuse the ordinary file share lifetime: the system consumes its own
         // disposable copy, never an export directory that the next export cleans.
         return try await Task.detached(priority: .utility) {
-            try LibraryExport { directory in
+            try ShareFiles { directory in
                 let copy = directory.appendingPathComponent(url.lastPathComponent)
                 try FileManager.default.copyItem(at: url, to: copy)
                 return [copy]
@@ -314,7 +278,7 @@ extension AppDataService {
             guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
             let plan = try UserBackupRestore(directory: staging.directory, manifest: staging.manifest, cancellation: cancellation)
             let core = try relationalUserIndex()
-            let review = try core.session.readUsers(core.lease) { try plan.preview($0, scope: core.lease.scope, cancellation: cancellation) }
+            let review = try core.previewReadingBackup(plan, cancellation: cancellation)
             try cancellation.check()
             let sources = try core.firstSources(forSHAs: Set(review.books.keys))
             var books = [ReadingBackupReview.Book]()
@@ -347,9 +311,7 @@ extension AppDataService {
             guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
             let index = try relationalUserIndex()
             guard index.lease == lease else { throw ReadingDataError.changed }
-            let reclaimed = try index.session.writeUsers(index.lease) {
-                try plan.merge($0, scope: index.lease.scope, syncRequested: cloudSyncIntent.requested, cancellation: cancellation)
-            }
+            let reclaimed = try index.restoreReadingBackup(plan, syncRequested: { cloudSyncIntent.requested }, cancellation: cancellation)
             await removeReclaimedCoverCopies(reclaimed, index: index)
         } onCancel: { cancellation.cancel() }
         dataChanged()

@@ -1,4 +1,6 @@
+@testable import MoonreadReader
 @testable import MoonreadAI
+import MoonreadCoreBindings
 import AISDKProvider
 import AISDKProviderUtils
 import SwiftData

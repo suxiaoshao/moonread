@@ -1,73 +1,10 @@
+import MoonreadDesign
+import MoonreadData
+import MoonreadLibrary
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Foundation
-import GRDB
 import SwiftUI
-
-/// A description is syncable; a bookmark and the local shelf UUID are not.
-struct ShelfReferenceValue: Codable, Equatable, Sendable {
-    var schemaVersion = 1
-    var name: String
-    var locationDescription: String
-}
-
-struct ShelfReference: Identifiable, Equatable, Sendable {
-    let id: String
-    let value: ShelfReferenceValue
-    var locationLabel: String {
-        value.locationDescription == "icloud-drive" ? String(localized: "iCloud Drive") : String(localized: "其他文件提供方", table: "ShelfRecovery")
-    }
-}
-
-/// Device-only authorization and acknowledgement. Missing data is the v1 initial
-/// state; an unknown version is never overwritten by an older installation.
-struct ShelfReferenceBindings: Codable, Equatable {
-    struct Scope: Codable, Equatable, Sendable {
-        var bindings: [String: String] = [:]
-        var ignored: Set<String> = []
-        var guided: Set<String> = []
-        var recovery: Set<String>? = nil
-        var published: [String: ShelfReferenceValue]? = nil
-    }
-    var schemaVersion = 1
-    var scopes: [String: Scope] = [:]
-    static let key = "Moonread.shelfReferenceBindings.v1"
-    init(data: Data?) throws {
-        if let data {
-            self = try JSONDecoder().decode(Self.self, from: data)
-            guard schemaVersion == 1 else { throw UserSyncCompatibilityError() }
-        }
-    }
-    static func read(_ db: Database) throws -> Scope {
-        var scope = Scope()
-        for row in try Row.fetchAll(db, sql: "SELECT key,kind,value FROM usr.local_shelf_recovery") {
-            let key: String = row["key"]
-            let kind: String = row["kind"]
-            switch kind {
-            case "binding":
-                scope.bindings[key] = try JSONDecoder().decode(String.self, from: row["value"])
-            case "ignored": scope.ignored.insert(key)
-            case "guided": scope.guided.insert(key)
-            case "recovery": scope.recovery = (scope.recovery ?? []).union([key])
-            case "published":
-                if scope.published == nil { scope.published = [:] }
-                scope.published?[key] = try JSONDecoder().decode(ShelfReferenceValue.self, from: row["value"])
-            default: throw UserSyncCompatibilityError()
-            }
-        }
-        return scope
-    }
-
-    static func write(_ db: Database, scope: Scope) throws {
-        try db.execute(sql: "DELETE FROM usr.local_shelf_recovery")
-        func insert(_ key: String, _ kind: String, value: Data? = nil) throws {
-            try db.execute(sql: "INSERT INTO usr.local_shelf_recovery VALUES(?,?,?)", arguments: [key,kind,value])
-        }
-        for (key, value) in scope.bindings { try insert(key,"binding",value: JSONEncoder().encode(value)) }
-        for key in scope.ignored { try insert(key,"ignored") }
-        for key in scope.guided { try insert(key,"guided") }
-        for key in scope.recovery ?? [] { try insert(key,"recovery") }
-        for (key, value) in scope.published ?? [:] { try insert(key,"published",value: JSONEncoder().encode(value)) }
-    }
-}
 
 struct ShelfRecoverySnapshot: Sendable, Equatable {
     var scope: String = ""
@@ -81,11 +18,11 @@ extension AppDataService {
     }
     private func shelfBindings() throws -> ShelfReferenceBindings.Scope {
         let index = try relationalUserIndex()
-        return try index.session.readUsers(index.lease) { try ShelfReferenceBindings.read($0) }
+        return try index.shelfBindings()
     }
     private func saveShelfBindings(_ bindings: ShelfReferenceBindings.Scope) throws {
         let index = try relationalUserIndex()
-        try index.session.writeUsers(index.lease) { try ShelfReferenceBindings.write($0, scope: bindings) }
+        try index.saveShelfBindings(bindings)
     }
     /// Called after registration and on configuration/import refresh. Stable local
     /// IDs are saved locally before publishing the description.
@@ -110,16 +47,10 @@ extension AppDataService {
                 // Publish local description changes, not a fresh LWW fact on every
                 // remote import. Devices with different display names must not ping-pong.
                 if bindings.published?[id] == value { continue }
-                let key = "shelf-reference/" + id
                 do {
                     guard let current = try? libraryShelf(shelf.id), current.name == shelf.name, current.location == shelf.location,
                           try shelfBindings().bindings[id] == shelf.id else { continue }
-                    if try index.session.writeUsers(index.lease, { db in
-                        guard try UserValueRows.shelfReferences(db, id: id).first?.value != value else { return false }
-                        try UserValueRows.put(db, key: .init(key), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock,
-                                              scope: index.lease.scope)
-                        return true
-                    }) {
+                    if try index.publishShelfReference(id: id, value: value, device: userDevice, now: { userValueClock }) {
                         changed = true
                     }
                     guard revision == userCloudConfigurationRevision, scope == (try shelfReferenceScope) else { throw CancellationError() }
@@ -132,7 +63,7 @@ extension AppDataService {
                 } catch is UserSyncCompatibilityError { continue }
             }
         }
-        let references = try index.session.readUsers(index.lease) { try UserValueRows.shelfReferences($0) }
+        let references = try index.shelfReferences()
         guard revision == userCloudConfigurationRevision, scope == (try shelfReferenceScope) else { throw CancellationError() }
         let local = try shelfBindings()
         let currentShelves = try self.shelves()
@@ -156,7 +87,7 @@ extension AppDataService {
     }
 
     private func bindMatchingShelfReferences(_ shelves: [LibraryShelf], index: ReaderIndex) throws {
-        let references = try index.session.readUsers(index.lease) { try UserValueRows.shelfReferences($0) }
+        let references = try index.shelfReferences()
         var local = try shelfBindings()
         let pending = references.filter { local.bindings[$0.id] == nil && !local.ignored.contains($0.id) }
         guard !pending.isEmpty else { return }
@@ -220,7 +151,6 @@ struct LibraryIndexScan: Sendable {
     let revision: UUID
     let files: Set<String>
 }
-extension Notification.Name { static let libraryIndexScanCommitted = Notification.Name("Moonread.libraryIndexScanCommitted") }
 
 struct ShelfIndexSummary: Equatable {
     let pending: Int

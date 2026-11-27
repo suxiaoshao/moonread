@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 // Original stories shared by the DEBUG fixture and the separate screenshot tests.

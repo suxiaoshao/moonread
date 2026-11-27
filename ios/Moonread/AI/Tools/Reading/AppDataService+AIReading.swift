@@ -1,3 +1,7 @@
+import MoonreadReader
+import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import MoonreadAI
 import Foundation
 
@@ -57,11 +61,7 @@ extension AppDataService {
   }
   func aiMarks(sha: String) async throws -> [String: [AnnotationCandidate]] {
     _ = try parseSha256(value: sha)
-    return try await fixedReaderRead { index in
-      try index.session.readUsers(index.lease) { db in
-        try AnnotationRows.snapshot(db, key: sha, reducing: false, settled: true).groups
-      }
-    }
+    return try await fixedReaderRead { try $0.aiMarks(sha: sha) }
   }
   func aiSearchBatch(_ job: SearchJob) throws -> SearchBatch { try job.nextBatch() }
   /// Uses the same import lease as readers, without setting preferred source/position

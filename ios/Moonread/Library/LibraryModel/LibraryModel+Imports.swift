@@ -1,3 +1,6 @@
+import MoonreadLibrary
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -55,7 +58,7 @@ extension LibraryModel {
             guard canAcceptFileWork, sheet == nil, !filePickerPresented else { return }
             let batches = scan.batches.filter { !enqueuedSharedBatches.contains($0.directory) }
             let files = batches.flatMap { batch in batch.files.map { item in
-                LibraryImportFile(url: item.url(in: batch.directory), inbox: (batch, item))
+                LibraryImportFile(url: item.url(in: batch.directory)) { batch.discard(item) }
             } }
             if !scan.errors.isEmpty { error = scan.errors.joined(separator: "\n") }
             guard !files.isEmpty else { return }

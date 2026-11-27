@@ -1,3 +1,5 @@
+import MoonreadDesign
+@testable import MoonreadReader
 @testable import MoonreadAI
 import SwiftUI
 import XCTest
@@ -9,7 +11,7 @@ class AIReadingMoonFixture: XCTestCase {
   func snapshot(_ status: AIAgentStatus, running: Bool, pose: MoonPose = .idle, id: String = "c1")
     -> AIMoonSnapshot
   {
-    AIMoonSnapshot(conversationID: id, running: running, status: status, pose: pose, label: "")
+    AIMoonSnapshot(conversationID: id, running: running, status: .init(status), pose: pose, label: "")
   }
 
 }

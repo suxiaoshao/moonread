@@ -1,3 +1,6 @@
+@testable import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Foundation
 import GRDB
 import SwiftData
@@ -650,7 +653,7 @@ struct DataV2MigrationTests {
         try session.prepareUsers(newLease) { throw DataV2Error.migrationAlreadyComplete }
         let state = try session.readUsers(newLease) { db in
             (try LocalReadingRows.resume(db, book: book), try LocalReadingRows.hidden(db, book: book),
-             try LocalReadingRows.preferredFile(db, book: book), try ReadingPositionRows.position(db, book: book, partition: 0))
+             try LocalReadingRead.preferredFile(db, book: book), try ReadingPositionRows.position(db, book: book, partition: 0))
         }
         #expect(state.0 == .init(offset: UInt64.max, token: "position") && !state.1 && state.2 == "file")
         #expect(state.3?.value.offset == UInt64.max && state.3?.token == "position")
@@ -749,7 +752,7 @@ struct DataV2MigrationTests {
         var config = Configuration()
         config.prepareDatabase { db in try db.execute(sql: "ATTACH DATABASE ? AS usr", arguments: [aFile.path]) }
         let writer = try DatabasePool(path: layout.index.path, configuration: config)
-        try DataV2Schema.prepare(writer, bundle: .main)
+        try DataV2Schema.prepare(writer)
         try await writer.writeWithoutTransaction { db in
             try LocalScopeImport.withSource(db, url: localFile, readOnly: true) {
                 try LocalScopeImport.copy(db, move: marker.id)

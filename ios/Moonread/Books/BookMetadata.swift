@@ -1,3 +1,6 @@
+import MoonreadDataTypes
+import MoonreadData
+import MoonreadCoreBindings
 import Combine
 import SwiftUI
 import ImageIO
@@ -7,7 +10,6 @@ import SwiftData
 import CoreData
 
 extension Notification.Name {
-    static let bookMetadataChanged = Notification.Name("Moonread.bookMetadataChanged")
 }
 
 extension Notification {
@@ -24,39 +26,6 @@ private enum BookMetadataChange {
     static let projectionFieldsKey = "projectionFields"
 }
 
-extension BookMetadata {
-    nonisolated var normalizedForSaving: BookMetadata {
-        var value = self
-        value.author = author.trimmingCharacters(in: .whitespacesAndNewlines)
-        value.synopsis = synopsis.trimmingCharacters(in: .whitespacesAndNewlines)
-        value.tags = Array(Set(tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
-        return value
-    }
-}
-
-struct BookMetadataEditPlan: Sendable {
-    let sha: String
-    let values: [String: String]
-    var isEmpty: Bool { values.isEmpty }
-}
-
-extension BookDetails {
-    var book: BookInfo? { body?.book }
-    var wordCount: UInt64? { body?.wordCount }
-    var chapterCount: UInt64? { body?.chapterCount }
-    var currentChapter: String? { body?.currentChapter }
-}
-
-extension BookDetailsResult {
-    func requireIdentified() throws -> BookDetails {
-        switch self {
-        case .identified(_, let details): details
-        case .unidentified, .pending: throw ReaderError.ImportBusy
-        case .missing: throw ReaderError.NotFound
-        }
-    }
-}
-
 extension AppDataService {
     func bookDetails(_ target: BookTarget) async throws -> BookDetailsResult {
         try await bookInformation(target, fileID: nil, includeRecordSource: false).1
@@ -67,25 +36,6 @@ extension AppDataService {
     func details(sha: String) async throws -> BookDetails {
         try await bookDetails(.record(key: .formal(sha256: sha))).requireIdentified()
     }
-    nonisolated func metadataEditPlan(base: BookMetadata, edited: BookMetadata, fields: Set<String>? = nil) throws -> BookMetadataEditPlan {
-        guard base.sha == edited.sha, (try? parseSha256(value: base.sha)) != nil, edited.author.utf8.count <= 1024,
-              edited.synopsis.utf8.count <= 64 * 1024, edited.tags.count <= 100 else { throw ReaderError.InvalidSettings }
-        let before = try JSONSerialization.jsonObject(with: Data(encodeBookMetadata(value: base).utf8)) as! [String: Any]
-        let normalized = edited.normalizedForSaving
-        guard normalized.tags.allSatisfy({ $0.utf8.count <= 128 }) else { throw ReaderError.InvalidSettings }
-        let after = try JSONSerialization.jsonObject(with: Data(encodeBookMetadata(value: normalized).utf8)) as! [String: Any]
-        var changes: [String: String] = [:]
-        for field in ["author", "synopsis", "status", "cover"] where fields?.contains(field) ?? true {
-            let old = try JSONSerialization.data(withJSONObject: before[field]!, options: [.fragmentsAllowed, .sortedKeys])
-            let new = try JSONSerialization.data(withJSONObject: after[field]!, options: [.fragmentsAllowed, .sortedKeys])
-            if old != new { changes["metadata/\(base.sha)/\(field)"] = String(decoding: new, as: UTF8.self) }
-        }
-        for tag in Set(base.tags).union(normalized.tags) where (fields?.contains("tags") ?? true) && base.tags.contains(tag) != normalized.tags.contains(tag) {
-            let key = SHA256.hash(data: Data(tag.utf8)).map { String(format: "%02x", $0) }.joined()
-            changes["metadata/\(base.sha)/tag-\(key)"] = normalized.tags.contains(tag) ? String(decoding: try JSONEncoder().encode(tag), as: UTF8.self) : "null"
-        }
-        return BookMetadataEditPlan(sha: base.sha, values: changes)
-    }
     func saveMetadata(base: BookMetadata, edited: BookMetadata) async throws {
         let admission = try indexStore().lease
         var final = edited
@@ -95,7 +45,7 @@ extension AppDataService {
                 final.cover = existing
             }
         }
-        let plan = try metadataEditPlan(base: base, edited: final)
+        let plan = try BookMetadataEditPlan.make(base: base, edited: final)
         try await commitMetadata(plan, cover: final.cover != base.cover ? final.cover : nil, admission: admission)
         if let cover = edited.cover { discardCoverDraft(cover) }
     }
@@ -106,9 +56,7 @@ extension AppDataService {
         try Task.checkCancellation()
         let index = try relationalUserIndex()
         guard admission == index.lease else { throw ReadingDataError.changed }
-        let reclaimed = try index.session.writeUsers(index.lease) {
-            try UserValueRows.putMetadata($0, [.init(plan: plan, cover: asset)], device: userDevice, now: userValueClock, scope: index.lease.scope)
-        }
+        let reclaimed = try index.commitBookMetadata([.init(plan: plan, cover: asset)], device: userDevice, now: { userValueClock })
         publishMetadataCommit([plan])
         await removeReclaimedCoverCopies(reclaimed, index: index)
     }
@@ -424,7 +372,7 @@ extension AppDataService {
 
     private func storedCoverBytes(_ cover: BookCoverAsset) throws -> Data? {
         let index = try relationalUserIndex()
-        return try index.session.readUsers(index.lease) { try UserValueRows.coverBytes($0, id: cover.id, sha: cover.sha256) }
+        return try index.coverBytes(cover)
     }
 
 }
@@ -682,11 +630,5 @@ struct BookCoverView: View {
                 if value > 0, pixels == nil { measuredPixels = value }
             }
             .onDisappear { subscription = nil }
-    }
-}
-
-extension BookReadingStatus {
-    var label: LocalizedStringKey {
-        switch self { case .unread: "未读"; case .reading: "阅读中"; case .finished: "读完"; case .paused: "暂搁"; case .other: "其他（当前版本不支持）" }
     }
 }

@@ -7,186 +7,43 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		ACDA3BF15FB2502D8E9807A4 /* CloudCallbackJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88CC01BA70B951BE9CA0C2A5 /* CloudCallbackJournal.swift */; };
-		F618FD57698B568994D28CB0 /* CloudInboxRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DCF6FB820125DA3BE5F4714 /* CloudInboxRows.swift */; };
-		EDD4277BCD8250569B8AA972 /* DataExchangeTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21EDB020537F5784BF5EBFCE /* DataExchangeTask.swift */; };
-		A80885CC5F9D5814A5E1511E /* RelationalReadingData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0621A45802455F07BCC2B7B4 /* RelationalReadingData.swift */; };
-		9C6623F2575E5EA790765826 /* UserBackupRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F77F001BB3A5E69A7C058C1 /* UserBackupRestore.swift */; };
-		FCF6C9A4531E5694B9584497 /* ReadingWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A3C75640B4F5969A1616A85 /* ReadingWindow.swift */; };
+        A37603000000000000000025 /* MoonreadSearchText in App Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000024; };
+        A37603000000000000000027 /* MoonreadSearchText in Widget Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000026; };
 		F327C48148375FB399ECB5B8 /* BookSearchConditionPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 876C7011C17350089BBFEFD4 /* BookSearchConditionPages.swift */; };
-		8FEC8C6E8A2954F393A2A389 /* BookSearchTagRulePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5613FA4B23135F6FB815B8E2 /* BookSearchTagRulePage.swift */; };
 		A1A276000000000000000001 /* MoonreadAI in Frameworks */ = {isa = PBXBuildFile; productRef = A1A276000000000000000002 /* MoonreadAI */; };
         270E20000000000000000090 = {isa = PBXBuildFile; fileRef = 270E10000000000000000090;};
-        270E20000000000000000091 = {isa = PBXBuildFile; fileRef = 270E10000000000000000091;};
-        270E20000000000000000092 = {isa = PBXBuildFile; fileRef = 270E10000000000000000092;};
-        270E20000000000000000093 = {isa = PBXBuildFile; fileRef = 270E10000000000000000093;};
         270E200000000000000000A0 = {isa = PBXBuildFile; fileRef = 270E100000000000000000A0;};
-        270E200000000000000000A1 = {isa = PBXBuildFile; fileRef = 270E100000000000000000A1;};
-        270E200000000000000000A2 = {isa = PBXBuildFile; fileRef = 270E100000000000000000A2;};
-        270E200000000000000000A3 = {isa = PBXBuildFile; fileRef = 270E100000000000000000A3;};
-        270E200000000000000000A4 = {isa = PBXBuildFile; fileRef = 270E100000000000000000A4;};
-        270E200000000000000000A5 = {isa = PBXBuildFile; fileRef = 270E100000000000000000A5;};
-        270E200000000000000000A6 = {isa = PBXBuildFile; fileRef = 270E100000000000000000A6;};
-        270E200000000000000000A7 = {isa = PBXBuildFile; fileRef = 270E100000000000000000A7;};
         270E200000000000000000B0 = {isa = PBXBuildFile; fileRef = 270E100000000000000000B0;};
-        270E200000000000000000B1 = {isa = PBXBuildFile; fileRef = 270E100000000000000000B1;};
-        270E200000000000000000B2 = {isa = PBXBuildFile; fileRef = 270E100000000000000000B2;};
-        270E200000000000000000A8 = {isa = PBXBuildFile; fileRef = 270E100000000000000000A8;};
-        270E20000000000000000094 = {isa = PBXBuildFile; fileRef = 270E10000000000000000094;};
-		C31100000000000000000002 /* SearchTagOption.graphql.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31100000000000000000001; };
-        270E20000000000000000077 = {isa = PBXBuildFile; fileRef = 270E10000000000000000077;};
-        270E20000000000000000076 = {isa = PBXBuildFile; fileRef = 270E10000000000000000076;};
-        270E20000000000000000075 = {isa = PBXBuildFile; fileRef = 270E10000000000000000075;};
-        270E20000000000000000074 = {isa = PBXBuildFile; fileRef = 270E10000000000000000074;};
-        270E20000000000000000073 = {isa = PBXBuildFile; fileRef = 270E10000000000000000073;};
-        270E20000000000000000072 = {isa = PBXBuildFile; fileRef = 270E10000000000000000072;};
-        270E20000000000000000071 = {isa = PBXBuildFile; fileRef = 270E10000000000000000071;};
         270E20000000000000000070 = {isa = PBXBuildFile; fileRef = 270E10000000000000000070;};
-        270E20000000000000000057 = {isa = PBXBuildFile; fileRef = 270E10000000000000000057;};
-        270E20000000000000000056 = {isa = PBXBuildFile; fileRef = 270E10000000000000000056;};
-        270E20000000000000000055 = {isa = PBXBuildFile; fileRef = 270E10000000000000000055;};
-        270E20000000000000000054 = {isa = PBXBuildFile; fileRef = 270E10000000000000000054;};
-        270E20000000000000000053 = {isa = PBXBuildFile; fileRef = 270E10000000000000000053;};
-        270E20000000000000000052 = {isa = PBXBuildFile; fileRef = 270E10000000000000000052;};
         270E20000000000000000051 = {isa = PBXBuildFile; fileRef = 270E10000000000000000051;};
-        270E20000000000000000050 = {isa = PBXBuildFile; fileRef = 270E10000000000000000050;};
-        270E20000000000000000038 = {isa = PBXBuildFile; fileRef = 270E10000000000000000038;};
-        270E20000000000000000037 = {isa = PBXBuildFile; fileRef = 270E10000000000000000037;};
-        270E20000000000000000036 = {isa = PBXBuildFile; fileRef = 270E10000000000000000036;};
-        270E20000000000000000035 = {isa = PBXBuildFile; fileRef = 270E10000000000000000035;};
-        270E20000000000000000034 = {isa = PBXBuildFile; fileRef = 270E10000000000000000034;};
-        270E20000000000000000033 = {isa = PBXBuildFile; fileRef = 270E10000000000000000033;};
-        270E20000000000000000032 = {isa = PBXBuildFile; fileRef = 270E10000000000000000032;};
         270E20000000000000000031 = {isa = PBXBuildFile; fileRef = 270E10000000000000000031;};
-        270E20000000000000000030 = {isa = PBXBuildFile; fileRef = 270E10000000000000000030;};
-        270E20000000000000000019 = {isa = PBXBuildFile; fileRef = 270E10000000000000000019;};
-        270E20000000000000000018 = {isa = PBXBuildFile; fileRef = 270E10000000000000000018;};
-        270E20000000000000000017 = {isa = PBXBuildFile; fileRef = 270E10000000000000000017;};
-        270E20000000000000000016 = {isa = PBXBuildFile; fileRef = 270E10000000000000000016;};
-        270E20000000000000000015 = {isa = PBXBuildFile; fileRef = 270E10000000000000000015;};
-        270E20000000000000000014 = {isa = PBXBuildFile; fileRef = 270E10000000000000000014;};
-        270E20000000000000000013 = {isa = PBXBuildFile; fileRef = 270E10000000000000000013;};
-        270E20000000000000000012 = {isa = PBXBuildFile; fileRef = 270E10000000000000000012;};
-        270E20000000000000000011 = {isa = PBXBuildFile; fileRef = 270E10000000000000000011;};
-        270E20000000000000000010 = {isa = PBXBuildFile; fileRef = 270E10000000000000000010;};
         270E2000000000000000000F = {isa = PBXBuildFile; fileRef = 270E1000000000000000000F;};
         270E40000000000000000003 = {isa = PBXBuildFile; productRef = 270E40000000000000000002;};
         270E2000000000000000000E = {isa = PBXBuildFile; fileRef = 270E1000000000000000000E;};
-        270E2000000000000000000D = {isa = PBXBuildFile; fileRef = 270E1000000000000000000D;};
-        270E2000000000000000000C = {isa = PBXBuildFile; fileRef = 270E1000000000000000000C;};
-        270E2000000000000000000B = {isa = PBXBuildFile; fileRef = 270E1000000000000000000B;};
-        270E2000000000000000000A = {isa = PBXBuildFile; fileRef = 270E1000000000000000000A;};
-        270E20000000000000000009 = {isa = PBXBuildFile; fileRef = 270E10000000000000000009;};
-        270E20000000000000000008 = {isa = PBXBuildFile; fileRef = 270E10000000000000000008;};
-        270E20000000000000000007 = {isa = PBXBuildFile; fileRef = 270E10000000000000000007;};
-        270E20000000000000000006 = {isa = PBXBuildFile; fileRef = 270E10000000000000000006;};
-        270E20000000000000000005 = {isa = PBXBuildFile; fileRef = 270E10000000000000000005;};
-        270E20000000000000000004 = {isa = PBXBuildFile; fileRef = 270E10000000000000000004;};
-        270E20000000000000000003 = {isa = PBXBuildFile; fileRef = 270E10000000000000000003;};
-        270E20000000000000000002 = {isa = PBXBuildFile; fileRef = 270E10000000000000000002;};
-        270E20000000000000000001 = {isa = PBXBuildFile; fileRef = 270E10000000000000000001;};
         270D00000000000000000043 = {isa = PBXBuildFile; productRef = 270D00000000000000000042;};
-        270D0000000000000000002B = {isa = PBXBuildFile; fileRef = 270D0000000000000000000B;};
-        270D0000000000000000002C = {isa = PBXBuildFile; fileRef = 270D0000000000000000000C;};
-        270D0000000000000000002D = {isa = PBXBuildFile; fileRef = 270D0000000000000000000D;};
-        270D0000000000000000002E = {isa = PBXBuildFile; fileRef = 270D0000000000000000000E;};
-        270D00000000000000000035 = {isa = PBXBuildFile; fileRef = 270D00000000000000000015;};
-        270D00000000000000000036 = {isa = PBXBuildFile; fileRef = 270D00000000000000000016;};
-        270D00000000000000000037 = {isa = PBXBuildFile; fileRef = 270D00000000000000000017;};
-        270D00000000000000000039 = {isa = PBXBuildFile; fileRef = 270D00000000000000000019;};
-        270D0000000000000000003A = {isa = PBXBuildFile; fileRef = 270D0000000000000000001A;};
-        270D0000000000000000003B = {isa = PBXBuildFile; fileRef = 270D0000000000000000001B;};
-        A327DEBA0000000000000001 = {isa = PBXBuildFile; fileRef = A327DEBA0000000000000002;};
-        270D0000000000000000003C = {isa = PBXBuildFile; fileRef = 270D0000000000000000001C;};
-        271C00000000000000000002 = {isa = PBXBuildFile; fileRef = 271C00000000000000000001;};
-        271D00000000000000000002 = {isa = PBXBuildFile; fileRef = 271D00000000000000000001;};
-        271A00000000000000000002 = {isa = PBXBuildFile; fileRef = 271A00000000000000000001;};
-        270D0000000000000000003E = {isa = PBXBuildFile; fileRef = 270D0000000000000000001E;};
         270D0000000000000000003D = {isa = PBXBuildFile; fileRef = 270D0000000000000000001D;};
-        270D00000000000000000038 = {isa = PBXBuildFile; fileRef = 270D00000000000000000018;};
-        270D00000000000000000034 = {isa = PBXBuildFile; fileRef = 270D00000000000000000014;};
-        270D00000000000000000033 = {isa = PBXBuildFile; fileRef = 270D00000000000000000013;};
-        270D00000000000000000032 = {isa = PBXBuildFile; fileRef = 270D00000000000000000012;};
-        270D00000000000000000031 = {isa = PBXBuildFile; fileRef = 270D00000000000000000011;};
-        270D00000000000000000030 = {isa = PBXBuildFile; fileRef = 270D00000000000000000010;};
-        270D0000000000000000002F = {isa = PBXBuildFile; fileRef = 270D0000000000000000000F;};
         270D0000000000000000002A = {isa = PBXBuildFile; fileRef = 270D0000000000000000000A;};
 		C3660000000000000000000A /* ReleasedReadingDataLayoutMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000009 /* ReleasedReadingDataLayoutMigrationTests.swift */; };
-        270D00000000000000000029 = {isa = PBXBuildFile; fileRef = 270D00000000000000000009;};
-        270D00000000000000000028 = {isa = PBXBuildFile; fileRef = 270D00000000000000000008;};
-        270D00000000000000000027 = {isa = PBXBuildFile; fileRef = 270D00000000000000000007;};
-        270D00000000000000000026 = {isa = PBXBuildFile; fileRef = 270D00000000000000000006;};
-        270D00000000000000000025 = {isa = PBXBuildFile; fileRef = 270D00000000000000000005;};
-        270D0000000000000000003F = {isa = PBXBuildFile; fileRef = 270D0000000000000000001F;};
         270D00000000000000000024 = {isa = PBXBuildFile; fileRef = 270D00000000000000000004;};
-        270D00000000000000000023 = {isa = PBXBuildFile; fileRef = 270D00000000000000000003;};
-        270D00000000000000000022 = {isa = PBXBuildFile; fileRef = 270D00000000000000000002;};
-        270D00000000000000000021 = {isa = PBXBuildFile; fileRef = 270D00000000000000000001;};
 
 
 
 		148B00000000000000000005 /* AIConnectionUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000005 /* AIConnectionUsageTests.swift */; };
-        F18300000000000000000003 /* ThemedGroupedList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18300000000000000000004; };
-        F18300000000000000000001 /* ReaderFontList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18300000000000000000002; };
 		6FE86863DC904E4183EE7017 /* MainActorNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */; };
-        F15200000000000000000005 /* ReaderBuiltinFonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15200000000000000000006; };
-        152000000000000000000003 /* ReaderFontPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152000000000000000000004; };
-        152000000000000000000001 /* ReaderFontLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152000000000000000000002; };
-		F13000000000000000000001 /* ReaderPresentationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13000000000000000000002 /* ReaderPresentationState.swift */; };
-		3D1C1E4B0133473A9A1C7DC4 /* ReaderToolSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383925FAF2394CAEBB958065 /* ReaderToolSession.swift */; };
-		75AC6A58A0F342E1BBCD5E39 /* ReaderNativeToolPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24876A02745446B988AAC7F8 /* ReaderNativeToolPresentation.swift */; };
-        F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14100000000000000000002 /* ReaderSettingsStore.swift */; };
-		4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */; };
 		6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */; };
 		FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */; };
-		65ECA15E2CC74AE98456F117 /* ReadingModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */; };
 		CE9F8CE75AFE42C28ECC1229 /* AppThemePreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */; };
-		BA82A3CBA86846ECB5AE63D2 /* PalettePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2FC43F5CF31408684F519A8 /* PalettePicker.swift */; };
-		6C7083940065499F8C0487BB /* PalettePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C09A37A925A455A99296F73 /* PalettePreview.swift */; };
-		F587C1E1155B48F9AEAC88ED /* PaletteEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */; };
-		A454A845E962475DB9521518 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC34429CDFF645F5BAE7F6D8 /* AboutView.swift */; };
-		DEC2BEC0985D4462A3DFFD5B /* ThirdPartyLicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10228DEB2BD941C69E7913EA /* ThirdPartyLicensesView.swift */; };
+		A37606000000000000000012 /* SettingsPaletteHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37606000000000000000002; };
 		5D04F75C81604F72B1B2B5D7 /* StatisticsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */; };
-		29A6B7ABAE5F498383369043 /* StatisticsBookList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB4842B3A754C71A06C635E /* StatisticsBookList.swift */; };
-		DBED821EB4A6440D9732F774 /* StatisticsDurationBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E34349A15174B0B96CF5ED2 /* StatisticsDurationBar.swift */; };
-		D40DDEFC45D0459C95B0AC51 /* StatisticsRhythm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219DD27FBAD14D52B0C6126E /* StatisticsRhythm.swift */; };
-		29AAD3F529884B28913015CC /* ReadingSessionsChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 950900AFC89A493D8BACE3EB /* ReadingSessionsChart.swift */; };
-		15CFAA04BB604325A6F7B91C /* StatisticsDayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF633098CC3047F3B4C9FD53 /* StatisticsDayView.swift */; };
 		BC404FD2C78B4E67B20B56A2 /* StatisticsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */; };
-		180EAB5E6B1F402795800E0D /* StatisticsSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 569E074D07FB4F80B6BF0E1C /* StatisticsSessionsView.swift */; };
 
-		E34C8E660FB8402F9D808D83 /* ReadingViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B366E511A14B4057A2530C62 /* ReadingViewport.swift */; };
-		C6E02235F2BC49C99652D6ED /* ReadingPagination.swift in Sources */ = {isa = PBXBuildFile; fileRef = 458B0A398F7C438EA28DEEE7 /* ReadingPagination.swift */; };
-		D1D21C97FB7B4DC9ABAC60C8 /* ReadingTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74FA7B4B76DC4862A844072D /* ReadingTextView.swift */; };
-		F9146A65FABC49229CE8AFBE /* ReaderCoverController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C364284297DE4F0EA83F563E /* ReaderCoverController.swift */; };
-		0E8B143793A847D18B946668 /* PageController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E319626F4A44AF7A3D79CF0 /* PageController.swift */; };
-		AD2E4CEA11114B348BD4001C /* ReadingController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1BA926631B40A984117791 /* ReadingController.swift */; };
-		5D3597B4FF844A3FAECAB599 /* ReadingController+Selection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31DD7DA228F74AF7BF5CF2BF /* ReadingController+Selection.swift */; };
-		6815BF660F5E4ADCA0560E68 /* ReadingController+Pages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84865B4171AD4E3FA50E0C27 /* ReadingController+Pages.swift */; };
-		7EFE92CC1E2F4EABA11F303E /* ReadingController+Navigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E544CBFC00B4DC4933A41F6 /* ReadingController+Navigation.swift */; };
-		56A29F1440F34C9BA64DD055 /* ReadingController+Scroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15890ED074464D47AAEC9260 /* ReadingController+Scroll.swift */; };
-		BCA9FC224516449E85299411 /* ReadingTextDecorations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877FD187DC584201993EB368 /* ReadingTextDecorations.swift */; };
-		68B923012B624E04B44EA7E3 /* ReaderSearchContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFDEA98F6244BFCB5585222 /* ReaderSearchContent.swift */; };
-		8BE0A1CCE83D4C5C83A75AD8 /* NoteEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA87A42C5E9B498293DC1520 /* NoteEditor.swift */; };
-		E44C314B4FF64F97B185487B /* ReaderAnnotationDetails.swift in Sources */ = {isa = PBXBuildFile; fileRef = E44C314B4FF64F97B185487A /* ReaderAnnotationDetails.swift */; };
-		79080AE9A8A340A1B99ACC83 /* ReaderChapterList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DD24446A106474B8CE31B7C /* ReaderChapterList.swift */; };
-		CC9B3BCAE0EA4013878D9BA4 /* ReaderNotesList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22ECFC9087614B5699133F80 /* ReaderNotesList.swift */; };
 		D14015000000000000000001 /* NoteDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14015000000000000000002 /* NoteDocument.swift */; };
-		87B3FE2BFDD04847AE5A02CA /* ReaderLibrarySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */; };
-		48A7297CFF794C178D1242D0 /* ReaderBattery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F985A452EFF8466E81960075 /* ReaderBattery.swift */; };
-		308165AED1DF4230A31FF52B /* ReaderEncodingMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */; };
-		4C8BF65601CA4114841B5D6B /* ReaderToolLabelStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */; };
-		2DD74B5821B64531B506A916 /* ReaderCompactHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */; };
-		AA51DD835A184821B465CFD4 /* ReaderPreparationContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */; };
-		920111E653264DBDB7FC1858 /* ReaderMoreContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */; };
-		4C49B0B7AF064FE799DE604A /* ReaderTaskContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */; };
 
 		CD0100000000000000000001 = {isa = PBXBuildFile; fileRef = CD0200000000000000000001; };
 		CD0100000000000000000002 = {isa = PBXBuildFile; fileRef = CD0200000000000000000002; };
 		CD0100000000000000000003 = {isa = PBXBuildFile; fileRef = CD0200000000000000000001; };
 		660000000000000000000006 = {isa = PBXBuildFile; fileRef = 660000000000000000000005; };
 		660000000000000000000004 = {isa = PBXBuildFile; fileRef = 660000000000000000000003; };
-		660000000000000000000002 = {isa = PBXBuildFile; fileRef = 660000000000000000000001; };
 		F02200000000000000000001 /* TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02200000000000000000002 /* TestSupport.swift */; };
         F14900000000000000000001 = {isa = PBXBuildFile; fileRef = F14900000000000000000002; };
         F14900000000000000000003 = {isa = PBXBuildFile; fileRef = F14900000000000000000004; };
@@ -196,7 +53,6 @@
 F01900000000000000000001 = {isa = PBXBuildFile; fileRef = F01900000000000000000002; };
         FC1100000000000000000001 = {isa = PBXBuildFile; fileRef = FC2100000000000000000001; };
         FC1100000000000000000002 = {isa = PBXBuildFile; fileRef = FC3100000000000000000001; };
-FF1000000000000000000001 = {isa = PBXBuildFile; fileRef = FF2000000000000000000001; };
 
 OS1000000000000000000001 = {isa = PBXBuildFile; fileRef = OS2000000000000000000001; };
 		F01800000000000000000003 /* AIChatGPTTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01800000000000000000004 /* AIChatGPTTestFixtures.swift */; };
@@ -209,19 +65,14 @@ B792EA92E8204EEDB7AA1450 = {isa = PBXBuildFile; fileRef = EC14CE0E00934BB682B83B
 		5AEB90FA1BD147BDA6246668 /* AppStorePrivacyTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C23901BA4E14CF6AA3F4140 /* AppStorePrivacyTestFixtures.swift */; };
 AP1000000000000000000001 = {isa = PBXBuildFile; fileRef = AP2000000000000000000001; };
 		F01700000000000000000005 /* TipJarTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01700000000000000000006 /* TipJarTestFixtures.swift */; };
-        F01700000000000000000001 = {isa = PBXBuildFile; fileRef = F01700000000000000000002; };
         F01600000000000000000001 = {isa = PBXBuildFile; fileRef = F01600000000000000000002; };
-        AF1000000000000000000004 /* LibraryDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000004; };
 		AF1000000000000000000005 /* LibraryDropTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000005 /* LibraryDropTestFixtures.swift */; };
-FB1000000000000000000001 = {isa = PBXBuildFile; fileRef = FB2000000000000000000001; };
 
 FA1000000000000000000002 = {isa = PBXBuildFile; fileRef = FA2000000000000000000002; };
-FA1000000000000000000001 = {isa = PBXBuildFile; fileRef = FA2000000000000000000001; };
 4ECB33000000000000000001 = {isa = PBXBuildFile; fileRef = 4ECB33000000000000000002; };
 		C36600000000000000000002 /* AIToolRequestNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000001 /* AIToolRequestNames.swift */; };
 E71000000000000000000001 = {isa = PBXBuildFile; fileRef = E72000000000000000000001; };
 358000000000000000000004 = {isa = PBXBuildFile; fileRef = 358000000000000000000003; };
-E71000000000000000000077 /* AIReadingMoon.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72000000000000000000077; };
 AC1000000000000000000077 /* MoonCharacter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2000000000000000000077; };
 		E61000000000000000000077 /* AIReadingMoonTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000077 /* AIReadingMoonTestFixtures.swift */; };
 		E61000000000000000000007 /* AIReadingToolsTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000007 /* AIReadingToolsTestFixtures.swift */; };
@@ -253,37 +104,23 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         AF1000000000000000000001 /* WelcomeStory.txt in Resources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000001; };
         AE1000000000000000000001 = {isa = PBXBuildFile; fileRef = AE2000000000000000000001; };
         AE1000000000000000000002 = {isa = PBXBuildFile; fileRef = AE2000000000000000000002; };
-        AD1000000000000000000008 = {isa = PBXBuildFile; fileRef = AD2000000000000000000008; };
-        AD1000000000000000000006 = {isa = PBXBuildFile; fileRef = AD2000000000000000000006; };
-        AD1000000000000000000007 = {isa = PBXBuildFile; fileRef = AD2000000000000000000007; };
-        AD1000000000000000000005 = {isa = PBXBuildFile; fileRef = AD2000000000000000000005; };
-        AD1000000000000000000004 = {isa = PBXBuildFile; fileRef = AD2000000000000000000004; };
         AD1000000000000000000003 = {isa = PBXBuildFile; fileRef = AD2000000000000000000003; };
         39D7C1FD293B4F679A79FD96 = {isa = PBXBuildFile; fileRef = 0D0965B74AE0467A91227A7C; };
-        34F12DF9BAFE4E998085F3FD = {isa = PBXBuildFile; fileRef = BDD21FDF37FC419990915D98; };
-        11BFB3022CB8470AB1230F9C = {isa = PBXBuildFile; fileRef = 0BF0665B40B94F05A6C9E334; };
-        AD1000000000000000000002 = {isa = PBXBuildFile; fileRef = AD2000000000000000000002; };
-        AD1000000000000000000001 = {isa = PBXBuildFile; fileRef = AD2000000000000000000001; };
         AC1000000000000000000001 = {isa = PBXBuildFile; fileRef = AC2000000000000000000001; };
         E28400000000000000000001 /* DeveloperMetadataCleanupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28400000000000000000002; };
         E28400000000000000000003 /* DeveloperTools.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = E28400000000000000000004; };
         AC1000000000000000000002 = {isa = PBXBuildFile; fileRef = AC2000000000000000000002; };
-        AC1000000000000000000003 = {isa = PBXBuildFile; fileRef = AC2000000000000000000003; };
+		A37606000000000000000011 /* SettingsDataHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37606000000000000000001; };
         AC1000000000000000000004 = {isa = PBXBuildFile; fileRef = AC2000000000000000000004; };
-        AC1000000000000000000006 = {isa = PBXBuildFile; fileRef = AC2000000000000000000006; };
 		A10000000000000000000001 /* MoonreadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MoonreadApp.swift */; };
+		A37603000000000000000017 /* AppDataServiceFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37603000000000000000016 /* AppDataServiceFactory.swift */; };
 		6330E9327FF2417A990DB18A /* AppShellModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32EF7CA859B141099ECA688E /* AppShellModel.swift */; };
 		A10000000000000000000002 /* AppDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppDataService.swift */; };
-		B8241D3AB12C4A36B0E155D1 /* ReadingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8241D3AB12C4A36B0E155D0 /* ReadingProgress.swift */; };
 		A10000000000000000000003 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* LibraryView.swift */; };
 		A10000000000000000000004 /* ReaderScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* ReaderScreen.swift */; };
-		A10000000000000000000005 /* ReadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* ReadingView.swift */; };
-		A10000000000000000000006 /* TextCoordinates.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* TextCoordinates.swift */; };
-		A10000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */; };
 		A10000000000000000000008 /* ../assets/icon/Moonread.icon in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* ../assets/icon/Moonread.icon */; };
 		A10000000000000000000009 /* MoonreadUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* MoonreadUITests.swift */; };
 		A1000000000000000000000A /* ReaderTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* ReaderTestFixtures.swift */; };
-        AB1000000000000000000001 /* ReaderTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000001; };
         AB1000000000000000000002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000002; };
 
 
@@ -297,11 +134,8 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 
 		3A96A876F24042AAA2FE29BC /* MoonreadDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A538254DAE463BA4801DAB /* MoonreadDelegate.swift */; };
 		9691E8B4840C4F38B899F26B /* LibraryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 487CD594A7CA40ABB7A8AB0B /* LibraryModel.swift */; };
-		D4FB0F4457504C4CA4DD4F73 /* ReaderSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86D90F0376D344A3842137FB /* ReaderSession.swift */; };
-		7A042EE51D614A828562A191 /* ReaderTitlePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF76A57AADD0405FB7746D49 /* ReaderTitlePage.swift */; };
 		29B55EBD38D34117AE72E079 /* CloudSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42742C82EEF942DE87A817BA /* CloudSettingsView.swift */; };
 		DFA135AC4F9846958D6431FB /* CloudStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD01275239A4B0EA525197E /* CloudStore.swift */; };
-		94D2EEC02FFF4BC08C9C7711 /* ReaderMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD79BB2926E04FA788D5DBB3 /* ReaderMessages.swift */; };
 		B399C5AB3B2D4E7385E053AC /* AITaskSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383CEB82D6324AC78C31EE40; };
 		DC581CB64D964BDC81C14C4B /* AIMetadataReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D536F47E57410DBB38F97B; };
 		0BC015E32C5041118947402E /* AICoverTaskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F3068431DF421C9ADE8A3A; };
@@ -321,8 +155,6 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		19B30D2DE87E46ADA99B1F85 /* AIResults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97243FC88EB941CE8D7B8C5D; };
 		0824CF925F1146178BFD0FD1 /* AIRepositoryTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7773498FC5E46E7B6D20EE9 /* AIRepositoryTestFixtures.swift */; };
 		941D8F146D7A436D97BC6909 /* AIReviewActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63157555C51A4D79A42A3D88; };
-		7A278708BAB942A99014C0D3 /* ReaderOpening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 990DFFD80C6248E3A5BF832F /* ReaderOpening.swift */; };
-		267C2529F2B14483B0424293 /* ReaderOpenDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF08E0D9F8D042DA8E2DC265 /* ReaderOpenDiagnostics.swift */; };
 		338EBE51F11D4BDC98985D77 /* ReaderOpenBenchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A44BEF4C3D4FE0A71CCB03; };
 		FD64F53149DE5DBFB6AA04F1 /* ShareInbox in App Sources */ = { isa = PBXBuildFile; fileRef = AF3B627D29215FAB93FC0C44;  };
 		83C1F3DE49DE5AC693D3E8E8 /* ShareReceive strings in App Resources */ = { isa = PBXBuildFile; fileRef = 5DA1E57CF521587EAF48FEFB;  };
@@ -386,12 +218,9 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		714F48D3E479BA56DD626210 /* TipJar.storekit in Test Resources */ = {isa = PBXBuildFile; fileRef = F01700000000000000000004 /* TipJar.storekit */; };
         B39A10000000000000000001 /* ShelfRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B39A20000000000000000001; };
         B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B39A20000000000000000002; };
-        D50610000000000000000001 /* UserDataBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000001; };
         D50610000000000000000002 /* ReadingDataManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000002; };
         D50610000000000000000003 /* CacheManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000003; };
         A36101000000000000000002 /* StorageManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000002 /* StorageManagement.swift */; };
-        A36101000000000000000001 /* StorageFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000001 /* StorageFiles.swift */; };
-        D50610000000000000000004 /* DataManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000004; };
         D50610000000000000000005 /* DataManagement.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000005; };
         A36101000000000000000005 /* Storage.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000005 /* Storage.xcstrings */; };
         D50610000000000000000006 /* DataManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000006; };
@@ -426,17 +255,10 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		2A49E75FB62D455EA40547D4 /* WidgetDefaultAppearance.json */ = {isa = PBXBuildFile; fileRef = 1FC26519733A4A86A5C69068; };
 		B135F2963E3B47819FE2FC73 /* WidgetDefaultAppearance.json */ = {isa = PBXBuildFile; fileRef = 1FC26519733A4A86A5C69068; };
 		A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */; };
-		1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */; };
-		154000000000000000000002 = {isa = PBXBuildFile; fileRef = 154000000000000000000001; };
 		154000000000000000000004 = {isa = PBXBuildFile; fileRef = 154000000000000000000003; };
-		C31100000000000000000006 /* BookTagCategories.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31100000000000000000005; };
 		C31100000000000000000004 /* BookTagPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31100000000000000000003; };
-		C31100000000000000000008 /* tag-map.json in Resources */ = {isa = PBXBuildFile; fileRef = C31100000000000000000007; };
 		154000000000000000000006 = {isa = PBXBuildFile; fileRef = 154000000000000000000005; };
 		154000000000000000000008 = {isa = PBXBuildFile; fileRef = 154000000000000000000007; };
-		358000000000000000000002 = {isa = PBXBuildFile; fileRef = 358000000000000000000001; };
-		6D93C1035BB54BA388AEDB7C /* ReaderAutoReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA37E7E44EF4E73B8BC6A70 /* ReaderAutoReading.swift */; };
-		1656D9DC94AB4BC4942732E9 /* ReaderAutoReadingContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0918A2524BAB480FBC176B72 /* ReaderAutoReadingContent.swift */; };
 
 		4DFEB8DA956D930D5E3A4D76 /* AppDataService+AIReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F86CEF54D14111746A4067 /* AppDataService+AIReading.swift */; };
 		C1FF27AC031AA7B21710CCF1 /* LibraryFolderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B08AF041DBD8BF5576A2C99 /* LibraryFolderView.swift */; };
@@ -456,14 +278,7 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 
 
 
-		91C1FE0F3C2AE3778DC59826 /* ReaderSession+Loading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD69288D1A4A7B83B7716FD /* ReaderSession+Loading.swift */; };
-		CE65946D407BC42BD38ECEF8 /* ReaderSession+Position.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8B593DB68A25B224FFC6357 /* ReaderSession+Position.swift */; };
-		DC0C7F5391863C5DFBF3A396 /* ReaderSession+Preparation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64668E58C60A8E8854443909 /* ReaderSession+Preparation.swift */; };
-		1515207B6BA51EC57E2B81F2 /* ReaderSession+Annotations.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECC2811577B9D46B2B2E4B22 /* ReaderSession+Annotations.swift */; };
-		D880D3619732F8B9540289DF /* ReaderSession+Browsing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7AE5C4807C48AC11277C1D6 /* ReaderSession+Browsing.swift */; };
-		C54AB28690F31B67D226B9E2 /* ReaderSession+Continuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53DA632BE52105B1B9FE45B9 /* ReaderSession+Continuation.swift */; };
 		5E88004253B3A735D2C1A07D /* UserDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41FE7642D97F4C44537CA95 /* UserDataModels.swift */; };
-		3A7B1A13F3E7DD531AF0CCE4 /* UserDataValues.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBFBE8417D869DCCCD1B1533 /* UserDataValues.swift */; };
 		218F66F30D512052FAFB4B0A /* UserDataStore+Transfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0D371B9C6A60C0708C4C049 /* UserDataStore+Transfer.swift */; };
 		E6D7C1E870611C3861CBCD58 /* UserDataStore+Values.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF3479613D2459E809884460 /* UserDataStore+Values.swift */; };
 		0EC6C0D2525AD80826CE3AA6 /* UserDataStore+Annotations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DEF385C03F17728D304C87C /* UserDataStore+Annotations.swift */; };
@@ -475,16 +290,8 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		E47F1E111F1148CE1CA8E652 /* LibraryModel+Navigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6679469CAA3B443138FDBCFA /* LibraryModel+Navigation.swift */; };
 		8C10E5B9210E87F647B8A322 /* LibraryModel+Imports.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2826A3437E79C7567C3A4406 /* LibraryModel+Imports.swift */; };
 		1447BC60327069310DE0A4CD /* LibraryModel+FileWork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A6964053824537B134D3E6C /* LibraryModel+FileWork.swift */; };
-		3A17B5EDF92E15B897D0C225 /* ReaderScreen+Content.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A6DCFDAFFDC5FBC8A30EEBE /* ReaderScreen+Content.swift */; };
-		3F6360D2E5B77985EFF5EF2E /* ReaderScreen+Controls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 266F15FF22C52D6798BCD4D3 /* ReaderScreen+Controls.swift */; };
-		ED43C6093F46B29167FA3107 /* ReaderSearchPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBFAB498FE6EBD8916C23861 /* ReaderSearchPage.swift */; };
-		34118FBC4E5AADEF0EE21434 /* ReaderChapterRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6446714E15EDF5DC84D08419 /* ReaderChapterRow.swift */; };
-		471EC7FB4D05BD00640CFA1D /* MetadataExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB3912F88E0505A233C40FF6; };
 		7FFFB76F33327913F37A7D68 /* MetadataExchangeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2359B9413943919B9286CDF7; };
 		4C40326EFE5BB71FA030A863 /* MetadataExchangeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 201974DC4BBF9AC197832880; };
-		E29300000000000000000001 /* MetadataExchangeStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = E29300000000000000000002; };
-		CDF00E04D1ED44A69B16733E /* MetadataImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B921D33133257F57CF747E59; };
-		2A9B96701CC7CDCCC25D0622 /* MetadataTasksSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE54835FF23B76DF33D8DB39; };
 		89E96FFFF6571AEF936D682A = {isa = PBXBuildFile; fileRef = ED137C59B129523670772A6F; };
 		D84AF1EE58BF3D4813B23CFA = {isa = PBXBuildFile; fileRef = 26AA2454BCE4D9C649AE5576; };
 		07E3722C848B4FE19CBF215D = {isa = PBXBuildFile; fileRef = 5BB83729646B4A3D83C1F8E1; };
@@ -495,27 +302,22 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 		FBEC3350F1726A8D25FE408B /* AIChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9A1F23534B032F5051C81C /* AIChatView.swift */; };
 		F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802F64D6FADEC829D9FABA3E /* AIComposer.swift */; };
 		88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */; };
-		90709A613E0B26BF14B9F308 /* DataManagementModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */; };
-		A36101000000000000000004 /* StorageSpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000004 /* StorageSpaceView.swift */; };
-		C36600000000000000000008 /* StorageDatabasePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000007 /* StorageDatabasePage.swift */; };
-		C36600000000000000000006 /* StorageSelectionPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000005 /* StorageSelectionPage.swift */; };
-		C36600000000000000000004 /* StorageCategoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C36600000000000000000003 /* StorageCategoryPage.swift */; };
-		A36101000000000000000003 /* StorageSpaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36102000000000000000003 /* StorageSpaceModel.swift */; };
-		4E5986F68A44B334B7F8643D /* ReadingDataListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */; };
-		42F0869878D5AA951138E187 /* ReadingDataIssuesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */; };
 		2D2BA9F36327CC9404EEC2D1 /* AIModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */; };
 		EC01BD4B8052624B73BD6031 /* LibraryDirectoryObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = F54437FA5E94BE01B694DE2D /* LibraryDirectoryObserver.swift */; };
-		6F0F9A8C149BDA5EEAD6DF01 /* LibraryExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1552663E85DD907D9582A20 /* LibraryExport.swift */; };
-		2D1B236D8713432E89CE0ED8 /* ListeningTextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEED0591FCDF4D9B875C2D65 /* ListeningTextProvider.swift */; };
-		8D74048A90F64B17A95EE475 /* ListeningAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38613D51CE20472BA3CD7959 /* ListeningAudio.swift */; };
-		2DCBBA9F75784F3DB0AFA4C6 /* ListeningSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 757662F1BC2C46D892CDD12D /* ListeningSession.swift */; };
-		FEF5731A64AE45B8A2C5A152 /* ReaderSession+Listening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EADC4B15AED40D6AABE1DD3 /* ReaderSession+Listening.swift */; };
-		F082D1DB5AA74D34B3B0BBCE /* ReaderListeningContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3FA0FBB62D4B56A733E32A /* ReaderListeningContent.swift */; };
 		BD8D1CFA6FD24E97B0C90D6A /* ListeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A18BA5D42144A6CAF36FCB2; };
-		FC28A3912F1D25B7A584D239 /* ReadingController+Listening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AF4BED8E0697070C37CB7D /* ReadingController+Listening.swift */; };
 		DEE84EA507BD5833583CE850 /* AIConversationProtocolFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 465891D88D369B6F3EFE2B27 /* AIConversationProtocolFixtures.swift */; };
 		338BB8A6D7043A0DD640FC65 /* AIConnectionFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E81C5D3417332DCB4691CF5 /* AIConnectionFixtures.swift */; };
 		7CE986CF432C7B672BAB0E6F /* AINativeToolsFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1DA2437A2F7FD02A7278FB /* AINativeToolsFixture.swift */; };
+		A37602000000000000000006 /* MoonreadStatistics in Frameworks */ = {isa = PBXBuildFile; productRef = A37602000000000000000003; };
+		A37602000000000000000008 /* MoonreadDesign in Frameworks */ = {isa = PBXBuildFile; productRef = A37602000000000000000005; };
+		A37603000000000000000003 /* MoonreadCoreBindings in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000002; };
+		A37603000000000000000013 /* MoonreadDataTypes in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000012; };
+		A37603000000000000000015 /* MoonreadData in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000014; };
+		A37603000000000000000023 /* MoonreadLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = A37603000000000000000022; };
+		A37604000000000000000003 /* MoonreadReader in Frameworks */ = {isa = PBXBuildFile; productRef = A37604000000000000000002; };
+		A37605000000000000000003 /* MoonreadSettings in Frameworks */ = {isa = PBXBuildFile; productRef = A37605000000000000000002; };
+		A37604000000000000000005 /* MoonreadInstalledFonts in Frameworks */ = {isa = PBXBuildFile; productRef = A37604000000000000000004; };
+		A37604000000000000000006 /* MoonreadInstalledFonts in Frameworks */ = {isa = PBXBuildFile; productRef = A37604000000000000000004; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -543,178 +345,36 @@ D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D320000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		88CC01BA70B951BE9CA0C2A5 /* CloudCallbackJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudCallbackJournal.swift; sourceTree = "<group>"; };
-		1DCF6FB820125DA3BE5F4714 /* CloudInboxRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudInboxRows.swift; sourceTree = "<group>"; };
-		21EDB020537F5784BF5EBFCE /* DataExchangeTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataExchangeTask.swift; sourceTree = "<group>"; };
-		0621A45802455F07BCC2B7B4 /* RelationalReadingData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelationalReadingData.swift; sourceTree = "<group>"; };
-		3F77F001BB3A5E69A7C058C1 /* UserBackupRestore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserBackupRestore.swift; sourceTree = "<group>"; };
-		9A3C75640B4F5969A1616A85 /* ReadingWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingWindow.swift; sourceTree = "<group>"; };
 		876C7011C17350089BBFEFD4 /* BookSearchConditionPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookSearchConditionPages.swift; sourceTree = "<group>"; };
-		5613FA4B23135F6FB815B8E2 /* BookSearchTagRulePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookSearchTagRulePage.swift; sourceTree = "<group>"; };
         270E10000000000000000090 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibrarySearchQuery.swift"; sourceTree = "<group>";};
-        270E10000000000000000091 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/SearchCandidatesQuery.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000092 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/BookFilterOptionsQuery.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000093 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/SearchFile.graphql.swift"; sourceTree = "<group>";};
         270E100000000000000000A0 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsQuery.swift"; sourceTree = "<group>";};
-        270E100000000000000000A1 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/StatisticsActivitiesQuery.graphql.swift"; sourceTree = "<group>";};
-        270E100000000000000000A2 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/StatisticsOverviewQuery.graphql.swift"; sourceTree = "<group>";};
-        270E100000000000000000A3 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/StatisticsWidgetQuery.graphql.swift"; sourceTree = "<group>";};
-        270E100000000000000000A4 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ReadingStatisticsActivity.graphql.swift"; sourceTree = "<group>";};
-        270E100000000000000000A5 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ReadingStatisticsBook.graphql.swift"; sourceTree = "<group>";};
-        270E100000000000000000A6 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ReadingStatisticsDay.graphql.swift"; sourceTree = "<group>";};
-        270E100000000000000000A7 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ReadingStatisticsOverview.graphql.swift"; sourceTree = "<group>";};
         270E100000000000000000B0 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingQuery.swift"; sourceTree = "<group>";};
-        270E100000000000000000B1 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/SystemCatalogueQuery.graphql.swift"; sourceTree = "<group>";};
-        270E100000000000000000B2 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/SystemCatalogueBook.graphql.swift"; sourceTree = "<group>";};
-        270E100000000000000000A8 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ReadingStatisticsWidget.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000094 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/SearchOptions.graphql.swift"; sourceTree = "<group>";};
-		C31100000000000000000001 /* SearchTagOption.graphql.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/SearchTagOption.graphql.swift"; sourceTree = "<group>"; };
-        270E10000000000000000077 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/InformationSource.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000076 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/InformationMetadata.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000075 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/InformationBody.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000074 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/BookInformation.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000073 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/InputObjects/InformationTarget.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000072 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Enums/BookInformationKind.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000071 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/BookInformationQuery.graphql.swift"; sourceTree = "<group>";};
         270E10000000000000000070 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookInformationQuery.swift"; sourceTree = "<group>";};
-        270E10000000000000000057 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ShelfTagGroup.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000056 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ShelfBookCard.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000055 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Enums/ShelfTagKind.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000054 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/ShelfTagGroupsQuery.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000053 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/ShelfBookCardsQuery.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000052 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryCardSQL.swift"; sourceTree = "<group>";};
         270E10000000000000000051 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CatalogueStore.swift"; sourceTree = "<group>";};
-        270E10000000000000000050 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CatalogueQuery.swift"; sourceTree = "<group>";};
-        270E10000000000000000038 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/FolderGroup.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000037 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/FolderEntry.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000036 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/FolderDestination.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000035 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/FolderCover.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000034 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/FolderBookCard.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000033 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/FolderPageQuery.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000032 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/FolderDestinationsQuery.graphql.swift"; sourceTree = "<group>";};
         270E10000000000000000031 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FolderStore.swift"; sourceTree = "<group>";};
-        270E10000000000000000030 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FolderQuery.swift"; sourceTree = "<group>";};
-        270E10000000000000000019 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ReaderOpening.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000018 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ChapterStructureEntry.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000017 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ChapterStructure.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/ChapterHeading.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/ReaderOpeningQuery.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/ChapterStructureQuery.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/ChapterAtQuery.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Fragments/HeadingFields.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderWindowRead.swift"; sourceTree = "<group>";};
-        270E10000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderOpeningQuery.swift"; sourceTree = "<group>";};
         270E1000000000000000000F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderChapterQuery.swift"; sourceTree = "<group>";};
         270E1000000000000000000E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecentReadingStore.swift"; sourceTree = "<group>";};
-        270E1000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecentReadingQuery.swift"; sourceTree = "<group>";};
-        270E1000000000000000000C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/SchemaMetadata.graphql.swift"; sourceTree = "<group>";};
-        270E1000000000000000000B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/SchemaConfiguration.swift"; sourceTree = "<group>";};
-        270E1000000000000000000A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/RecentReadingMetadata.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/RecentReadingFile.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/RecentReadingCover.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/RecentReadingCard.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/Query.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/CustomScalars/UInt64.swift"; sourceTree = "<group>";};
-        270E10000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/CustomScalars/Int64.swift"; sourceTree = "<group>";};
-        270E10000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/CustomScalars/ID.swift"; sourceTree = "<group>";};
-        270E10000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/RecentReadingQuery.graphql.swift"; sourceTree = "<group>";};
-        270E10000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/MoonreadQueries.graphql.swift"; sourceTree = "<group>";};
-        270D0000000000000000000B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderIndex.swift"; sourceTree = "<group>";};
-        270D0000000000000000000C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexInput.swift"; sourceTree = "<group>";};
-        270D0000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexImport.swift"; sourceTree = "<group>";};
-        270D0000000000000000000E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexSources.swift"; sourceTree = "<group>";};
-        270D00000000000000000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CurrentUserRows.swift"; sourceTree = "<group>";};
-        270D00000000000000000016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingFactSettlement.swift"; sourceTree = "<group>";};
-        270D00000000000000000017 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserValueRows.swift"; sourceTree = "<group>";};
-        270D00000000000000000019 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSegmentRows.swift"; sourceTree = "<group>";};
-        270D0000000000000000001A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingClearRows.swift"; sourceTree = "<group>";};
-        270D0000000000000000001B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudTransportRows.swift"; sourceTree = "<group>";};
-        A327DEBA0000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingDataLayoutUpgrade.swift"; sourceTree = "<group>";};
-        270D0000000000000000001C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FixedValueCloudRows.swift"; sourceTree = "<group>";};
-        270D0000000000000000001E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CausalCloudRows.swift"; sourceTree = "<group>";};
-        270D00000000000000000018 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MetadataExchangeRows.swift"; sourceTree = "<group>";};
-        270D00000000000000000014 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AnnotationRows.swift"; sourceTree = "<group>";};
-        270D00000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingFactRows.swift"; sourceTree = "<group>";};
-        270D00000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PendingUserPromotion.swift"; sourceTree = "<group>";};
-        270D00000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingPositionRows.swift"; sourceTree = "<group>";};
-        270D00000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalReadingRows.swift"; sourceTree = "<group>";};
-        270D0000000000000000000F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexTasks.swift"; sourceTree = "<group>";};
         270D0000000000000000000A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Data/DataV2MigrationTests.swift"; sourceTree = SOURCE_ROOT;};
 		C36600000000000000000009 /* ReleasedReadingDataLayoutMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/Data/ReleasedReadingDataLayoutMigrationTests.swift; sourceTree = SOURCE_ROOT; };
-        270D00000000000000000009 = {isa = PBXFileReference; lastKnownFileType = text; path = "Moonread/Data/Database/LegacySQL/source_decoding_migration.sql"; sourceTree = SOURCE_ROOT;};
-        270D00000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text; path = "Moonread/Data/Database/LegacySQL/full_index.sql"; sourceTree = SOURCE_ROOT;};
-        270D00000000000000000007 = {isa = PBXFileReference; lastKnownFileType = text; path = "Moonread/Data/Database/LegacySQL/schema.sql"; sourceTree = SOURCE_ROOT;};
-        270D00000000000000000006 = {isa = PBXFileReference; lastKnownFileType = text; path = "UserSchemaV1.sql"; sourceTree = "<group>";};
-        270D00000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalScopeImport.swift"; sourceTree = "<group>";};
-        270D0000000000000000001F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UpgradeOrigins.swift"; sourceTree = "<group>";};
         270D00000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LegacyUserImport.swift"; sourceTree = "<group>";};
-        270D00000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LegacyIndexImport.swift"; sourceTree = "<group>";};
-        270D00000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DataSession.swift"; sourceTree = "<group>";};
-        270D00000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DataSchema.swift"; sourceTree = "<group>";};
 
 
 
 		148A00000000000000000005 /* AIConnectionUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIConnectionUsageTests.swift"; sourceTree = "SOURCE_ROOT"; };
-        F18300000000000000000004 /* ThemedGroupedList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemedGroupedList.swift; sourceTree = "<group>"; };
-        F18300000000000000000002 /* ReaderFontList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontList.swift"; sourceTree = "<group>"; };
 		D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainActorNotifications.swift; sourceTree = "<group>"; };
-        F15200000000000000000006 /* ReaderBuiltinFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBuiltinFonts.swift"; sourceTree = "<group>"; };
-        152000000000000000000004 /* ReaderFontPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontPicker.swift"; sourceTree = "<group>"; };
-        152000000000000000000002 /* ReaderFontLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontLibrary.swift"; sourceTree = "<group>"; };
-		F13000000000000000000002 /* ReaderPresentationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderPresentationState.swift"; sourceTree = "<group>"; };
-		383925FAF2394CAEBB958065 /* ReaderToolSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderToolSession.swift"; sourceTree = "<group>"; };
-		24876A02745446B988AAC7F8 /* ReaderNativeToolPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderNativeToolPresentation.swift"; sourceTree = "<group>"; };
-        F14100000000000000000002 /* ReaderSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSettingsStore.swift"; sourceTree = "<group>"; };
-		80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProtectedFileAccess.swift"; sourceTree = "<group>"; };
 		B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SourceDecodingTests.swift"; sourceTree = "<group>"; };
 		2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SourceDecodingPreferences.swift"; sourceTree = "<group>"; };
-		B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingModePicker.swift"; sourceTree = "<group>"; };
 		FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppThemePreferencesView.swift"; sourceTree = "<group>"; };
-		D2FC43F5CF31408684F519A8 /* PalettePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PalettePicker.swift"; sourceTree = "<group>"; };
-		4C09A37A925A455A99296F73 /* PalettePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PalettePreview.swift"; sourceTree = "<group>"; };
-		CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PaletteEditor.swift"; sourceTree = "<group>"; };
-		EC34429CDFF645F5BAE7F6D8 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AboutView.swift"; sourceTree = "<group>"; };
-		10228DEB2BD941C69E7913EA /* ThirdPartyLicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ThirdPartyLicensesView.swift"; sourceTree = "<group>"; };
+		A37606000000000000000002 /* SettingsPaletteHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsPaletteHost.swift"; sourceTree = "<group>"; };
 		843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsModels.swift"; sourceTree = "<group>"; };
-		1DB4842B3A754C71A06C635E /* StatisticsBookList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsBookList.swift"; sourceTree = "<group>"; };
-		7E34349A15174B0B96CF5ED2 /* StatisticsDurationBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsDurationBar.swift"; sourceTree = "<group>"; };
-		219DD27FBAD14D52B0C6126E /* StatisticsRhythm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsRhythm.swift"; sourceTree = "<group>"; };
-		950900AFC89A493D8BACE3EB /* ReadingSessionsChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSessionsChart.swift"; sourceTree = "<group>"; };
-		BF633098CC3047F3B4C9FD53 /* StatisticsDayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsDayView.swift"; sourceTree = "<group>"; };
 		0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsSettingsView.swift"; sourceTree = "<group>"; };
-		569E074D07FB4F80B6BF0E1C /* StatisticsSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsSessionsView.swift"; sourceTree = "<group>"; };
 
-		B366E511A14B4057A2530C62 /* ReadingViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingViewport.swift"; sourceTree = "<group>"; };
-		458B0A398F7C438EA28DEEE7 /* ReadingPagination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingPagination.swift"; sourceTree = "<group>"; };
-		74FA7B4B76DC4862A844072D /* ReadingTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingTextView.swift"; sourceTree = "<group>"; };
-		C364284297DE4F0EA83F563E /* ReaderCoverController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderCoverController.swift"; sourceTree = "<group>"; };
-		1E319626F4A44AF7A3D79CF0 /* PageController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PageController.swift"; sourceTree = "<group>"; };
-		AA1BA926631B40A984117791 /* ReadingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController.swift"; sourceTree = "<group>"; };
-		31DD7DA228F74AF7BF5CF2BF /* ReadingController+Selection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Selection.swift"; sourceTree = "<group>"; };
-		84865B4171AD4E3FA50E0C27 /* ReadingController+Pages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Pages.swift"; sourceTree = "<group>"; };
-		3E544CBFC00B4DC4933A41F6 /* ReadingController+Navigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Navigation.swift"; sourceTree = "<group>"; };
-		15890ED074464D47AAEC9260 /* ReadingController+Scroll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Scroll.swift"; sourceTree = "<group>"; };
-		877FD187DC584201993EB368 /* ReadingTextDecorations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingTextDecorations.swift"; sourceTree = "<group>"; };
-		5DFDEA98F6244BFCB5585222 /* ReaderSearchContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSearchContent.swift"; sourceTree = "<group>"; };
-		DA87A42C5E9B498293DC1520 /* NoteEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteEditor.swift"; sourceTree = "<group>"; };
-		E44C314B4FF64F97B185487A /* ReaderAnnotationDetails.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderAnnotationDetails.swift"; sourceTree = "<group>"; };
-		2DD24446A106474B8CE31B7C /* ReaderChapterList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderChapterList.swift"; sourceTree = "<group>"; };
-		22ECFC9087614B5699133F80 /* ReaderNotesList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderNotesList.swift"; sourceTree = "<group>"; };
 		D14015000000000000000002 /* NoteDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteDocument.swift"; sourceTree = "<group>"; };
-		A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderLibrarySheet.swift"; sourceTree = "<group>"; };
-		F985A452EFF8466E81960075 /* ReaderBattery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBattery.swift"; sourceTree = "<group>"; };
-		224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderEncodingMenu.swift"; sourceTree = "<group>"; };
-		938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderToolLabelStyle.swift"; sourceTree = "<group>"; };
-		AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderCompactHeader.swift"; sourceTree = "<group>"; };
-		5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderPreparationContent.swift"; sourceTree = "<group>"; };
-		1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderMoreContent.swift"; sourceTree = "<group>"; };
-		3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderTaskContent.swift"; sourceTree = "<group>"; };
 
 		CD0200000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StoreScreenshotFixture.swift; path = "StoreScreenshotFixture.swift"; sourceTree = "<group>"; };
 		CD0200000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreScreenshots.swift; sourceTree = "<group>"; };
 		660000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../crates/moonread-core/tests/fixtures/library-input-contract-v1.json"; sourceTree = SOURCE_ROOT; };
 		660000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryQueryRulesTests.swift"; sourceTree = "<group>"; };
-		660000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryQueryRules.swift"; sourceTree = "<group>"; };
 		F02200000000000000000002 /* TestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/TestSupport.swift"; sourceTree = SOURCE_ROOT; };
         F14900000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FullIndex.swift"; sourceTree = "<group>"; };
         F14900000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "FullIndex.xcstrings"; sourceTree = "<group>"; };
@@ -726,7 +386,6 @@ F01900000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourceco
         FC2100000000000000000002 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
         FC2100000000000000000003 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
         FC2100000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
-FF2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserSyncJSON.swift"; sourceTree = "<group>"; };
 
 OS2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text; path = Moonread/Resources/ThirdPartyNotices.txt; sourceTree = SOURCE_ROOT; };
 		F01800000000000000000004 /* AIChatGPTTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatGPTTestFixtures.swift"; sourceTree = "<group>"; };
@@ -740,18 +399,13 @@ EC14CE0E00934BB682B83B4D = {isa = PBXFileReference; lastKnownFileType = sourceco
 AP2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Moonread/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT; };
 		F01700000000000000000006 /* TipJarTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/TipJarTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
         F01700000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text; path = Moonread/Settings/TipJar.storekit; sourceTree = SOURCE_ROOT; };
-        F01700000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/Settings/TipJar.swift; sourceTree = SOURCE_ROOT; };
         F01600000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
-        AF2000000000000000000004 /* LibraryDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryDrop.swift"; sourceTree = "<group>"; };
 		AF2000000000000000000005 /* LibraryDropTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/LibraryDropTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
-FB2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AINativeMarkdown.swift"; sourceTree = "<group>"; };
 FA2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIMessageRow.swift"; sourceTree = "<group>"; };
-FA2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIMessageList.swift"; sourceTree = "<group>"; };
 4ECB33000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIToolResultDetails.swift"; sourceTree = "<group>"; };
 		C36600000000000000000001 /* AIToolRequestNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIToolRequestNames.swift; sourceTree = "<group>"; };
 E72000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AITurnView.swift"; sourceTree = "<group>"; };
 358000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIBookListCard.swift"; sourceTree = "<group>"; };
-E72000000000000000000077 /* AIReadingMoon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingMoon.swift"; sourceTree = "<group>"; };
 		E62000000000000000000077 /* AIReadingMoonTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingMoonTestFixtures.swift"; sourceTree = "<group>"; };
 		E62000000000000000000007 /* AIReadingToolsTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingToolsTestFixtures.swift"; sourceTree = "<group>"; };
 E62000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReadingTools.swift"; sourceTree = "<group>"; };
@@ -775,9 +429,6 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         B12000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingStatistics.swift; sourceTree = "<group>"; };
         B12000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
         B02000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudSync.swift"; sourceTree = "<group>"; };
-        271C00000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudBootstrapRows.swift"; sourceTree = "<group>";};
-        271D00000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudBootstrapFold.swift"; sourceTree = "<group>";};
-        271A00000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingCloudInitialization.swift"; sourceTree = "<group>";};
         270D0000000000000000001D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSyncEngineAdapter.swift"; sourceTree = "<group>";};
         B02000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudLibrary.swift"; sourceTree = "<group>"; };
         AF2000000000000000000003 /* LibraryCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryCollection.swift"; sourceTree = "<group>"; };
@@ -786,34 +437,21 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         AF2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text; path = Resources/WelcomeStory.txt; sourceTree = "<group>"; };
         AE2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryService.swift"; sourceTree = "<group>"; };
         AE2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryActions.swift"; sourceTree = "<group>"; };
-        AD2000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBottomPanel.swift"; sourceTree = "<group>"; };
-        AD2000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderChapters.swift"; sourceTree = "<group>"; };
-        AD2000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingPreview.swift"; sourceTree = "<group>"; };
-        AD2000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderProgress.swift"; sourceTree = "<group>"; };
-        AD2000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderDeviceControls.swift; sourceTree = "<group>"; };
         AD2000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderPreferences.swift"; sourceTree = "<group>"; };
         0D0965B74AE0467A91227A7C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSettingsControls.swift"; sourceTree = "<group>"; };
-        BDD21FDF37FC419990915D98 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSettingsEditing.swift"; sourceTree = "<group>"; };
-        0BF0665B40B94F05A6C9E334 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderQuickSettings.swift"; sourceTree = "<group>"; };
-        AD2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingTypography.swift"; sourceTree = "<group>"; };
-        AD2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBackNavigation.swift"; sourceTree = "<group>"; };
         AC2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
         E28400000000000000000002 /* DeveloperMetadataCleanupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperMetadataCleanupView.swift; sourceTree = "<group>"; };
         E28400000000000000000004 /* DeveloperTools.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = DeveloperTools.xcstrings; sourceTree = "<group>"; };
         AC2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-        AC2000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonView.swift; sourceTree = "<group>"; };
+		A37606000000000000000001 /* SettingsDataHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsDataHost.swift"; sourceTree = "<group>"; };
         AC2000000000000000000077 /* MoonCharacter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonCharacter.swift; sourceTree = "<group>"; };
         AC2000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-        AC2000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputFocus.swift; sourceTree = "<group>"; };
 		A20000000000000000000001 /* MoonreadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadApp.swift; sourceTree = "<group>"; };
+		A37603000000000000000016 /* AppDataServiceFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataServiceFactory.swift; sourceTree = "<group>"; };
 		32EF7CA859B141099ECA688E /* AppShellModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellModel.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* AppDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataService.swift; sourceTree = "<group>"; };
-		B8241D3AB12C4A36B0E155D0 /* ReadingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgress.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryView.swift"; sourceTree = "<group>"; };
 		A20000000000000000000004 /* ReaderScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderScreen.swift"; sourceTree = "<group>"; };
-		A20000000000000000000005 /* ReadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingView.swift; sourceTree = "<group>"; };
-		A20000000000000000000006 /* TextCoordinates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TextCoordinates.swift"; sourceTree = "<group>"; };
-		A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift"; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000008 /* ../assets/icon/Moonread.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = ../assets/icon/Moonread.icon; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000009 /* MoonreadUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadUITests.swift; sourceTree = "<group>"; };
 		A2000000000000000000000A /* Moonread.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Moonread.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -821,7 +459,6 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		A2000000000000000000000C /* ReaderTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/ReaderTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 		A2000000000000000000000D /* MoonreadTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoonreadTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000000000000000000000E /* Configuration.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Configuration.xcconfig; sourceTree = SOURCE_ROOT; };
-        AB2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderTools.swift"; sourceTree = "<group>"; };
         AB2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 
 
@@ -832,11 +469,8 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 
 		C0A538254DAE463BA4801DAB /* MoonreadDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadDelegate.swift; sourceTree = "<group>"; };
 		487CD594A7CA40ABB7A8AB0B /* LibraryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryModel.swift"; sourceTree = "<group>"; };
-		86D90F0376D344A3842137FB /* ReaderSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSession.swift"; sourceTree = "<group>"; };
-		DF76A57AADD0405FB7746D49 /* ReaderTitlePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderTitlePage.swift"; sourceTree = "<group>"; };
 		42742C82EEF942DE87A817BA /* CloudSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudSettingsView.swift"; sourceTree = "<group>"; };
 		5CD01275239A4B0EA525197E /* CloudStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudStore.swift"; sourceTree = "<group>"; };
-		BD79BB2926E04FA788D5DBB3 /* ReaderMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderMessages.swift; sourceTree = "<group>"; };
 		383CEB82D6324AC78C31EE40 /* AITaskSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AITaskSheet.swift"; sourceTree = "<group>"; };
 		E8D536F47E57410DBB38F97B /* AIMetadataReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIMetadataReviewView.swift"; sourceTree = "<group>"; };
 		C1F3068431DF421C9ADE8A3A /* AICoverTaskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AICoverTaskView.swift"; sourceTree = "<group>"; };
@@ -856,8 +490,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		97243FC88EB941CE8D7B8C5D /* AIResults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIResults.swift"; sourceTree = "<group>"; };
 		F7773498FC5E46E7B6D20EE9 /* AIRepositoryTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIRepositoryTestFixtures.swift"; sourceTree = "<group>"; };
 		63157555C51A4D79A42A3D88 /* AIReviewActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIReviewActions.swift"; sourceTree = "<group>"; };
-		990DFFD80C6248E3A5BF832F /* ReaderOpening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderOpening.swift"; sourceTree = "<group>"; };
-		BF08E0D9F8D042DA8E2DC265 /* ReaderOpenDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderOpenDiagnostics.swift"; sourceTree = "<group>"; };
 		23A44BEF4C3D4FE0A71CCB03 /* ReaderOpenBenchmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderOpenBenchmark.swift"; sourceTree = "<group>"; };
 		AF3B627D29215FAB93FC0C44 /* ShareInbox.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShareInbox.swift"; sourceTree = "<group>"; };
 		5DA1E57CF521587EAF48FEFB /* ShareReceive.xcstrings */ = { isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "ShareReceive.xcstrings"; sourceTree = "<group>"; };
@@ -919,12 +551,9 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		5DD6B800901BD6C290FD4CBA /* UserPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserPersistenceTests.swift"; sourceTree = "<group>"; };
         B39A20000000000000000001 /* ShelfRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShelfRecovery.swift"; sourceTree = "<group>"; };
         B39A20000000000000000002 /* ShelfRecovery.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "ShelfRecovery.xcstrings"; sourceTree = "<group>"; };
-        D50620000000000000000001 /* UserDataBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserDataBackup.swift"; sourceTree = "<group>"; };
         D50620000000000000000002 /* ReadingDataManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingDataManagement.swift"; sourceTree = "<group>"; };
         D50620000000000000000003 /* CacheManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CacheManagement.swift"; sourceTree = "<group>"; };
         A36102000000000000000002 /* StorageManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageManagement.swift; sourceTree = "<group>"; };
-        A36102000000000000000001 /* StorageFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageFiles.swift; sourceTree = "<group>"; };
-        D50620000000000000000004 /* DataManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementView.swift; sourceTree = "<group>"; };
         D50620000000000000000005 /* DataManagement.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = DataManagement.xcstrings; sourceTree = "<group>"; };
         A36102000000000000000005 /* Storage.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Storage.xcstrings; sourceTree = "<group>"; };
         D50620000000000000000006 /* DataManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DataManagementTests.swift"; sourceTree = "<group>"; };
@@ -953,17 +582,10 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		F304E7CD71124E5D9F7DEC91 /* SystemWidgetPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemWidgetPublishing.swift"; sourceTree = "<group>"; };
 		1FC26519733A4A86A5C69068 /* WidgetDefaultAppearance.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "WidgetDefaultAppearance.json"; sourceTree = "<group>"; };
 		7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuation.swift"; sourceTree = "<group>"; };
-		B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuationBanner.swift"; sourceTree = "<group>"; };
-		154000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookSearchQuery.swift"; sourceTree = "<group>"; };
 		154000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookSearchEditor.swift"; sourceTree = "<group>"; };
-		C31100000000000000000005 /* BookTagCategories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookTagCategories.swift"; sourceTree = "<group>"; };
 		C31100000000000000000003 /* BookTagPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BookTagPicker.swift"; sourceTree = "<group>"; };
-		C31100000000000000000007 /* tag-map.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "tag-map.json"; sourceTree = "<group>"; };
 		154000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedFilters.swift; sourceTree = "<group>"; };
 		154000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedFilterViews.swift; sourceTree = "<group>"; };
-		358000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookSearchSummaryViews.swift; sourceTree = "<group>"; };
-		FDA37E7E44EF4E73B8BC6A70 /* ReaderAutoReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderAutoReading.swift; sourceTree = "<group>"; };
-		0918A2524BAB480FBC176B72 /* ReaderAutoReadingContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderAutoReadingContent.swift"; sourceTree = "<group>"; };
 
 		15F86CEF54D14111746A4067 /* AppDataService+AIReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDataService+AIReading.swift"; sourceTree = "<group>"; };
 		3B08AF041DBD8BF5576A2C99 /* LibraryFolderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryFolderView.swift"; sourceTree = "<group>"; };
@@ -983,14 +605,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 
 
 
-		6CD69288D1A4A7B83B7716FD /* ReaderSession+Loading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSession+Loading.swift"; sourceTree = "<group>"; };
-		C8B593DB68A25B224FFC6357 /* ReaderSession+Position.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSession+Position.swift"; sourceTree = "<group>"; };
-		64668E58C60A8E8854443909 /* ReaderSession+Preparation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSession+Preparation.swift"; sourceTree = "<group>"; };
-		ECC2811577B9D46B2B2E4B22 /* ReaderSession+Annotations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSession+Annotations.swift"; sourceTree = "<group>"; };
-		C7AE5C4807C48AC11277C1D6 /* ReaderSession+Browsing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSession+Browsing.swift"; sourceTree = "<group>"; };
-		53DA632BE52105B1B9FE45B9 /* ReaderSession+Continuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSession+Continuation.swift"; sourceTree = "<group>"; };
 		F41FE7642D97F4C44537CA95 /* UserDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserDataModels.swift"; sourceTree = "<group>"; };
-		BBFBE8417D869DCCCD1B1533 /* UserDataValues.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserDataValues.swift"; sourceTree = "<group>"; };
 		E0D371B9C6A60C0708C4C049 /* UserDataStore+Transfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserDataStore+Transfer.swift"; sourceTree = "<group>"; };
 		DF3479613D2459E809884460 /* UserDataStore+Values.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserDataStore+Values.swift"; sourceTree = "<group>"; };
 		5DEF385C03F17728D304C87C /* UserDataStore+Annotations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UserDataStore+Annotations.swift"; sourceTree = "<group>"; };
@@ -1002,16 +617,8 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		6679469CAA3B443138FDBCFA /* LibraryModel+Navigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryModel+Navigation.swift"; sourceTree = "<group>"; };
 		2826A3437E79C7567C3A4406 /* LibraryModel+Imports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryModel+Imports.swift"; sourceTree = "<group>"; };
 		8A6964053824537B134D3E6C /* LibraryModel+FileWork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryModel+FileWork.swift"; sourceTree = "<group>"; };
-		4A6DCFDAFFDC5FBC8A30EEBE /* ReaderScreen+Content.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderScreen+Content.swift"; sourceTree = "<group>"; };
-		266F15FF22C52D6798BCD4D3 /* ReaderScreen+Controls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderScreen+Controls.swift"; sourceTree = "<group>"; };
-		BBFAB498FE6EBD8916C23861 /* ReaderSearchPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSearchPage.swift; sourceTree = "<group>"; };
-		6446714E15EDF5DC84D08419 /* ReaderChapterRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderChapterRow.swift; sourceTree = "<group>"; };
-		BB3912F88E0505A233C40FF6 /* MetadataExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchange.swift; sourceTree = "<group>"; };
 		2359B9413943919B9286CDF7 /* MetadataExchangeModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeModel.swift; sourceTree = "<group>"; };
 		201974DC4BBF9AC197832880 /* MetadataExchangeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeService.swift; sourceTree = "<group>"; };
-		E29300000000000000000002 /* MetadataExchangeStaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeStaging.swift; sourceTree = "<group>"; };
-		B921D33133257F57CF747E59 /* MetadataImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataImportView.swift; sourceTree = "<group>"; };
-		DE54835FF23B76DF33D8DB39 /* MetadataTasksSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataTasksSection.swift; sourceTree = "<group>"; };
 		ED137C59B129523670772A6F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeTests.swift; sourceTree = "<group>"; };
 		26AA2454BCE4D9C649AE5576 = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = MetadataExchange.xcstrings; sourceTree = "<group>"; };
 		5BB83729646B4A3D83C1F8E1 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemPresetBookCover.swift; sourceTree = "<group>"; };
@@ -1020,24 +627,9 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		7A9A1F23534B032F5051C81C /* AIChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatView.swift; sourceTree = "<group>"; };
 		802F64D6FADEC829D9FABA3E /* AIComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIComposer.swift; sourceTree = "<group>"; };
 		3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIReadingAttachmentPreview.swift; sourceTree = "<group>"; };
-		C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementModel.swift; sourceTree = "<group>"; };
-		A36102000000000000000004 /* StorageSpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSpaceView.swift; sourceTree = "<group>"; };
-		C36600000000000000000007 /* StorageDatabasePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageDatabasePage.swift; sourceTree = "<group>"; };
-		C36600000000000000000005 /* StorageSelectionPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSelectionPage.swift; sourceTree = "<group>"; };
-		C36600000000000000000003 /* StorageCategoryPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageCategoryPage.swift; sourceTree = "<group>"; };
-		A36102000000000000000003 /* StorageSpaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSpaceModel.swift; sourceTree = "<group>"; };
-		B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataListView.swift; sourceTree = "<group>"; };
-		B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataIssuesView.swift; sourceTree = "<group>"; };
 		36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModelDetailView.swift; sourceTree = "<group>"; };
 		F54437FA5E94BE01B694DE2D /* LibraryDirectoryObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDirectoryObserver.swift; sourceTree = "<group>"; };
-		A1552663E85DD907D9582A20 /* LibraryExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryExport.swift; sourceTree = "<group>"; };
-		FEED0591FCDF4D9B875C2D65 /* ListeningTextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ListeningTextProvider.swift"; sourceTree = "<group>"; };
-		38613D51CE20472BA3CD7959 /* ListeningAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ListeningAudio.swift"; sourceTree = "<group>"; };
-		757662F1BC2C46D892CDD12D /* ListeningSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ListeningSession.swift"; sourceTree = "<group>"; };
-		3EADC4B15AED40D6AABE1DD3 /* ReaderSession+Listening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSession+Listening.swift"; sourceTree = "<group>"; };
-		1B3FA0FBB62D4B56A733E32A /* ReaderListeningContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderListeningContent.swift"; sourceTree = "<group>"; };
 		6A18BA5D42144A6CAF36FCB2 /* ListeningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ListeningTests.swift"; sourceTree = "<group>"; };
-		22AF4BED8E0697070C37CB7D /* ReadingController+Listening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Listening.swift"; sourceTree = "<group>"; };
 		465891D88D369B6F3EFE2B27 /* AIConversationProtocolFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConversationProtocolFixtures.swift"; sourceTree = "<group>"; };
 		9E81C5D3417332DCB4691CF5 /* AIConnectionFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConnectionFixtures.swift"; sourceTree = "<group>"; };
 		3C1DA2437A2F7FD02A7278FB /* AINativeToolsFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AINativeToolsFixture.swift"; sourceTree = "<group>"; };
@@ -1051,6 +643,16 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				A1A276000000000000000001 /* MoonreadAI in Frameworks */,
                 270D00000000000000000043,
                 270E40000000000000000003,
+				A37602000000000000000008 /* MoonreadDesign in Frameworks */,
+				A37603000000000000000003 /* MoonreadCoreBindings in Frameworks */,
+				A37603000000000000000023 /* MoonreadLibrary in Frameworks */,
+				A37604000000000000000003 /* MoonreadReader in Frameworks */,
+				A37605000000000000000003 /* MoonreadSettings in Frameworks */,
+				A37604000000000000000005 /* MoonreadInstalledFonts in Frameworks */,
+				A37603000000000000000015 /* MoonreadData in Frameworks */,
+                A37603000000000000000025 /* MoonreadSearchText in App Frameworks */,
+				A37603000000000000000013 /* MoonreadDataTypes in Frameworks */,
+				A37602000000000000000006 /* MoonreadStatistics in Frameworks */,
 
 
 
@@ -1075,12 +677,12 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C3E05493EB5F54BB9BFA12EA /* Share Frameworks */ = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		3FC6D6EDD8194024ADBFC58B = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		3FC6D6EDD8194024ADBFC58B = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A37603000000000000000027,A37604000000000000000006,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-        270E30000000000000000000 /* Queries */ = {isa = PBXGroup; children = (270E10000000000000000001,270E10000000000000000002,270E10000000000000000003,270E10000000000000000004,270E10000000000000000005,270E10000000000000000006,270E10000000000000000007,270E10000000000000000008,270E10000000000000000009,270E1000000000000000000A,270E1000000000000000000B,270E1000000000000000000C,270E1000000000000000000D,270E1000000000000000000E,270E1000000000000000000F,270E10000000000000000010,270E10000000000000000011,270E10000000000000000012,270E10000000000000000013,270E10000000000000000014,270E10000000000000000015,270E10000000000000000016,270E10000000000000000017,270E10000000000000000018,270E10000000000000000019,270E10000000000000000030,270E10000000000000000031,270E10000000000000000032,270E10000000000000000033,270E10000000000000000034,270E10000000000000000035,270E10000000000000000036,270E10000000000000000037,270E10000000000000000038,270E10000000000000000050,270E10000000000000000051,270E10000000000000000052,270E10000000000000000053,270E10000000000000000054,270E10000000000000000055,270E10000000000000000056,270E10000000000000000057,270E10000000000000000070,270E10000000000000000071,270E10000000000000000072,270E10000000000000000073,270E10000000000000000074,270E10000000000000000075,270E10000000000000000076,270E10000000000000000077,270E10000000000000000090,270E10000000000000000091,270E10000000000000000092,270E10000000000000000093,270E10000000000000000094,C31100000000000000000001,270E100000000000000000A0,270E100000000000000000A1,270E100000000000000000A2,270E100000000000000000A3,270E100000000000000000A4,270E100000000000000000A5,270E100000000000000000A6,270E100000000000000000A7,270E100000000000000000A8,270E100000000000000000B0,270E100000000000000000B1,270E100000000000000000B2); path = Queries; sourceTree = "<group>";};
-        270D00000000000000000040 /* Database */ = {isa = PBXGroup; children = (88CC01BA70B951BE9CA0C2A5 /* CloudCallbackJournal.swift */,1DCF6FB820125DA3BE5F4714 /* CloudInboxRows.swift */,270D00000000000000000001,270D00000000000000000002,270D00000000000000000003,270D00000000000000000004,270D00000000000000000005,270D00000000000000000006,270D00000000000000000007,270D00000000000000000008,270D00000000000000000009,270D0000000000000000000B,270D0000000000000000000C,270D0000000000000000000D,270D0000000000000000000E,270D0000000000000000000F,270D00000000000000000010,270D00000000000000000011,270D00000000000000000012,270D00000000000000000013,270D00000000000000000014,270D00000000000000000015,270D00000000000000000016,270D00000000000000000017,270D00000000000000000019,270D0000000000000000001A,270D0000000000000000001B,A327DEBA0000000000000002,271C00000000000000000001,271D00000000000000000001,270D0000000000000000001C,270D0000000000000000001E,270D00000000000000000018,270D0000000000000000001F); path = Database; sourceTree = "<group>";};
+        270D00000000000000000040 /* Database */ = {isa = PBXGroup; children = (270D00000000000000000004); path = Database; sourceTree = "<group>";};
+        270E30000000000000000000 /* Queries */ = {isa = PBXGroup; children = (270E1000000000000000000E, 270E1000000000000000000F, 270E10000000000000000031, 270E10000000000000000051, 270E10000000000000000070, 270E10000000000000000090, 270E100000000000000000A0, 270E100000000000000000B0); path = Queries; sourceTree = "<group>";};
 		12BD6151DCDE468C8BAEC02A /* Concurrency */ = {isa = PBXGroup; children = (D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */,); path = Concurrency; sourceTree = "<group>"; };
 		A50000000000000000000001 = {
 			isa = PBXGroup;
@@ -1118,7 +720,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 AC2000000000000000000004,
                 FC3100000000000000000001,
                 AB2000000000000000000002,
-				A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */,
 			);
 			path = Moonread;
 			sourceTree = "<group>";
@@ -1212,6 +813,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000001 /* MoonreadApp.swift */,
+				A37603000000000000000016 /* AppDataServiceFactory.swift */,
 				32EF7CA859B141099ECA688E /* AppShellModel.swift */,
 				C0A538254DAE463BA4801DAB /* MoonreadDelegate.swift */,
 			);
@@ -1248,7 +850,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
 				0E3ED36AE3569A81A0BD2A1E /* ReaderSession */,
-				FDA37E7E44EF4E73B8BC6A70 /* ReaderAutoReading.swift */,
 				98265A1B27CF4EA8806DAB39 /* Listening */,
 				C612670FEE4503CB6D595987 /* Opening */,
 			);
@@ -1273,10 +874,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		77D959CA16854893807FBC08 /* Rendering */ = {
 			isa = PBXGroup;
 			children = (
-				A20000000000000000000005 /* ReadingView.swift */,
-				B366E511A14B4057A2530C62 /* ReadingViewport.swift */,
-				458B0A398F7C438EA28DEEE7 /* ReadingPagination.swift */,
-				AD2000000000000000000004 /* ReaderDeviceControls.swift */,
 				2234A593EEC51003DAC29F53 /* ReadingController */,
 				EACA8BC9970BE64826CD5CC0 /* Pages */,
 				B399364D65D034D7F5460546 /* Text */,
@@ -1298,12 +895,9 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
 				843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */,
-				1DB4842B3A754C71A06C635E /* StatisticsBookList.swift */,
 				0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */,
 				B12000000000000000000002 /* StatisticsView.swift */,
 				B12000000000000000000001 /* ReadingStatistics.swift */,
-				4DB4734A025FDCBF759666E2 /* Charts */,
-				5A8622897DF864625B45FB82 /* Details */,
 			);
 			path = "Statistics";
 			sourceTree = "<group>";
@@ -1313,17 +907,15 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			children = (
 				D50620000000000000000005 /* DataManagement.xcstrings */,
 				A36102000000000000000005 /* Storage.xcstrings */,
-				C77FEFA6FC6D2D5785EE3779 /* DataManagement */,
                 E28400000000000000000002 /* DeveloperMetadataCleanupView.swift */,
                 E28400000000000000000004 /* DeveloperTools.xcstrings */,
 				AC2000000000000000000002 /* SettingsView.swift */,
+				A37606000000000000000001 /* SettingsDataHost.swift */,
 				F01600000000000000000002 /* Onboarding.swift */,
 				F01700000000000000000004 /* TipJar.storekit */,
-				F01700000000000000000002 /* TipJar.swift */,
 				860C2D48823202EF975F1A45 /* Reading */,
 				8A2CDA4DF4A82ED21BE96A75 /* Appearance */,
 				2A20F6AEF2B8D3608C0726CD /* Cloud */,
-				79846A474AAA1AD9574FA2E9 /* About */,
 			);
 			path = "Settings";
 			sourceTree = "<group>";
@@ -1331,11 +923,9 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		C60318128F8C4F59B3C2CFB2 /* Data */ = {
 			isa = PBXGroup;
 			children = (
-				9A3C75640B4F5969A1616A85 /* ReadingWindow.swift */,
                 270D00000000000000000040, 270E30000000000000000000,
 				E237B1E2BAF2109F635ED408 /* UserData */,
 				A20000000000000000000002 /* AppDataService.swift */,
-				B8241D3AB12C4A36B0E155D0 /* ReadingProgress.swift */,
 				2AABE76052D0D231A8ACA8DF /* Cloud */,
 				6A33186914892ECAE8FC0AA0 /* Restoration */,
 				E5A0C22F71F5B7838D74C9D2 /* Management */,
@@ -1347,7 +937,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		91084535AE4B47EC9267324A /* Shared */ = {
 			isa = PBXGroup;
 			children = (
-				BD79BB2926E04FA788D5DBB3 /* ReaderMessages.swift */,
 				12BD6151DCDE468C8BAEC02A /* Concurrency */,
 				8083CE54D16F4728AFD46C1D /* Theme */,
 				6690B829BEF0465DA1786DB9 /* Components */,
@@ -1366,10 +955,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		6690B829BEF0465DA1786DB9 /* Components */ = {
 			isa = PBXGroup;
 			children = (
-				F18300000000000000000004 /* ThemedGroupedList.swift */,
-                AC2000000000000000000003 /* MoonView.swift */,
 				AC2000000000000000000077 /* MoonCharacter.swift */,
-				AC2000000000000000000006 /* InputFocus.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -1434,14 +1020,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		0E3ED36AE3569A81A0BD2A1E /* ReaderSession */ = {
 			isa = PBXGroup;
 			children = (
-				86D90F0376D344A3842137FB /* ReaderSession.swift */,
-				3EADC4B15AED40D6AABE1DD3 /* ReaderSession+Listening.swift */,
-				ECC2811577B9D46B2B2E4B22 /* ReaderSession+Annotations.swift */,
-				C7AE5C4807C48AC11277C1D6 /* ReaderSession+Browsing.swift */,
-				53DA632BE52105B1B9FE45B9 /* ReaderSession+Continuation.swift */,
-				6CD69288D1A4A7B83B7716FD /* ReaderSession+Loading.swift */,
-				C8B593DB68A25B224FFC6357 /* ReaderSession+Position.swift */,
-				64668E58C60A8E8854443909 /* ReaderSession+Preparation.swift */,
 			);
 			path = ReaderSession;
 			sourceTree = "<group>";
@@ -1450,8 +1028,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000004 /* ReaderScreen.swift */,
-				4A6DCFDAFFDC5FBC8A30EEBE /* ReaderScreen+Content.swift */,
-				266F15FF22C52D6798BCD4D3 /* ReaderScreen+Controls.swift */,
 			);
 			path = ReaderScreen;
 			sourceTree = "<group>";
@@ -1489,15 +1065,12 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			children = (
 				C22000000000000000000001 /* UserData.swift */,
 				F41FE7642D97F4C44537CA95 /* UserDataModels.swift */,
-				BBFBE8417D869DCCCD1B1533 /* UserDataValues.swift */,
 				5DEF385C03F17728D304C87C /* UserDataStore+Annotations.swift */,
 				6C1486C6EC506114B0C8D1EE /* UserDataStore+Projection.swift */,
 				8243783F93245933C9F3DC84 /* UserDataStore+Statistics.swift */,
 				E0D371B9C6A60C0708C4C049 /* UserDataStore+Transfer.swift */,
 				DF3479613D2459E809884460 /* UserDataStore+Values.swift */,
 				C22000000000000000000002 /* UserDataService.swift */,
-				D50620000000000000000001 /* UserDataBackup.swift */,
-				FF2000000000000000000001 /* UserSyncJSON.swift */,
 				C22000000000000000000003 /* UserThemes.swift */,
 			);
 			path = "UserData";
@@ -1557,12 +1130,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		2234A593EEC51003DAC29F53 /* ReadingController */ = {
 			isa = PBXGroup;
 			children = (
-				AA1BA926631B40A984117791 /* ReadingController.swift */,
-				22AF4BED8E0697070C37CB7D /* ReadingController+Listening.swift */,
-				3E544CBFC00B4DC4933A41F6 /* ReadingController+Navigation.swift */,
-				84865B4171AD4E3FA50E0C27 /* ReadingController+Pages.swift */,
-				15890ED074464D47AAEC9260 /* ReadingController+Scroll.swift */,
-				31DD7DA228F74AF7BF5CF2BF /* ReadingController+Selection.swift */,
 			);
 			path = "ReadingController";
 			sourceTree = "<group>";
@@ -1606,7 +1173,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			children = (
 				B02000000000000000000001 /* CloudSync.swift */,
 				270D0000000000000000001D,
-				271A00000000000000000001,
 			);
 			path = "Cloud";
 			sourceTree = "<group>";
@@ -1630,36 +1196,12 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		48CED65B0EAF17799A024E37 /* Presentation */ = {
 			isa = PBXGroup;
 			children = (
-				AD2000000000000000000001 /* ReaderBackNavigation.swift */,
-				AD2000000000000000000008 /* ReaderBottomPanel.swift */,
-				A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */,
-				F13000000000000000000002 /* ReaderPresentationState.swift */,
-				383925FAF2394CAEBB958065 /* ReaderToolSession.swift */,
-				24876A02745446B988AAC7F8 /* ReaderNativeToolPresentation.swift */,
-				3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */,
 			);
 			path = "Presentation";
 			sourceTree = "<group>";
 		};
-		4DB4734A025FDCBF759666E2 /* Charts */ = {
-			isa = PBXGroup;
-			children = (
-				950900AFC89A493D8BACE3EB /* ReadingSessionsChart.swift */,
-				7E34349A15174B0B96CF5ED2 /* StatisticsDurationBar.swift */,
-				219DD27FBAD14D52B0C6126E /* StatisticsRhythm.swift */,
-			);
-			path = "Charts";
-			sourceTree = "<group>";
-		};
-		5A8622897DF864625B45FB82 /* Details */ = {
-			isa = PBXGroup;
-			children = (
-				BF633098CC3047F3B4C9FD53 /* StatisticsDayView.swift */,
-				569E074D07FB4F80B6BF0E1C /* StatisticsSessionsView.swift */,
-			);
-			path = "Details";
-			sourceTree = "<group>";
-		};
+
+
 		5B251B0616B37A49F1CDA86C /* Recovery */ = {
 			isa = PBXGroup;
 			children = (
@@ -1690,7 +1232,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		65CB370F3C6AF99DFBE4BCD6 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */,
 				2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */,
 			);
 			path = "Sources";
@@ -1723,27 +1264,10 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			path = "Proposals";
 			sourceTree = "<group>";
 		};
-		79846A474AAA1AD9574FA2E9 /* About */ = {
-			isa = PBXGroup;
-			children = (
-				EC34429CDFF645F5BAE7F6D8 /* AboutView.swift */,
-				10228DEB2BD941C69E7913EA /* ThirdPartyLicensesView.swift */,
-			);
-			path = "About";
-			sourceTree = "<group>";
-		};
+
 		7DCDF56553412C6438775D26 /* Controls */ = {
 			isa = PBXGroup;
 			children = (
-				0918A2524BAB480FBC176B72 /* ReaderAutoReadingContent.swift */,
-				F985A452EFF8466E81960075 /* ReaderBattery.swift */,
-				AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */,
-				224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */,
-				1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */,
-				5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */,
-				AD2000000000000000000005 /* ReaderProgress.swift */,
-				DF76A57AADD0405FB7746D49 /* ReaderTitlePage.swift */,
-				B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */,
 			);
 			path = "Controls";
 			sourceTree = "<group>";
@@ -1753,12 +1277,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			children = (
 				AD2000000000000000000003 /* ReaderPreferences.swift */,
 				0D0965B74AE0467A91227A7C /* ReadingSettingsControls.swift */,
-				BDD21FDF37FC419990915D98 /* ReadingSettingsEditing.swift */,
-				0BF0665B40B94F05A6C9E334 /* ReaderQuickSettings.swift */,
 				4E5FFA7219F463F7E5C1509C /* ReaderSettingsCache.swift */,
-				F14100000000000000000002 /* ReaderSettingsStore.swift */,
-				B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */,
-				AD2000000000000000000007 /* ReadingPreview.swift */,
 				CCB9325189A34FEACCB5624A /* Fonts */,
 			);
 			path = "Reading";
@@ -1779,9 +1298,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
 				FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */,
-				CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */,
-				D2FC43F5CF31408684F519A8 /* PalettePicker.swift */,
-				4C09A37A925A455A99296F73 /* PalettePreview.swift */,
+				A37606000000000000000002 /* SettingsPaletteHost.swift */,
 			);
 			path = "Appearance";
 			sourceTree = "<group>";
@@ -1789,8 +1306,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		8C6B979018CD9ADE9446E532 /* Tools */ = {
 			isa = PBXGroup;
 			children = (
-				AB2000000000000000000001 /* ReaderTools.swift */,
-				938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */,
 			);
 			path = "Tools";
 			sourceTree = "<group>";
@@ -1799,7 +1314,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
 				E52000000000000000000008 /* AIReadingEntry.swift */,
-				E72000000000000000000077 /* AIReadingMoon.swift */,
 			);
 			path = "Reading";
 			sourceTree = "<group>";
@@ -1867,10 +1381,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		B399364D65D034D7F5460546 /* Text */ = {
 			isa = PBXGroup;
 			children = (
-				AD2000000000000000000002 /* ReadingTypography.swift */,
-				A20000000000000000000006 /* TextCoordinates.swift */,
-				74FA7B4B76DC4862A844072D /* ReadingTextView.swift */,
-				877FD187DC584201993EB368 /* ReadingTextDecorations.swift */,
 			);
 			path = "Text";
 			sourceTree = "<group>";
@@ -1882,13 +1392,11 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				802F64D6FADEC829D9FABA3E /* AIComposer.swift */,
 				7A9A1F23534B032F5051C81C /* AIChatView.swift */,
 				D32000000000000000000005 /* AIConversationsView.swift */,
-				FA2000000000000000000001 /* AIMessageList.swift */,
 				E72000000000000000000001 /* AITurnView.swift */,
 				358000000000000000000003 /* AIBookListCard.swift */,
 				4ECB33000000000000000002 /* AIToolResultDetails.swift */,
 				C36600000000000000000001 /* AIToolRequestNames.swift */,
 
-				FB2000000000000000000001 /* AINativeMarkdown.swift */,
 				FC2100000000000000000001 /* AIReplyFeedback.swift */,
 			);
 			path = "Conversations";
@@ -1897,9 +1405,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		C612670FEE4503CB6D595987 /* Opening */ = {
 			isa = PBXGroup;
 			children = (
-				990DFFD80C6248E3A5BF832F /* ReaderOpening.swift */,
 				23A44BEF4C3D4FE0A71CCB03 /* ReaderOpenBenchmark.swift */,
-				BF08E0D9F8D042DA8E2DC265 /* ReaderOpenDiagnostics.swift */,
 			);
 			path = "Opening";
 			sourceTree = "<group>";
@@ -1917,10 +1423,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		CCB9325189A34FEACCB5624A /* Fonts */ = {
 			isa = PBXGroup;
 			children = (
-				F15200000000000000000006 /* ReaderBuiltinFonts.swift */,
-				152000000000000000000002 /* ReaderFontLibrary.swift */,
-				152000000000000000000004 /* ReaderFontPicker.swift */,
-                F18300000000000000000002 /* ReaderFontList.swift */,
 			);
 			path = "Fonts";
 			sourceTree = "<group>";
@@ -1929,17 +1431,11 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXGroup;
 			children = (
 				876C7011C17350089BBFEFD4 /* BookSearchConditionPages.swift */,
-				5613FA4B23135F6FB815B8E2 /* BookSearchTagRulePage.swift */,
 				B14000000000000000000003 /* AppSearch.swift */,
 				154000000000000000000003 /* BookSearchEditor.swift */,
-				C31100000000000000000005 /* BookTagCategories.swift */,
 				C31100000000000000000003 /* BookTagPicker.swift */,
-				C31100000000000000000007 /* tag-map.json */,
-				154000000000000000000001 /* BookSearchQuery.swift */,
 				154000000000000000000005 /* SavedFilters.swift */,
 				154000000000000000000007 /* SavedFilterViews.swift */,
-				358000000000000000000001 /* BookSearchSummaryViews.swift */,
-				660000000000000000000001 /* LibraryQueryRules.swift */,
 			);
 			path = "Search";
 			sourceTree = "<group>";
@@ -1947,9 +1443,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		D8A9053AADFD64D37A2701E0 /* Chapters */ = {
 			isa = PBXGroup;
 			children = (
-				6446714E15EDF5DC84D08419 /* ReaderChapterRow.swift */,
-				2DD24446A106474B8CE31B7C /* ReaderChapterList.swift */,
-				AD2000000000000000000006 /* ReaderChapters.swift */,
 			);
 			path = "Chapters";
 			sourceTree = "<group>";
@@ -1957,10 +1450,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		DB8C8C172290509EDEBFEBB6 /* Notes */ = {
 			isa = PBXGroup;
 			children = (
-				22ECFC9087614B5699133F80 /* ReaderNotesList.swift */,
 				D14015000000000000000002 /* NoteDocument.swift */,
-				DA87A42C5E9B498293DC1520 /* NoteEditor.swift */,
-				E44C314B4FF64F97B185487A /* ReaderAnnotationDetails.swift */,
 			);
 			path = "Notes";
 			sourceTree = "<group>";
@@ -1968,13 +1458,9 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		E5A0C22F71F5B7838D74C9D2 /* Management */ = {
 			isa = PBXGroup;
 			children = (
-				21EDB020537F5784BF5EBFCE /* DataExchangeTask.swift */,
-				0621A45802455F07BCC2B7B4 /* RelationalReadingData.swift */,
-				3F77F001BB3A5E69A7C058C1 /* UserBackupRestore.swift */,
 				D50620000000000000000002 /* ReadingDataManagement.swift */,
 				D50620000000000000000003 /* CacheManagement.swift */,
 				A36102000000000000000002 /* StorageManagement.swift */,
-				A36102000000000000000001 /* StorageFiles.swift */,
 			);
 			path = "Management";
 			sourceTree = "<group>";
@@ -1982,9 +1468,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		E811C8CAF4B648C0177FB2A8 /* FileOperations */ = {
 			isa = PBXGroup;
 			children = (
-				A1552663E85DD907D9582A20 /* LibraryExport.swift */,
 				AE2000000000000000000002 /* LibraryActions.swift */,
-				AF2000000000000000000004 /* LibraryDrop.swift */,
 				F853A448B490AEA3E382B39B /* LibraryShelfDrop.swift */,
 			);
 			path = "FileOperations";
@@ -1993,8 +1477,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		EACA8BC9970BE64826CD5CC0 /* Pages */ = {
 			isa = PBXGroup;
 			children = (
-				1E319626F4A44AF7A3D79CF0 /* PageController.swift */,
-				C364284297DE4F0EA83F563E /* ReaderCoverController.swift */,
 			);
 			path = "Pages";
 			sourceTree = "<group>";
@@ -2027,44 +1509,19 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		7AA9CD4AFAD099E6F26CBA8B /* Search */ = {
             isa = PBXGroup;
             children = (
-                5DFDEA98F6244BFCB5585222 /* ReaderSearchContent.swift */,
-                BBFAB498FE6EBD8916C23861 /* ReaderSearchPage.swift */,
             );
             path = Search;
             sourceTree = "<group>";
         };
 		D02176A5E81A8C8BDAC8782F /* MetadataExchange */ = {isa = PBXGroup; children = (
 			26AA2454BCE4D9C649AE5576,
-			BB3912F88E0505A233C40FF6 /* MetadataExchange.swift */,
 			2359B9413943919B9286CDF7 /* MetadataExchangeModel.swift */,
 			201974DC4BBF9AC197832880 /* MetadataExchangeService.swift */,
-			E29300000000000000000002 /* MetadataExchangeStaging.swift */,
-			B921D33133257F57CF747E59 /* MetadataImportView.swift */,
-			DE54835FF23B76DF33D8DB39 /* MetadataTasksSection.swift */,
 		); path = MetadataExchange; sourceTree = "<group>"; };
-		C77FEFA6FC6D2D5785EE3779 /* DataManagement */ = {
-			isa = PBXGroup;
-			children = (
-				D50620000000000000000004 /* DataManagementView.swift */,
-				C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */,
-				A36102000000000000000004 /* StorageSpaceView.swift */,
-				C36600000000000000000007 /* StorageDatabasePage.swift */,
-				C36600000000000000000005 /* StorageSelectionPage.swift */,
-				C36600000000000000000003 /* StorageCategoryPage.swift */,
-				A36102000000000000000003 /* StorageSpaceModel.swift */,
-				B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */,
-				B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */,
-			);
-			path = DataManagement;
-			sourceTree = "<group>";
-		};
+
 		98265A1B27CF4EA8806DAB39 /* Listening */ = {isa = PBXGroup; children = (
-				FEED0591FCDF4D9B875C2D65 /* ListeningTextProvider.swift */,
-				38613D51CE20472BA3CD7959 /* ListeningAudio.swift */,
-				757662F1BC2C46D892CDD12D /* ListeningSession.swift */,
 			); path = "Listening"; sourceTree = "<group>"; };
 		26591D9AEDAC45B48997D4C9 /* Listening */ = {isa = PBXGroup; children = (
-				1B3FA0FBB62D4B56A733E32A /* ReaderListeningContent.swift */,
 			); path = "Listening"; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
@@ -2074,7 +1531,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			buildConfigurationList = A70000000000000000000001 /* Build configuration list for PBXNativeTarget "Moonread" */;
 			buildPhases = (
                 6502577E2278509DB864FF63,
-				A60000000000000000000001 /* Build Rust core and UniFFI bindings */,
+				A60000000000000000000001 /* Build Rust core and verify UniFFI bindings */,
 				A60000000000000000000002 /* Sources */,
 				A40000000000000000000001 /* Frameworks */,
 				A60000000000000000000003 /* Resources */,
@@ -2086,7 +1543,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
                 F1C19004BB32432C8F23B23B,
                 24EC65B9F10B59B19FF49005,
 			);
-			packageProductDependencies = (A1A276000000000000000002,270D00000000000000000042,270E40000000000000000002);
+			packageProductDependencies = (A1A276000000000000000002,270D00000000000000000042,270E40000000000000000002,A37602000000000000000003,A37602000000000000000005,A37603000000000000000002,A37603000000000000000012,A37603000000000000000014,A37603000000000000000022,A37603000000000000000024,A37604000000000000000002,A37604000000000000000004,A37605000000000000000002);
 			name = Moonread;
 			productName = Moonread;
 			productReference = A2000000000000000000000A /* Moonread.app */;
@@ -2129,7 +1586,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		04C2476D974D589BB2C7513F /* MoonreadShare */ = { isa = PBXNativeTarget; buildConfigurationList = B0A8488C9CD75E49AB087C16; buildPhases = (67F838CFAF2F527F8C8EE359,C3E05493EB5F54BB9BFA12EA,CA0C3527F96E5A318EE28FC7,); buildRules = (); dependencies = (); name = MoonreadShare; productName = MoonreadShare; productReference = 44920FD9D2A9541EA0D84A3B; productType = "com.apple.product-type.app-extension"; };
-		AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */ = {isa = PBXNativeTarget; buildConfigurationList = 0E91A9D300784A34AE232948; buildPhases = (D68B24CD446A49FDAD76CC77,3FC6D6EDD8194024ADBFC58B,EC1986FEC42C4A9A940AE0B0,); buildRules = (); dependencies = (); name = MoonreadWidgets; productName = MoonreadWidgets; productReference = 62E1DE86580044548A03C0AA; productType = "com.apple.product-type.app-extension"; };
+		AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */ = {isa = PBXNativeTarget; buildConfigurationList = 0E91A9D300784A34AE232948; buildPhases = (D68B24CD446A49FDAD76CC77,3FC6D6EDD8194024ADBFC58B,EC1986FEC42C4A9A940AE0B0,); buildRules = (); dependencies = (); packageProductDependencies = (A37603000000000000000026,A37604000000000000000004,); name = MoonreadWidgets; productName = MoonreadWidgets; productReference = 62E1DE86580044548A03C0AA; productType = "com.apple.product-type.app-extension"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXVariantGroup section */
@@ -2178,7 +1635,7 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			productRefGroup = A50000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-            packageReferences = (A1A276000000000000000003,270D00000000000000000041,270E40000000000000000001);
+            packageReferences = (A1A276000000000000000003,270D00000000000000000041,270E40000000000000000001,A37602000000000000000001,A37602000000000000000002,A37603000000000000000001,A37603000000000000000011,A37603000000000000000021,A37604000000000000000001,A37605000000000000000001);
 			targets = (
                 AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */,
                 04C2476D974D589BB2C7513F,
@@ -2194,10 +1651,6 @@ D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-                270D00000000000000000026,
-                270D00000000000000000027,
-                270D00000000000000000028,
-                270D00000000000000000029,
 
                 2A49E75FB62D455EA40547D4 /* WidgetDefaultAppearance.json */,
                 FEBD0561E8064B4F9A34173E,
@@ -2218,7 +1671,6 @@ OS1000000000000000000001,
 				A10000000000000000000008 /* ../assets/icon/Moonread.icon in Resources */,
                 AC1000000000000000000004,
                 AB1000000000000000000002,
-				C31100000000000000000008 /* tag-map.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2249,25 +1701,25 @@ OS1000000000000000000001,
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		A60000000000000000000001 /* Build Rust core and UniFFI bindings */ = {
+		A60000000000000000000001 /* Build Rust core and verify UniFFI bindings */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputPaths = (
+                "$(MOONREAD_BINDINGS_DIR)/MoonreadCoreBindings/moonread_core.swift",
+                "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI/module.h",
+                "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI/module.modulemap",
 			);
-			name = "Build Rust core and UniFFI bindings";
+			name = "Build Rust core and verify UniFFI bindings";
 			outputPaths = (
-				"$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift",
-				"$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)/module.h",
-				"$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)/module.modulemap",
 				"$(MOONREAD_BINDGEN_LIBRARY)",
 				"$(MOONREAD_AI_COVER_LIBRARY)",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"$PWD/target\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command bash -c '\n  set -eu\n  builder=cargo\n  if [ -z \"${CI:-}\" ]; then\n    if command -v mbx >/dev/null 2>&1; then\n      builder=$(command -v mbx)\n    elif [ -x \"$HOME/.cargo/bin/mbx\" ]; then\n      builder=\"$HOME/.cargo/bin/mbx\"\n    fi\n  fi\n  echo \"Rust builder: $builder; rustc: $(command -v rustc)\"\n  start=$SECONDS\n  \"$builder\" build --locked --package moonread-core --package moonread-ai-cover --lib --profile \"$1\" ${2}\n  printf \"CI_TIMING rust_library_seconds=%s\\n\" \"$((SECONDS - start))\"\n' bash \"${MOONREAD_CARGO_PROFILE}\" \"${MOONREAD_RUST_TARGET_FLAGS}\"\nstart=$SECONDS\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo build --locked --package moonread-core --features cli --bin uniffi-bindgen\nprintf 'CI_TIMING rust_bindgen_build_seconds=%s\\n' \"$((SECONDS - start))\"\nmkdir -p \"${MOONREAD_BINDINGS_DIR}\"\ngenerated=$(mktemp -d \"${MOONREAD_BINDINGS_DIR}.XXXXXX\")\ntrap 'rm -rf \"$generated\"' EXIT\nstart=$SECONDS\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command \"$CARGO_TARGET_DIR/debug/uniffi-bindgen\" generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"$generated\"\nprintf 'CI_TIMING uniffi_generation_seconds=%s\\n' \"$((SECONDS - start))\"\n# Check the complete known output contract before replacing any owned file.\nfor name in moonread_core.swift module.h module.modulemap; do\n  if [ ! -s \"$generated/$name\" ]; then\n    printf 'Missing expected UniFFI output: %s\\n' \"$name\" >&2\n    exit 1\n  fi\ndone\nfor name in moonread_core.swift module.h module.modulemap; do\n  if ! cmp -s \"$generated/$name\" \"${MOONREAD_BINDINGS_DIR}/$name\"; then\n    mv -f \"$generated/$name\" \"${MOONREAD_BINDINGS_DIR}/$name\"\n  fi\ndone\n";
+			shellScript = "set -euo pipefail\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"$PWD/target\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command bash -c '\n  set -eu\n  builder=cargo\n  if [ -z \"${CI:-}\" ]; then\n    if command -v mbx >/dev/null 2>&1; then\n      builder=$(command -v mbx)\n    elif [ -x \"$HOME/.cargo/bin/mbx\" ]; then\n      builder=\"$HOME/.cargo/bin/mbx\"\n    fi\n  fi\n  echo \"Rust builder: $builder; rustc: $(command -v rustc)\"\n  start=$SECONDS\n  \"$builder\" build --locked --package moonread-core --package moonread-ai-cover --lib --profile \"$1\" ${2}\n  printf \"CI_TIMING rust_library_seconds=%s\\n\" \"$((SECONDS - start))\"\n' bash \"${MOONREAD_CARGO_PROFILE}\" \"${MOONREAD_RUST_TARGET_FLAGS}\"\nstart=$SECONDS\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo build --locked --package moonread-core --features cli --bin uniffi-bindgen\nprintf 'CI_TIMING rust_bindgen_build_seconds=%s\\n' \"$((SECONDS - start))\"\ngenerated=$(mktemp -d \"${TMPDIR:-/tmp}/moonread-bindings.XXXXXX\")\ntrap 'rm -rf \"$generated\"' EXIT\nstart=$SECONDS\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command \"$CARGO_TARGET_DIR/debug/uniffi-bindgen\" generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"$generated\"\nprintf 'CI_TIMING uniffi_generation_seconds=%s\\n' \"$((SECONDS - start))\"\n# Fail when the checked-in interfaces differ from this SDK's archive.\nfor relative in MoonreadCoreBindings/moonread_core.swift moonread_coreFFI/module.h moonread_coreFFI/module.modulemap; do\n  if ! cmp -s \"$generated/${relative##*/}\" \"$MOONREAD_BINDINGS_DIR/$relative\"; then\n    printf 'error: UniFFI binding differs: %s. Regenerate the checked-in MoonreadCoreBindings interfaces.\\n' \"$relative\" >&2\n    exit 1\n  fi\ndone\n";
 		};
 		A60000000000000000000008 /* Prune unused math fonts */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2292,130 +1744,25 @@ OS1000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-                270D00000000000000000021,
-                270D00000000000000000022,
-                270D00000000000000000023,
                 270D00000000000000000024,
-                270D0000000000000000003F,
-                270D0000000000000000002B,
-                270D0000000000000000002C,
-                270D0000000000000000002D,
-                270D0000000000000000002E,
-                270D0000000000000000002F,
-                270D00000000000000000030,
-                270D00000000000000000031,
-                270D00000000000000000032,
-                270D00000000000000000033,
-                270D00000000000000000034,
-                270D00000000000000000036,
-                270D00000000000000000037,
-                270D00000000000000000039,
-                270D0000000000000000003A,
-                270D0000000000000000003B,
-                A327DEBA0000000000000001,
-                271C00000000000000000002,
-                271D00000000000000000002,
-                270D0000000000000000003C,
-                270D0000000000000000003E,
-                271A00000000000000000002,
                 270D0000000000000000003D,
-                270E20000000000000000001,
-                270E20000000000000000002,
-                270E20000000000000000003,
-                270E20000000000000000004,
-                270E20000000000000000005,
-                270E20000000000000000006,
-                270E20000000000000000007,
-                270E20000000000000000008,
-                270E20000000000000000009,
-                270E2000000000000000000A,
-                270E2000000000000000000B,
-                270E2000000000000000000C,
-                270E2000000000000000000D,
                 270E2000000000000000000E,
                 270E20000000000000000090,
-                270E20000000000000000091,
-                270E20000000000000000092,
-                270E20000000000000000093,
                 270E200000000000000000A0,
-                270E200000000000000000A1,
-                270E200000000000000000A2,
-                270E200000000000000000A3,
-                270E200000000000000000A4,
-                270E200000000000000000A5,
-                270E200000000000000000A6,
-                270E200000000000000000A7,
                 270E200000000000000000B0,
-                270E200000000000000000B1,
-                270E200000000000000000B2,
-                270E200000000000000000A8,
-                270E20000000000000000094,
-				C31100000000000000000002 /* SearchTagOption.graphql.swift in Sources */,
-                270E20000000000000000077,
-                270E20000000000000000076,
-                270E20000000000000000075,
-                270E20000000000000000074,
-                270E20000000000000000073,
-                270E20000000000000000072,
-                270E20000000000000000071,
                 270E20000000000000000070,
-                270E20000000000000000057,
-                270E20000000000000000056,
-                270E20000000000000000055,
-                270E20000000000000000054,
-                270E20000000000000000053,
-                270E20000000000000000052,
                 270E20000000000000000051,
-                270E20000000000000000050,
-                270E20000000000000000038,
-                270E20000000000000000037,
-                270E20000000000000000036,
-                270E20000000000000000035,
-                270E20000000000000000034,
-                270E20000000000000000033,
-                270E20000000000000000032,
                 270E20000000000000000031,
-                270E20000000000000000030,
-                270E20000000000000000019,
-                270E20000000000000000018,
-                270E20000000000000000017,
-                270E20000000000000000016,
-                270E20000000000000000015,
-                270E20000000000000000014,
-                270E20000000000000000013,
-                270E20000000000000000012,
-                270E20000000000000000011,
-                270E20000000000000000010,
                 270E2000000000000000000F,
-                270D00000000000000000038,
-                270D00000000000000000035,
-                270D00000000000000000025,
 
 				FBEC3350F1726A8D25FE408B /* AIChatView.swift in Sources */,
 				F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */,
 				88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */,
-				90709A613E0B26BF14B9F308 /* DataManagementModel.swift in Sources */,
-				A36101000000000000000004 /* StorageSpaceView.swift in Sources */,
-				C36600000000000000000008 /* StorageDatabasePage.swift in Sources */,
-				C36600000000000000000006 /* StorageSelectionPage.swift in Sources */,
-				C36600000000000000000004 /* StorageCategoryPage.swift in Sources */,
-				A36101000000000000000003 /* StorageSpaceModel.swift in Sources */,
-				4E5986F68A44B334B7F8643D /* ReadingDataListView.swift in Sources */,
-				42F0869878D5AA951138E187 /* ReadingDataIssuesView.swift in Sources */,
 
 				2D2BA9F36327CC9404EEC2D1 /* AIModelDetailView.swift in Sources */,
 				EC01BD4B8052624B73BD6031 /* LibraryDirectoryObserver.swift in Sources */,
-				6F0F9A8C149BDA5EEAD6DF01 /* LibraryExport.swift in Sources */,
-				471EC7FB4D05BD00640CFA1D /* MetadataExchange.swift in Sources */,
 				7FFFB76F33327913F37A7D68 /* MetadataExchangeModel.swift in Sources */,
 				4C40326EFE5BB71FA030A863 /* MetadataExchangeService.swift in Sources */,
-				E29300000000000000000001 /* MetadataExchangeStaging.swift in Sources */,
-				CDF00E04D1ED44A69B16733E /* MetadataImportView.swift in Sources */,
-				2A9B96701CC7CDCCC25D0622 /* MetadataTasksSection.swift in Sources */,
-				34118FBC4E5AADEF0EE21434 /* ReaderChapterRow.swift in Sources */,
-				ED43C6093F46B29167FA3107 /* ReaderSearchPage.swift in Sources */,
-				3F6360D2E5B77985EFF5EF2E /* ReaderScreen+Controls.swift in Sources */,
-				3A17B5EDF92E15B897D0C225 /* ReaderScreen+Content.swift in Sources */,
 				1447BC60327069310DE0A4CD /* LibraryModel+FileWork.swift in Sources */,
 				8C10E5B9210E87F647B8A322 /* LibraryModel+Imports.swift in Sources */,
 				E47F1E111F1148CE1CA8E652 /* LibraryModel+Navigation.swift in Sources */,
@@ -2427,14 +1774,7 @@ OS1000000000000000000001,
 				0EC6C0D2525AD80826CE3AA6 /* UserDataStore+Annotations.swift in Sources */,
 				E6D7C1E870611C3861CBCD58 /* UserDataStore+Values.swift in Sources */,
 				218F66F30D512052FAFB4B0A /* UserDataStore+Transfer.swift in Sources */,
-				3A7B1A13F3E7DD531AF0CCE4 /* UserDataValues.swift in Sources */,
 				5E88004253B3A735D2C1A07D /* UserDataModels.swift in Sources */,
-				C54AB28690F31B67D226B9E2 /* ReaderSession+Continuation.swift in Sources */,
-				D880D3619732F8B9540289DF /* ReaderSession+Browsing.swift in Sources */,
-				1515207B6BA51EC57E2B81F2 /* ReaderSession+Annotations.swift in Sources */,
-				DC0C7F5391863C5DFBF3A396 /* ReaderSession+Preparation.swift in Sources */,
-				CE65946D407BC42BD38ECEF8 /* ReaderSession+Position.swift in Sources */,
-				91C1FE0F3C2AE3778DC59826 /* ReaderSession+Loading.swift in Sources */,
 
 
 				B0C40FF5843FDB56FDBA1277 /* LibraryStoreShotFixtures.swift in Sources */,
@@ -2463,35 +1803,19 @@ OS1000000000000000000001,
 				7C27F97BAC8E4D479B8F5F0C /* SystemReadingRouter.swift in Sources */,
 				D96AA4CE1D4740298CEB37E3 /* SystemReadingCatalog.swift in Sources */,
 				7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */,
-                D50610000000000000000004 /* DataManagementView.swift in Sources */,
                 D50610000000000000000003 /* CacheManagement.swift in Sources */,
                 A36101000000000000000002 /* StorageManagement.swift in Sources */,
-                A36101000000000000000001 /* StorageFiles.swift in Sources */,
                 D50610000000000000000002 /* ReadingDataManagement.swift in Sources */,
-				ACDA3BF15FB2502D8E9807A4 /* CloudCallbackJournal.swift in Sources */,
-				F618FD57698B568994D28CB0 /* CloudInboxRows.swift in Sources */,
-				EDD4277BCD8250569B8AA972 /* DataExchangeTask.swift in Sources */,
-				A80885CC5F9D5814A5E1511E /* RelationalReadingData.swift in Sources */,
-				9C6623F2575E5EA790765826 /* UserBackupRestore.swift in Sources */,
-				FCF6C9A4531E5694B9584497 /* ReadingWindow.swift in Sources */,
 				F327C48148375FB399ECB5B8 /* BookSearchConditionPages.swift in Sources */,
-				8FEC8C6E8A2954F393A2A389 /* BookSearchTagRulePage.swift in Sources */,
-                D50610000000000000000001 /* UserDataBackup.swift in Sources */,
-				660000000000000000000002,
 				154000000000000000000004,
-				C31100000000000000000006 /* BookTagCategories.swift in Sources */,
 				C31100000000000000000004 /* BookTagPicker.swift in Sources */,
 				154000000000000000000006,
 				154000000000000000000008,
-				358000000000000000000002,
-				154000000000000000000002,
                 FD64F53149DE5DBFB6AA04F1,
                 344233D679E94ACDA4FA2A11,
                 FC1100000000000000000001,
 CAA8B00EBC8041F6A299A6A5,
 B792EA92E8204EEDB7AA1450,
-  FF1000000000000000000001,
-                F01700000000000000000001,
 				1E29F78A7797494D83F655FD /* AITaskFixtures.swift */,
 
 				29E8AF36983F4CF9BE988DE0 /* AIOrganization.swift */,
@@ -2511,20 +1835,9 @@ B792EA92E8204EEDB7AA1450,
 				0BC015E32C5041118947402E /* AICoverTaskView.swift */,
 				3A96A876F24042AAA2FE29BC /* MoonreadDelegate.swift in Sources */,
 				9691E8B4840C4F38B899F26B /* LibraryModel.swift in Sources */,
-				D4FB0F4457504C4CA4DD4F73 /* ReaderSession.swift in Sources */,
-				6D93C1035BB54BA388AEDB7C /* ReaderAutoReading.swift in Sources */,
-				F082D1DB5AA74D34B3B0BBCE /* ReaderListeningContent.swift in Sources */,
-				FEF5731A64AE45B8A2C5A152 /* ReaderSession+Listening.swift in Sources */,
-				2DCBBA9F75784F3DB0AFA4C6 /* ListeningSession.swift in Sources */,
-				8D74048A90F64B17A95EE475 /* ListeningAudio.swift in Sources */,
-				2D1B236D8713432E89CE0ED8 /* ListeningTextProvider.swift in Sources */,
 				338EBE51F11D4BDC98985D77 /* ReaderOpenBenchmark.swift in Sources */,
-				267C2529F2B14483B0424293 /* ReaderOpenDiagnostics.swift in Sources */,
-				7A278708BAB942A99014C0D3 /* ReaderOpening.swift in Sources */,
-				7A042EE51D614A828562A191 /* ReaderTitlePage.swift in Sources */,
 				29B55EBD38D34117AE72E079 /* CloudSettingsView.swift in Sources */,
 				DFA135AC4F9846958D6431FB /* CloudStore.swift in Sources */,
-				94D2EEC02FFF4BC08C9C7711 /* ReaderMessages.swift in Sources */,
 				6FE86863DC904E4183EE7017 /* MainActorNotifications.swift in Sources */,
 
 
@@ -2537,7 +1850,6 @@ E71000000000000000000001,
 4ECB33000000000000000001,
 				C36600000000000000000002 /* AIToolRequestNames.swift in Sources */,
 
-E71000000000000000000077,
 
 
 
@@ -2557,97 +1869,34 @@ F01900000000000000000001,
                 B13000000000000000000003,
                 B01000000000000000000002,
 				CD0100000000000000000003,
-				E34C8E660FB8402F9D808D83 /* ReadingViewport.swift in Sources */,
-				C6E02235F2BC49C99652D6ED /* ReadingPagination.swift in Sources */,
-				D1D21C97FB7B4DC9ABAC60C8 /* ReadingTextView.swift in Sources */,
-				F9146A65FABC49229CE8AFBE /* ReaderCoverController.swift in Sources */,
-				0E8B143793A847D18B946668 /* PageController.swift in Sources */,
-				AD2E4CEA11114B348BD4001C /* ReadingController.swift in Sources */,
-				5D3597B4FF844A3FAECAB599 /* ReadingController+Selection.swift in Sources */,
-				6815BF660F5E4ADCA0560E68 /* ReadingController+Pages.swift in Sources */,
-				FC28A3912F1D25B7A584D239 /* ReadingController+Listening.swift in Sources */,
-				7EFE92CC1E2F4EABA11F303E /* ReadingController+Navigation.swift in Sources */,
-				56A29F1440F34C9BA64DD055 /* ReadingController+Scroll.swift in Sources */,
-				BCA9FC224516449E85299411 /* ReadingTextDecorations.swift in Sources */,
-				68B923012B624E04B44EA7E3 /* ReaderSearchContent.swift in Sources */,
-				8BE0A1CCE83D4C5C83A75AD8 /* NoteEditor.swift in Sources */,
-				E44C314B4FF64F97B185487B /* ReaderAnnotationDetails.swift in Sources */,
-				79080AE9A8A340A1B99ACC83 /* ReaderChapterList.swift in Sources */,
-				CC9B3BCAE0EA4013878D9BA4 /* ReaderNotesList.swift in Sources */,
 				D14015000000000000000001 /* NoteDocument.swift in Sources */,
-				87B3FE2BFDD04847AE5A02CA /* ReaderLibrarySheet.swift in Sources */,
-				3D1C1E4B0133473A9A1C7DC4 /* ReaderToolSession.swift in Sources */,
-				75AC6A58A0F342E1BBCD5E39 /* ReaderNativeToolPresentation.swift in Sources */,
-				F13000000000000000000001 /* ReaderPresentationState.swift in Sources */,
-				48A7297CFF794C178D1242D0 /* ReaderBattery.swift in Sources */,
-				308165AED1DF4230A31FF52B /* ReaderEncodingMenu.swift in Sources */,
-				4C8BF65601CA4114841B5D6B /* ReaderToolLabelStyle.swift in Sources */,
-				2DD74B5821B64531B506A916 /* ReaderCompactHeader.swift in Sources */,
-				AA51DD835A184821B465CFD4 /* ReaderPreparationContent.swift in Sources */,
-				920111E653264DBDB7FC1858 /* ReaderMoreContent.swift in Sources */,
-				1656D9DC94AB4BC4942732E9 /* ReaderAutoReadingContent.swift in Sources */,
-				4C49B0B7AF064FE799DE604A /* ReaderTaskContent.swift in Sources */,
-				65ECA15E2CC74AE98456F117 /* ReadingModePicker.swift in Sources */,
 				CE9F8CE75AFE42C28ECC1229 /* AppThemePreferencesView.swift in Sources */,
-				BA82A3CBA86846ECB5AE63D2 /* PalettePicker.swift in Sources */,
-				6C7083940065499F8C0487BB /* PalettePreview.swift in Sources */,
-				F587C1E1155B48F9AEAC88ED /* PaletteEditor.swift in Sources */,
-				A454A845E962475DB9521518 /* AboutView.swift in Sources */,
-				DEC2BEC0985D4462A3DFFD5B /* ThirdPartyLicensesView.swift in Sources */,
+				A37606000000000000000012 /* SettingsPaletteHost.swift in Sources */,
+				A37606000000000000000011 /* SettingsDataHost.swift in Sources */,
 				5D04F75C81604F72B1B2B5D7 /* StatisticsModels.swift in Sources */,
-				29A6B7ABAE5F498383369043 /* StatisticsBookList.swift in Sources */,
-				DBED821EB4A6440D9732F774 /* StatisticsDurationBar.swift in Sources */,
-				D40DDEFC45D0459C95B0AC51 /* StatisticsRhythm.swift in Sources */,
-				29AAD3F529884B28913015CC /* ReadingSessionsChart.swift in Sources */,
-				15CFAA04BB604325A6F7B91C /* StatisticsDayView.swift in Sources */,
 				BC404FD2C78B4E67B20B56A2 /* StatisticsSettingsView.swift in Sources */,
-				180EAB5E6B1F402795800E0D /* StatisticsSessionsView.swift in Sources */,
 				A10000000000000000000001 /* MoonreadApp.swift in Sources */,
+				A37603000000000000000017 /* AppDataServiceFactory.swift in Sources */,
 				6330E9327FF2417A990DB18A /* AppShellModel.swift in Sources */,
                 AC1000000000000000000001,
                 E28400000000000000000001 /* DeveloperMetadataCleanupView.swift in Sources */,
                 AC1000000000000000000002,
                 F01600000000000000000001,
-                AC1000000000000000000003,
                 AC1000000000000000000077,
-                AC1000000000000000000006,
 				A10000000000000000000002 /* AppDataService.swift in Sources */,
-				B8241D3AB12C4A36B0E155D1 /* ReadingProgress.swift in Sources */,
-				1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */,
 				A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */,
-				4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */,
 				FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */,
 				A10000000000000000000003 /* LibraryView.swift in Sources */,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
                 BA332A1147C34AF4B0033201 /* AuthorLibraryView.swift in Sources */,
-                AF1000000000000000000004 /* LibraryDrop.swift in Sources */,
                 F14900000000000000000001,
                 B39A10000000000000000001 /* ShelfRecovery.swift in Sources */,
 				A10000000000000000000004 /* ReaderScreen.swift in Sources */,
-                AD1000000000000000000001,
-                AD1000000000000000000002,
                 AD1000000000000000000003,
                 39D7C1FD293B4F679A79FD96,
-                34F12DF9BAFE4E998085F3FD,
-                11BFB3022CB8470AB1230F9C,
-                F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */,
-                F15200000000000000000005 /* ReaderBuiltinFonts.swift in Sources */,
-                152000000000000000000003 /* ReaderFontPicker.swift in Sources */,
-                F18300000000000000000003 /* ThemedGroupedList.swift in Sources */,
-                F18300000000000000000001 /* ReaderFontList.swift in Sources */,
-                152000000000000000000001 /* ReaderFontLibrary.swift in Sources */,
-                AD1000000000000000000004,
-                AD1000000000000000000005,
-                AD1000000000000000000006,
-                AD1000000000000000000007,
-                AD1000000000000000000008,
                 AE1000000000000000000001,
                 AE1000000000000000000002,
-				A10000000000000000000005 /* ReadingView.swift in Sources */,
-				A10000000000000000000006 /* TextCoordinates.swift in Sources */,
-                AB1000000000000000000001,
-				A10000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2778,20 +2027,38 @@ F01900000000000000000001,
 
 /* Begin XCLocalSwiftPackageReference section */
 		A1A276000000000000000003 = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadAI; };
+		270E40000000000000000001 = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadQueries; };
+		A37602000000000000000001 /* MoonreadStatistics */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadStatistics; };
+		A37602000000000000000002 /* MoonreadDesign */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadDesign; };
+		A37603000000000000000001 /* MoonreadCoreBindings */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadCoreBindings; };
+		A37603000000000000000011 /* MoonreadData */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadData; };
+		A37603000000000000000021 /* MoonreadLibrary */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadLibrary; };
+		A37604000000000000000001 /* MoonreadReader */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadReader; };
+		A37605000000000000000001 /* MoonreadSettings */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/MoonreadSettings; };
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-        270E40000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/apollographql/apollo-ios"; requirement = {kind = exactVersion; version = 2.5.0;};};
         270D00000000000000000041 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/groue/GRDB.swift"; requirement = {kind = exactVersion; version = 7.12.0;};};
 
 /* End XCRemoteSwiftPackageReference section */
 /* Begin XCSwiftPackageProductDependency section */
+        A37603000000000000000024 /* MoonreadSearchText App */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000011; productName = MoonreadSearchText; };
+        A37603000000000000000026 /* MoonreadSearchText Widget */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000011; productName = MoonreadSearchText; };
 		A1A276000000000000000002 /* MoonreadAI */ = {isa = XCSwiftPackageProductDependency; package = A1A276000000000000000003; productName = MoonreadAI; };
-        270E40000000000000000002 = {isa = XCSwiftPackageProductDependency; package = 270E40000000000000000001; productName = ApolloAPI;};
+        270E40000000000000000002 = {isa = XCSwiftPackageProductDependency; package = 270E40000000000000000001; productName = MoonreadQueries;};
         270D00000000000000000042 = {isa = XCSwiftPackageProductDependency; package = 270D00000000000000000041; productName = GRDB;};
 
 
 
+		A37602000000000000000003 /* MoonreadStatistics */ = {isa = XCSwiftPackageProductDependency; package = A37602000000000000000001; productName = MoonreadStatistics; };
+		A37602000000000000000005 /* MoonreadDesign */ = {isa = XCSwiftPackageProductDependency; package = A37602000000000000000002; productName = MoonreadDesign; };
+		A37603000000000000000002 /* MoonreadCoreBindings */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000001; productName = MoonreadCoreBindings; };
+		A37603000000000000000012 /* MoonreadDataTypes */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000011; productName = MoonreadDataTypes; };
+		A37603000000000000000014 /* MoonreadData */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000011; productName = MoonreadData; };
+		A37603000000000000000022 /* MoonreadLibrary */ = {isa = XCSwiftPackageProductDependency; package = A37603000000000000000021; productName = MoonreadLibrary; };
+		A37604000000000000000002 /* MoonreadReader */ = {isa = XCSwiftPackageProductDependency; package = A37604000000000000000001; productName = MoonreadReader; };
+		A37605000000000000000002 /* MoonreadSettings */ = {isa = XCSwiftPackageProductDependency; package = A37605000000000000000001; productName = MoonreadSettings; };
+		A37604000000000000000004 /* MoonreadInstalledFonts */ = {isa = XCSwiftPackageProductDependency; package = A37604000000000000000001; productName = MoonreadInstalledFonts; };
 /* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -2899,7 +2166,6 @@ F01900000000000000000001,
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(MOONREAD_TOOLS_CONDITION)";
 				EXCLUDED_SOURCE_FILE_NAMES = "$(inherited) DeveloperTools.xcstrings";
 				INCLUDED_SOURCE_FILE_NAMES = "$(inherited) $(MOONREAD_TOOLS_RESOURCES_$(MOONREAD_TOOLS_CONDITION))";
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2935,7 +2201,6 @@ F01900000000000000000001,
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(MOONREAD_TOOLS_CONDITION)";
 				EXCLUDED_SOURCE_FILE_NAMES = "$(inherited) DeveloperTools.xcstrings";
 				INCLUDED_SOURCE_FILE_NAMES = "$(inherited) $(MOONREAD_TOOLS_RESOURCES_$(MOONREAD_TOOLS_CONDITION))";
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2950,6 +2215,7 @@ F01900000000000000000001,
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadUITests;
 				CODE_SIGN_ENTITLEMENTS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_INCLUDE_PATHS = ("$(inherited)", "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI");
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Moonread;
@@ -2964,6 +2230,7 @@ F01900000000000000000001,
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadUITests;
 				CODE_SIGN_ENTITLEMENTS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_INCLUDE_PATHS = ("$(inherited)", "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI");
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Moonread;
@@ -2980,7 +2247,7 @@ F01900000000000000000001,
 				CODE_SIGN_ENTITLEMENTS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(MOONREAD_TOOLS_CONDITION)";
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
+				SWIFT_INCLUDE_PATHS = ("$(inherited)", "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI");
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Moonread.app/Moonread";
@@ -2996,7 +2263,7 @@ F01900000000000000000001,
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadTests;
 				CODE_SIGN_ENTITLEMENTS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
+				SWIFT_INCLUDE_PATHS = ("$(inherited)", "$(MOONREAD_BINDINGS_DIR)/moonread_coreFFI");
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Moonread.app/Moonread";

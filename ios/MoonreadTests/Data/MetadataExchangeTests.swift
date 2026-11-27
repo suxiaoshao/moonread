@@ -1,3 +1,7 @@
+@testable import MoonreadLibrary
+@testable import MoonreadData
+import MoonreadDataTypes
+import MoonreadCoreBindings
 import Foundation
 import GRDB
 import CryptoKit
@@ -49,10 +53,10 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         let model = MetadataExchangeModel(service: service)
         let coverOnly = try inventory.confirmation(selected: [key, other], fields: [.cover])
         model.review(try await service.previewMetadata(exported.file.urls[0]))
-        do { _ = try await model.cleanMetadata(coverOnly); XCTFail("An import preview must exclude cleanup") }
+        do { _ = try await model.cleanMetadata(coverOnly, service: service); XCTFail("An import preview must exclude cleanup") }
         catch MetadataCleanupError.busy {}
         model.clear()
-        let cleared = try await model.cleanMetadata(coverOnly)
+        let cleared = try await model.cleanMetadata(coverOnly, service: service)
         XCTAssertEqual(cleared, 1)
         let afterCover = try await service.details(sha: key)
         XCTAssertNil(afterCover.metadata.cover)
@@ -69,11 +73,11 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         var newer = afterCover.metadata
         newer.author = "Newer fixture author"
         try await service.saveMetadata(base: afterCover.metadata, edited: newer)
-        do { _ = try await model.cleanMetadata(stale); XCTFail("A stale confirmation must never erase a newer edit") }
+        do { _ = try await model.cleanMetadata(stale, service: service); XCTFail("A stale confirmation must never erase a newer edit") }
         catch ReadingDataError.changed {}
         let fresh = try await service.metadataCleanupInventory()
         let all = try fresh.confirmation(selected: [key, other], fields: Set(MetadataCleanupInventory.fields))
-        let restoredToDefaults = try await model.cleanMetadata(all)
+        let restoredToDefaults = try await model.cleanMetadata(all, service: service)
         XCTAssertEqual(restoredToDefaults, 1)
         let after = try await service.details(sha: key)
         XCTAssertEqual(after.metadata.status, .reading, "The default state still derives from position")
@@ -83,7 +87,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         var preview = try await service.previewMetadata(exported.file.urls[0])
         let match = try XCTUnwrap(preview.books.firstIndex { $0.id == key })
         preview.books[match].adopt(true)
-        preview.books[match].validateSelection(using: service)
+        preview.books[match].validateSelection()
         let restored = await service.applyMetadata(preview) { _, _ in }
         XCTAssertNil(restored.failure)
         let final = try await service.details(sha: key)
@@ -295,7 +299,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         firstEdit.author = "Temporary author"
         firstEdit.cover = proposedCover
         let initialValues = try store.metadataTokens()
-        let firstWrite = try service.metadataEditPlan(base: firstBase, edited: firstEdit)
+        let firstWrite = try BookMetadataEditPlan.make(base: firstBase, edited: firstEdit)
         let draft = await service.coverDraftURL(proposedCover)
         let validCover = try Data(contentsOf: draft)
         let badField = BookMetadataEditPlan(sha: second.fixtureSHA256,

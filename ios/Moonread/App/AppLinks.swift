@@ -1,3 +1,4 @@
+import MoonreadCoreBindings
 import Foundation
 
 /// Published policy/support URLs, reviewed before publication.
