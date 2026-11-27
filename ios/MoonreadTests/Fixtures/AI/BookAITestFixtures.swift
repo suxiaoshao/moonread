@@ -68,12 +68,14 @@ actor CoverCallGate {
 }
 
 @MainActor class BookAIFixture: XCTestCase {
-  func fixture() async throws -> (URL, AppDataService, ImportText, UserRowsFixture, String) {
+  func fixture(text: String = "第一章 月\n\n甲乙丙丁。\n第二段文字。\n") async throws
+    -> (URL, AppDataService, ImportText, UserRowsFixture, String)
+  {
     let root = FileManager.default.temporaryDirectory.appending(path: "AITest-" + UUID().uuidString)
     let library = root.appending(path: "library")
     try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
     let file = library.appending(path: "book.txt")
-    try "第一章 月\n\n甲乙丙丁。\n第二段文字。\n".write(to: file, atomically: true, encoding: .utf8)
+    try text.write(to: file, atomically: true, encoding: .utf8)
     let core = try makeReaderIndexFixture(at: root.appending(path: "db"))
     let book = try importBookFixture(core, filePath: file.path, title: "Book")
     let users = UserRowsFixture(index: core)

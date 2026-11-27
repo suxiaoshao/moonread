@@ -16,6 +16,7 @@ public struct AIProposalHost {
   public var coverBytes: @MainActor (BookCoverAsset) async throws -> Data
   public var makeCover: @MainActor (Data) async throws -> BookCoverAsset
   public var discardCoverDraft: @MainActor (BookCoverAsset) async -> Void
+  public var chapterTitle: @MainActor (String, UInt64) async throws -> String?
   public var annotationAdmission: @MainActor () async throws -> DataSessionLease
   public var ensureBookmark: @MainActor (String, UInt64, DataSessionLease) async throws -> ReaderMark
   public var prepareUserAnnotation: @MainActor (String, UInt64, UInt64, DataSessionLease) async throws -> AnnotationEdit
@@ -33,6 +34,7 @@ public struct AIProposalHost {
     coverBytes: @escaping @MainActor (BookCoverAsset) async throws -> Data,
     makeCover: @escaping @MainActor (Data) async throws -> BookCoverAsset,
     discardCoverDraft: @escaping @MainActor (BookCoverAsset) async -> Void,
+    chapterTitle: @escaping @MainActor (String, UInt64) async throws -> String?,
     annotationAdmission: @escaping @MainActor () async throws -> DataSessionLease,
     ensureBookmark: @escaping @MainActor (String, UInt64, DataSessionLease) async throws -> ReaderMark,
     prepareUserAnnotation: @escaping @MainActor (String, UInt64, UInt64, DataSessionLease) async throws -> AnnotationEdit,
@@ -49,6 +51,7 @@ public struct AIProposalHost {
     self.coverBytes = coverBytes
     self.makeCover = makeCover
     self.discardCoverDraft = discardCoverDraft
+    self.chapterTitle = chapterTitle
     self.annotationAdmission = annotationAdmission
     self.ensureBookmark = ensureBookmark
     self.prepareUserAnnotation = prepareUserAnnotation

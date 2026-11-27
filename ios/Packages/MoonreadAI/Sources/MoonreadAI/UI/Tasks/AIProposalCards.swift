@@ -10,19 +10,12 @@ public typealias AIProposalNoteEditor = @MainActor (
 
 /// Canonical history is always visible. Editable reviews are fresh, view-lifetime values.
 struct AIResultCard: View {
-    init(result: AIResultValue, noteEditor: @escaping AIProposalNoteEditor) {
-        self.result = result
-        self.noteEditor = noteEditor
-    }
-
-    private let noteEditor: AIProposalNoteEditor
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     let result: AIResultValue
     private var resultID: String { result.id }
     @State private var metadataSheet = false
     @State private var coverSheet = false
-    @State private var editor: AINoteEditorRequest?
     @State private var imagePreview: AICoverCandidate?
     @State private var confirmedNodes: Set<String> = []
     @State private var confirmOrganization = false
@@ -43,9 +36,6 @@ struct AIResultCard: View {
                 default:
                     VStack(alignment: .leading, spacing: LayoutTokens.control) {
                         switch result.body {
-                        case .note(let proposal):
-                            if let review, case .note(let note) = review.body { noteContent(note, proposal: proposal) }
-                            else { Text("笔记建议").font(.headline) }
                         case .organization:
                             if let review, case .organization(let organization) = review.body { organizationContent(organization) }
                             else { Text("整理方案").font(.headline) }
@@ -77,10 +67,6 @@ struct AIResultCard: View {
                         .toolbar { ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close) { coverSheet = false }.accessibilityIdentifier("closeAICoverSelection") } }
                         .sheet(item: $imagePreview) { candidate in coverPreview(candidate) }
                 }.themeScope(theme)
-            }
-            .sheet(item: $editor) { request in
-                noteEditor(request.edit, ai.proposals.annotationHooks(result)) { editor = nil }
-                    .themeScope(theme).preferredColorScheme(theme.scheme)
             }
         }
     }
@@ -137,23 +123,6 @@ struct AIResultCard: View {
             ThemedDivider()
             HStack { Text("选择封面"); Spacer(); Image(systemName: "chevron.right") }.font(.subheadline.weight(.semibold)).foregroundStyle(Color(uiColor: theme.accent))
         }.frame(maxWidth: .infinity, alignment: .leading)
-    }
-    private func noteContent(_ note: AINoteReviewValue, proposal: AINoteProposal) -> some View {
-        VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-            Text(proposal.kind == .bookmark ? "书签建议" : "笔记建议").font(.headline)
-            Text(verbatim: note.excerpt).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-            if note.existingBookmark { Text("已有").font(.caption) }
-            else if let reason = note.unavailable { Text("暂不可用").font(.caption); Text(verbatim: reason).font(.footnote) }
-            else {
-                Toggle("选择", isOn: Binding(get: { note.selected }, set: { ai.proposals.editNote(resultID, selected: $0) }))
-                if proposal.kind == .note {
-                    TextField("批注", text: Binding(get: { note.draft }, set: { ai.proposals.editNote(resultID, text: $0) }), axis: .vertical)
-                        .lineLimit(2...8).accessibilityIdentifier("aiNoteDraft-\(resultID)")
-                }
-                Button("保存所选") { Task { editor = await ai.proposals.saveNote(resultID) } }
-                    .disabled(!note.selected || editor != nil).accessibilityIdentifier("saveAINote-\(resultID)")
-            }
-        }.disabled(saving)
     }
     private func coverContent(_ cover: AICoverReviewValue) -> some View {
         VStack(alignment: .leading, spacing: LayoutTokens.control) {

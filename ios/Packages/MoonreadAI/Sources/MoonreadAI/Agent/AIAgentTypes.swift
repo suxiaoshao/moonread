@@ -38,6 +38,7 @@ public struct AIAgentPendingCall: Codable, Equatable, Sendable {
   public var input: JSONValue
   public var output: JSONValue?
   var bookList: [AIBookListPresentation]?
+  var notePreview: AINotePreview?
 
     public init(
         id: String,
@@ -124,6 +125,7 @@ public struct AIAgentEntry: Codable, Equatable, Sendable, Identifiable {
   public var userText: String?
   public var readingAttachments: [AIReadingAttachment] = []
   public var bookLists: [String: [AIBookListPresentation]]?
+  public var notePreviews: [String: AINotePreview]?
   public var outcome: AIAgentStatus?
   public var error: String?
 
@@ -203,6 +205,7 @@ public struct AIAgentEntry: Codable, Equatable, Sendable, Identifiable {
         userText: String? = nil,
         readingAttachments: [AIReadingAttachment] = [],
         bookLists: [String: [AIBookListPresentation]]? = nil,
+        notePreviews: [String: AINotePreview]? = nil,
         outcome: AIAgentStatus? = nil,
         error: String? = nil
     ) {
@@ -223,6 +226,7 @@ public struct AIAgentEntry: Codable, Equatable, Sendable, Identifiable {
         self.userText = userText
         self.readingAttachments = readingAttachments
         self.bookLists = bookLists
+        self.notePreviews = notePreviews
         self.outcome = outcome
         self.error = error
     }
@@ -334,6 +338,7 @@ public enum AIAgentFailure: Error, Equatable {
 struct AIAgentToolExecution: Sendable {
   let output: JSONValue
   var bookList: [AIBookListPresentation]?
+  var notePreview: AINotePreview?
 }
 
 public struct AIAgentTool: Sendable {
@@ -342,7 +347,7 @@ public struct AIAgentTool: Sendable {
   public let schema: JSONValue
   public let sdkTool: Tool
   public let confirmation: @Sendable (JSONValue) async throws -> String?
-  private var executeBookList: (@Sendable (JSONValue) async throws -> AIAgentToolExecution)?
+  private var executeWithPresentation: (@Sendable (JSONValue) async throws -> AIAgentToolExecution)?
 
 
   public init<Input: AIReadingInput, Output: Codable & Sendable>(
@@ -378,7 +383,7 @@ public struct AIAgentTool: Sendable {
     executeBookList: @escaping @Sendable (AIShowBookListInput) async throws -> (AIToolResponse<AIShownBooksResult>, [AIBookListPresentation])
   ) {
     self.init(name: name, description: description, input: input, execute: { try await executeBookList($0).0 })
-    self.executeBookList = { value in
+    self.executeWithPresentation = { value in
       let input = try JSONDecoder().decode(AIShowBookListInput.self, from: JSONEncoder().encode(value))
       try input.validate()
       let (response, books) = try await executeBookList(input)
@@ -387,8 +392,24 @@ public struct AIAgentTool: Sendable {
     }
   }
 
+  init<Input: AIReadingInput>(
+    name: String, description: String, input: Input.Type,
+    confirmation: @escaping @Sendable (Input) async throws -> String?,
+    executeNote: @escaping @Sendable (Input) async throws -> (AIToolResponse<AIProposalSnapshot>, AINotePreview)
+  ) {
+    self.init(name: name, description: description, input: input, confirmation: confirmation,
+              execute: { try await executeNote($0).0 })
+    executeWithPresentation = { value in
+      let input = try JSONDecoder().decode(Input.self, from: JSONEncoder().encode(value))
+      try input.validate()
+      let (response, preview) = try await executeNote(input)
+      let output = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(response))
+      return .init(output: output, notePreview: preview)
+    }
+  }
+
   func run(_ input: JSONValue, options: ToolExecutionOptions) async throws -> AIAgentToolExecution {
-    if let executeBookList { return try await executeBookList(input) }
+    if let executeWithPresentation { return try await executeWithPresentation(input) }
     guard let execute = sdkTool.execute else { throw AIAgentFailure.invalidTool }
     return .init(output: try await execute(input, options).resolve())
   }

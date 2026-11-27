@@ -61,6 +61,7 @@ extension AIAgentRuntime {
     toolCount += 1
     var output: JSONValue
     var bookList: [AIBookListPresentation]?
+    var notePreview: AINotePreview?
     do {
       if let reason = try await definition.confirmation(input) {
         try check(expected)
@@ -95,6 +96,7 @@ extension AIAgentRuntime {
       try check(expected)
       output = completed.output
       bookList = completed.bookList
+      notePreview = completed.notePreview
 
     } catch {
       if generation != expected || stopped || error is CancellationError {
@@ -106,15 +108,16 @@ extension AIAgentRuntime {
         output = Self.errorResult((error as? URLError)?.code == .timedOut ? "timeout" : "execution_failed")
       }
     }
-    try await recordResult(output, bookList: bookList, callID: callID, expected: expected, expectedTurn: expectedTurn)
+    try await recordResult(output, bookList: bookList, notePreview: notePreview, callID: callID, expected: expected, expectedTurn: expectedTurn)
     return output
   }
-  private func recordResult(_ output: JSONValue, bookList: [AIBookListPresentation]? = nil, callID: String, expected: UUID, expectedTurn: String) async throws {
+  private func recordResult(_ output: JSONValue, bookList: [AIBookListPresentation]? = nil, notePreview: AINotePreview? = nil, callID: String, expected: UUID, expectedTurn: String) async throws {
     try await transact { next in
       guard self.generation == expected, next.currentTurn == expectedTurn,
             let index = next.pendingCalls.firstIndex(where: { $0.id == callID }) else { throw CancellationError() }
       next.pendingCalls[index].output = output
       next.pendingCalls[index].bookList = bookList
+      next.pendingCalls[index].notePreview = notePreview
       return []
     }
     results[callID] = output

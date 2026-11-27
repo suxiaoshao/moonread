@@ -12,6 +12,13 @@ public struct AINoteEditorRequest: Identifiable, Sendable {
 
 
 extension AIProposalRegistry {
+    func openNewNoteReviews(_ suggestions: [AINoteSuggestion]) async {
+        for suggestion in suggestions where reviews[suggestion.id] == nil {
+            guard !Task.isCancelled else { return }
+            await openResult(suggestion.result)
+        }
+    }
+
     public func editMetadata(_ id: String, kind: AIMetadataFieldKind, text: String? = nil, selected: Bool? = nil, tag: String? = nil) {
         guard var value = review(id), canEdit(value.sessionID), !inFlight.contains(id), case .metadata(var body) = value.body,
               let i = body.fields.firstIndex(where: { $0.kind == kind }) else { return }
@@ -21,7 +28,7 @@ extension AIProposalRegistry {
         value.body = .metadata(body); update(value); lastErrors[id] = nil; feedback[id] = nil
     }
     public func editNote(_ id: String, text: String? = nil, selected: Bool? = nil) {
-        guard var value = review(id), canEdit(value.sessionID), !inFlight.contains(id), case .note(var body) = value.body else { return }
+        guard var value = review(id), canEdit(value.sessionID), !inFlight.contains(id), case .note(var body) = value.body, body.canSave else { return }
         if let text { body.draft = text }; if let selected { body.selected = selected }
         value.body = .note(body); update(value); lastErrors[id] = nil
     }
@@ -108,7 +115,7 @@ extension AIProposalRegistry {
     }
     public func saveNote(_ id: String) async -> AINoteEditorRequest? {
         guard let value = review(id), case .note(let note) = value.body, case .note(let proposal) = value.result.body,
-              note.selected, !note.existingBookmark, note.unavailable == nil, !inFlight.contains(id) else { return nil }
+              note.selected, note.canSave, !inFlight.contains(id) else { return nil }
         let token: UUID
         do { token = try beginApplication(value.sessionID) } catch { lastErrors[id] = AIRequestError.message(error); return nil }
         inFlight.insert(id); lastErrors[id] = nil
@@ -118,7 +125,8 @@ extension AIProposalRegistry {
             let reading = try await AIReadingReferences(access: host.reading).available(proposal.bookRef)
             if proposal.kind == .bookmark {
                 _ = try await host.ensureBookmark(reading, proposal.startUtf8, admission)
-                feedback[id] = String(localized: "书签已保存"); return nil
+                markNoteSaved(id, feedback: String(localized: "书签已保存"))
+                return nil
             }
             var edit = try await host.prepareUserAnnotation(reading, proposal.startUtf8, proposal.endUtf8, admission)
             if !edit.marks.isEmpty || edit.baselines.values.contains(where: { !$0.isEmpty }) {
@@ -126,9 +134,17 @@ extension AIProposalRegistry {
                 return .init(id: id, sessionID: value.sessionID, edit: edit)
             }
             _ = try await host.saveUserNote(edit, note.draft)
-            feedback[id] = String(localized: "批注已保存")
-        } catch { lastErrors[id] = AIRequestError.message(error) }
+            markNoteSaved(id, feedback: String(localized: "批注已保存"))
+        } catch is CancellationError {} catch { lastErrors[id] = AIRequestError.message(error) }
         return nil
+    }
+    private func markNoteSaved(_ id: String, feedback message: String) {
+        feedback[id] = message
+        guard var value = review(id), case .note(var note) = value.body else { return }
+        note.status = .saved
+        note.selected = false
+        value.body = .note(note)
+        update(value)
     }
     public func annotationHooks(_ result: AIResultValue) -> AIAnnotationCommitHooks {
         let id = result.id
@@ -136,7 +152,7 @@ extension AIProposalRegistry {
             guard !self.inFlight.contains(id) else { throw AIToolError("busy") }
             let token = try self.beginApplication(result.sessionID); self.inFlight.insert(id)
             return .init(owner: result.sessionID, token: token)
-        }, saved: { self.feedback[id] = String(localized: "批注已保存") },
+        }, saved: { self.markNoteSaved(id, feedback: String(localized: "批注已保存")) },
         finish: { ticket in self.inFlight.remove(id); self.endApplication(ticket.owner, ticket.token) })
     }
     public func setCover(_ id: String, attachmentRef: String) async -> Bool {

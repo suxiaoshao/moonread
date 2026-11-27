@@ -318,6 +318,9 @@ final class AIProposalTests: BookAIFixture {
       return XCTFail("Missing note review")
     }
     XCTAssertEqual(review.draft, "Original suggestion")
+    XCTAssertNil(result.notePreview)
+    let originalExcerpt = try await reader.textRange(book.id, start: 0, end: 9).text
+    XCTAssertEqual(review.preview?.excerpt, originalExcerpt)
     let unchanged = try await reader.annotations(book.id, start: 0, end: 9)
     XCTAssertTrue(unchanged.isEmpty)
     let baseline = try await reader.prepareAnnotation(book.id, start: 0, end: 9)
@@ -345,6 +348,81 @@ final class AIProposalTests: BookAIFixture {
     XCTAssertEqual(marks.count, 1)
     XCTAssertEqual(marks.first?.note, "Confirmed edit")
     XCTAssertNotNil(registry.feedback[result.id])
+    guard case .note(let savedReview) = registry.review(result.id)?.body else {
+      return XCTFail("Missing saved note review")
+    }
+    XCTAssertEqual(savedReview.status, .saved)
+    XCTAssertEqual(AINoteReviewCounts([savedReview]).selected, 0)
+  }
+
+  func testAppendedNoteSuggestionLoadsWithoutResettingExistingReview() async throws {
+    let (root, reader, book, _, _) = try await fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = UUID().uuidString
+    let registry = AIProposalRegistry(reader: reader)
+    registry.canEdit = { $0 == owner }
+    let bookRef = AIReadingTools.bookRef(book.fixtureSHA256)
+    func suggestion(_ proposal: AINoteProposal, sequence: Int) -> AINoteSuggestion {
+      let id = proposal.proposalRef
+      let result = AIResultValue(
+        id: id, sessionID: owner, entryID: id, callID: id, turn: "same-turn",
+        sequence: sequence, body: .note(proposal))
+      return .init(result: result, proposal: proposal)
+    }
+    let first = suggestion(.init(
+      proposalRef: "note", bookRef: bookRef, kind: .note,
+      startUtf8: 0, endUtf8: 9, note: "Original suggestion"), sequence: 0)
+    let second = suggestion(.init(
+      proposalRef: "bookmark", bookRef: bookRef, kind: .bookmark,
+      startUtf8: 15, endUtf8: 15, note: ""), sequence: 1)
+
+    await registry.openNewNoteReviews([first])
+    registry.editNote(first.id, text: "Edited draft", selected: false)
+    XCTAssertNil(registry.review(second.id))
+    await registry.openNewNoteReviews([first, second])
+
+    guard case .note(let original) = registry.review(first.id)?.body,
+          case .note(let appended) = registry.review(second.id)?.body else {
+      return XCTFail("Missing note reviews")
+    }
+    XCTAssertEqual(original.draft, "Edited draft")
+    XCTAssertFalse(original.selected)
+    let counts = AINoteReviewCounts([original, appended])
+    XCTAssertEqual(counts.pending, 2)
+    XCTAssertEqual(counts.selected, 1)
+  }
+
+  func testLegacyNotePreviewUsesSuggestionChapterInsteadOfReadingPosition() async throws {
+    let firstHeading = "第一章 月\n\n"
+    let firstChapter = firstHeading + "甲乙丙丁。\n\n"
+    let secondHeading = "第二章 岸\n\n"
+    let (root, reader, book, _, _) = try await fixture(text: firstChapter + secondHeading + "戊己庚辛。\n")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let start = UInt64(firstHeading.utf8.count)
+    let current = UInt64((firstChapter + secondHeading).utf8.count)
+    try await reader.savePosition(bookID: book.id, offset: current)
+    let details = try await reader.details(bookID: book.id)
+    XCTAssertEqual(details.currentChapter, "第二章 岸")
+
+    let repository = try await AIRepository.open(inMemory: true)
+    let owner = UUID().uuidString
+    let registry = await registry(repository, reader: reader, owner: owner)
+    let proposal = AINoteProposal(
+      proposalRef: "bookmark", bookRef: AIReadingTools.bookRef(book.fixtureSHA256), kind: .bookmark,
+      startUtf8: start, endUtf8: start, note: "")
+    let legacy = entry(
+      try AIAgentEntry.json(AIToolResponse(data: AIProposalSnapshot.notes(proposal))),
+      name: "propose_bookmark")
+    let result = try XCTUnwrap(AICommittedResultDecoder.results(legacy, sessionID: owner).first)
+    XCTAssertNil(result.notePreview)
+    let preview = try await registry.legacyNotePreview(proposal)
+    XCTAssertEqual(preview.chapter, "第一章 月")
+
+    await registry.openResult(result)
+    guard case .note(let review) = registry.review(result.id)?.body else {
+      return XCTFail("Missing note review")
+    }
+    XCTAssertEqual(review.preview, preview)
   }
 
   // S109: 封面审核选择取消不保存，重开同一候选仍可明确应用。
