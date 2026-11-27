@@ -17,8 +17,10 @@ public struct AIResultValue: Sendable, Identifiable {
     public let turn: String
     public let sequence: Int
     public let body: Body
-    public init(id: String, sessionID: String, entryID: String, callID: String, turn: String, sequence: Int, body: Body) {
+    public let notePreview: AINotePreview?
+    public init(id: String, sessionID: String, entryID: String, callID: String, turn: String, sequence: Int, body: Body, notePreview: AINotePreview? = nil) {
         self.id = id; self.sessionID = sessionID; self.entryID = entryID; self.callID = callID; self.turn = turn; self.sequence = sequence; self.body = body
+        self.notePreview = notePreview
     }
 }
 
@@ -58,14 +60,32 @@ public struct AIMetadataReviewValue {
     public init(bookRef: String, title: String, fields: [AIMetadataFieldReview], rename: AIMetadataRenameReview?) { self.bookRef = bookRef; self.title = title; self.fields = fields; self.rename = rename }
 }
 public struct AINoteReviewValue {
+    enum Status: Equatable { case pending, existingBookmark, saved, unavailable(String) }
     public var draft: String
-    public var selected: Bool
-    public var excerpt: String
-    public var chapter: String?
-    public var existingBookmark: Bool
-    public var unavailable: String?
-    public init(draft: String, selected: Bool, excerpt: String, chapter: String?, existingBookmark: Bool, unavailable: String?) {
-        self.draft = draft; self.selected = selected; self.excerpt = excerpt; self.chapter = chapter; self.existingBookmark = existingBookmark; self.unavailable = unavailable
+    var selected = true
+    var preview: AINotePreview?
+    var status: Status = .pending
+    var canSave: Bool { status == .pending }
+}
+
+struct AINoteReviewCounts: Equatable {
+    let pending: Int
+    let selected: Int
+
+    init(_ notes: [AINoteReviewValue]) {
+        let pending = notes.filter(\.canSave)
+        self.pending = pending.count
+        selected = pending.lazy.filter(\.selected).count
+    }
+}
+
+struct AINoteSuggestion: Identifiable, Equatable {
+    let result: AIResultValue
+    let proposal: AINoteProposal
+    var id: String { result.id }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.proposal == rhs.proposal && lhs.result.notePreview == rhs.result.notePreview
     }
 }
 public struct AICoverReviewValue {
@@ -118,7 +138,7 @@ public enum AICommittedResultDecoder {
                 default: return nil
                 }
             }
-            return .init(id: entry.id + "/" + call, sessionID: sessionID, entryID: entry.id, callID: call, turn: entry.turn, sequence: entry.sequence, body: body)
+            return .init(id: entry.id + "/" + call, sessionID: sessionID, entryID: entry.id, callID: call, turn: entry.turn, sequence: entry.sequence, body: body, notePreview: entry.notePreviews?[call])
         }
     }
 }

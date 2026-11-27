@@ -37,7 +37,18 @@ public struct AIMetadataProposal: Codable, Sendable, Identifiable {
     }
     public var id: String { proposalRef }
 }
-public struct AINoteProposal: Codable, Sendable, Identifiable {
+/// Stored locally with the committed tool result, outside the provider message.
+public struct AINotePreview: Codable, Equatable, Sendable {
+    public let chapter: String?
+    public let excerpt: String
+
+    public init(chapter: String?, excerpt: String) {
+        self.chapter = chapter
+        self.excerpt = excerpt
+    }
+}
+
+public struct AINoteProposal: Codable, Equatable, Sendable, Identifiable {
     public enum Kind: String, Codable, Sendable { case note, bookmark }
     public var proposalRef: String
     public var bookRef: String

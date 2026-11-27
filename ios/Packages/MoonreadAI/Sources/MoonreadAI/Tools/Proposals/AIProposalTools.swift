@@ -119,7 +119,7 @@ public enum AIResolvedSource: Sendable, Identifiable {
         let ref: String
         switch result.body {
         case .metadata(let p): ref = p.bookRef
-        case .note(let p): ref = p.bookRef
+        case .note: return
         case .cover(let p): ref = p.bookRef
         case .findCover(let p): ref = p.bookRef
         case .organization, .bookFilter, .bookList: return
@@ -162,17 +162,26 @@ public enum AIResolvedSource: Sendable, Identifiable {
             }
             body = .metadata(.init(bookRef: p.bookRef, title: details.book?.title ?? String(localized: "小说信息"), fields: fields, rename: rename))
         case .note(let p):
-            var value = AINoteReviewValue(draft: p.note, selected: true, excerpt: "", chapter: nil, existingBookmark: false, unavailable: nil)
+            var value = AINoteReviewValue(draft: p.note, preview: result.notePreview)
             do {
                 let reading = try await references.available(p.bookRef)
-                let range = p.kind == .bookmark ? try await host.reading.paragraph(reading, p.startUtf8) : try await host.reading.textRange(reading, p.startUtf8, p.endUtf8)
-                value.excerpt = String(range.text.prefix(160)); value.chapter = try await host.reading.detailsByID(reading).currentChapter
+                let text = try await noteText(p, reading: reading)
+                if value.preview == nil {
+                    let chapter = try await host.reading.detailsByID(reading).currentChapter
+                    value.preview = .init(chapter: chapter, excerpt: String(text.prefix(160)))
+                }
                 if p.kind == .bookmark {
                     let marks = try await host.reading.aiMarks(references.sha(p.bookRef))
-                    value.existingBookmark = marks.values.contains { $0.contains { $0.bookmark && $0.content?.start == p.startUtf8 } }
-                    if value.existingBookmark { value.selected = false }
+                    if marks.values.contains(where: { $0.contains { $0.bookmark && $0.content?.start == p.startUtf8 } }) {
+                        value.status = .existingBookmark
+                        value.selected = false
+                    }
                 }
-            } catch { value.unavailable = AIRequestError.message(error); value.selected = false }
+            } catch is CancellationError { throw CancellationError() }
+            catch {
+                value.status = .unavailable(AIRequestError.message(error))
+                value.selected = false
+            }
             body = .note(value)
         case .cover(let p): body = .cover(await initialCoverReview(p.bookRef, candidates: [p.attachment.id]))
         case .findCover(let p): body = .cover(await initialCoverReview(p.bookRef, candidates: Self.coverCandidates(result).map(\.id)))
@@ -211,9 +220,7 @@ public enum AIResolvedSource: Sendable, Identifiable {
                 guard Set(produced.map(\.id)) == Set(refs) else { throw AIToolError("stale_reference", field: "sourceRefs") }
             }
         case .notes(let proposal):
-            let id = try await references.available(proposal.bookRef)
-            if proposal.kind == .bookmark { _ = try await host.reading.paragraph(id, proposal.startUtf8) }
-            else { _ = try await host.reading.textRange(id, proposal.startUtf8, proposal.endUtf8) }
+            return try await prepareNote(proposal).0
         case .cover(let proposal): _ = try await AIImageStore.shared.attachment(owner: owner, ref: proposal.attachment.id)
         case .organization(let proposal):
             try proposal.input.validate()
@@ -223,6 +230,34 @@ public enum AIResolvedSource: Sendable, Identifiable {
         }
         return .init(data: snapshot)
     }
+    private func prepareNote(_ proposal: AINoteProposal) async throws -> (AIToolResponse<AIProposalSnapshot>, AINotePreview) {
+        let reading = try await AIReadingReferences(access: host.reading).available(proposal.bookRef)
+        let text = try await noteText(proposal, reading: reading)
+        let chapter = try? await host.chapterTitle(reading, proposal.startUtf8)
+        return (.init(data: .notes(proposal)), .init(chapter: chapter, excerpt: String(text.prefix(160))))
+    }
+
+    func legacyNotePreview(_ proposal: AINoteProposal) async throws -> AINotePreview {
+        let reading = try await AIReadingReferences(access: host.reading).available(proposal.bookRef)
+        let text = try await noteText(proposal, reading: reading)
+        let chapter = try await host.reading.detailsByID(reading).currentChapter
+        return .init(chapter: chapter, excerpt: String(text.prefix(160)))
+    }
+
+    func noteText(_ proposal: AINoteProposal) async throws -> String {
+        let reading = try await AIReadingReferences(access: host.reading).available(proposal.bookRef)
+        return try await noteText(proposal, reading: reading)
+    }
+
+    private func noteText(_ proposal: AINoteProposal, reading: String) async throws -> String {
+        let range = if proposal.kind == .bookmark {
+            try await host.reading.paragraph(reading, proposal.startUtf8)
+        } else {
+            try await host.reading.textRange(reading, proposal.startUtf8, proposal.endUtf8)
+        }
+        return range.text
+    }
+
     public func resolveSources(_ refs: [String], owner: String) async throws -> [AIResolvedSource] {
         var produced: [String: AIResolvedSource] = [:]
         for entry in try await history(owner) where entry.message.object["role"] == .string("tool") {
@@ -328,13 +363,13 @@ public enum AIResolvedSource: Sendable, Identifiable {
             .init(name: "propose_book_metadata", description: "Propose only the requested metadata fields for user review. Attribute authors only from explicit filename attribution, existing metadata, front matter, body attribution or cited web sources; never infer authorship from characters or style. Extract or compose synopsis and tags as requested. Tag removals, replacements and clears require explicit user request. Never infer reading status; include it only when the user explicitly requested a status change. Omitted fields are unchanged, empty fields clear only by explicit request. Tags merge by default. Optionally propose rename {fileRef,name}: name is a filename stem and the original extension is retained. Only propose renaming to remove obvious author/site/format/completion noise from a filename, or on explicit user request. Do not rewrite, translate or infer the book title from prose. fileRef must belong to bookRef. User confirmation renames that real file without replacement, independently of metadata saving.", input: AIMetadataProposalInput.self, execute: { input in
                 try await self.prepare(.metadata(self.metadataProposal(input)), owner: owner)
             }),
-            .init(name: "propose_note", description: "Suggest an annotation for the reader to review. Quote the exact original text and give a nearby positionRef; existing notes and conflicts are handled in the app editor and never overwritten.", input: AINoteProposalInput.self, confirmation: { try await references.confirmText([$0.bookRef]) }, execute: { input in
+            .init(name: "propose_note", description: "Suggest an annotation for the reader to review. Quote the exact original text and give a nearby positionRef; existing notes and conflicts are handled in the app editor and never overwritten.", input: AINoteProposalInput.self, confirmation: { try await references.confirmText([$0.bookRef]) }, executeNote: { input in
                 let (start, end) = try await self.quoteRange(bookRef: input.bookRef, near: input.near, quote: input.quote, references: references)
-                return try await self.prepare(.notes(.init(proposalRef: UUID().uuidString, bookRef: input.bookRef, kind: .note, startUtf8: start, endUtf8: end, note: input.note, markRef: input.markRef)), owner: owner)
+                return try await self.prepareNote(.init(proposalRef: UUID().uuidString, bookRef: input.bookRef, kind: .note, startUtf8: start, endUtf8: end, note: input.note, markRef: input.markRef))
             }),
-            .init(name: "propose_bookmark", description: "Suggest a bookmark at a positionRef for the reader to review. An existing bookmark there is kept.", input: AIBookmarkProposalInput.self, confirmation: { try await references.confirmText([$0.bookRef]) }, execute: { input in
+            .init(name: "propose_bookmark", description: "Suggest a bookmark at a positionRef for the reader to review. An existing bookmark there is kept.", input: AIBookmarkProposalInput.self, confirmation: { try await references.confirmText([$0.bookRef]) }, executeNote: { input in
                 let offset = try AIPosition.offset(input.at, bookSHA: try references.sha(input.bookRef), field: "at")
-                return try await self.prepare(.notes(.init(proposalRef: UUID().uuidString, bookRef: input.bookRef, kind: .bookmark, startUtf8: offset, endUtf8: offset, note: "")), owner: owner)
+                return try await self.prepareNote(.init(proposalRef: UUID().uuidString, bookRef: input.bookRef, kind: .bookmark, startUtf8: offset, endUtf8: offset, note: ""))
             }),
             .init(name: "propose_cover", description: "Propose an image attachment from this session as a cover for user review. For a generated cover, call generate_image first and pass its returned attachmentRef here. Does not apply the cover.", input: AICoverProposalInput.self, execute: { input in
                 let image = try await AIImageStore.shared.attachment(owner: owner, ref: input.attachmentRef)

@@ -19,6 +19,7 @@ extension AppDataService {
       coverBytes: { try await self.coverBytes($0) },
       makeCover: { try await self.makeCover($0) },
       discardCoverDraft: { await self.discardCoverDraft($0) },
+      chapterTitle: { try await self.chapter(bookID: $0, offset: $1)?.title },
       annotationAdmission: { try await self.annotationActionAdmission() },
       ensureBookmark: { try await self.ensureBookmark($0, at: $1, admission: $2) },
       prepareUserAnnotation: { try await self.prepareUserAnnotation($0, start: $1, end: $2, admission: $3) },

@@ -318,6 +318,9 @@ final class AIProposalTests: BookAIFixture {
       return XCTFail("Missing note review")
     }
     XCTAssertEqual(review.draft, "Original suggestion")
+    XCTAssertNil(result.notePreview)
+    let originalExcerpt = try await reader.textRange(book.id, start: 0, end: 9).text
+    XCTAssertEqual(review.preview?.excerpt, originalExcerpt)
     let unchanged = try await reader.annotations(book.id, start: 0, end: 9)
     XCTAssertTrue(unchanged.isEmpty)
     let baseline = try await reader.prepareAnnotation(book.id, start: 0, end: 9)
@@ -345,6 +348,11 @@ final class AIProposalTests: BookAIFixture {
     XCTAssertEqual(marks.count, 1)
     XCTAssertEqual(marks.first?.note, "Confirmed edit")
     XCTAssertNotNil(registry.feedback[result.id])
+    guard case .note(let savedReview) = registry.review(result.id)?.body else {
+      return XCTFail("Missing saved note review")
+    }
+    XCTAssertEqual(savedReview.status, .saved)
+    XCTAssertEqual(AINoteReviewCounts([savedReview]).selected, 0)
   }
 
   // S109: 封面审核选择取消不保存，重开同一候选仍可明确应用。

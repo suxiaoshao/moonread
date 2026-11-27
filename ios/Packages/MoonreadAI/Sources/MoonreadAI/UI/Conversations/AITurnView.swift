@@ -452,8 +452,9 @@ struct AIMessageRowView: View {
                                     openBook: { reference, title, entry in onHostAction(.openBook(reference: reference, title: title, entry: entry)) })
                         .accessibilityIdentifier("aiResult-\(result.id)")
                 default:
-                    AIResultCard(result: result, noteEditor: host.noteEditor)
+                    AIResultCard(result: result)
                 }
+            case .noteSuggestions(let notes): AINoteSuggestionsCard(notes: notes, noteEditor: host.noteEditor)
             case .error(let text): Label(text, systemImage: "exclamationmark.circle").font(.subheadline).foregroundStyle(Color(uiColor: theme.destructive))
             case .actions(let answer, let outcome):
                 HStack(spacing: LayoutTokens.compact) {

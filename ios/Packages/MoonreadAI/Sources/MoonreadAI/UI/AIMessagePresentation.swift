@@ -128,6 +128,7 @@ struct AIMessageHeightKey: Hashable {
 /// Snapshot-bound measurements; obsolete callbacks cannot resize a replacement row.
 struct DeferredRowMeasurements {
     private var pending: [String: (version: Int, height: Double)] = [:]
+    var isEmpty: Bool { pending.isEmpty }
     mutating func record(id: String, version: Int, height: Double) { pending[id] = (version, height) }
     mutating func drain(versions: [String: Int]) -> [(String, Double)] {
         defer { pending.removeAll() }

@@ -253,20 +253,25 @@ import SwiftAISDK
       let bookLists = Dictionary(uniqueKeysWithValues: next.pendingCalls.compactMap { call in
         call.bookList.map { (call.id, $0) }
       })
+      let notePreviews = Dictionary(uniqueKeysWithValues: next.pendingCalls.compactMap { call in
+        call.notePreview.map { (call.id, $0) }
+      })
       if clearPending { next.pendingCalls = []; next.pendingParts = [] }
       defer { if messages.contains(where: { if case .assistant = $0 { return true }; return false }) { next.currentStep += 1 } }
       return try messages.enumerated().map { index, message in
         defer { next.nextSequence += 1 }
         let payload = try AIAgentEntry.json(message)
-        let localLists = bookLists.filter { id, _ in
-          payload.object["role"]?.string == "tool" &&
-            (payload.object["content"]?.array ?? []).contains { $0.object["toolCallId"]?.string == id }
-        }
+        let toolCallIDs = payload.object["role"]?.string == "tool"
+          ? Set((payload.object["content"]?.array ?? []).compactMap { $0.object["toolCallId"]?.string })
+          : []
+        let localLists = bookLists.filter { toolCallIDs.contains($0.key) }
+        let localNotePreviews = notePreviews.filter { toolCallIDs.contains($0.key) }
         return AIAgentEntry(sequence: next.nextSequence, step: next.currentStep, turn: expectedTurn, provider: provider, model: model,
           message: payload, inputTokens: index == 0 ? usage?.inputTokens : nil,
           outputTokens: index == 0 ? usage?.outputTokens : nil, cacheReadTokens: index == 0 ? usage?.inputTokenDetails.cacheReadTokens : nil,
           cacheWriteTokens: index == 0 ? usage?.inputTokenDetails.cacheWriteTokens : nil, reasoningTokens: index == 0 ? usage?.outputTokenDetails.reasoningTokens : nil,
-          finishReason: reason, thinking: next.activeThinking, bookLists: localLists.isEmpty ? nil : localLists)
+          finishReason: reason, thinking: next.activeThinking, bookLists: localLists.isEmpty ? nil : localLists,
+          notePreviews: localNotePreviews.isEmpty ? nil : localNotePreviews)
       }
     } } catch { finishStepPublication(); throw error }
   }

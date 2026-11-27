@@ -108,7 +108,15 @@ extension AIService {
         }
         let np = AINoteProposal(proposalRef: "ui-note-" + session, bookRef: bookRef, kind: .note, startUtf8: noteRange.startUtf8, endUtf8: noteRange.endUtf8, note: "AI 的评论建议")
         let bp = AINoteProposal(proposalRef: "ui-bookmark-" + session, bookRef: bookRef, kind: .bookmark, startUtf8: range.startUtf8, endUtf8: range.startUtf8, note: "")
-        try await installFixtureSession(notes, entries: try fixtureTimeline([try fixtureResult(.notes(np), name: "propose_note", sequence: 0), try fixtureResult(.notes(bp), name: "propose_bookmark", sequence: 1)], purpose: "笔记建议"))
+        let following = try await reader.paragraph(id, at: range.endUtf8 + 2)
+        let secondNote = AINoteProposal(proposalRef: "ui-second-note-" + session, bookRef: bookRef, kind: .note,
+            startUtf8: following.startUtf8, endUtf8: following.endUtf8, note: "这一段承接了前面的场景。")
+        let noteResults = try await [
+            fixtureNoteResult(np, excerpt: noteRange.text, chapter: reader.chapter(bookID: id, offset: np.startUtf8)?.title, sequence: 0),
+            fixtureNoteResult(secondNote, excerpt: following.text, chapter: reader.chapter(bookID: id, offset: secondNote.startUtf8)?.title, sequence: 1),
+            fixtureNoteResult(bp, excerpt: range.text, chapter: reader.chapter(bookID: id, offset: bp.startUtf8)?.title, sequence: 2)
+        ]
+        try await installFixtureSession(notes, entries: try fixtureTimeline(noteResults, purpose: "请标出这段值得记下的地方。", oneTurn: true))
         // A long listed conversation whose only "灯塔" message lies far above the newest page.
         var history: [AIAgentEntry] = []
         for index in 0..<60 {
@@ -130,22 +138,36 @@ extension AIService {
         }
         fixtureSeeded = true
     }
-    private func fixtureTimeline(_ results: [AIAgentEntry], purpose: String) throws -> [AIAgentEntry] {
+    private func fixtureTimeline(_ results: [AIAgentEntry], purpose: String, oneTurn: Bool = false) throws -> [AIAgentEntry] {
         var entries: [AIAgentEntry] = []
-        for (index, original) in results.enumerated() {
+        let turns = oneTurn ? [results] : results.map { [$0] }
+        for (index, originals) in turns.enumerated() {
             let turn = "fixture-\(index)"
             if index == 0 {
                 entries.append(.init(sequence: entries.count, turn: turn, provider: "fixture", model: "fixture", message: .object(["role": .string("user"), "content": .object(["value": .string(purpose)])]), userText: purpose))
             }
-            let result = original.message.object["content"]?.array?.first?.object ?? [:]
-            let call = AISDKProvider.JSONValue.object(["type": .string("tool-call"), "toolCallId": result["toolCallId"] ?? .null, "toolName": result["toolName"] ?? .null, "input": .object([:])])
-            let assistant = AISDKProvider.JSONValue.object(["role": .string("assistant"), "content": .object(["parts": .array([call])])])
+            let calls: [AISDKProvider.JSONValue] = originals.map { original in
+                let result = original.message.object["content"]?.array?.first?.object ?? [:]
+                return .object(["type": .string("tool-call"), "toolCallId": result["toolCallId"] ?? .null, "toolName": result["toolName"] ?? .null, "input": .object([:])])
+            }
+            let assistant = AISDKProvider.JSONValue.object(["role": .string("assistant"), "content": .object(["parts": .array(calls)])])
             entries.append(.init(sequence: entries.count, turn: turn, provider: "fixture", model: "fixture", message: assistant))
-            var tool = original; tool.sequence = entries.count; tool.turn = turn; entries.append(tool)
+            for var tool in originals {
+                tool.sequence = entries.count
+                tool.turn = turn
+                entries.append(tool)
+            }
             entries.append(.init(sequence: entries.count, step: 1, turn: turn, provider: "fixture", model: "fixture", message: .object(["role": .string("assistant"), "content": .object(["value": .string("请查看建议后决定。")])]), outcome: .completed))
         }
         return entries
     }
+
+    private func fixtureNoteResult(_ note: AINoteProposal, excerpt: String, chapter: String?, sequence: Int) throws -> AIAgentEntry {
+        var entry = try fixtureResult(.notes(note), name: note.kind == .bookmark ? "propose_bookmark" : "propose_note", sequence: sequence)
+        entry.notePreviews = ["fixture-call-\(sequence)": .init(chapter: chapter, excerpt: String(excerpt.prefix(160)))]
+        return entry
+    }
+
     private func fixtureResult(_ snapshot: AIProposalSnapshot, name: String, sequence: Int = 0) throws -> AIAgentEntry {
         try fixtureOutput(AIToolResponse(data: snapshot), name: name, sequence: sequence)
     }

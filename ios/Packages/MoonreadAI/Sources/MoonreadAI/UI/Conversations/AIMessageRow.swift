@@ -23,6 +23,7 @@ struct AIMessageRow: Identifiable, Equatable {
         case confirmation(AIAgentConfirmation)
         case image(AIImageAttachment)
         case result(AIResultValue, [JSONValue])
+        case noteSuggestions([AINoteSuggestion])
         case error(String)
         case actions(String, AIAgentStatus)
 
@@ -37,6 +38,7 @@ struct AIMessageRow: Identifiable, Equatable {
             case (.confirmation(let a), .confirmation(let b)): a == b
             case (.image(let a), .image(let b)): a.attachmentRef == b.attachmentRef && a.width == b.width && a.height == b.height && a.mimeType == b.mimeType
             case (.result(let a, let x), .result(let b, let y)): a.id == b.id && x == y
+            case (.noteSuggestions(let a), .noteSuggestions(let b)): a == b
             case (.error(let a), .error(let b)): a == b
             case (.actions(let a, let s), .actions(let b, let t)): a == b && s == t
             default: false
@@ -88,7 +90,17 @@ struct AIMessageRow: Identifiable, Equatable {
         for confirmation in confirmations { add(turn.id + "/confirm/" + confirmation.id, .confirmation(confirmation)) }
         if active && !turn.answer.isEmpty { add(turn.id + "/generating", .generating) }
         for (id, image) in imageRows { add(id, .image(image)) }
-        for result in turn.results { add("result/" + result.id, .result(result, turn.resultPayloads)) }
+        let notes: [AINoteSuggestion] = turn.results.compactMap { result in
+            guard case .note(let proposal) = result.body else { return nil }
+            return .init(result: result, proposal: proposal)
+        }
+        for result in turn.results {
+            if case .note = result.body {
+                if result.id == notes.first?.id { add(turn.id + "/note-suggestions", .noteSuggestions(notes)) }
+            } else {
+                add("result/" + result.id, .result(result, turn.resultPayloads))
+            }
+        }
         if let error = turn.error { add(turn.id + "/error", .error(error)) }
         let ended = [.completed, .stopped, .interrupted, .failed, .limitReached].contains(turn.outcome)
         if !active && ended && (!turn.answer.isEmpty || turn.error == nil && [.stopped, .interrupted].contains(turn.outcome)) {
@@ -172,7 +184,7 @@ extension AIMessageRow {
         case .queued(let input): kind = .input(text: input.text)
         case .image(let image): kind = .image(width: Double(image.width), height: Double(image.height))
         case .confirmation: kind = .confirmation
-        case .result: kind = .result
+        case .result, .noteSuggestions: kind = .result
         case .header: kind = .header
         case .processToggle: kind = .processToggle
         default: kind = .other

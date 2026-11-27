@@ -104,7 +104,12 @@ private final class AIHostedMessageCell: UITableViewCell {
         attachHost()
         setNeedsLayout(); layoutIfNeeded()
     }
-    func resize(_ height: CGFloat) { self.height = height; setNeedsLayout() }
+    @discardableResult func resize(_ height: CGFloat) -> Bool {
+        guard abs(self.height - height) > 0.5 else { return false }
+        self.height = height
+        setNeedsLayout()
+        return true
+    }
     private func attachHost() {
         guard window != nil, let host, host.parent == nil, let parentController else { return }
         parentController.addChild(host); host.didMove(toParent: parentController)
@@ -346,21 +351,24 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     /// Re-measures a visible row whose content grew or shrank without a new row version.
     func hostedContentResized(_ id: String, height: CGFloat) {
         guard let row = rows[id], case .result = row.kind else { return }
-        // A process expansion owns its geometry. Keep the latest result-card
-        // measurement until it finishes; SwiftUI may never send it again.
-        guard !animatingExpansion, !expansionAnimationPending, !applying, expansionHeights.isEmpty else {
-            pendingResizes.record(id: id, version: row.version, height: Double(height)); return
-        }
-        let key = heightKey(row), height = ceil(height)
-        guard let cached = presentation?.messageHeights[key], abs(cached - height) > 0.5 else { return }
-        storeMeasuredHeight(height, for: key)
-        guard let path = source.indexPath(for: id), let cell = tableView.cellForRow(at: path) as? AIHostedMessageCell else { return }
-        cell.resize(height)
-        UIView.performWithoutAnimation { tableView.performBatchUpdates(nil) }
+        // Geometry observations can arrive while UIKit still owns a snapshot or expansion.
+        // Keep the latest measurement and apply it even when that row has no cached height.
+        guard height.isFinite, height > 0 else { return }
+        pendingResizes.record(id: id, version: row.version, height: Double(height))
+        replayPendingResizes()
     }
     private func replayPendingResizes() {
-        let pending = pendingResizes.drain(versions: rows.mapValues(\.version))
-        for (id, height) in pending { hostedContentResized(id, height: CGFloat(height)) }
+        guard !pendingResizes.isEmpty, !animatingExpansion, !expansionAnimationPending, !applying, expansionHeights.isEmpty else { return }
+        var needsLayout = false
+        for (id, measured) in pendingResizes.drain(versions: rows.mapValues(\.version)) {
+            guard let row = rows[id] else { continue }
+            let key = heightKey(row), height = ceil(CGFloat(measured))
+            let cacheChanged = presentation?.messageHeights[key].map { abs($0 - height) > 0.5 } ?? true
+            if cacheChanged { storeMeasuredHeight(height, for: key) }
+            guard let path = source.indexPath(for: id), let cell = tableView.cellForRow(at: path) as? AIHostedMessageCell else { continue }
+            if cell.resize(height) || cacheChanged { needsLayout = true }
+        }
+        if needsLayout { UIView.performWithoutAnimation { tableView.performBatchUpdates(nil) } }
     }
     @objc private func tappedBackground() { dismissKeyboard?() }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
@@ -413,6 +421,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         let force = appearance != nextAppearance
         if force { streamLineHeight = nextAppearance.markdownTheme(traits: traitCollection).fonts.body.lineHeight }
         if appearance?.theme != nextAppearance.theme || appearance?.typeSize != nextAppearance.typeSize {
+            pendingResizes = .init()
             presentation?.messageHeights.removeAll()
         }
         appearance = nextAppearance; self.render = render
@@ -519,7 +528,11 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         }
         expansionAnimationPending = false
         tableView.selfSizingInvalidation = .enabledIncludingConstraints
-        guard previous != ids || !changed.isEmpty else { settle(anchor: anchor); return }
+        guard previous != ids || !changed.isEmpty else {
+            replayPendingResizes()
+            settle(anchor: anchor)
+            return
+        }
         var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
         snapshot.appendSections([0]); snapshot.appendItems(ids); snapshot.reconfigureItems(changed)
         applying = true
@@ -623,7 +636,11 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         let environment = "\(tableView.bounds.width.rounded())/\(String(describing: appearance?.typeSize))"
-        if sizingEnvironment != environment { presentation?.messageHeights.removeAll(); sizingEnvironment = environment }
+        if sizingEnvironment != environment {
+            pendingResizes = .init()
+            presentation?.messageHeights.removeAll()
+            sizingEnvironment = environment
+        }
         settle(anchor: stableAnchor)
     }
     private func heightKey(_ row: AIMessageViewportRow) -> AIMessageHeightKey {

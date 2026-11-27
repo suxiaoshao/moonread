@@ -126,6 +126,41 @@ final class AIConversationProjectionAgentRuntimeTests: AgentRuntimeFixture {
 }
 
 final class AIToolHistoryPresentationTests: XCTestCase {
+  func testNotesGroupAtFirstSuggestionAndCountOnlyPendingSelections() {
+    func result(_ id: String, _ turn: String, _ body: AIResultValue.Body) -> AIResultValue {
+      .init(id: id, sessionID: "session", entryID: id, callID: id, turn: turn, sequence: 0, body: body)
+    }
+    let note: AIResultValue.Body = .note(.init(proposalRef: "note", bookRef: "b:fixture",
+      kind: .note, startUtf8: 0, endUtf8: 1, note: "Comment"))
+    let bookmark: AIResultValue.Body = .note(.init(proposalRef: "bookmark", bookRef: "b:fixture",
+      kind: .bookmark, startUtf8: 0, endUtf8: 0, note: ""))
+    var turn = AIConversationTurn(id: "turn")
+    turn.results = [
+      result("books", turn.id, .bookList([])), result("note", turn.id, note),
+      result("metadata", turn.id, .metadata(.init(proposalRef: "meta", bookRef: "b:fixture"))),
+      result("bookmark", turn.id, bookmark),
+    ]
+    let rows = AIMessageRow.project(turn, active: false, confirmations: [], expanded: false)
+    XCTAssertEqual(rows.map(\.id), ["result/books", "turn/note-suggestions", "result/metadata"])
+    guard rows.indices.contains(1), case .noteSuggestions(let group) = rows[1].content else {
+      return XCTFail("Missing note group")
+    }
+    XCTAssertEqual(group.map(\.id), ["note", "bookmark"])
+
+    var next = AIConversationTurn(id: "next")
+    next.results = [result("next-note", next.id, note)]
+    XCTAssertEqual(AIMessageRow.project(next, active: false, confirmations: [], expanded: false).map(\.id),
+                   ["next/note-suggestions"])
+
+    let counts = AINoteReviewCounts([
+      .init(draft: "selected"), .init(draft: "unselected", selected: false),
+      .init(draft: "", status: .existingBookmark), .init(draft: "", status: .saved),
+      .init(draft: "", status: .unavailable("Unavailable")),
+    ])
+    XCTAssertEqual(counts.pending, 2)
+    XCTAssertEqual(counts.selected, 1)
+  }
+
   @MainActor func testStoredMarkResultsWithRetiredFieldsDecodeAndOpen() async throws {
     let stored = [
       #"{"markRef":"old-mark","deleted":true}"#,
