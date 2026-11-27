@@ -126,6 +126,31 @@ final class AIConversationProjectionAgentRuntimeTests: AgentRuntimeFixture {
 }
 
 final class AIToolHistoryPresentationTests: XCTestCase {
+  func testSingleToolAndReasoningStayInSeparateRows() {
+    let blocks = AIProcessBlock.project([
+      .init(id: "reasoning", kind: .reasoning),
+      .init(id: "tool", kind: .tool),
+    ])
+
+    XCTAssertEqual(blocks.map { $0.items.map(\.id) }, [["reasoning"], ["tool"]])
+  }
+
+  func testOnlyConsecutiveToolsAreGroupedAcrossReasoningAndMessages() {
+    let blocks = AIProcessBlock.project([
+      .init(id: "first", kind: .tool), .init(id: "second", kind: .tool),
+      .init(id: "reasoning", kind: .reasoning), .init(id: "another-reasoning", kind: .reasoning),
+      .init(id: "third", kind: .tool), .init(id: "fourth", kind: .tool),
+      .init(id: "reply", kind: .text), .init(id: "fifth", kind: .tool),
+      .init(id: "follow-up", kind: .input), .init(id: "sixth", kind: .tool),
+      .init(id: "seventh", kind: .tool),
+    ])
+
+    XCTAssertEqual(blocks.map { $0.items.map(\.id) }, [
+      ["first", "second"], ["reasoning"], ["another-reasoning"], ["third", "fourth"],
+      ["reply"], ["fifth"], ["follow-up"], ["sixth", "seventh"],
+    ])
+  }
+
   func testNotesGroupAtFirstSuggestionAndCountOnlyPendingSelections() {
     func result(_ id: String, _ turn: String, _ body: AIResultValue.Body) -> AIResultValue {
       .init(id: id, sessionID: "session", entryID: id, callID: id, turn: turn, sequence: 0, body: body)
