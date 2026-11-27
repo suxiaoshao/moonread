@@ -2,14 +2,19 @@ import MoonreadData
 import MoonreadDesign
 import MoonreadDataTypes
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 
-struct AIBookListCard: View {
-    let owner: String
-    let books: [AIBookListPresentation]
-    let openBook: (StatisticsRoute) -> Void
-    @Environment(LibraryModel.self) private var library
+public struct AIBookListCard: View {
+    public init(owner: String, books: [AIBookListPresentation], readingAccess: AIReadingAccess,
+                readingInputRevision: @escaping @MainActor () -> UInt64, openBook: @escaping (String, String, LibraryEntry) -> Void) {
+        self.owner = owner; self.books = books; self.readingAccess = readingAccess
+        self.readingInputRevision = readingInputRevision; self.openBook = openBook
+    }
+    public let owner: String
+    public let books: [AIBookListPresentation]
+    private let readingAccess: AIReadingAccess
+    private let readingInputRevision: @MainActor () -> UInt64
+    private let openBook: (String, String, LibraryEntry) -> Void
     @Environment(\.theme) private var theme
     @State private var unavailable: Set<String> = []
     @State private var openFailed = false
@@ -17,14 +22,14 @@ struct AIBookListCard: View {
 
     private var refs: [String] { books.map(\.id) }
 
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: LayoutTokens.control) {
             Label("书单 · \(books.count) 本", systemImage: "books.vertical")
                 .font(.headline).accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                 ForEach(books) { item in
                     if item.id != books.first?.id {
-                        Divider().overlay(Color(uiColor: theme.separator)).padding(.leading, LibraryFileRow.textLeading)
+                        Divider().overlay(Color(uiColor: theme.separator)).padding(.leading, BookFileRowLayout.textLeading)
                     }
                     if unavailable.contains(item.id) {
                         row(item, missing: true)
@@ -48,21 +53,21 @@ struct AIBookListCard: View {
                 .strokeBorder(Color(uiColor: theme.border), lineWidth: LayoutTokens.border)
                 .allowsHitTesting(false)
         }
-        .task(id: library.readingInputRevision) { _ = try? await refresh() }
+        .task(id: readingInputRevision()) { _ = try? await refresh() }
         .alert("暂时无法打开这本书", isPresented: $openFailed) {
             Button("好", role: .cancel) {}
         }
     }
 
     private func row(_ item: AIBookListPresentation, missing: Bool) -> some View {
-        LibraryFileRow.Content(title: Text(verbatim: item.book.title),
+        BookFileRowContent(title: Text(verbatim: item.book.title),
                                author: item.book.author.map { Text(verbatim: $0) }, unavailable: missing) {
             AIBookListCover(owner: owner, item: item)
                 .saturation(missing ? 0 : 1)
         } status: {
             Group {
                 if missing { Text("书库中已没有这本书") }
-                else { Text(verbatim: LibraryEntry.progressLabel(needsDownload: item.needsDownload, fraction: item.progress)).lineLimit(1) }
+                else { Text(verbatim: ReadingProgressLabel.text(needsDownload: item.needsDownload, fraction: item.progress)).lineLimit(1) }
             }
         }
         .contentShape(.rect)
@@ -70,7 +75,7 @@ struct AIBookListCard: View {
     }
 
     private func refresh() async throws -> AIBookListResolution {
-        let result = try await library.service.aiBookListEntries(refs)
+        let result = try await readingAccess.aiBookListEntries(refs, false)
         try Task.checkCancellation()
         unavailable = Set(refs).subtracting(result.entries.keys)
         return result
@@ -80,10 +85,7 @@ struct AIBookListCard: View {
         defer { opening = false }
         do {
             guard let entry = try await refresh().entries[item.id] else { return }
-            let target: BookTarget
-            if item.id.hasPrefix("b:"), let key = entry.readingIdentity { target = .record(key: key) }
-            else { target = .file(fileId: entry.id) }
-            openBook(.init(target: target, title: item.book.title))
+            openBook(item.id, item.book.title, entry)
         } catch is CancellationError {
             return
         } catch {
@@ -98,8 +100,8 @@ private struct AIBookListCover: View {
     @State private var image: UIImage?
 
     var body: some View {
-        SystemBookCover(title: item.book.title, compact: true, contentSHA256: item.coverSeed,
-                        author: item.book.author, userImage: image)
+        MetadataCoverPreview(title: item.book.title, image: image, contentSHA256: item.coverSeed,
+                             author: item.book.author, compact: true)
             .task(id: item.thumbnail) {
                 image = nil
                 guard let ref = item.thumbnail,

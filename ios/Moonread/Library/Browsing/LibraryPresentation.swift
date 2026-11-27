@@ -13,13 +13,7 @@ extension LibraryEntry {
         guard readingIdentity != nil, positionUtf8 > 0 else { return String(localized: "未读") }
         return libraryProgress + (chapterTitle.map { " · " + $0 } ?? "")
     }
-    var libraryProgress: String { Self.progressLabel(needsDownload: needsDownload, fraction: libraryProgressFraction) }
-
-    static func progressLabel(needsDownload: Bool, fraction: Double?) -> String {
-        if needsDownload { return String(localized: "待下载") }
-        guard let fraction else { return String(localized: "未读") }
-        return fraction.formatted(.percent.precision(.fractionLength(1)))
-    }
+    var libraryProgress: String { ReadingProgressLabel.text(needsDownload: needsDownload, fraction: libraryProgressFraction) }
 }
 
 

@@ -1,6 +1,5 @@
 import MoonreadDesign
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 import AISDKProvider
 import AISDKProviderUtils
@@ -9,7 +8,7 @@ import AISDKProviderUtils
 struct AIComposer: View {
     @Environment(AIService.self) private var ai
     let conversation: AIConversation
-    var placement: AIChatView.Placement = .page
+    var placement: AIChatPlacement = .page
     var prompt: LocalizedStringKey = "向月读提问"
     var modelTarget: AIModelSelectionTarget
     /// Nil hides the reading-object menu.

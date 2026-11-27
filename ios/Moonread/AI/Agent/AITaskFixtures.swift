@@ -119,7 +119,7 @@ extension AIService {
         try await installFixtureSession(AISessionValue(id: "ui-ai-long-" + session, title: "长对话", listed: true), entries: history)
         if ProcessInfo.processInfo.arguments.contains("--ui-test-ai-expansion") {
             var entries = Array(history.prefix(30))
-            let parts: [JSONValue] = (0..<3).map { .object(["type": .string("tool-call"), "toolCallId": .string("expand-call\($0)"), "toolName": .string("read_book"), "input": .object([:])]) } + [
+            let parts: [AISDKProvider.JSONValue] = (0..<3).map { .object(["type": .string("tool-call"), "toolCallId": .string("expand-call\($0)"), "toolName": .string("read_book"), "input": .object([:])]) } + [
                 .object(["type": .string("reasoning"), "text": .string("")]),
                 .object(["type": .string("text"), "text": .string("接着核对内容。")]),
                 .object(["type": .string("reasoning"), "text": .string("查看资料。\n" + String(repeating: "这是合成思考内容，用于验证展开与滚动。", count: 8))])
@@ -138,8 +138,8 @@ extension AIService {
                 entries.append(.init(sequence: entries.count, turn: turn, provider: "fixture", model: "fixture", message: .object(["role": .string("user"), "content": .object(["value": .string(purpose)])]), userText: purpose))
             }
             let result = original.message.object["content"]?.array?.first?.object ?? [:]
-            let call = JSONValue.object(["type": .string("tool-call"), "toolCallId": result["toolCallId"] ?? .null, "toolName": result["toolName"] ?? .null, "input": .object([:])])
-            let assistant = JSONValue.object(["role": .string("assistant"), "content": .object(["parts": .array([call])])])
+            let call = AISDKProvider.JSONValue.object(["type": .string("tool-call"), "toolCallId": result["toolCallId"] ?? .null, "toolName": result["toolName"] ?? .null, "input": .object([:])])
+            let assistant = AISDKProvider.JSONValue.object(["role": .string("assistant"), "content": .object(["parts": .array([call])])])
             entries.append(.init(sequence: entries.count, turn: turn, provider: "fixture", model: "fixture", message: assistant))
             var tool = original; tool.sequence = entries.count; tool.turn = turn; entries.append(tool)
             entries.append(.init(sequence: entries.count, step: 1, turn: turn, provider: "fixture", model: "fixture", message: .object(["role": .string("assistant"), "content": .object(["value": .string("请查看建议后决定。")])]), outcome: .completed))

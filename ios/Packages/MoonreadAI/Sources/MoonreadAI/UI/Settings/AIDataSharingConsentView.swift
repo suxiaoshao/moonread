@@ -73,12 +73,11 @@ struct AIDataSharingConsentView: View {
 }
 
 /// Presented by the currently visible chat/task sheet, never by the root window.
-public struct AIDataSharingPresentation: ViewModifier {
+struct AIDataSharingPresentation: ViewModifier {
     @Environment(AIService.self) private var ai
     let owner: String
     @State private var presentedID: UUID?
-    public init(owner: String) { self.owner = owner }
-    public func body(content: Content) -> some View {
+    func body(content: Content) -> some View {
         content.sheet(item: Binding(get: { ai.sharing.requests.first { $0.owner == owner } }, set: { _ in }), onDismiss: {
             if let id = presentedID { ai.sharing.answer(id, approved: false) }
             presentedID = nil

@@ -1,10 +1,6 @@
-import AISDKProvider
 import Foundation
 import MoonreadAI
 import MoonreadDesign
-
-// Apollo also exports a JSONValue alias. AI messages use the provider wire value.
-typealias JSONValue = AISDKProvider.JSONValue
 
 @MainActor func makeAppAIService(
     repository: AIRepository? = nil, defaults: UserDefaults? = nil,

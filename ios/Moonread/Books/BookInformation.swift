@@ -139,9 +139,16 @@ struct BookReadingDataClearSection: View {
 extension View {
     func metadataCoverPresentation() -> some View {
         environment(\.metadataCoverRenderer) { request in
-            AnyView(BookCoverView(title: request.title, compact: request.compact, cover: request.cover,
-                                  contentSHA256: request.contentSHA256, author: request.author,
-                                  pixels: request.pixels, contentMode: request.contentMode))
+            switch request.source {
+            case .asset(let cover, let pixels):
+                AnyView(BookCoverView(title: request.title, compact: request.compact, cover: cover,
+                                      contentSHA256: request.contentSHA256, author: request.author,
+                                      pixels: pixels, contentMode: request.contentMode))
+            case .image(let image):
+                AnyView(SystemBookCover(title: request.title, compact: request.compact,
+                                        contentSHA256: request.contentSHA256, author: request.author,
+                                        userImage: image, contentMode: request.contentMode))
+            }
         }
     }
 }

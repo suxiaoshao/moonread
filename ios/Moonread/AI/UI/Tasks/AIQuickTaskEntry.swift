@@ -1,7 +1,5 @@
-import MoonreadDesign
 import MoonreadLibrary
 import MoonreadDataTypes
-import MoonreadCoreBindings
 import MoonreadStatistics
 import MoonreadAI
 import SwiftUI

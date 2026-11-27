@@ -3,8 +3,7 @@ import AISDKProvider
 import Foundation
 
 /// Display names already established by earlier committed tools within this turn.
-public struct AIToolRequestNames: Equatable {
-    public init() {}
+struct AIToolRequestNames: Equatable {
     var references: [String: String] = [:]
     var chapterAtPosition: String?
     subscript(_ reference: String?) -> String? { reference.flatMap { references[$0] } }

@@ -29,7 +29,7 @@ struct HostedLibraryCollection: View {
             isSearch: isSearch, hasSearchDrawer: hasSearchDrawer, hasTopAccessory: hasTopAccessory, onRefresh: onRefresh,
             open: { host.open($0, in: model) }, delete: { model.deleteEntries([$0]) },
             canAcceptDrop: { model.canAcceptDrop(at: $0) }, acceptDrop: { _ = model.acceptDrop($0, at: $1) },
-            coverSize: LibraryFileRow.coverSize, textLeading: LibraryFileRow.textLeading,
+            coverSize: BookFileRowLayout.coverSize, textLeading: BookFileRowLayout.textLeading,
             renderFile: { entry, format, selecting, selected in
                 let interaction: LibraryItemInteraction = selecting ? .selecting(selected: selected) : .browse(host, beforeOpen: beforeOpen)
                 return AnyView(Group {

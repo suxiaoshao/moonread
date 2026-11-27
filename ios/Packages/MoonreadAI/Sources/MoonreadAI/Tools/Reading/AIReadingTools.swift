@@ -271,8 +271,7 @@ public actor AIReadingTools {
       entry = source
       switch policy {
       case .prepare:
-        let prepared = try await reader.preparedBookIdentity(source.source)
-        guard let sha = prepared.formalSHA256 else { throw AIToolError("needs_preparation") }
+        guard let sha = try await reader.preparedBookSHA(source.source) else { throw AIToolError("needs_preparation") }
         contentSHA = sha
       case .existingOnly:
         contentSHA = try source.metadata.map { try parseSha256(value: $0.sha) }

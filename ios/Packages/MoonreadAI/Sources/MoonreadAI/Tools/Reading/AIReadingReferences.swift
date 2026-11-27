@@ -117,8 +117,8 @@ public actor AIReadingReferences {
     guard let entry = try await files().first(where: { $0.bookId == id }) else {
       throw AIToolError("needs_preparation")
     }
-    let prepared = try await access.preparedBookIdentity(entry.source)
-    guard prepared.formalSHA256 == (try sha(ref)) else {
+    let preparedSHA = try await access.preparedBookSHA(entry.source)
+    guard preparedSHA == (try sha(ref)) else {
       throw AIToolError("stale_reference")
     }
     return try await access.aiBookID(sha(ref))

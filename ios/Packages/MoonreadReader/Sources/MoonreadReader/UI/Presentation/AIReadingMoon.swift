@@ -1,28 +1,6 @@
 import MoonreadDesign
 import SwiftUI
 
-/// What the reading Moon can see of the conversation selected in this opening.
-public struct AIMoonSnapshot: Equatable {
-    let conversationID: String
-    let running: Bool
-    public enum Status: Equatable {
-        case idle, waitingConfirmation, waitingDataSharing, completed, failed
-    }
-
-    let status: Status
-    /// The live pose while the run is going.
-    let pose: MoonPose
-    let label: String
-
-    public init(conversationID: String, running: Bool, status: Status, pose: MoonPose, label: String) {
-        self.conversationID = conversationID
-        self.running = running
-        self.status = status
-        self.pose = pose
-        self.label = label
-    }
-}
-
 /// Brief reading-time notices for one book opening. Notices come only from
 /// transitions observed here, so reopening a book or refreshing state never
 /// replays an old outcome; acknowledging an outcome never rewrites the task.

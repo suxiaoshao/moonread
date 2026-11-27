@@ -29,7 +29,7 @@ import AISDKProviderUtils
     @ObservationIgnored private var entryResults: [String: [AIResultValue]] = [:]
     // Live output belongs after the newest message, so a window above it omits it.
     @ObservationIgnored private var committedTurns: [AIConversationTurn] = []
-    public var turns: [AIConversationTurn] {
+    var turns: [AIConversationTurn] {
         _ = entries
         return hasLater ? committedTurns : AIConversationTurn.live(committedTurns, head: head, parts: activity.parts, step: activity.step, reasoningActive: activity.reasoningActive, running: running)
     }

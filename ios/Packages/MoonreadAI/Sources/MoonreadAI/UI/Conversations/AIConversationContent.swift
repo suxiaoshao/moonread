@@ -4,24 +4,24 @@ import AISDKProvider
 import AISDKProviderUtils
 
 /// Read-only presentation projection. Agent entries are the only message history.
-public struct AIConversationTurn: Identifiable, Equatable {
-    public let id: String
-    public var process: [AIProcessItem] = []
-    public var results: [AIResultValue] = []
+struct AIConversationTurn: Identifiable, Equatable {
+    let id: String
+    var process: [AIProcessItem] = []
+    var results: [AIResultValue] = []
     // Result views are derived from these committed payloads, not mutable review state.
     private(set) var resultPayloads: [JSONValue] = []
-    public var outcome: AIAgentStatus = .running
-    public var error: String?
-    public var model: String?
-    public var thinking: String?
-    public var answer: String { process.last(where: { $0.kind == .text })?.text ?? "" }
-    public var finalTextID: String? { process.last?.kind == .text ? process.last?.id : nil }
-    public static func == (lhs: Self, rhs: Self) -> Bool {
+    var outcome: AIAgentStatus = .running
+    var error: String?
+    var model: String?
+    var thinking: String?
+    var answer: String { process.last(where: { $0.kind == .text })?.text ?? "" }
+    var finalTextID: String? { process.last?.kind == .text ? process.last?.id : nil }
+    static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.process == rhs.process && lhs.resultPayloads == rhs.resultPayloads
             && lhs.results.map(\.id) == rhs.results.map(\.id) && lhs.outcome == rhs.outcome
             && lhs.error == rhs.error && lhs.model == rhs.model && lhs.thinking == rhs.thinking
     }
-    public static func partID(turn: String, step: Int, part: Int) -> String { "\(turn)/s\(step)/p\(part)" }
+    static func partID(turn: String, step: Int, part: Int) -> String { "\(turn)/s\(step)/p\(part)" }
     static func committed(_ entries: [AIAgentEntry], resultsByEntry: [String: [AIResultValue]] = [:]) -> [Self] {
         var turns: [Self] = []
         for entry in entries {
@@ -97,32 +97,32 @@ public struct AIConversationTurn: Identifiable, Equatable {
     static func project(_ entries: [AIAgentEntry], head: AIAgentHead, parts: [AIAgentLivePart] = [], reasoningActive: Bool = false, running: Bool, resultsByEntry: [String: [AIResultValue]] = [:]) -> [Self] {
         live(committed(entries, resultsByEntry: resultsByEntry), head: head, parts: parts, step: head.currentStep, reasoningActive: reasoningActive, running: running)
     }
-    public static func text(_ content: JSONValue?) -> String {
+    static func text(_ content: JSONValue?) -> String {
         if let text = content?.object["value"]?.string { return text }
         return content?.object["parts"]?.array?.compactMap { $0.object["text"]?.string }.joined() ?? ""
     }
 }
-public struct AIProcessItem: Identifiable, Equatable {
-    public enum Kind { case text, reasoning, input, tool }
-    public var id: String
-    public var kind: Kind
-    public var text = ""
-    public var name = ""
-    public var input: JSONValue = .null
-    public var output: JSONValue?
-    public var resultID: String?
-    public var callSequence: Int?
-    public var resultSequence: Int?
-    public var isRunning = false
-    public var entry: AIAgentEntry?
+struct AIProcessItem: Identifiable, Equatable {
+    enum Kind { case text, reasoning, input, tool }
+    var id: String
+    var kind: Kind
+    var text = ""
+    var name = ""
+    var input: JSONValue = .null
+    var output: JSONValue?
+    var resultID: String?
+    var callSequence: Int?
+    var resultSequence: Int?
+    var isRunning = false
+    var entry: AIAgentEntry?
 }
 
 /// Prose (including steering) separates consecutive reasoning/tool activities.
 /// The first item's identity remains stable while a group receives more events.
-public struct AIProcessBlock: Identifiable, Equatable {
-    public let items: [AIProcessItem]
-    public var id: String { items[0].id }
-    public var isMessage: Bool { items[0].kind == .text || items[0].kind == .input }
+struct AIProcessBlock: Identifiable, Equatable {
+    let items: [AIProcessItem]
+    var id: String { items[0].id }
+    var isMessage: Bool { items[0].kind == .text || items[0].kind == .input }
     static func project(_ items: [AIProcessItem]) -> [Self] {
         var blocks: [Self] = []
         var group: [AIProcessItem] = []

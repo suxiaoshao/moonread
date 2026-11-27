@@ -1,5 +1,6 @@
 import MoonreadCoreBindings
 import MoonreadDataTypes
+import MoonreadDesign
 import SwiftUI
 
 public struct ReaderDetailsTarget: Hashable {

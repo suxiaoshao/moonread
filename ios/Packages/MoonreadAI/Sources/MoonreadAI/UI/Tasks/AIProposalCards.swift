@@ -9,8 +9,8 @@ public typealias AIProposalNoteEditor = @MainActor (
 ) -> AnyView
 
 /// Canonical history is always visible. Editable reviews are fresh, view-lifetime values.
-public struct AIResultCard: View {
-    public init(result: AIResultValue, noteEditor: @escaping AIProposalNoteEditor) {
+struct AIResultCard: View {
+    init(result: AIResultValue, noteEditor: @escaping AIProposalNoteEditor) {
         self.result = result
         self.noteEditor = noteEditor
     }
@@ -30,7 +30,7 @@ public struct AIResultCard: View {
     @State private var shelfNames: [String: String] = [:]
     private var review: AIReviewValue? { ai.proposals.review(resultID) }
     private var saving: Bool { ai.proposals.inFlight.contains(resultID) }
-    public var body: some View {
+    var body: some View {
         Group {
             Group {
                 switch result.body {
@@ -221,23 +221,23 @@ struct AIResultButtonStyle: ButtonStyle {
     }
 }
 
-public struct AIBookFilterCard: View {
-    public init(suggestion: AIBookFilterSuggestion, configuration: BookSearchConfiguration,
-                shelves: [LibraryShelf], open: @escaping () -> Void) {
+struct AIBookFilterCard: View {
+    init(suggestion: AIBookFilterSuggestion, configuration: BookSearchConfiguration,
+                shelves: @escaping @MainActor () -> [LibraryShelf], open: @escaping () -> Void) {
         self.suggestion = suggestion
         self.configuration = configuration
         self.shelves = shelves
         self.open = open
     }
 
-    let shelves: [LibraryShelf]
+    let shelves: @MainActor () -> [LibraryShelf]
     let suggestion: AIBookFilterSuggestion
     let configuration: BookSearchConfiguration
     let open: () -> Void
     @Environment(\.theme) private var theme
 
-    public var body: some View {
-        let resolution = suggestion.resolveShelves(shelves)
+    var body: some View {
+        let resolution = suggestion.resolveShelves(shelves())
         let root = configuration.root
         Button(action: open) {
             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
@@ -272,7 +272,7 @@ public struct AIBookFilterCard: View {
 }
 
 public struct AIFilterShelfChoiceSheet: View {
-    public init(suggestion: AIBookFilterSuggestion, shelves: [LibraryShelf],
+    public init(suggestion: AIBookFilterSuggestion, shelves: @escaping @MainActor () -> [LibraryShelf],
                 shelfLabel: @escaping @MainActor (LibraryShelf) -> AnyView,
                 open: @escaping (BookSearchConfiguration) -> Void) {
         self.suggestion = suggestion
@@ -281,7 +281,7 @@ public struct AIFilterShelfChoiceSheet: View {
         self.open = open
     }
 
-    let shelves: [LibraryShelf]
+    let shelves: @MainActor () -> [LibraryShelf]
     let shelfLabel: @MainActor (LibraryShelf) -> AnyView
     let suggestion: AIBookFilterSuggestion
     let open: (BookSearchConfiguration) -> Void
@@ -290,8 +290,8 @@ public struct AIFilterShelfChoiceSheet: View {
     @State private var selected: [Data: String] = [:]
 
     public var body: some View {
-        let options = suggestion.resolveShelves(shelves)
-        let resolution = suggestion.resolveShelves(shelves, selected: selected)
+        let options = suggestion.resolveShelves(shelves())
+        let resolution = suggestion.resolveShelves(shelves(), selected: selected)
         NavigationStack {
             List {
                 ForEach(options.choices) { choice in

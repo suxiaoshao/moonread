@@ -10,31 +10,31 @@ public struct AIReadingAccess: Sendable {
   public typealias StatisticsRead = (value: StatisticsOverview, compatibilityNotice: String?)
   public typealias ActivitiesRead = (value: [StatisticsTimelineRow], compatibilityNotice: String?)
 
-  public let shelves: @Sendable () async throws -> [LibraryShelf]
-  public let metadataOptions: @Sendable (String?) async throws -> LibraryMetadataOptions
-  public let libraryEntries: @Sendable (LibraryLocation) async throws -> [LibraryEntry]
-  public let aiLibraryEntries: @Sendable (LibraryLocation, LibrarySort) async throws -> [LibraryEntry]
-  public let aiLibraryBooks: @Sendable (String) async throws -> [LibraryEntry]
-  public let aiFoundBookPage: @Sendable (String, LibraryLocation?, BookSearchConfiguration, Int, Int) async throws -> BookSearchPage
-  public let aiBookListEntries: @Sendable ([String], Bool) async throws -> AIBookListResolution
-  public let aiBookListThumbnail: @Sendable (BookCoverAsset) async -> Data?
-  public let aiBookID: @Sendable (String) async throws -> String
-  public let aiMarks: @Sendable (String) async throws -> [String: [AnnotationCandidate]]
+  let shelves: @Sendable () async throws -> [LibraryShelf]
+  let metadataOptions: @Sendable (String?) async throws -> LibraryMetadataOptions
+  let libraryEntries: @Sendable (LibraryLocation) async throws -> [LibraryEntry]
+  let aiLibraryEntries: @Sendable (LibraryLocation, LibrarySort) async throws -> [LibraryEntry]
+  let aiLibraryBooks: @Sendable (String) async throws -> [LibraryEntry]
+  let aiFoundBookPage: @Sendable (String, LibraryLocation?, BookSearchConfiguration, Int, Int) async throws -> BookSearchPage
+  let aiBookListEntries: @Sendable ([String], Bool) async throws -> AIBookListResolution
+  let aiBookListThumbnail: @Sendable (BookCoverAsset) async -> Data?
+  let aiBookID: @Sendable (String) async throws -> String
+  let aiMarks: @Sendable (String) async throws -> [String: [AnnotationCandidate]]
   /// Prepares and reads identity while the host's reading lease remains alive.
-  public let preparedBookIdentity: @Sendable (SourceFile) async throws -> (id: String, formalSHA256: String?)
-  public let snapshot: @Sendable (String) async throws -> ReadingSnapshot
-  public let details: @Sendable (String) async throws -> BookDetails
-  public let detailsByID: @Sendable (String) async throws -> BookDetails
-  public let chapters: @Sendable (String) async throws -> ChapterOutline
-  public let book: @Sendable (String) async throws -> BookInfo
-  public let textContext: @Sendable (String, UInt64, UInt32, UInt32) async throws -> TextRange
-  public let textRange: @Sendable (String, UInt64, UInt64) async throws -> TextRange
-  public let paragraph: @Sendable (String, UInt64) async throws -> TextRange
-  public let paragraphContaining: @Sendable (String, UInt64) async throws -> TextRange
-  public let search: @Sendable (String, String, Bool, Bool, SearchRange?) async throws -> SearchJob
-  public let searchBatch: @Sendable (SearchJob) async throws -> SearchBatch
-  public let statisticsRead: @Sendable (Int64, Int64, String?) async throws -> StatisticsRead
-  public let activitiesRead: @Sendable (Int64, Int64, String?) async throws -> ActivitiesRead
+  let preparedBookSHA: @Sendable (SourceFile) async throws -> String?
+  let snapshot: @Sendable (String) async throws -> ReadingSnapshot
+  let details: @Sendable (String) async throws -> BookDetails
+  let detailsByID: @Sendable (String) async throws -> BookDetails
+  let chapters: @Sendable (String) async throws -> ChapterOutline
+  let book: @Sendable (String) async throws -> BookInfo
+  let textContext: @Sendable (String, UInt64, UInt32, UInt32) async throws -> TextRange
+  let textRange: @Sendable (String, UInt64, UInt64) async throws -> TextRange
+  let paragraph: @Sendable (String, UInt64) async throws -> TextRange
+  let paragraphContaining: @Sendable (String, UInt64) async throws -> TextRange
+  let search: @Sendable (String, String, Bool, Bool, SearchRange?) async throws -> SearchJob
+  let searchBatch: @Sendable (SearchJob) async throws -> SearchBatch
+  let statisticsRead: @Sendable (Int64, Int64, String?) async throws -> StatisticsRead
+  let activitiesRead: @Sendable (Int64, Int64, String?) async throws -> ActivitiesRead
 
   public init(
     shelves: @escaping @Sendable () async throws -> [LibraryShelf],
@@ -47,7 +47,7 @@ public struct AIReadingAccess: Sendable {
     aiBookListThumbnail: @escaping @Sendable (BookCoverAsset) async -> Data?,
     aiBookID: @escaping @Sendable (String) async throws -> String,
     aiMarks: @escaping @Sendable (String) async throws -> [String: [AnnotationCandidate]],
-    preparedBookIdentity: @escaping @Sendable (SourceFile) async throws -> (id: String, formalSHA256: String?),
+    preparedBookSHA: @escaping @Sendable (SourceFile) async throws -> String?,
     snapshot: @escaping @Sendable (String) async throws -> ReadingSnapshot,
     details: @escaping @Sendable (String) async throws -> BookDetails,
     detailsByID: @escaping @Sendable (String) async throws -> BookDetails,
@@ -72,7 +72,7 @@ public struct AIReadingAccess: Sendable {
     self.aiBookListThumbnail = aiBookListThumbnail
     self.aiBookID = aiBookID
     self.aiMarks = aiMarks
-    self.preparedBookIdentity = preparedBookIdentity
+    self.preparedBookSHA = preparedBookSHA
     self.snapshot = snapshot
     self.details = details
     self.detailsByID = detailsByID

@@ -34,16 +34,3 @@ extension AIProposalRegistry {
     self.init(host: reader.aiProposalHost)
   }
 }
-
-@MainActor
-extension AIOrganizationPlan {
-  convenience init(
-    proposal: AIOrganizationProposal,
-    scope: LibraryLocation,
-    reader: AppDataService = .shared,
-    historical: Bool = false,
-    moveItem: (@MainActor (LibraryEntry, LibraryLocation, String, AIFileMoveCheck) async -> AIFileExecutionResult)? = nil
-  ) {
-    self.init(proposal: proposal, scope: scope, host: reader.aiProposalHost, historical: historical, moveItem: moveItem)
-  }
-}

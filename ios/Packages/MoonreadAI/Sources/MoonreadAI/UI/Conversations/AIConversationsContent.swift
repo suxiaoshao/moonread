@@ -14,7 +14,6 @@ public struct AIConversationsContent<Chat: View, Route: Hashable, Destination: V
     }
 
     @Environment(AIService.self) private var ai
-    @Environment(\.theme) private var theme
     @State private var path = NavigationPath()
     @State private var visible = false
     @State private var notice: AIActionNotice?

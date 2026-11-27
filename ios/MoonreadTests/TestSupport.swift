@@ -362,3 +362,28 @@ struct UserRowsFixture: Sendable {
     }
   }
 }
+
+extension AIReadingTools {
+  init(reader: AppDataService = .shared, lineLimit: Int = 2000, owner: String? = nil) {
+    self.init(reader: reader.aiReadingAccess, lineLimit: lineLimit, owner: owner)
+  }
+}
+
+extension AIReadingReferences {
+  init(reader: AppDataService = .shared) {
+    self.init(access: reader.aiReadingAccess)
+  }
+}
+
+@MainActor
+extension AIOrganizationPlan {
+  convenience init(
+    proposal: AIOrganizationProposal,
+    scope: LibraryLocation,
+    reader: AppDataService = .shared,
+    historical: Bool = false,
+    moveItem: (@MainActor (LibraryEntry, LibraryLocation, String, AIFileMoveCheck) async -> AIFileExecutionResult)? = nil
+  ) {
+    self.init(proposal: proposal, scope: scope, host: reader.aiProposalHost, historical: historical, moveItem: moveItem)
+  }
+}

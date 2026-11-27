@@ -183,7 +183,7 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 | `Data` | `AppDataService`、GRDB 用户数据及同步协调；`UserData/` 中 UserDataModels/UserDataValues 保留原模型与载荷，UserDataStore 的事务/存储留在同目录 UserData.swift，Values/Annotations/Statistics/Projection/Transfer 只物理拆分方法；UserDataService/Backup/SyncJSON/Themes 归入同目录，`Cloud/` 汇集云同步，`Restoration/` 汇集续读恢复，`Management/` 汇集备份/缓存编排，`Sources/` 汇集受保护访问与编码解析；正文准备、导入、云目录 owner 与紧耦合私有类型仍在 `AppDataService` |
 | `SystemIntegration` / `SystemIntegrationShared` | 主 App 派生快照、系统入口路由与平台更新；共享部分只有稳定链接、只读 DTO、最小 Entity/配置与无状态文字卡片。Widget/Control 目标不含数据库/正文服务；任意队列系统回调显式 nonisolated / @Sendable 后再交接 |
 | `Shared` | `Theme`、`MoonView`/`MoonCharacter`/`BrandSeal`、输入焦点及跨功能错误文案 `ReaderMessages` |
-| `AI` 与 `ios/Packages/MoonreadAI` | 包持有运行时、仓储、连接、认证、目录、传输、工具契约，以及对话列表、聊天布局、原生消息视口、输入、设置列表和预览。App 注入消息行中的书籍详情、批准与写入，接入会话许可、平台分享与授权正文读取。模型快照及供应商品牌资源从包读取，运行时在 AI 入口首用时初始化。 |
+| `AI` 与 `ios/Packages/MoonreadAI` | 包持有 AI 服务、运行时、仓储、连接、认证、模型目录、传输、工具及建议审阅，也持有会话列表、聊天、输入、附件、任务与设置界面。App 注入授权正文读取、文件与资料写入、批注编辑和跨功能导航。共享行、封面呈现和阅读器月亮快照由 `MoonreadDesign` 提供。运行时在 AI 入口首用时初始化。 |
 
 `ios/MoonreadTests` 按 Library、Reader、Data、Settings、Statistics、Platform 与已有 AI 归目录，AI 夹具在 `Fixtures/AI/`；会话支撑留在 `ConversationTestFixtures.swift`，会话网络协议及共享状态、连接/认证协议与店面查询、原生事务 fixture 分别位于 `AIConversationProtocolFixtures.swift`、`AIConnectionFixtures.swift`、`AINativeToolsFixture.swift`；类/方法名和测试发现保持，UITests/TestPlan/scheme 入口不变。
 

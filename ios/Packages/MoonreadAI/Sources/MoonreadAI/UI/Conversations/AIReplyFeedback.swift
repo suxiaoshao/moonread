@@ -4,10 +4,10 @@ import MessageUI
 import SwiftUI
 
 /// Capture only the selected reply and its own persisted request identity, never the conversation.
-public struct AIReplyFeedback: Equatable {
+struct AIReplyFeedback: Equatable {
     let provider: String
     let model: String
-    public let text: String
+    let text: String
     let version: String
     let recipient: String
     var subject: String { String(localized: "月读回复反馈") }
@@ -26,7 +26,7 @@ public struct AIReplyFeedback: Equatable {
         return components.url
     }
 
-    public init(provider: String, model: String, text: String, recipient: String, version: String? = nil) {
+    init(provider: String, model: String, text: String, recipient: String, version: String? = nil) {
         self.provider = provider; self.model = model; self.text = text; self.recipient = recipient
         self.version = version ?? "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"))"
     }
@@ -43,8 +43,8 @@ enum AIReplyFeedbackDelivery {
     }
 }
 
-@MainActor public final class AIReplyFeedbackPresenter: NSObject, @preconcurrency MFMailComposeViewControllerDelegate {
-    public func present(_ feedback: AIReplyFeedback, from controller: UIViewController, theme: ThemeSurface) {
+@MainActor final class AIReplyFeedbackPresenter: NSObject, @preconcurrency MFMailComposeViewControllerDelegate {
+    func present(_ feedback: AIReplyFeedback, from controller: UIViewController, theme: ThemeSurface) {
         guard controller.presentedViewController == nil else { return }
         Task { [weak controller] in
             #if DEBUG
@@ -72,7 +72,7 @@ enum AIReplyFeedbackDelivery {
             }
         }
     }
-    public func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
+    func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
         controller.dismiss(animated: true)
     }
 }
@@ -123,7 +123,7 @@ private struct AIReplyFeedbackFallback: View {
 }
 
 extension AIReplyFeedback {
-    @MainActor public init?(row: AIMessageRow, conversation: AIConversation, connections: [AIConnection], recipient: String) {
+    @MainActor init?(row: AIMessageRow, conversation: AIConversation, connections: [AIConnection], recipient: String) {
         guard let turn = row.turnID else { return nil }
         let text: String
         if let native = row.nativeText, !native.streaming { text = native.text }

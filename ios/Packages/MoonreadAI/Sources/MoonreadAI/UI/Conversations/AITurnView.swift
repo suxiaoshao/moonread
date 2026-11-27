@@ -1,8 +1,7 @@
-import MoonreadReader
-import MoonreadLibrary
+import MoonreadData
 import MoonreadDesign
+import MoonreadDataTypes
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 import ImageIO
 import AISDKProvider
@@ -63,6 +62,7 @@ private struct AIProcessBlockView: View {
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     let expansion: AIProcessExpansionState
     let toggle: AIProcessExpansionHandler
+    let searchSummary: (AIConversationSearchSummary) -> AnyView
     private var tools: [AIProcessItem] { block.items.filter { $0.kind == .tool } }
     private var runningItem: AIProcessItem? { block.items.last(where: \.isRunning) }
     private var title: String {
@@ -80,7 +80,7 @@ private struct AIProcessBlockView: View {
             }
         } else if block.items.count == 1 {
             AIProcessRow(item: block.items[0], outcome: outcome, conversationID: conversationID,
-                                     hasReplyResult: expansion.replyResultCalls.contains(block.items[0].id), requestNames: expansion.requestNames[block.items[0].id] ?? .init(), expanded: expansion.reasoning.contains(block.items[0].id), toggle: toggle)
+                                     hasReplyResult: expansion.replyResultCalls.contains(block.items[0].id), requestNames: expansion.requestNames[block.items[0].id] ?? .init(), expanded: expansion.reasoning.contains(block.items[0].id), toggle: toggle, searchSummary: searchSummary)
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 Button { toggle(.group(block.id)) } label: {
@@ -106,7 +106,7 @@ private struct AIProcessBlockView: View {
                 if expansion.group {
                     ForEach(block.items) { item in
                         AIProcessRow(item: item, outcome: outcome, conversationID: conversationID,
-                                     hasReplyResult: expansion.replyResultCalls.contains(item.id), requestNames: expansion.requestNames[item.id] ?? .init(), expanded: expansion.reasoning.contains(item.id), toggle: toggle)
+                                     hasReplyResult: expansion.replyResultCalls.contains(item.id), requestNames: expansion.requestNames[item.id] ?? .init(), expanded: expansion.reasoning.contains(item.id), toggle: toggle, searchSummary: searchSummary)
                     }
                 }
             }.accessibilityElement(children: .contain)
@@ -124,6 +124,7 @@ struct AIProcessRow: View {
     var requestNames = AIToolRequestNames()
     var expanded = false
     let toggle: AIProcessExpansionHandler
+    let searchSummary: (AIConversationSearchSummary) -> AnyView
     @State private var showingDetail = false
     var body: some View {
         Group {
@@ -152,7 +153,7 @@ struct AIProcessRow: View {
                     Button { showingDetail = true } label: { toolLabel(result) }
                         .buttonStyle(.plain).accessibilityIdentifier("aiTool-\(item.name)")
                         .sheet(isPresented: $showingDetail) {
-                            AIToolDetailView(item: item, result: result, conversationID: conversationID)
+                            AIToolDetailView(item: item, result: result, conversationID: conversationID, searchSummary: searchSummary)
                         }
                 } else {
                     toolLabel(result).accessibilityIdentifier("aiTool-\(item.name)")
@@ -203,6 +204,7 @@ struct AIToolDetailView: View {
     let item: AIProcessItem
     let result: AIToolResultDetails
     let conversationID: String?
+    let searchSummary: (AIConversationSearchSummary) -> AnyView
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
 
@@ -234,15 +236,14 @@ struct AIToolDetailView: View {
                         filterCards(suggestion, title: "筛选建议")
                     }
                     if let books = result.bookResult {
-                        BookSearchSummaryCard {
-                            VStack(alignment: .leading, spacing: LayoutTokens.control) {
-                                Text(verbatim: books.title).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                                ForEach(books.rows) { row in
-                                    if row.id != books.rows.first?.id { Divider() }
-                                    rowText(row).textSelection(.enabled)
-                                }
+                        let content = AnyView(VStack(alignment: .leading, spacing: LayoutTokens.control) {
+                            Text(verbatim: books.title).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                            ForEach(books.rows) { row in
+                                if row.id != books.rows.first?.id { Divider() }
+                                rowText(row).textSelection(.enabled)
                             }
-                        }
+                        })
+                        searchSummary(.books(content: content))
                     }
                     if result.state != .empty {
                         ForEach(result.sections) { section in
@@ -265,10 +266,7 @@ struct AIToolDetailView: View {
     }
 
     @ViewBuilder private func filterCards(_ filter: AIToolResultDetails.FilterSummary, title: LocalizedStringKey) -> some View {
-        if let root = filter.root {
-            BookSearchRuleCard(root: root, title: title, shelfTitle: { $0 }) { EmptyView() } footer: { EmptyView() }
-        }
-        BookSearchSortCard(sorts: filter.sorts)
+        searchSummary(.filter(root: filter.root, title: title, sorts: filter.sorts))
     }
 
     private func detailSection(_ section: AIToolResultDetails.Section, showTitle: Bool, secondaryTitle: Bool = false) -> some View {
@@ -331,14 +329,14 @@ extension AIConversation {
     }
     /// All tools and reasoning share one working state; activityTitle retains
     /// the precise operation for VoiceOver.
-    var moonSnapshot: AIMoonSnapshot {
+    public var moonSnapshot: AIMoonSnapshot {
         AIMoonSnapshot(conversationID: id, running: running, status: .init(activity.status),
             pose: .live(running: running, status: activity.status,
                         hasTools: head.pendingCalls.contains { $0.output == nil }, reasoning: activity.reasoningActive),
             label: running ? activityTitle : "")
     }
     /// Whether the latest turn left a proposal for the person to review.
-    var latestTurnProposes: Bool {
+    public var latestTurnProposes: Bool {
         turns.last?.process.contains { item in
             guard item.kind == .tool, item.name.hasPrefix("propose_"), let output = item.output else { return false }
             return !["denied", "error"].contains(output.object["status"]?.string ?? "")
@@ -391,8 +389,8 @@ struct AIMessageRowView: View {
     let taskObject: AITaskObject?
     let preview: (AIReadingAttachment) -> Void
     let loadEarlier: () -> Void
-    let openFilter: (AIBookFilterSuggestion) -> Void
-    let openBook: (StatisticsRoute) -> Void
+    let host: AIConversationHost
+    let onHostAction: (AIConversationHostAction) -> Void
     let toggleProcessItem: AIProcessExpansionHandler
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
@@ -414,7 +412,7 @@ struct AIMessageRowView: View {
                     .accessibilityAction(named: "取消发送") { ai.cancelQueued(conversationID, inputID: input.id) }
                     .contextMenu { Button("取消发送", systemImage: "xmark") { ai.cancelQueued(conversationID, inputID: input.id) } }
             case .block(let block, let outcome, let expansion): AIProcessBlockView(block: block, outcome: outcome, conversationID: conversationID,
-                                   expansion: expansion, toggle: toggleProcessItem)
+                                   expansion: expansion, toggle: toggleProcessItem, searchSummary: host.searchSummary)
             case .processToggle(let expanded):
                 Button { if let turn = row.turnID { ai.conversation(conversationID)?.toggleProcess(turn) } } label: {
                     Label("查看过程", systemImage: expanded ? "chevron.down" : "chevron.right")
@@ -446,13 +444,15 @@ struct AIMessageRowView: View {
             case .result(let result, _):
                 switch result.body {
                 case .bookFilter(let suggestion, let summary):
-                    AIBookFilterCard(suggestion: suggestion, configuration: summary) { openFilter(suggestion) }
+                    AIBookFilterCard(suggestion: suggestion, configuration: summary, shelves: host.shelves) { onHostAction(.openFilter(suggestion)) }
                         .accessibilityIdentifier("aiResult-\(result.id)")
                 case .bookList(let books):
-                    AIBookListCard(owner: result.sessionID, books: books, openBook: openBook)
+                    AIBookListCard(owner: result.sessionID, books: books, readingAccess: host.readingAccess,
+                                    readingInputRevision: host.readingInputRevision,
+                                    openBook: { reference, title, entry in onHostAction(.openBook(reference: reference, title: title, entry: entry)) })
                         .accessibilityIdentifier("aiResult-\(result.id)")
                 default:
-                    AIResultCard(result: result)
+                    AIResultCard(result: result, noteEditor: host.noteEditor)
                 }
             case .error(let text): Label(text, systemImage: "exclamationmark.circle").font(.subheadline).foregroundStyle(Color(uiColor: theme.destructive))
             case .actions(let answer, let outcome):

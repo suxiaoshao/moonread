@@ -1,6 +1,4 @@
 import MoonreadDesign
-import MoonreadAI
-import SwiftUI
 
 extension MoonPose {
     static func live(running: Bool, status: AIAgentStatus, hasTools: Bool, reasoning: Bool) -> Self {

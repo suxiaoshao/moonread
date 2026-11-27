@@ -5,11 +5,11 @@ import AISDKProvider
 import Foundation
 
 /// Read-only presentation of the saved output. Only committed conversation rows own actions.
-public struct AIToolResultDetails {
-    public enum State: Equatable {
+struct AIToolResultDetails {
+    enum State: Equatable {
         case running, waiting, stopped, denied, failed, empty, available, missing
 
-        public var title: String {
+        var title: String {
             switch self {
             case .running: String(localized: "执行中")
             case .waiting: String(localized: "等待确认")
@@ -22,7 +22,7 @@ public struct AIToolResultDetails {
             }
         }
 
-        public var symbol: String {
+        var symbol: String {
             switch self {
             case .running, .waiting: "clock"
             case .stopped: "stop.circle"
@@ -33,23 +33,23 @@ public struct AIToolResultDetails {
         }
     }
 
-    public struct Row: Identifiable {
-        public struct ID: Hashable {
+    struct Row: Identifiable {
+        struct ID: Hashable {
             let section: Section.ID
             let key: [String?]
             let occurrence: Int
         }
 
-        public let key: [String?]
-        public let text: String
-        public var label: String?
-        public var subtitle: String?
-        public var web: AIWebSource?
-        public var image: AIImageAttachment?
-        public var indent: Int = 0
+        let key: [String?]
+        let text: String
+        var label: String?
+        var subtitle: String?
+        var web: AIWebSource?
+        var image: AIImageAttachment?
+        var indent: Int = 0
         fileprivate var sectionID: Section.ID = []
         fileprivate var occurrence = 0
-        public var id: ID { .init(section: sectionID, key: key, occurrence: occurrence) }
+        var id: ID { .init(section: sectionID, key: key, occurrence: occurrence) }
 
         static func fact(_ key: String, _ label: String, _ value: String?) -> Self? {
             guard let value, !value.isEmpty else { return nil }
@@ -57,12 +57,12 @@ public struct AIToolResultDetails {
         }
     }
 
-    public struct Section: Identifiable {
-        public typealias ID = [String]
-        public let id: ID
-        public let title: String
-        public let rows: [Row]
-        public let isEntity: Bool
+    struct Section: Identifiable {
+        typealias ID = [String]
+        let id: ID
+        let title: String
+        let rows: [Row]
+        let isEntity: Bool
 
         init(id: ID, title: String, rows: [Row], isEntity: Bool = false) {
             self.id = id
@@ -81,14 +81,14 @@ public struct AIToolResultDetails {
         }
     }
 
-    public struct FilterSummary {
-        public let root: BookSearchNode?
-        public let sorts: [BookSearchSort]
+    struct FilterSummary {
+        let root: BookSearchNode?
+        let sorts: [BookSearchSort]
     }
 
-    public private(set) var requestedFilter: FilterSummary?
-    public private(set) var suggestedFilter: FilterSummary?
-    public private(set) var bookResult: Section?
+    private(set) var requestedFilter: FilterSummary?
+    private(set) var suggestedFilter: FilterSummary?
+    private(set) var bookResult: Section?
     private let bookFilterInput: JSONValue?
     private let item: AIProcessItem
     private let outcome: AIAgentStatus
@@ -97,11 +97,11 @@ public struct AIToolResultDetails {
     private let input: [String: JSONValue]
     private let data: JSONValue
     private let bytes: Data?
-    public private(set) var sections: [Section] = []
+    private(set) var sections: [Section] = []
     private let names: AIToolRequestNames
-    public private(set) var requestSection: Section?
-    public var request: [Row] { requestSection?.rows ?? [] }
-    public private(set) var notice: String?
+    private(set) var requestSection: Section?
+    var request: [Row] { requestSection?.rows ?? [] }
+    private(set) var notice: String?
     private var resultRecorded = false
     private var fact: String?
     private var empty = false
@@ -114,7 +114,7 @@ public struct AIToolResultDetails {
         return message
     }
 
-    public init(item: AIProcessItem, outcome: AIAgentStatus, hasReplyResult: Bool, names: AIToolRequestNames = .init()) {
+    init(item: AIProcessItem, outcome: AIAgentStatus, hasReplyResult: Bool, names: AIToolRequestNames = .init()) {
         self.names = names
         self.item = item
         self.outcome = outcome
@@ -135,13 +135,13 @@ public struct AIToolResultDetails {
         project()
     }
 
-    public var opensDetail: Bool { !(hasReplyResult && status == "ok") }
+    var opensDetail: Bool { !(hasReplyResult && status == "ok") }
     private var hasUnreturnedPage: Bool {
         let page = result.object["page"]?.object
         return page?["complete"] == .bool(false) || page?["nextCursor"]?.string != nil || input["cursor"]?.string != nil
     }
 
-    public var state: State {
+    var state: State {
         switch status {
         case "denied": return .denied
         case "error": return code == "cancelled" ? .stopped : .failed
@@ -160,7 +160,7 @@ public struct AIToolResultDetails {
         }
     }
 
-    public var statusTitle: String {
+    var statusTitle: String {
         if state == .empty {
             switch item.name {
             case "find_books": return String(localized: "没有找到匹配的小说")
@@ -171,7 +171,7 @@ public struct AIToolResultDetails {
         return state.title
     }
 
-    public var summary: String {
+    var summary: String {
         switch state {
         case .available: return fact ?? request.first.map { Self.snippet($0.text) ?? $0.text } ?? ""
         case .failed: return explanation ?? state.title
@@ -179,7 +179,7 @@ public struct AIToolResultDetails {
         }
     }
 
-    public var explanation: String? {
+    var explanation: String? {
         switch state {
         case .running: return nil
         case .waiting: return String(localized: "此调用需要确认后才能继续。")

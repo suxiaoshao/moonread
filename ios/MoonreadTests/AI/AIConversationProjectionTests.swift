@@ -139,7 +139,9 @@ final class AIToolHistoryPresentationTests: XCTestCase {
         output: .object(["status": .string("ok"), "data": payload]))
       let detail = AIToolResultDetails(item: item, outcome: .completed, hasReplyResult: false)
       XCTAssertTrue(detail.opensDetail)
-      _ = AIToolDetailView(item: item, result: detail, conversationID: nil).body
+      _ = AIToolDetailView(item: item, result: detail, conversationID: nil) { _ in
+        AnyView(EmptyView())
+      }.body
     }
   }
 

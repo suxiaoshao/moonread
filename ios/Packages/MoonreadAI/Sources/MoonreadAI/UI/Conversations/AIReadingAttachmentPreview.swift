@@ -1,19 +1,22 @@
+import Foundation
 import MoonreadDataTypes
 import MoonreadDesign
 import MoonreadSearchText
 import MoonreadData
 import MoonreadCoreBindings
-import MoonreadAI
 import SwiftUI
 import AISDKProvider
 import AISDKProviderUtils
 
 /// The attachment sheet presents existing excerpts. Only the host opens the session's image store.
-struct AIReadingAttachmentPreview: View {
-    let attachment: AIReadingAttachment
-    var owner: String? = nil
+public struct AIReadingAttachmentPreview: View {
+    public init(attachment: AIReadingAttachment, owner: String? = nil) {
+        self.attachment = attachment; self.owner = owner
+    }
+    public let attachment: AIReadingAttachment
+    public var owner: String? = nil
 
-    var body: some View {
+    public var body: some View {
         AIChatAttachmentPreview(attachment: attachment) {
             guard let owner, let ref = attachment.attachmentRef else { throw AIToolError("not_found") }
             let bytes = try await AIImageStore.shared.read(owner: owner, ref: ref)
@@ -23,10 +26,13 @@ struct AIReadingAttachmentPreview: View {
     }
 }
 
-struct AIReadingObjectPicker: View {
+public struct AIReadingObjectPicker: View {
+    public init(kind: AIReadingAttachment.Kind, conversationID: String) {
+        self.kind = kind; self.conversationID = conversationID
+    }
     @Environment(\.theme) private var theme
-    let kind: AIReadingAttachment.Kind
-    let conversationID: String
+    public let kind: AIReadingAttachment.Kind
+    public let conversationID: String
     @Environment(AIService.self) private var ai
     @Environment(\.dismiss) private var dismiss
     @State private var books: [AIReadingAttachment] = []
@@ -34,7 +40,7 @@ struct AIReadingObjectPicker: View {
     @State private var error: String?
     @State private var loaded = false
     private var title: String { switch kind { case .bookmark: String(localized: "选择书签"); case .annotation: String(localized: "选择批注"); default: String(localized: "选择书籍") } }
-    var body: some View {
+    public var body: some View {
         NavigationStack {
             let shown = books.filter { LibraryQueryRules.selectionMatches($0.title, query: query) }
             Group {
@@ -72,8 +78,8 @@ struct AIReadingObjectPicker: View {
         loaded = false; error = nil
         do {
             var result: [AIReadingAttachment] = []; var seen = Set<String>()
-            for shelf in try await AppDataService.shared.shelves() {
-                for row in try await AppDataService.shared.aiLibraryBooks(shelf.id) {
+            for shelf in try await ai.readingAccess.shelves() {
+                for row in try await ai.readingAccess.aiLibraryBooks(shelf.id) {
                     let bookRef = (row.metadata?.sha).flatMap { (try? parseSha256(value: $0)) != nil ? AIReadingTools.bookRef($0) : nil }
                     let fileRef = AIReadingTools.ref("f", row.id)
                     guard seen.insert(bookRef ?? fileRef).inserted else { continue }
@@ -90,6 +96,7 @@ private struct AIReadingMarkPicker: View {
     let book: AIReadingAttachment
     let kind: AIReadingAttachment.Kind
     let select: (AIReadingAttachment) -> Void
+    @Environment(AIService.self) private var ai
     @State private var items: [AIReadingAttachment] = []
     @State private var error: String?
     @State private var loaded = false
@@ -131,7 +138,7 @@ private struct AIReadingMarkPicker: View {
 
         do {
             guard let ref = book.bookRef else { loaded = true; return }
-            let groups = try await AppDataService.shared.aiMarks(sha: String(ref.dropFirst(2)))
+            let groups = try await ai.readingAccess.aiMarks(String(ref.dropFirst(2)))
             items = groups.compactMap { id, heads in
                 let live = heads.filter { $0.content != nil }
                 guard let first = live.first, let content = first.content, first.bookmark == (kind == .bookmark) else { return nil }

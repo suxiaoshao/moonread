@@ -135,10 +135,10 @@ extension AIReadingAccess {
       aiBookListThumbnail: { await service.aiBookListThumbnail($0) },
       aiBookID: { try await service.aiBookID(sha: $0) },
       aiMarks: { try await service.aiMarks(sha: $0) },
-      preparedBookIdentity: { file in
+      preparedBookSHA: { file in
         let lease = try await service.aiPrepare(file)
         let sha = try await service.snapshot(lease.id).book.readingKey.formalSHA256
-        return (lease.id, sha)
+        return withExtendedLifetime(lease) { sha }
       },
       snapshot: { try await service.snapshot($0) },
       details: { try await service.details(sha: $0) },
@@ -164,16 +164,4 @@ extension AIReadingAccess {
 
 extension AppDataService {
   nonisolated var aiReadingAccess: AIReadingAccess { AIReadingAccess.appDataService(self) }
-}
-
-extension AIReadingTools {
-  init(reader: AppDataService = .shared, lineLimit: Int = 2000, owner: String? = nil) {
-    self.init(reader: reader.aiReadingAccess, lineLimit: lineLimit, owner: owner)
-  }
-}
-
-extension AIReadingReferences {
-  init(reader: AppDataService = .shared) {
-    self.init(access: reader.aiReadingAccess)
-  }
 }
