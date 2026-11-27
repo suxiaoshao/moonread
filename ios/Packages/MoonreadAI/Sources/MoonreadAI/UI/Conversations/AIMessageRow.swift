@@ -18,7 +18,7 @@ struct AIMessageRow: Identifiable, Equatable {
         case header, earlier, later
         case user(AIAgentEntry), queued(AIAgentInput)
         case block(AIProcessBlock, AIAgentStatus, AIProcessExpansionState = .init())
-        case processToggle(Bool)
+        case processToggle(expanded: Bool, completed: Bool)
         case waiting(AIAgentStatus), generating
         case confirmation(AIAgentConfirmation)
         case image(AIImageAttachment)
@@ -33,7 +33,7 @@ struct AIMessageRow: Identifiable, Equatable {
             case (.user(let a), .user(let b)): a == b
             case (.queued(let a), .queued(let b)): a == b
             case (.block(let a, let s, let x), .block(let b, let t, let y)): a == b && s == t && x == y
-            case (.processToggle(let a), .processToggle(let b)): a == b
+            case (.processToggle(let a, let c), .processToggle(let b, let d)): a == b && c == d
             case (.waiting(let a), .waiting(let b)): a == b
             case (.confirmation(let a), .confirmation(let b)): a == b
             case (.image(let a), .image(let b)): a.attachmentRef == b.attachmentRef && a.width == b.width && a.height == b.height && a.mimeType == b.mimeType
@@ -65,14 +65,17 @@ struct AIMessageRow: Identifiable, Equatable {
                 }
             }
         }
-        let collapsible = turn.outcome == .completed && turn.process.contains { $0.kind != .input && $0.id != turn.finalTextID }
+        let completed = turn.outcome == .completed
+        let running = active && confirmations.isEmpty && [.running, .compacting].contains(turn.outcome)
+        let finalTextID = turn.finalTextID
+        let collapsible = (completed || running) && turn.process.contains { $0.kind != .input && $0.id != finalTextID }
         let requestNames = !collapsible || expanded ? AIToolRequestNames.preceding(turn.process) : [:]
         var insertedProcessToggle = false
         for block in AIProcessBlock.project(turn.process) {
             if collapsible && !insertedProcessToggle && block.items[0].entry == nil {
-                add(turn.id + "/process", .processToggle(expanded)); insertedProcessToggle = true
+                add(turn.id + "/process", .processToggle(expanded: expanded, completed: completed)); insertedProcessToggle = true
             }
-            guard !collapsible || expanded || block.id == turn.finalTextID || block.items[0].entry != nil else { continue }
+            guard !collapsible || expanded || block.id == finalTextID || block.items[0].entry != nil else { continue }
             if let entry = block.items[0].entry { add(block.id, .user(entry)) }
             else {
                 let state = AIProcessExpansionState(group: itemExpansion.contains(.group(block.id)),
@@ -120,17 +123,21 @@ struct AIMessageTurnCache {
 }
 
 extension AIConversation {
-    /// Reopening completed history collapses its process; finishing in this presentation does not.
+    /// Manual expansion choices are local to this presentation.
     func beginMessagePresentation() {
         processExpansion = [:]
-        presentedActiveTurns = []
         messageTurnCache = [:]
     }
-    func toggleProcess(_ turn: String) {
-        processExpansion[turn] = !(processExpansion[turn] ?? presentedActiveTurns.contains(turn))
-    }
     func toggleProcessItem(_ id: AIProcessExpansionID) {
+        if case .turn(let id) = id {
+            guard let turn = turns.first(where: { $0.id == id }) else { return }
+            processExpansion[id] = !isProcessExpanded(turn)
+            return
+        }
         if !processItemExpansion.insert(id).inserted { processItemExpansion.remove(id) }
+    }
+    private func isProcessExpanded(_ turn: AIConversationTurn) -> Bool {
+        processExpansion[turn.id] ?? (turn.outcome != .completed)
     }
     var messageRows: [AIMessageRow] {
         let projected = turns
@@ -138,8 +145,7 @@ extension AIConversation {
         if hasEarlier { rows.append(.init(id: "page/earlier", turnID: nil, content: .earlier)) }
         for turn in projected {
             let active = running && head.currentTurn == turn.id && !hasLater
-            if active || turn.outcome != .completed { presentedActiveTurns.insert(turn.id) }
-            let expanded = processExpansion[turn.id] ?? presentedActiveTurns.contains(turn.id)
+            let expanded = isProcessExpanded(turn)
             let confirmations = active ? self.confirmations : []
             if let cached = messageTurnCache[turn.id], cached.turn == turn, cached.active == active,
                cached.confirmations == confirmations, cached.expanded == expanded, cached.itemExpansion == processItemExpansion { rows += cached.rows }
@@ -179,14 +185,16 @@ extension AIMessageRow {
     var viewportRow: AIMessageViewportRow {
         let kind: AIMessageViewportRow.Kind
         switch content {
-        case .block(let block, _, _): kind = .block(message: block.isMessage ? block.items[0].text : nil)
+        case .block(let block, _, let expansion):
+            kind = .block(message: block.isMessage ? block.items[0].text : nil,
+                          toolGroupExpanded: block.items.count > 1 ? expansion.group : nil)
         case .user(let entry): kind = .input(text: entry.userText ?? "")
         case .queued(let input): kind = .input(text: input.text)
         case .image(let image): kind = .image(width: Double(image.width), height: Double(image.height))
         case .confirmation: kind = .confirmation
         case .result, .noteSuggestions: kind = .result
         case .header: kind = .header
-        case .processToggle: kind = .processToggle
+        case .processToggle(let expanded, let completed): kind = .processToggle(expanded: expanded, completed: completed)
         default: kind = .other
         }
         return .init(id: id, turnID: turnID, version: version, kind: kind,

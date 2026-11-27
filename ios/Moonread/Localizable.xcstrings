@@ -3954,6 +3954,7 @@
     "查看生成图片": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "View generated image"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "檢視生成圖片"}}}},
     "生成图片": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Generate image"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "生成圖片"}}}},
     "查询书籍": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Book lookup"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "查詢書籍"}}}},
+    "阅读统计与标记": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading statistics and marks"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀統計與標記"}}}},
     "已思考": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Thought"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已思考"}}}},
     "思考中": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Thinking"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "思考中"}}}},
     "进行中": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "In progress"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "進行中"}}}},

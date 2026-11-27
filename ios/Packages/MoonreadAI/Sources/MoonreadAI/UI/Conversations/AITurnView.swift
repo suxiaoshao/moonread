@@ -60,18 +60,12 @@ private struct AIProcessBlockView: View {
     let conversationID: String
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
+    @Environment(\.aiRetainsCollapsingToolGroup) private var retainsCollapsingToolGroup
+    @ScaledMetric(relativeTo: .subheadline) private var groupIconWidth: CGFloat = 16
     let expansion: AIProcessExpansionState
     let toggle: AIProcessExpansionHandler
     let searchSummary: (AIConversationSearchSummary) -> AnyView
-    private var tools: [AIProcessItem] { block.items.filter { $0.kind == .tool } }
     private var runningItem: AIProcessItem? { block.items.last(where: \.isRunning) }
-    private var title: String {
-        if let item = runningItem {
-            return item.kind == .reasoning ? (item.text.isEmpty ? (item.isRunning ? String(localized: "思考中") : String(localized: "已思考")) : item.text) : AIToolPresentation.title(item.name)
-        }
-        if tools.isEmpty { return block.items.last?.text ?? "" }
-        return AIToolPresentation.groupTitle(tools.map(\.name))
-    }
     var body: some View {
         if block.isMessage {
             VStack(alignment: .leading, spacing: 4) {
@@ -79,20 +73,20 @@ private struct AIProcessBlockView: View {
                 Text(block.items[0].text).textSelection(.enabled)
             }
         } else if block.items.count == 1 {
-            AIProcessRow(item: block.items[0], outcome: outcome, conversationID: conversationID,
-                                     hasReplyResult: expansion.replyResultCalls.contains(block.items[0].id), requestNames: expansion.requestNames[block.items[0].id] ?? .init(), expanded: expansion.reasoning.contains(block.items[0].id), toggle: toggle, searchSummary: searchSummary)
+            processRow(block.items[0])
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 Button { toggle(.group(block.id)) } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: runningItem.map { $0.kind == .reasoning ? "sparkles" : AIToolPresentation.symbol($0.name, input: $0.input, output: $0.output) } ?? (tools.isEmpty ? "sparkles" : "list.bullet"))
-                        Text(title).lineLimit(1).truncationMode(.tail)
+                        Image(systemName: runningItem.map { AIToolPresentation.symbol($0.name, input: $0.input, output: $0.output) } ?? "list.bullet")
+                            .frame(width: groupIconWidth)
+                        Text(AIToolPresentation.groupTitle(block.items.map(\.name))).lineLimit(1).truncationMode(.tail)
                             .foregroundStyle(Color(uiColor: runningItem == nil ? theme.secondary : theme.ink))
                             .fontWeight(runningItem == nil ? nil : .medium)
                         Spacer(minLength: 0)
                         if runningItem != nil { AIProcessLoading() }
-                        else if tools.contains(where: { $0.output?.object["status"]?.string == "error" }) { Image(systemName: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive)) }
-                        else if !tools.isEmpty { Text("\(tools.count) 次调用").font(.footnote).monospacedDigit() }
+                        else if block.items.contains(where: { $0.output?.object["status"]?.string == "error" }) { Image(systemName: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive)) }
+                        Text("\(block.items.count) 次调用").font(.footnote).monospacedDigit()
                         Image(systemName: "chevron.right").font(.caption2)
                             .rotationEffect(.degrees(expansion.group ? 90 : 0))
                             .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: expansion.group)
@@ -103,14 +97,27 @@ private struct AIProcessBlockView: View {
                     .accessibilityValue(expansion.group ? String(localized: "已展开") : String(localized: "已收起"))
                     .accessibilityIdentifier("aiProcessGroup-\(block.id)")
                     .aiProcessHeaderGeometry("group-" + block.id)
-                if expansion.group {
-                    ForEach(block.items) { item in
-                        AIProcessRow(item: item, outcome: outcome, conversationID: conversationID,
-                                     hasReplyResult: expansion.replyResultCalls.contains(item.id), requestNames: expansion.requestNames[item.id] ?? .init(), expanded: expansion.reasoning.contains(item.id), toggle: toggle, searchSummary: searchSummary)
+                if expansion.group || retainsCollapsingToolGroup {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(block.items) { processRow($0) }
                     }
+                    .padding(.leading, LayoutTokens.content)
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(Color(uiColor: theme.separator)).frame(width: 2)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.leading, (groupIconWidth - 2) / 2)
+                    .allowsHitTesting(expansion.group)
+                    .accessibilityHidden(!expansion.group)
                 }
             }.accessibilityElement(children: .contain)
         }
+    }
+
+    private func processRow(_ item: AIProcessItem) -> AIProcessRow {
+        AIProcessRow(item: item, outcome: outcome, conversationID: conversationID,
+                     hasReplyResult: expansion.replyResultCalls.contains(item.id), requestNames: expansion.requestNames[item.id] ?? .init(),
+                     expanded: expansion.reasoning.contains(item.id), toggle: toggle, searchSummary: searchSummary)
     }
 }
 
@@ -382,6 +389,51 @@ private struct AIGeneratedImageView: View {
     }
 }
 
+struct AIProcessToggleHitShape: Shape {
+    static let rowSpace = "aiProcessToggleRow"
+
+    static func target(for label: CGRect) -> CGRect {
+        let extra = max(0, LayoutTokens.hit - label.height)
+        // Keep the touch extension biased away from the reply.
+        let below = min(6, extra / 2)
+        return CGRect(x: label.minX, y: label.minY - (extra - below),
+                      width: label.width, height: label.height + extra)
+    }
+
+    func path(in rect: CGRect) -> Path { Path(Self.target(for: rect)) }
+}
+
+extension EnvironmentValues {
+    @Entry var aiProcessToggleLabelFrame: (CGRect) -> Void = { _ in }
+    @Entry var aiRetainsCollapsingToolGroup = false
+}
+
+private struct AIProcessToggle: View {
+    let expanded: Bool
+    let action: () -> Void
+    @Environment(\.theme) private var theme
+    @Environment(\.moonreadReduceMotion) private var reduceMotion
+    @Environment(\.aiProcessToggleLabelFrame) private var reportFrame
+
+    var body: some View {
+        Button(action: action) {
+            Label {
+                Text("查看过程")
+            } icon: {
+                Image(systemName: "chevron.right")
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .animation(reduceMotion ? nil : .default, value: expanded)
+            }
+            .font(.subheadline)
+            .foregroundStyle(Color(uiColor: theme.secondary))
+            .contentShape(.interaction, AIProcessToggleHitShape())
+            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(AIProcessToggleHitShape.rowSpace)) }, action: reportFrame)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("aiTurnProcess")
+    }
+}
+
 /// One hosting cell is one presentation block. Navigation and previews remain SwiftUI.
 struct AIMessageRowView: View {
     let row: AIMessageRow
@@ -413,11 +465,10 @@ struct AIMessageRowView: View {
                     .contextMenu { Button("取消发送", systemImage: "xmark") { ai.cancelQueued(conversationID, inputID: input.id) } }
             case .block(let block, let outcome, let expansion): AIProcessBlockView(block: block, outcome: outcome, conversationID: conversationID,
                                    expansion: expansion, toggle: toggleProcessItem, searchSummary: host.searchSummary)
-            case .processToggle(let expanded):
-                Button { if let turn = row.turnID { ai.conversation(conversationID)?.toggleProcess(turn) } } label: {
-                    Label("查看过程", systemImage: expanded ? "chevron.down" : "chevron.right")
-                        .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)).frame(minHeight: LayoutTokens.hit)
-                }.buttonStyle(.plain).accessibilityIdentifier("aiTurnProcess")
+            case .processToggle(let expanded, _):
+                if let turn = row.turnID {
+                    AIProcessToggle(expanded: expanded) { toggleProcessItem(.turn(turn)) }
+                }
             case .waiting(let status):
                 HStack(spacing: LayoutTokens.compact) {
                     if status == .compacting {

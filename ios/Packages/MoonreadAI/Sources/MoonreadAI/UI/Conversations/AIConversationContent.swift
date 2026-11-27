@@ -15,7 +15,7 @@ struct AIConversationTurn: Identifiable, Equatable {
     var model: String?
     var thinking: String?
     var answer: String { process.last(where: { $0.kind == .text })?.text ?? "" }
-    var finalTextID: String? { process.last?.kind == .text ? process.last?.id : nil }
+    var finalTextID: String? { process.last(where: { $0.kind == .text })?.id }
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.process == rhs.process && lhs.resultPayloads == rhs.resultPayloads
             && lhs.results.map(\.id) == rhs.results.map(\.id) && lhs.outcome == rhs.outcome
@@ -117,8 +117,8 @@ struct AIProcessItem: Identifiable, Equatable {
     var entry: AIAgentEntry?
 }
 
-/// Prose (including steering) separates consecutive reasoning/tool activities.
-/// The first item's identity remains stable while a group receives more events.
+/// Only consecutive tool calls share a block. Reasoning, replies and steering stand alone.
+/// The first tool's identity remains stable as the group receives more calls.
 struct AIProcessBlock: Identifiable, Equatable {
     let items: [AIProcessItem]
     var id: String { items[0].id }
@@ -127,7 +127,7 @@ struct AIProcessBlock: Identifiable, Equatable {
         var blocks: [Self] = []
         var group: [AIProcessItem] = []
         for item in items {
-            if item.kind == .text || item.kind == .input {
+            if item.kind != .tool {
                 if !group.isEmpty { blocks.append(.init(items: group)); group = [] }
                 blocks.append(.init(items: [item]))
             } else { group.append(item) }

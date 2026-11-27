@@ -7,8 +7,10 @@ public enum AIToolPresentation {
     public static func isHidden(_ name: String) -> Bool { name == "get_current_time" }
     public static func groupTitle(_ names: [String]) -> String {
         let books: Set<String> = ["find_books", "get_book_info", "list_chapters", "read_text", "search_text", "list_marks"]
-        if names.allSatisfy({ books.contains($0) }) { return String(localized: "查询书籍") }
-        if Set(names).count == 1, let name = names.first { return title(name) }
+        let kinds = Set(names)
+        if kinds == ["get_reading_statistics", "list_marks"] { return String(localized: "阅读统计与标记") }
+        if kinds.isSubset(of: books) { return String(localized: "查询书籍") }
+        if kinds.count == 1, let name = names.first { return title(name) }
         return String(localized: "工具调用")
     }
     public static func title(_ name: String, output: JSONValue? = nil) -> String {

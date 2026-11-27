@@ -1,6 +1,6 @@
 import Foundation
 
-public enum AIProcessExpansionID: Hashable { case group(String), reasoning(String) }
+public enum AIProcessExpansionID: Hashable { case turn(String), group(String), reasoning(String) }
 public typealias AIProcessExpansionHandler = @MainActor @Sendable (AIProcessExpansionID) -> Void
 
 /// A conversation owns its presentation cache across viewport updates and history windows.
@@ -19,8 +19,10 @@ public typealias AIProcessExpansionHandler = @MainActor @Sendable (AIProcessExpa
 
 public struct AIMessageViewportRow: Identifiable, Equatable {
     public enum Kind: Equatable {
-        case block(message: String?), input(text: String), image(width: Double, height: Double)
-        case confirmation, result, header, processToggle, other
+        case block(message: String?, toolGroupExpanded: Bool? = nil)
+        case input(text: String), image(width: Double, height: Double)
+        case processToggle(expanded: Bool, completed: Bool)
+        case confirmation, result, header, other
     }
 
     public struct NativeText: Equatable {
@@ -38,6 +40,10 @@ public struct AIMessageViewportRow: Identifiable, Equatable {
     var version: Int
     var kind: Kind
     var nativeText: NativeText?
+    var toolGroupExpanded: Bool? {
+        if case .block(_, let expanded) = kind { return expanded }
+        return nil
+    }
 
     public init(id: String, turnID: String?, version: Int, kind: Kind, nativeText: NativeText?) {
         self.id = id
