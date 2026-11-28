@@ -163,7 +163,8 @@ struct NoteEditorContent: View {
                 .ignoresSafeArea(.keyboard)
     }
     var body: some View {
-        fields.navigationTitle("批注").navigationBarTitleDisplayMode(.inline)
+        fields.navigationPageBackground(Color(uiColor: theme.surface))
+            .navigationTitle("批注").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { cancelButton }
                     ToolbarItem(placement: .confirmationAction) { saveButton }

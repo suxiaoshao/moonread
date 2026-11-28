@@ -25,7 +25,7 @@ public struct AIChatSurface<Content: View>: View {
         }
         // Both placements keep their own canvas behind the system bar.
         .foregroundStyle(Color(uiColor: theme.ink)).tint(Color(uiColor: theme.accent))
-        .background(Color(uiColor: background), ignoresSafeAreaEdges: .all)
+        .navigationPageBackground(Color(uiColor: background))
     }
 
     @ViewBuilder private var chatWithNavigation: some View {
@@ -46,6 +46,7 @@ public struct AIChatLayout<Messages: View, Composer: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var queueHeight: CGFloat = 0
     @State private var composerHeight: CGFloat = 0
+    @State private var keyboardDocked = false
     let isEmpty: Bool
     let atBottom: Bool
     let queue: [AIAgentInput]
@@ -100,12 +101,26 @@ public struct AIChatLayout<Messages: View, Composer: View>: View {
                 }
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: queue.isEmpty)
                 composer()
+                    .padding(.bottom, composerBottomPadding)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
+            }
+        }
+        .background {
+            if #available(iOS 26, *) {
+                DockedKeyboardObservation(isDocked: $keyboardDocked)
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
         }
         .onChange(of: queue.isEmpty) { _, empty in
             if empty { queueHeight = 0 }
         }
+    }
+
+    private var composerBottomPadding: CGFloat {
+        if #available(iOS 26, *), !keyboardDocked { return 0 }
+        return LayoutTokens.compact
     }
 }
 
