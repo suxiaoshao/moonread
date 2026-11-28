@@ -22,7 +22,7 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
     items[0].needsDownload = true
     try await f.service.applyLibraryScan("builtin", root: f.directory, items: items, observe: false)
     let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
-    let controller = FullIndexController(defaults: defaults, service: f.service, registerTasks: false)
+    let controller = FullIndexController(defaults: defaults, service: f.service, observePowerAndThermalChanges: false)
     let model = LibraryModel(service: f.service, fullIndex: controller, defaults: defaults, cloudDiscoveryRequired: false)
     try await model.reload()
     let revision = model.revision
@@ -51,7 +51,7 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
     let f = try await fixture(["readable.txt": Data("第一章 月光\n原创正文\u{b}\u{c}。".utf8), "binary.txt": Data(repeating: 0, count: 100)])
     defer { f.clean() }
     try await scan(f)
-    let controller = FullIndexController(defaults: try XCTUnwrap(UserDefaults(suiteName: f.suite)), service: f.service, registerTasks: false)
+    let controller = FullIndexController(defaults: try XCTUnwrap(UserDefaults(suiteName: f.suite)), service: f.service, observePowerAndThermalChanges: false)
     controller.start("builtin", includeCloud: false, userInitiated: false)
     await controller.waitForCompletion()
     let inventory = try await f.service.identityInventory("builtin")
@@ -138,7 +138,7 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
       await fulfillment(of: [entered], timeout: 3)
       let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
       let controller = FullIndexController(
-        defaults: defaults, service: f.service, registerTasks: false)
+        defaults: defaults, service: f.service, observePowerAndThermalChanges: false)
       try controller.restoreTasks(f.core.session)
       controller.start("builtin", includeCloud: false, userInitiated: false)
       XCTAssertTrue(controller.running)
