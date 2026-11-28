@@ -54,7 +54,8 @@ public struct AITaskSetup<Setup: View>: View {
                     .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
                     .disabled(selection == nil || !canStart || starting).accessibilityIdentifier("startAITask")
             }.padding([.horizontal, .top], LayoutTokens.content).padding(.bottom)
-        }.scrollDismissesKeyboard(.interactively)
+        }.navigationPageBackground(Color(uiColor: theme.surface))
+            .scrollDismissesKeyboard(.interactively)
             .onAppear { if selection == nil { selection = ai.modelSelection(for: .defaults) } }
     }
 }

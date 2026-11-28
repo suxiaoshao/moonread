@@ -16,9 +16,17 @@ public struct SurfacePage: ViewModifier {
 
     public func body(content: Content) -> some View {
         content.scrollContentBackground(.hidden)
-            .background(canvas)
+            .navigationPageBackground(canvas)
             .foregroundStyle(ink)
             .tint(accent)
+    }
+}
+
+public extension View {
+    /// Keep the page and its navigation host on the same surface behind the system keyboard.
+    func navigationPageBackground(_ color: Color) -> some View {
+        background(color, ignoresSafeAreaEdges: .all)
+            .containerBackground(color, for: .navigation)
     }
 }
 

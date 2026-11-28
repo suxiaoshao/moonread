@@ -59,6 +59,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
                 if taskID != nil { if !large { closeTask() }; return }
                 if canExpand, expanded != large { expanded = large }
             }.allowsHitTesting(false).accessibilityHidden(true))
+        .background { Color(uiColor: theme.surface).ignoresSafeArea() }
         .presentationBackground(Color(uiColor: theme.surface))
         .onPreferenceChange(ReaderPanelSize.self, perform: updateMeasurement)
         .onChange(of: wantsExpanded, initial: true) { _, expanded in setExpanded(expanded) }

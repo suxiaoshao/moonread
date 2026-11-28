@@ -24,7 +24,7 @@ struct ReaderSearchPage: View {
                 }
                 searchList
             }
-            .background(Color(uiColor: theme.surface))
+            .navigationPageBackground(Color(uiColor: theme.surface))
             .navigationTitle("搜索")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -116,7 +116,7 @@ struct ReaderLibraryContent: View {
                 case .bookmarks, .notes: notesList
                 }
             }
-            .background(Color(uiColor: theme.surface))
+            .navigationPageBackground(Color(uiColor: theme.surface))
             .safeAreaInset(edge: .bottom) {
                 if let removed = editing.removedChapter, let id = session.readingID {
                     HStack {

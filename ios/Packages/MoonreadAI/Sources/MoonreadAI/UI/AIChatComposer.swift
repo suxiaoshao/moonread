@@ -42,10 +42,6 @@ public struct AIChatComposer<ModelPicker: View>: View {
         self.modelPicker = modelPicker
     }
 
-    private var bottomPadding: CGFloat {
-        if #available(iOS 26, *) { 0 } else { LayoutTokens.compact }
-    }
-
     public var body: some View {
         let hasText = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return VStack(alignment: .leading, spacing: LayoutTokens.compact) {
@@ -95,7 +91,7 @@ public struct AIChatComposer<ModelPicker: View>: View {
             RoundedRectangle(cornerRadius: LayoutTokens.floatingRadius)
                 .strokeBorder(Color(uiColor: inputFocused.wrappedValue ? theme.focus : theme.border), lineWidth: LayoutTokens.border)
         }
-        .padding(.horizontal, LayoutTokens.content).padding(.bottom, bottomPadding)
+        .padding(.horizontal, LayoutTokens.content)
         .disabled(submitting || deleting)
     }
 
