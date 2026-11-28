@@ -99,11 +99,22 @@ import AISDKProviderUtils
     public var listed: Bool
     public var deleting = false
     public var persisted = true
+    private(set) var hasSentMessage = false
+    var allowsAutomaticTitle = false
     var sendTask: Task<Void, Never>?
     public var submitting: Bool { sendTask != nil }
     init(_ value: AISessionValue) {
         id = value.id; title = value.title; context = value.context; updated = value.updated
         origin = value.origin; kind = value.kind; listed = value.listed
+        hasSentMessage = value.hasSentMessage == true
+        allowsAutomaticTitle = value.allowsAutomaticTitle == true
+    }
+    func didSendMessage() { hasSentMessage = true }
+    func applyInitialTitle(_ title: String) {
+        self.title = title
+        listed = true
+        hasSentMessage = true
+        allowsAutomaticTitle = true
     }
 }
 
@@ -202,8 +213,12 @@ public struct AISessionSummary: Identifiable {
                     isOpen: { [weak self] id in self?.ownsSession(id) == true },
                     entriesCommitted: { [weak self] id, entries, head in
                         guard let value = self?.conversation(id) else { return }
+                        if entries.contains(where: \.isUserInput) { value.didSendMessage() }
                         value.head = head; value.mergeEntries(entries, insertingNew: !value.hasLater)
-                    }, makeTransport: self.makeTransport)
+                    },
+                    initialTitleCommitted: { [weak self] id, title in self?.conversation(id)?.applyInitialTitle(title) },
+                    titleRequested: { [weak self] request, destination in self?.generateTitle(request, destination: destination) },
+                    makeTransport: self.makeTransport)
                 self.coordinator = coordinator
                 self.proposals.history = { id in try await coordinator.store(for: id).all(id) }
                 self.sessions = try await repository.sessions().map(AIConversation.init)
@@ -238,6 +253,7 @@ public struct AISessionSummary: Identifiable {
         var head = AIAgentHead(); head.nextSequence = entries.count; head.status = .completed
         let changes = try await store.commit(value.id, head: head, entries: entries)
         guard let projection = conversation(value.id) else { return }
+        if changes.contains(where: \.isUserInput) { projection.didSendMessage() }
         if projection.historyLoaded { projection.mergeEntries(changes) }
         try await connect(projection)
     }
@@ -269,13 +285,38 @@ public struct AISessionSummary: Identifiable {
         return summary(value.id)
     }
     public func conversation(_ id: String) -> AIConversation? { sessions.first { $0.id == id } }
+    func renameConversation(_ id: String, title: String) async {
+        do {
+            try requireAdmission(id)
+            guard let repository, let value = conversation(id), value.hasSentMessage else { return }
+            let saved = try await repository.rename(id, title: title)
+            guard ownsSession(id) else { return }
+            value.title = saved
+            value.allowsAutomaticTitle = false
+        } catch { notify(error, sessionID: id) }
+    }
+    private func generateTitle(_ request: AIConversationTitleRequest, destination: AIDataSharingConsent.Destination?) {
+        guard let repository else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let title: String?
+            if let destination, self.admissionOpen(request.id) {
+                title = try? await AIProviderRequest.conversationTitle(request, destination: destination,
+                    providers: self.providers, makeTransport: self.makeTransport)
+            } else { title = nil }
+            guard (try? await repository.finishAutomaticTitle(request.id, title: title)) == true,
+                  let value = self.conversation(request.id), value.allowsAutomaticTitle else { return }
+            value.allowsAutomaticTitle = false
+            if let title { value.title = title }
+        }
+    }
     @discardableResult public func create(context: AIContext = .general, noticeOwner: String? = nil) async -> AIConversation? {
         guard availability.isAvailable else { return nil }
         await load()
         do {
             try availability.requireAvailable()
             guard let repository else { throw AIError.storage }
-            let value = AISessionValue(title: context.title ?? String(localized: "新对话"), context: context, listed: false)
+            let value = AISessionValue(title: AIConversationTitle.untitled, context: context, listed: false)
             let projection = AIConversation(value); projection.persisted = false
             sessions.append(projection); selectedID = value.id
             await AIImageStore.shared.bind(value.id, repository: repository)
@@ -317,7 +358,7 @@ public struct AISessionSummary: Identifiable {
             try await repository.create(value, head: head, assets: staged)
             await AIImageStore.shared.didCommit(owner: value.id, refs: refs)
         } catch { await AIImageStore.shared.forget(value.id); throw error }
-        let projection = AIConversation(value); projection.head = head; sessions.append(projection)
+        let projection = AIConversation(value); projection.head = head; projection.didSendMessage(); sessions.append(projection)
         #if DEBUG || AI_TESTING
         taskPersisted?()
         #endif
@@ -489,12 +530,13 @@ public struct AISessionSummary: Identifiable {
                     var head = value.head
                     head.selection = .init(connectionID: selection.connectionID, modelID: selection.modelID, thinking: selection.thinking)
                     head.queue = [.init(text: text, mode: mode, readingAttachments: attachments)]
-                    let session = AISessionValue(id: id, title: value.context == .general ? String(text.prefix(40)) : value.title, context: value.context)
+                    var session = AISessionValue(id: id, title: AIConversationTitle.temporary(text), context: value.context)
+                    session.allowsAutomaticTitle = true
                     let refs = AIAssetReferences.head(head)
                     let staged = await AIImageStore.shared.staged(owner: id, refs: refs)
                     try requireAdmission(id)
                     try await repository.create(session, head: head, assets: staged)
-                    value.persisted = true; value.listed = true; value.title = session.title; value.head = head
+                    value.persisted = true; value.applyInitialTitle(session.title); value.head = head
                     value.draft = ""; value.readingDraft = []; value.readingDraftInitialized = false
                     await AIImageStore.shared.didCommit(owner: id, refs: refs)
                     try requireAdmission(id)
@@ -510,7 +552,7 @@ public struct AISessionSummary: Identifiable {
                     selection: .init(connectionID: selection.connectionID, modelID: selection.modelID, thinking: selection.thinking),
                     listed: value.kind == nil ? true : nil)
                 value.draft = ""; value.readingDraft = []; value.readingDraftInitialized = false
-                value.title = try await repository.session(id).title
+                value.didSendMessage()
                 if value.kind == nil { value.listed = true }
                 value.updated = Date()
             } catch { notify(error, sessionID: value.id) }

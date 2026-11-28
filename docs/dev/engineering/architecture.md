@@ -66,6 +66,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 搜索与筛选按用途取数 | Swift `LibrarySearchQuery.swift` / `FolderQuery.swift` / `LibraryQueryRules.swift`；Apollo 生成固定结果类型 | 筛选取当前作者及标签，选项查询按正文身份一次汇总标签用量；普通搜索按条件选列，匹配在事务外执行，再核对输入并只给命中项补卡。AI 资料搜索保留简介与正式资料兼容屏障。AI 按条件查找沿用普通筛选求值和排序，加同一 AI 读取屏障，复核快照后只给当页的条目补状态与作者。两者沿用写入时结算的 pending 整对象覆盖 | 搜索与选择页按需观察 |
 | 标签选择页的浏览分组与顺序 | Swift `Library/Search/BookTagCategories.swift` | 原词查随包词表，按标签使用本数和拼音分组排序。计数复用选项查询，两种入口共享展示规则，查询与存储仍使用原词 | 仅展示，不写用户数据 |
 | AI 工具输入/schema/输出契约与执行 | Swift `MoonreadAI/Tools/Reading/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 工具和引用解析在包内，App 通过 `AIReadingAccess` 注入读取及正文准备能力；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
+| AI 会话标题 | Swift `MoonreadAI/Data/AIConversationTitle.swift` 与 `AIRepository` | 纯规则处理临时题名、模型结果和旧书名条件。仓储事务拥有拟题资格和名称写入，运行时只在提交首轮终态后发布一次事件，`AIService` 发送独立短请求并投影保存结果 | 手动名称锁定，排序时间沿用消息写入 |
 | AI 对话筛选建议 | 包内 `AIBookFilterContracts`、`AIBookFilterResolution` 和 `AIReadingTools`，由 `AICommittedResultDecoder` 恢复 | 候选与手动筛选同源，复用 `BookSearchConfiguration` 校验与查询。建议随成功工具结果保存，用户点击才打开独立搜索。书架 ID 与歧义选择留在本机 | 搜索、排序与虚拟书架由原领域持有 |
 | AI 对话固定书单 | 包内 `AIBookFilterContracts`、`AIReadingReferences`，由 `AICommittedResultDecoder` 恢复 | 现有文件与正式正文身份同批解析，只补选中书目；本地封面缩略图、精简状态和引用随工具会话提交，模型仍只接收宿主核实的引用与书目名称。用相同解析检查当前是否可打开，保留历史快照 | 不写书库、不下载正文、共享详情路由与书目行 |
 | AI b: 引用协议 | Swift `MoonreadAI/Tools/Reading/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验。外部字符串解码为书或文件引用，准备权限独立；共享准备由 AppDataService 持有，最后一个等待者释放工作 | 共享引用解析 |
@@ -252,7 +253,7 @@ AI 连接、共享授权、用途默认值逐条解码，失败条目跳过并�
 
 1.6 的最近打开复用既有 UserValue v1 envelope 和 LWW，新增可缺省的 `opened/<reading-key>` 值（JSON Int64 毫秒）；缺失不伪造，排序回退已发布 1.5 的位置时间。既有 SwiftData 模型、CloudKit schema、位置和备份容器格式不变；完整备份包含此值，pending 晋升和按书删除沿原入口处理。旧版可保留未知键，1.6 能读取原有 1.5 数据；没有开发中间态迁移。
 
-已发布的 SwiftData 模型按其发布版本识别。仍使用 SwiftData 的 AI 会话库遵循以下演进规则。1.0.0 的阅读数据库与 AI 会话库没有使用 `VersionedSchema`。1.0.0 之后第一次修改任一库的模型（包括只加可选字段的轻量变更）时引入版本化：1.0.0 的现有模型原样作为 `SchemaV1`，新模型为 `SchemaV2`，加 `SchemaMigrationPlan` 与旧库升级测试；此后每个发布过的 schema 都保留一个版本，轻量变更用 lightweight stage，不能只登记首尾两端。CloudKit 生产 schema 只增加字段/记录类型，不删改既有类型及字段语义。UserDefaults/Keychain 的键名与凭据编码属于数据契约，变更需迁移且不得落入日志。阅读事实 payload 由 Rust 类型化校验，其他同步 payload 由 Swift 校验；Swift 存储边界按作用域隔离未知内容，不能靠 JSON 字段保留代替 LWW 并发设计；详见同步专题。
+已发布的 SwiftData 模型按其发布版本识别。第一次修改仍在使用的无版本库时引入 `VersionedSchema`、`SchemaMigrationPlan` 与旧库升级测试。AI 会话库以 1.9 发布库的四个实体为 V1，V2 仅增加会话的可空拟题资格，采用 lightweight stage。此后为每个发布过的 schema 保留独立版本。CloudKit 生产 schema 只增加字段/记录类型，不删改既有类型及字段语义。UserDefaults/Keychain 的键名与凭据编码属于数据契约，变更需迁移且不得落入日志。阅读事实 payload 由 Rust 类型化校验，其他同步 payload 由 Swift 校验；Swift 存储边界按作用域隔离未知内容，不能靠 JSON 字段保留代替 LWW 并发设计；详见同步专题。
 
 重置仅限当轮明确授权的开发数据，不是发布后错误恢复方式；不得删除用户的外部或 iCloud 小说原件。上述约定不改变[iOS 版本和 API 兼容策略](ios-support.md)。
 

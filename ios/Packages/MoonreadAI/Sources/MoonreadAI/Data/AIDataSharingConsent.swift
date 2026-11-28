@@ -137,16 +137,24 @@ import CryptoKit
 }
 
 @MainActor extension AIConnectionService {
+    func sharingRecipient(connection: AIConnection, model: AIModelOption) -> AIConnection {
+        var recipient = connection
+        recipient.wireProtocol = model.wireProtocol ?? connection.wireProtocol
+        return recipient
+    }
+
+    func sharingAccountFingerprint(_ credential: RuntimeCredential) -> String {
+        // Account identifiers are not credentials; retain only a pseudonymous equality key.
+        credential.accountID.isEmpty ? "" : SHA256.hash(data: Data(credential.accountID.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Match the selected endpoint and effective protocol, rather than a display name.
     public func authorizeSharing(connection: AIConnection, model: AIModelOption, credential: RuntimeCredential,
                           owner: String, purpose: String, scopes: Set<AIDataSharingConsent.Scope>, accountGeneration: String) async throws {
         try availability.requireAvailable()
         guard try sharing.destination(connection).accountGeneration == accountGeneration else { throw CancellationError() }
-        var recipient = connection
-        recipient.wireProtocol = model.wireProtocol ?? connection.wireProtocol
-        let target = recipient
-        // Account identifiers are not credentials; retain only a pseudonymous equality key.
-        let accountFingerprint = credential.accountID.isEmpty ? "" : SHA256.hash(data: Data(credential.accountID.utf8)).map { String(format: "%02x", $0) }.joined()
+        let target = sharingRecipient(connection: connection, model: model)
+        let accountFingerprint = sharingAccountFingerprint(credential)
         try await sharing.authorize(target, owner: owner, purpose: purpose, scopes: scopes, accountFingerprint: accountFingerprint) { [weak self] in
             guard let current = self?.connections.first(where: { $0.id == connection.id }),
                   current.baseURL == connection.baseURL, current.providerID == connection.providerID,

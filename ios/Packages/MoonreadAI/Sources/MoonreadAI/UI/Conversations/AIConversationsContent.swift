@@ -21,7 +21,7 @@ public struct AIConversationsContent<Chat: View, Route: Hashable, Destination: V
         NavigationStack(path: $path) {
             AIConversationList(
                 conversations: ai.conversations.map { item in
-                    AIConversationListItem(id: item.id, title: item.title, preview: item.preview, book: item.context.title,
+                    AIConversationListItem(id: item.id, title: item.title, preview: item.preview,
                         updated: item.updated, status: item.head.status, awaitingConfirmation: item.head.status == .waitingConfirmation
                             || item.activity.status == .waitingDataSharing, running: item.running)
                 },
@@ -31,16 +31,15 @@ public struct AIConversationsContent<Chat: View, Route: Hashable, Destination: V
             )
                 .navigationDestination(for: Route.self, destination: libraryDestination)
                 .navigationDestination(for: String.self) { id in
-                    chat(id).toolbar {
-                        ToolbarItem(placement: .principal) {
-                            AIConversationTitleMenu(currentID: id, create: { Task { if let value = await ai.create(noticeOwner: id) { path = NavigationPath([value.id]) } } },
-                                                    select: { path = NavigationPath([$0]) })
+                    chat(id)
+                        .modifier(AIConversationTitleMenu(currentID: id, create: { createConversation(after: id) },
+                            select: { path = NavigationPath([$0]) }))
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("新对话", systemImage: "square.and.pencil") { createConversation(after: id) }
+                                    .toolbarGlyph()
+                            }
                         }
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("新对话", systemImage: "square.and.pencil") { Task { if let value = await ai.create(noticeOwner: id) { path = NavigationPath([value.id]) } } }
-                                .toolbarGlyph()
-                        }
-                    }
                 }
         }.task { await ai.load(); await ai.providers.refreshCatalogsIfNeeded() }
         .onAppear { visible = true }.onDisappear { visible = false; notice = nil }
@@ -51,5 +50,11 @@ public struct AIConversationsContent<Chat: View, Route: Hashable, Destination: V
         .alert("暂时无法完成", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
             Button("知道了", role: .cancel) { notice = nil }
         } message: { Text(notice?.message ?? "") }
+    }
+
+    private func createConversation(after id: String) {
+        Task {
+            if let value = await ai.create(noticeOwner: id) { path = NavigationPath([value.id]) }
+        }
     }
 }

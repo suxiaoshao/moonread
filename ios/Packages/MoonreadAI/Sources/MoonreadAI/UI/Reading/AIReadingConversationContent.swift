@@ -23,12 +23,15 @@ public struct AIReadingConversationContent<Chat: View>: View {
         NavigationStack {
             Group {
                 if let id = selected { chat(id) }
-                else { ContentUnavailableView("新对话", systemImage: "bubble.left.and.bubble.right") }
-            }.toolbar {
-                ToolbarItem(placement: .principal) {
-                    AIConversationTitleMenu(currentID: selected, create: { Task { await createConversation() } },
-                                            select: { selected = $0; seed() })
+                else {
+                    ContentUnavailableView("新对话", systemImage: "bubble.left.and.bubble.right")
+                        .navigationTitle(AIConversationTitle.untitled)
+                        .toolbarTitleDisplayMode(.inline)
                 }
+            }
+            .modifier(AIConversationTitleMenu(currentID: selected, create: { Task { await createConversation() } },
+                select: { selected = $0; seed() }))
+            .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close, action: close).labelStyle(.iconOnly).toolbarGlyph().accessibilityIdentifier("closeAIChat") }
             }
         }

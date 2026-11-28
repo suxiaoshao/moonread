@@ -5,18 +5,16 @@ public struct AIConversationListItem: Identifiable {
     public let id: String
     let title: String
     let preview: String
-    let book: String?
     let updated: Date
     let status: AIAgentStatus
     let awaitingConfirmation: Bool
     let running: Bool
 
-    public init(id: String, title: String, preview: String, book: String?, updated: Date,
+    public init(id: String, title: String, preview: String, updated: Date,
                 status: AIAgentStatus, awaitingConfirmation: Bool, running: Bool) {
         self.id = id
         self.title = title
         self.preview = preview
-        self.book = book
         self.updated = updated
         self.status = status
         self.awaitingConfirmation = awaitingConfirmation
@@ -88,7 +86,7 @@ public struct AIConversationList: View {
     }
 }
 
-/// Title and the latest visible message lead; the book and time stay quiet.
+/// The title and status share one line. A distinct preview may use a second line.
 private struct AIConversationRow: View {
     let conversation: AIConversationListItem
     @Environment(\.theme) private var theme
@@ -104,19 +102,12 @@ private struct AIConversationRow: View {
                 Text(preview).font(.subheadline).lineLimit(1)
                     .foregroundStyle(Color(uiColor: theme.secondary))
             }
-            if let book = conversation.book, !book.isEmpty {
-                Label(book, systemImage: "book.closed").font(.caption).lineLimit(1)
-                    .labelStyle(AICompactLabelStyle())
-                    .foregroundStyle(Color(uiColor: theme.secondary))
-                    .padding(.top, 2)
-            }
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
     }
-    /// The title already is the first question; repeating it adds nothing.
     private var preview: String? {
-        let value = conversation.preview
+        let value = conversation.preview.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty || value.hasPrefix(conversation.title) ? nil : value
     }
     @ViewBuilder private var status: some View {

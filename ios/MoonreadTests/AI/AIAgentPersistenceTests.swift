@@ -155,7 +155,7 @@ final class AIAgentPersistenceAgentRuntimeTests: AgentRuntimeFixture {
 }
 
 final class AIAgentPersistenceBookAITests: BookAIFixture {
-  // S106: 首次发送提交队列时确定标题，后续发送不覆盖用户标题；不为生成标题发额外请求。
+  // S106: 普通与阅读会话首发入队时用首问作临时标题，后续入队保留标题，快捷任务沿用原名。
   func testFirstSendTitleSharesQueueListing() async throws {
     let repository = try await AIRepository.open(inMemory: true)
     let owner = UUID().uuidString
@@ -177,13 +177,15 @@ final class AIAgentPersistenceBookAITests: BookAIFixture {
       title: "当前小说", context: .init(contentSHA: String(repeating: "a", count: 64), title: "当前小说"),
       listed: false)
     let task = AISessionValue(title: "文件夹整理", kind: .organization, listed: false)
-    for original in [contextual, task] {
+    let question = "这一章发生了什么？"
+    for (original, expectedTitle) in [(contextual, question), (task, task.title)] {
       try await repository.create(original)
       var input = AIAgentHead()
-      input.queue = [.init(text: "不得覆盖既有标题", mode: .steering)]
+      input.queue = [.init(text: question, mode: .steering)]
       try await repository.commit(original.id, head: input, listed: true)
-      let kept = try await repository.session(original.id)
-      XCTAssertEqual(kept.title, original.title)
+      let saved = try await repository.session(original.id)
+      XCTAssertEqual(saved.title, expectedTitle)
+      XCTAssertEqual(saved.context, original.context)
     }
   }
 
@@ -236,6 +238,79 @@ final class AIAgentPersistenceBookAITests: BookAIFixture {
 }
 
 final class AIAgentPersistenceConversationTests: ConversationFixture {
+  func testDeepSeekFirstTitleUsesLowWhileRepliesKeepHigh() async throws {
+    let preset = try XCTUnwrap(AIProviderPreset.all.first { $0.id == "deepseek" }).connection()
+    let directory = #"{"data":[{"id":"deepseek-flash","name":"DeepSeek-V4.1-Flash","context_length":32000,"max_output_tokens":8192,"input_modalities":["text"],"output_modalities":["text"],"effort":{"supported_levels":["low","high","max"],"default_level":"high"}}]}"#
+    let page = try AIModelDirectoryDecoder.page(Data(directory.utf8), policy: .policy(preset), provider: "deepseek")
+    let discovered = try XCTUnwrap(page.models.first)
+    let saved = try JSONDecoder().decode(AIModelOption.self, from: JSONEncoder().encode(discovered))
+
+    for model in [saved, discovered] {
+      let (service, repository, supplied, suite) = try await fixture("deepseek-conversation-title", connection: preset)
+      defer { cleanup(supplied, suite: suite) }
+      var connection = supplied
+      connection.models = [model]
+      connection.modelID = model.id
+      service.providers.connections = [connection]
+      let conversation = try await created(service)
+      let selected = await service.applyModelSelection(.init(connectionID: connection.id, modelID: model.id, thinking: "high"),
+        to: .session(conversation.id))
+      XCTAssertTrue(selected)
+      service.updateDraft(conversation.id, text: "阅读批注如何按主题归类？")
+      service.send(conversation.id)
+      await wait { conversation.title == "阅读笔记归类" && !conversation.running }
+      let stored = try await repository.session(conversation.id)
+      XCTAssertEqual(stored.title, "阅读笔记归类")
+      XCTAssertEqual(conversation.head.selection?.thinking, "high")
+
+      service.updateDraft(conversation.id, text: "能举一个合成例子吗？")
+      service.send(conversation.id, mode: .followUp)
+      await wait { conversation.turns.count == 2 && !conversation.running }
+      XCTAssertEqual(conversation.title, "阅读笔记归类")
+
+      let requests = try AITestURLProtocol.state.requestBodies.map {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any])
+      }
+      XCTAssertEqual(requests.map { $0["reasoning_effort"] as? String }, ["high", "low", "high"])
+      XCTAssertEqual(AITestURLProtocol.state.counts.0, 3)
+      let title = try XCTUnwrap(requests.dropFirst().first)
+      XCTAssertEqual((title["thinking"] as? [String: String])?["type"], "enabled")
+      XCTAssertEqual(title["max_tokens"] as? Int, 4096)
+      let messages = try XCTUnwrap(title["messages"] as? [[String: Any]])
+      let instruction = messages.first?["content"] as? String
+      XCTAssertTrue(instruction?.contains("为读者日后在列表中找到这段对话拟一个主题名") == true)
+      XCTAssertTrue((title["tools"] as? [Any] ?? []).isEmpty)
+    }
+  }
+
+  func testCompletedFirstReplyRequestsATitleThroughTheExistingConnection() async throws {
+    let (service, repository, connection, suite) = try await fixture()
+    defer { cleanup(connection, suite: suite) }
+    let conversation = try await created(service, context: .init(contentSHA: "synthetic", title: "关联书名夹具"))
+    XCTAssertEqual(conversation.title, AIConversationTitle.untitled)
+    XCTAssertFalse(conversation.hasSentMessage)
+    let question = "离线首问"
+    service.updateDraft(conversation.id, text: question)
+    service.send(conversation.id)
+    await wait { conversation.hasSentMessage && !conversation.allowsAutomaticTitle && !conversation.running }
+    let stored = try await repository.session(conversation.id)
+    let answer = try XCTUnwrap(conversation.turns.last?.answer)
+    XCTAssertEqual(stored.title, AIConversationTitle.generated(answer))
+    XCTAssertEqual(conversation.title, stored.title)
+    XCTAssertEqual(AITestURLProtocol.state.counts.0, 2)
+    let data = try XCTUnwrap(AITestURLProtocol.state.requestBody)
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let input = try XCTUnwrap(body["input"] as? [[String: Any]])
+    XCTAssertEqual(input.count, 1)
+    XCTAssertEqual(input.first?["role"] as? String, "user")
+    XCTAssertTrue((body["tools"] as? [Any] ?? []).isEmpty)
+    let content = try XCTUnwrap(input.first?["content"] as? [[String: Any]])
+    let text = try XCTUnwrap(content.first?["text"] as? String)
+    let fields = try JSONDecoder().decode([String: String].self, from: Data(text.utf8))
+    XCTAssertEqual(fields, ["question": question, "answer": answer])
+    XCTAssertTrue(service.sharing.requests.isEmpty)
+  }
+
   // S166: 未发送会话与附件选择保持内存草稿，不产生持久会话和自动发送。
   func testUnsentConversationsStayInMemoryIncludingSelectionAndAttachments() async throws {
     let (service, repository, connection, suite) = try await fixture()
