@@ -155,7 +155,7 @@ final class AIAgentPersistenceAgentRuntimeTests: AgentRuntimeFixture {
 }
 
 final class AIAgentPersistenceBookAITests: BookAIFixture {
-  // S106: 首次发送提交队列时确定标题，后续发送不覆盖用户标题；不为生成标题发额外请求。
+  // S106: 普通与阅读会话首发入队时用首问作临时标题，后续入队保留标题，快捷任务沿用原名。
   func testFirstSendTitleSharesQueueListing() async throws {
     let repository = try await AIRepository.open(inMemory: true)
     let owner = UUID().uuidString
@@ -177,13 +177,15 @@ final class AIAgentPersistenceBookAITests: BookAIFixture {
       title: "当前小说", context: .init(contentSHA: String(repeating: "a", count: 64), title: "当前小说"),
       listed: false)
     let task = AISessionValue(title: "文件夹整理", kind: .organization, listed: false)
-    for original in [contextual, task] {
+    let question = "这一章发生了什么？"
+    for (original, expectedTitle) in [(contextual, question), (task, task.title)] {
       try await repository.create(original)
       var input = AIAgentHead()
-      input.queue = [.init(text: "不得覆盖既有标题", mode: .steering)]
+      input.queue = [.init(text: question, mode: .steering)]
       try await repository.commit(original.id, head: input, listed: true)
-      let kept = try await repository.session(original.id)
-      XCTAssertEqual(kept.title, original.title)
+      let saved = try await repository.session(original.id)
+      XCTAssertEqual(saved.title, expectedTitle)
+      XCTAssertEqual(saved.context, original.context)
     }
   }
 
