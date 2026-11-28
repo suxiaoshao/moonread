@@ -85,7 +85,7 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     let inventory = try await f.service.identityInventory("builtin", scannedOnly: true)
     XCTAssertEqual(Set(inventory.pending.map(\.relativePath)), ["kept/old.txt", "new.txt"])
     XCTAssertEqual(inventory.admittedPending.map(\.relativePath), ["new.txt"])
-    let controller = FullIndexController(defaults: try XCTUnwrap(UserDefaults(suiteName: f.suite)), service: f.service, registerTasks: false)
+    let controller = FullIndexController(defaults: try XCTUnwrap(UserDefaults(suiteName: f.suite)), service: f.service, observePowerAndThermalChanges: false)
     controller.start("builtin", includeCloud: false, userInitiated: false, scannedOnly: true, files: inventory.local)
     await controller.waitForCompletion()
     XCTAssertEqual(try f.core.pendingIdentityFiles(shelfId: "builtin").map(\.relativePath), ["kept/old.txt"])
@@ -123,7 +123,7 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     defer { f.clean() }
     try await scan(f)
     let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
-    let controller = FullIndexController(defaults: defaults, service: f.service, registerTasks: false)
+    let controller = FullIndexController(defaults: defaults, service: f.service, observePowerAndThermalChanges: false)
     try controller.restoreTasks(f.core.session)
     let model = LibraryModel(service: f.service, fullIndex: controller, prepareLibrary: {}, refreshLibrary: {}, defaults: defaults, cloudDiscoveryRequired: false)
     let loaded = await model.load()

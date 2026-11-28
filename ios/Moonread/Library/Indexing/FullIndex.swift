@@ -193,12 +193,16 @@ final class FullIndexController {
             if automatic && !oldValue { admissions.removeAll() }
         }
     }
-    init(defaults: UserDefaults = .standard, service: AppDataService = .shared, registerTasks: Bool = true) {
+    // Called synchronously from didFinishLaunchingWithOptions, before scene connection.
+    static func registerProcessingTask() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: processingID, using: nil,
+            launchHandler: FullIndexSystemCallback.launch { FullIndexController.shared.attach($0) })
+    }
+
+    init(defaults: UserDefaults = .standard, service: AppDataService = .shared, observePowerAndThermalChanges: Bool = true) {
         self.defaults = defaults; self.service = service
         automatic = defaults.bool(forKey: "Moonread.fullIndex.automatic")
-        guard registerTasks else { return }
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processingID, using: nil,
-            launchHandler: FullIndexSystemCallback.launch { self.attach($0) })
+        guard observePowerAndThermalChanges else { return }
         for name in [Notification.Name.NSProcessInfoPowerStateDidChange, ProcessInfo.thermalStateDidChangeNotification] {
             observers.append(MainActorNotifications.observe(name) { Task { @MainActor in
                 if self.constrained { self.pause() } else if self.foreground { self.resume() }
