@@ -6,7 +6,7 @@ final class AIProtocolState: @unchecked Sendable {
   var mode = "complete"
   var requestCount = 0
   var stopCount = 0
-  var body: Data?
+  private var bodies: [Data] = []
   var requestEvent: (@Sendable () -> Void)?
   var stopEvent: (@Sendable () -> Void)?
   func events(request: @escaping @Sendable () -> Void, stop: @escaping @Sendable () -> Void) {
@@ -29,15 +29,17 @@ final class AIProtocolState: @unchecked Sendable {
       }
       data = result
     }
-    lock.withLock { body = data }
+    if let data { lock.withLock { bodies.append(data) } }
   }
-  var requestBody: Data? { lock.withLock { body } }
+  var requestBody: Data? { lock.withLock { bodies.last } }
+  var requestBodies: [Data] { lock.withLock { bodies } }
   func reset(_ value: String) {
     lock.lock()
     defer { lock.unlock() }
     mode = value
     requestCount = 0
     stopCount = 0
+    bodies.removeAll()
   }
   func request() -> String {
     let (value, event) = lock.withLock {
@@ -159,6 +161,14 @@ final class AITestURLProtocol: URLProtocol, @unchecked Sendable {
       return
     }
     if request.url?.path.hasSuffix("/chat/completions") == true {
+      let titleRequest = mode == "deepseek-conversation-title" && Self.state.counts.0 == 2
+      if titleRequest {
+        event([
+          "id": "fixture", "object": "chat.completion.chunk", "created": 1,
+          "model": "deepseek-flash",
+          "choices": [["index": 0, "delta": ["reasoning_content": "拟题思考夹具"], "finish_reason": NSNull()]],
+        ])
+      }
       if mode == "openrouter-replay" {
         event([
           "id": "fixture", "object": "chat.completion.chunk", "created": 1,
@@ -179,7 +189,7 @@ final class AITestURLProtocol: URLProtocol, @unchecked Sendable {
         "id": "fixture", "object": "chat.completion.chunk", "created": 1, "model": "fixture-model",
         "choices": [
           [
-            "index": 0, "delta": ["role": "assistant", "content": "你好，**月读**。"],
+            "index": 0, "delta": ["role": "assistant", "content": titleRequest ? "阅读笔记归类" : "你好，**月读**。"],
             "finish_reason": NSNull(),
           ]
         ],

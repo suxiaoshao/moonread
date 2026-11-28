@@ -1,20 +1,18 @@
-import MoonreadDesign
 import SwiftUI
 
 extension AIConversation: Identifiable {}
 
 /// One title menu for the conversation tab and the reading sheet.
-struct AIConversationTitleMenu: View {
+struct AIConversationTitleMenu: ViewModifier {
     @Environment(AIService.self) private var ai
-    @Environment(\.theme) private var theme
     @State private var renaming = false
     @State private var renamingID: String?
     @State private var name = ""
     let currentID: String?
     let create: () -> Void
     let select: (String) -> Void
-    var body: some View {
-        Menu {
+    func body(content: Content) -> some View {
+        content.toolbarTitleMenu {
             Button("新对话", systemImage: "square.and.pencil", action: create)
             if let conversation, conversation.hasSentMessage {
                 Button("重命名…", systemImage: "pencil") {
@@ -31,16 +29,7 @@ struct AIConversationTitleMenu: View {
                     }
                 }
             }
-        } label: {
-            HStack(spacing: 4) {
-                Text(title).font(.headline).lineLimit(1)
-                Image(systemName: "chevron.down").font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(uiColor: theme.secondary))
-            }
-            .foregroundStyle(Color(uiColor: theme.ink))
-            .frame(minHeight: LayoutTokens.hit).contentShape(Rectangle())
         }
-        .accessibilityLabel("选择对话").accessibilityValue(title).accessibilityIdentifier("aiConversationMenu")
         .alert("重命名对话", isPresented: $renaming, presenting: renamingID) { id in
             TextField("对话标题", text: $name)
             Button("取消", role: .cancel) {}
@@ -52,5 +41,4 @@ struct AIConversationTitleMenu: View {
         }
     }
     private var conversation: AIConversation? { currentID.flatMap { ai.conversation($0) } }
-    private var title: String { conversation?.title ?? AIConversationTitle.untitled }
 }

@@ -236,6 +236,51 @@ final class AIAgentPersistenceBookAITests: BookAIFixture {
 }
 
 final class AIAgentPersistenceConversationTests: ConversationFixture {
+  func testDeepSeekFirstTitleUsesLowWhileRepliesKeepHigh() async throws {
+    let preset = try XCTUnwrap(AIProviderPreset.all.first { $0.id == "deepseek" }).connection()
+    let directory = #"{"data":[{"id":"deepseek-flash","name":"DeepSeek-V4.1-Flash","context_length":32000,"max_output_tokens":8192,"input_modalities":["text"],"output_modalities":["text"],"effort":{"supported_levels":["low","high","max"],"default_level":"high"}}]}"#
+    let page = try AIModelDirectoryDecoder.page(Data(directory.utf8), policy: .policy(preset), provider: "deepseek")
+    let discovered = try XCTUnwrap(page.models.first)
+    let saved = try JSONDecoder().decode(AIModelOption.self, from: JSONEncoder().encode(discovered))
+
+    for model in [saved, discovered] {
+      let (service, repository, supplied, suite) = try await fixture("deepseek-conversation-title", connection: preset)
+      defer { cleanup(supplied, suite: suite) }
+      var connection = supplied
+      connection.models = [model]
+      connection.modelID = model.id
+      service.providers.connections = [connection]
+      let conversation = try await created(service)
+      let selected = await service.applyModelSelection(.init(connectionID: connection.id, modelID: model.id, thinking: "high"),
+        to: .session(conversation.id))
+      XCTAssertTrue(selected)
+      service.updateDraft(conversation.id, text: "阅读批注如何按主题归类？")
+      service.send(conversation.id)
+      await wait { conversation.title == "阅读笔记归类" && !conversation.running }
+      let stored = try await repository.session(conversation.id)
+      XCTAssertEqual(stored.title, "阅读笔记归类")
+      XCTAssertEqual(conversation.head.selection?.thinking, "high")
+
+      service.updateDraft(conversation.id, text: "能举一个合成例子吗？")
+      service.send(conversation.id, mode: .followUp)
+      await wait { conversation.turns.count == 2 && !conversation.running }
+      XCTAssertEqual(conversation.title, "阅读笔记归类")
+
+      let requests = try AITestURLProtocol.state.requestBodies.map {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: $0) as? [String: Any])
+      }
+      XCTAssertEqual(requests.map { $0["reasoning_effort"] as? String }, ["high", "low", "high"])
+      XCTAssertEqual(AITestURLProtocol.state.counts.0, 3)
+      let title = try XCTUnwrap(requests.dropFirst().first)
+      XCTAssertEqual((title["thinking"] as? [String: String])?["type"], "enabled")
+      XCTAssertEqual(title["max_tokens"] as? Int, 4096)
+      let messages = try XCTUnwrap(title["messages"] as? [[String: Any]])
+      let instruction = messages.first?["content"] as? String
+      XCTAssertTrue(instruction?.contains("为读者日后在列表中找到这段对话拟一个主题名") == true)
+      XCTAssertTrue((title["tools"] as? [Any] ?? []).isEmpty)
+    }
+  }
+
   func testCompletedFirstReplyRequestsATitleThroughTheExistingConnection() async throws {
     let (service, repository, connection, suite) = try await fixture()
     defer { cleanup(connection, suite: suite) }
