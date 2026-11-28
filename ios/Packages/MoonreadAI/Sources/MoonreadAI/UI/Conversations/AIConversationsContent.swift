@@ -21,7 +21,7 @@ public struct AIConversationsContent<Chat: View, Route: Hashable, Destination: V
         NavigationStack(path: $path) {
             AIConversationList(
                 conversations: ai.conversations.map { item in
-                    AIConversationListItem(id: item.id, title: item.title, preview: item.preview, book: item.context.title,
+                    AIConversationListItem(id: item.id, title: item.title, preview: item.preview,
                         updated: item.updated, status: item.head.status, awaitingConfirmation: item.head.status == .waitingConfirmation
                             || item.activity.status == .waitingDataSharing, running: item.running)
                 },

@@ -23,6 +23,8 @@ import SwiftAISDK
   var beforeStepPublication: (@MainActor () async -> Void)?
   #endif
   private let committedEntries: @MainActor ([AIAgentEntry], AIAgentHead) -> Void
+  private let initialTitleCommitted: @MainActor (String) -> Void
+  private let titleRequested: @MainActor (AIConversationTitleRequest, AIDataSharingConsent.Destination?) -> Void
   let settleToolAssets: @MainActor (AIAgentHead) async -> Void
   public internal(set) var head: AIAgentHead
   var task: Task<Void, Never>?
@@ -100,6 +102,8 @@ import SwiftAISDK
     admission: @escaping @MainActor () -> Bool = { true },
     observe: @escaping @MainActor (AIAgentActivity) -> Void = { _ in },
     committedEntries: @escaping @MainActor ([AIAgentEntry], AIAgentHead) -> Void = { _, _ in },
+    initialTitleCommitted: @escaping @MainActor (String) -> Void = { _ in },
+    titleRequested: @escaping @MainActor (AIConversationTitleRequest, AIDataSharingConsent.Destination?) -> Void = { _, _ in },
     settleToolAssets: @escaping @MainActor (AIAgentHead) async -> Void = { _ in },
     classifyHostToolError: @escaping @Sendable (Error) -> AIToolError? = { _ in nil }
   ) async throws {
@@ -110,6 +114,7 @@ import SwiftAISDK
     self.resolve = resolve; self.admission = admission
     self.observer = observe
     self.committedEntries = committedEntries; self.settleToolAssets = settleToolAssets
+    self.initialTitleCommitted = initialTitleCommitted; self.titleRequested = titleRequested
     self.classifyHostToolError = classifyHostToolError
     head = try await store.head(id)
     if [.running, .waitingConfirmation, .compacting].contains(head.status) {
@@ -135,13 +140,15 @@ import SwiftAISDK
       await previous?.value
       var next = self.head
       let entries = try mutation(&next)
-      let changes = try await self.store.commit(self.id, head: next, entries: entries, listed: listed, sentAt: sentAt, finish: finish)
+      let commit = try await self.store.commitTransition(self.id, head: next, entries: entries, listed: listed, sentAt: sentAt, finish: finish)
       // A committed transaction always publishes, including after caller cancellation.
       self.head = next
-      for entry in changes {
+      for entry in commit.entries {
         if let index = self.unpublishedEntries.firstIndex(where: { $0.id == entry.id }) { self.unpublishedEntries[index] = entry }
         else { self.unpublishedEntries.append(entry) }
       }
+      if let title = commit.initialTitle { self.initialTitleCommitted(title) }
+      if let request = commit.titleRequest { self.titleRequested(request, self.configuration?.sharingDestination) }
       return entries
     }
     persistenceTail = Task { _ = try? await operation.value }
@@ -239,7 +246,7 @@ import SwiftAISDK
     if stopped { throw CancellationError() }
   }
   func status(_ value: AIAgentStatus) async throws {
-    try await transact(finish: [.completed, .stopped, .failed, .interrupted, .limitReached].contains(value)) { next in
+    try await transact(finish: value.isTerminal) { next in
       next.status = value; return []
     }
     observe(.init(status: value, text: partialText, reasoning: partialReasoning, reasoningActive: reasoningActive))

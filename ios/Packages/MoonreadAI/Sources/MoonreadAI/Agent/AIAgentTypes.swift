@@ -8,6 +8,10 @@ import SwiftAISDK
 public enum AIAgentStatus: String, Codable, Sendable {
   case idle, running, waitingDataSharing, waitingConfirmation, compacting, completed, stopped, interrupted, failed,
     limitReached
+
+  var isTerminal: Bool {
+    [.completed, .stopped, .interrupted, .failed, .limitReached].contains(self)
+  }
 }
 public enum AIAgentQueueMode: String, Codable, Sendable { case steering, followUp }
 public struct AIAgentInput: Codable, Equatable, Sendable, Identifiable {
@@ -241,6 +245,7 @@ public struct AIAgentConfiguration: Sendable {
   public var contextWindow: Int
   public var maxOutput: Int = 4096
   public var supportsTools: Bool
+  var sharingDestination: AIDataSharingConsent.Destination?
   public var authorize: @MainActor @Sendable () async throws -> Void = {}
   public var cancel: @Sendable () -> Void = {}
   public var finish: @Sendable () -> Void = {}
@@ -495,6 +500,9 @@ extension JSONValue {
 }
 
 extension AIAgentEntry {
+  var isUserInput: Bool { message.object["role"]?.string == "user" }
+  var inputText: String { userText ?? AIConversationTurn.text(message.object["content"]) }
+
   /// A person's own input or a final answer; reasoning, tool calls/results and
   /// text that accompanies tool calls belong to the process, not the messages.
   public var searchableText: String {

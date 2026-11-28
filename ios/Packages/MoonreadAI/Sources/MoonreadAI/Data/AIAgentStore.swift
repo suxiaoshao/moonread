@@ -36,9 +36,12 @@ public struct AIAgentStore: Sendable {
         try await repository.history(id, after: after, through: through, limit: limit)
     }
     @discardableResult public func commit(_ id: String, head: AIAgentHead, entries: [AIAgentEntry] = [], listed: Bool? = nil, sentAt: Date? = nil, finish: Bool = false) async throws -> [AIAgentEntry] {
+        try await commitTransition(id, head: head, entries: entries, listed: listed, sentAt: sentAt, finish: finish).entries
+    }
+    func commitTransition(_ id: String, head: AIAgentHead, entries: [AIAgentEntry], listed: Bool?, sentAt: Date?, finish: Bool) async throws -> AIAgentCommit {
         let refs = AIAssetReferences.head(head).union(entries.flatMap { AIAssetReferences.entry($0).union(AIAssetReferences.bookLists($0)) })
         let staged = await AIImageStore.shared.staged(owner: id, refs: refs)
-        let changes = try await repository.commit(id, head: head, entries: entries, assets: staged, references: Array(refs), listed: listed, sentAt: sentAt, finish: finish)
+        let changes = try await repository.commitTransition(id, head: head, entries: entries, assets: staged, references: Array(refs), listed: listed, sentAt: sentAt, finish: finish)
         await AIImageStore.shared.didCommit(owner: id, refs: refs)
         return changes
     }

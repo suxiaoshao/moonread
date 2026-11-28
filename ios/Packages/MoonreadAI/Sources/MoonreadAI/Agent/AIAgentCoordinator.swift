@@ -12,19 +12,24 @@ import Foundation
     private struct Construction { let id: UUID; let work: Task<AIAgentRuntime, Error> }
     private var constructing: [String: Construction] = [:]
     private let entriesCommitted: @MainActor (String, [AIAgentEntry], AIAgentHead) -> Void
+    private let initialTitleCommitted: @MainActor (String, String) -> Void
+    private let titleRequested: @MainActor (AIConversationTitleRequest, AIDataSharingConsent.Destination?) -> Void
     private let isOpen: @MainActor (String) -> Bool
     public typealias Selection = AIAgentSelection
-    public init(
+    init(
         repository: AIRepository, providers: AIConnectionService,
         appTools: @escaping @MainActor (String) -> [AIAgentTool],
         classifyToolError: @escaping @Sendable (Error) -> AIToolError?,
         isOpen: @escaping @MainActor (String) -> Bool,
         entriesCommitted: @escaping @MainActor (String, [AIAgentEntry], AIAgentHead) -> Void,
+        initialTitleCommitted: @escaping @MainActor (String, String) -> Void,
+        titleRequested: @escaping @MainActor (AIConversationTitleRequest, AIDataSharingConsent.Destination?) -> Void,
         makeTransport: @escaping @Sendable () -> AITransport
     ) {
         store = AIAgentStore(repository: repository)
         self.providers = providers; self.appTools = appTools; self.classifyToolError = classifyToolError
         self.makeTransport = makeTransport; self.isOpen = isOpen; self.entriesCommitted = entriesCommitted
+        self.initialTitleCommitted = initialTitleCommitted; self.titleRequested = titleRequested
     }
     public func store(for id: String) -> AIAgentStore { store }
     public func select(_ selection: Selection, conversationID: String) async throws {
@@ -73,10 +78,14 @@ import Foundation
                     let request = try AIProviderRequest(connection: connection, model: model, credential: credential, thinking: selection.thinking, conversationID: id, instructions: instructions, transport: transport, onUnauthorized: {
                         try await self.providers.confirmLoginInvalid(connection, sessionID: credential.sessionID)
                     })
-                    return .init(provider: connection.id + ":" + connection.protocolIdentity, modelID: model.id, model: request.model,
+                    var configuration = AIAgentConfiguration(provider: connection.id + ":" + connection.protocolIdentity, modelID: model.id, model: request.model,
                         system: request.system, options: request.options, summaryOptions: request.options, contextWindow: capacity,
                         maxOutput: resolved.output ?? capacity, supportsTools: resolved.capabilities.tools == true,
                         authorize: authorize, cancel: { transport.cancel() }, finish: { transport.finish() })
+                    let recipient = self.providers.sharingRecipient(connection: connection, model: model)
+                    configuration.sharingDestination = try self.providers.sharing.destination(recipient,
+                        accountFingerprint: self.providers.sharingAccountFingerprint(credential))
+                    return configuration
                 }, admission: { [weak self] in
                     guard let self else { return false }
                     return self.providers.availability.isAvailable && self.isOpen(id)
@@ -84,6 +93,8 @@ import Foundation
                 committedEntries: { [weak self] entries, head in
                     self?.entriesCommitted(id, entries, head)
                 },
+                initialTitleCommitted: { [weak self] title in self?.initialTitleCommitted(id, title) },
+                titleRequested: self.titleRequested,
                 settleToolAssets: { _ in await AIImageStore.shared.discardStaged(owner: id) },
                 classifyHostToolError: self.classifyToolError)
         }

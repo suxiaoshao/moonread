@@ -10,6 +10,8 @@ public struct AISessionValue: Codable, Sendable, Identifiable {
     public var origin: AITaskOrigin?
     public var kind: AITaskKind?
     public var listed: Bool
+    var allowsAutomaticTitle: Bool?
+    var hasSentMessage: Bool?
     public init(id: String = UUID().uuidString, title: String, context: AIContext = .general,
          origin: AITaskOrigin? = nil, kind: AITaskKind? = nil, listed: Bool = true) {
         self.id = id; self.title = title; self.context = context
@@ -37,6 +39,7 @@ public struct AIStagedAsset: Sendable {
     var origin: Data?
     var kind: Data?
     var listed: Bool
+    var allowsAutomaticTitle: Bool?
     @Relationship(deleteRule: .cascade, inverse: \AIAgentHeadRecord.session) var heads: [AIAgentHeadRecord] = []
     @Relationship(deleteRule: .cascade, inverse: \AIAgentEntryRecord.session) var entries: [AIAgentEntryRecord] = []
     @Relationship(deleteRule: .cascade, inverse: \AIAssetRecord.session) var assets: [AIAssetRecord] = []
@@ -45,6 +48,7 @@ public struct AIStagedAsset: Sendable {
         context = try JSONEncoder().encode(value.context)
         origin = try value.origin.map { try JSONEncoder().encode($0) }; kind = try value.kind.map { try JSONEncoder().encode($0) }
         listed = value.listed
+        allowsAutomaticTitle = value.kind == nil && value.allowsAutomaticTitle == true
     }
 }
 @Model final class AIAssetRecord {
@@ -66,7 +70,7 @@ public struct AIStagedAsset: Sendable {
         try await Task.detached { try Self.make(inMemory: inMemory, url: url) }.value
     }
     private nonisolated static func make(inMemory: Bool, url: URL?) throws -> AIRepository {
-        let schema = Schema([AIConversationRecord.self, AIAgentHeadRecord.self, AIAgentEntryRecord.self, AIAssetRecord.self])
+        let schema = Schema(versionedSchema: AIConversationSchemaV2.self)
         let configuration: ModelConfiguration
         if inMemory { configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none) }
         else {
@@ -84,11 +88,12 @@ public struct AIStagedAsset: Sendable {
                 location = directory.appending(path: session.map { "ai-ui-\($0).store" } ?? "ai-conversations.store")
             }
             configuration = ModelConfiguration(schema: schema, url: location, cloudKitDatabase: .none)
-            let container = try ModelContainer(for: schema, configurations: [configuration])
+            let container = try ModelContainer(for: schema, migrationPlan: AIConversationMigration.self, configurations: [configuration])
             try AIToolNameMigration.run(container, store: location)
+            try organizeLegacyTitles(in: ModelContext(container))
             return AIRepository(modelContainer: container)
         }
-        return AIRepository(modelContainer: try ModelContainer(for: schema, configurations: [configuration]))
+        return AIRepository(modelContainer: try ModelContainer(for: schema, migrationPlan: AIConversationMigration.self, configurations: [configuration]))
     }
     private func save<T>(_ operation: () throws -> T) throws -> T {
         modelContext.autosaveEnabled = false
@@ -97,15 +102,58 @@ public struct AIStagedAsset: Sendable {
             try modelContext.save(); return value
         } catch { modelContext.rollback(); throw error }
     }
+    private func recordIfPresent(_ id: String) throws -> AIConversationRecord? {
+        try modelContext.fetch(FetchDescriptor<AIConversationRecord>(predicate: #Predicate { $0.id == id })).first
+    }
     private func record(_ id: String) throws -> AIConversationRecord {
-        guard let value = try modelContext.fetch(FetchDescriptor<AIConversationRecord>(predicate: #Predicate { $0.id == id })).first else { throw AIToolError("not_found") }
-        return value
+        guard let row = try recordIfPresent(id) else { throw AIToolError("not_found") }
+        return row
+    }
+    private static func firstUserEntry(_ id: String, in context: ModelContext) throws -> AIAgentEntry? {
+        var query = FetchDescriptor<AIAgentEntryRecord>(predicate: #Predicate { $0.conversationID == id },
+            sortBy: [SortDescriptor(\.sequence)])
+        query.fetchLimit = 16
+        while true {
+            let rows = try context.fetch(query)
+            for row in rows {
+                let entry = try JSONDecoder().decode(AIAgentEntry.self, from: row.payload)
+                if entry.isUserInput { return entry }
+            }
+            guard rows.count == 16 else { return nil }
+            query.fetchOffset = (query.fetchOffset ?? 0) + rows.count
+        }
+    }
+    private func hasSentMessage(_ row: AIConversationRecord) throws -> Bool {
+        let id = row.id
+        let head = try modelContext.fetch(FetchDescriptor<AIAgentHeadRecord>(predicate: #Predicate { $0.conversationID == id })).first
+        if let head, try !JSONDecoder().decode(AIAgentHead.self, from: head.payload).queue.isEmpty { return true }
+        return try Self.firstUserEntry(id, in: modelContext) != nil
+    }
+    private static func organizeLegacyTitles(in context: ModelContext) throws {
+        context.autosaveEnabled = false
+        let rows = try context.fetch(FetchDescriptor<AIConversationRecord>(predicate: #Predicate { $0.allowsAutomaticTitle == nil }))
+        for (index, row) in rows.enumerated() {
+            row.allowsAutomaticTitle = false
+            guard row.kind == nil else { continue }
+            do {
+                let association = try JSONDecoder().decode(AIContext.self, from: row.context)
+                guard AIConversationTitle.legacyMatchesBook(title: row.title, context: association) else { continue }
+                row.title = AIConversationTitle.temporary(try firstUserEntry(row.id, in: context)?.inputText)
+            } catch {
+                AIPersistedJSON.skipped("AIRepository.organizeLegacyTitles", index: index)
+            }
+        }
+        do { try context.save() }
+        catch { context.rollback(); throw error }
     }
     private func value(_ row: AIConversationRecord) throws -> AISessionValue {
         var value = AISessionValue(id: row.id, title: row.title, context: try JSONDecoder().decode(AIContext.self, from: row.context), listed: row.listed)
         value.updated = row.updated
         value.origin = try row.origin.map { try JSONDecoder().decode(AITaskOrigin.self, from: $0) }
         value.kind = try row.kind.map { try JSONDecoder().decode(AITaskKind.self, from: $0) }
+        value.allowsAutomaticTitle = row.allowsAutomaticTitle == true
+        do { value.hasSentMessage = try hasSentMessage(row) }
+        catch { AIPersistedJSON.skipped("AIRepository.hasSentMessage", index: 0) }
         return value
     }
     public func sessions() throws -> [AISessionValue] {
@@ -118,7 +166,9 @@ public struct AIStagedAsset: Sendable {
     public func create(_ value: AISessionValue, head: AIAgentHead = .init(), assets: [AIStagedAsset] = []) throws {
         try save {
             guard (try? record(value.id)) == nil else { throw AIError.storage }
-            let row = try AIConversationRecord(value); modelContext.insert(row)
+            let row = try AIConversationRecord(value)
+            if head.queue.isEmpty { row.allowsAutomaticTitle = false }
+            modelContext.insert(row)
             try insertAssets(assets, session: row)
             modelContext.insert(try AIAgentHeadRecord(value.id, head, session: row))
             try validateAssetReferences(Array(AIAssetReferences.head(head)), session: row)
@@ -128,6 +178,25 @@ public struct AIStagedAsset: Sendable {
         try save { let row = try record(id); row.listed = true; row.origin = nil }
     }
     public func delete(_ id: String) throws { try save { modelContext.delete(try record(id)) } }
+    func rename(_ id: String, title: String) throws -> String {
+        try save {
+            let row = try record(id)
+            guard try hasSentMessage(row) else { throw AIError.storage }
+            let title = AIConversationTitle.manual(title)
+            guard !title.isEmpty else { throw AIError.storage }
+            row.title = title
+            row.allowsAutomaticTitle = false
+            return title
+        }
+    }
+    func finishAutomaticTitle(_ id: String, title: String?) throws -> Bool {
+        try save {
+            guard let row = try recordIfPresent(id), row.allowsAutomaticTitle == true else { return false }
+            if let title { row.title = title }
+            row.allowsAutomaticTitle = false
+            return true
+        }
+    }
     private func insertAssets(_ values: [AIStagedAsset], session: AIConversationRecord) throws {
         for value in values {
             guard value.sessionID == session.id else { throw AIToolError("permission_denied") }
@@ -159,19 +228,26 @@ public struct AIStagedAsset: Sendable {
         return try row.map { try JSONDecoder().decode(AIAgentHead.self, from: $0.payload) } ?? .init()
     }
     @discardableResult public func commit(_ id: String, head: AIAgentHead, entries: [AIAgentEntry] = [], assets: [AIStagedAsset] = [], references: [String] = [], listed: Bool? = nil, sentAt: Date? = nil, finish: Bool = false) throws -> [AIAgentEntry] {
+        try commitTransition(id, head: head, entries: entries, assets: assets, references: references, listed: listed, sentAt: sentAt, finish: finish).entries
+    }
+    func commitTransition(_ id: String, head: AIAgentHead, entries: [AIAgentEntry] = [], assets: [AIStagedAsset] = [], references: [String] = [], listed: Bool? = nil, sentAt: Date? = nil, finish: Bool = false) throws -> AIAgentCommit {
         try save {
-            var changes = entries
+            var commit = AIAgentCommit(entries: entries)
             let session = try record(id)
             try insertAssets(assets, session: session); try validateAssetReferences(references, session: session)
             let payload = try JSONEncoder().encode(head)
-            if let row = try modelContext.fetch(FetchDescriptor<AIAgentHeadRecord>(predicate: #Predicate { $0.conversationID == id })).first { row.payload = payload }
+            let headRow = try modelContext.fetch(FetchDescriptor<AIAgentHeadRecord>(predicate: #Predicate { $0.conversationID == id })).first
+            let previousHead = headRow?.payload
+            if listed == true, !session.listed, session.kind == nil,
+               try !hasSentMessage(session), let first = head.queue.first {
+                let title = AIConversationTitle.temporary(first.text)
+                session.title = title
+                session.allowsAutomaticTitle = true
+                commit.initialTitle = title
+            }
+            if let headRow { headRow.payload = payload }
             else { modelContext.insert(try AIAgentHeadRecord(id, head, session: session)) }
             for entry in entries { modelContext.insert(try AIAgentEntryRecord(id, entry, session: session)) }
-            if listed == true, !session.listed, session.kind == nil,
-               try JSONDecoder().decode(AIContext.self, from: session.context) == .general,
-               let first = head.queue.first {
-                session.title = String(first.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
-            }
             if let listed { session.listed = listed }
             if let sentAt { session.updated = sentAt }
             if finish {
@@ -181,13 +257,38 @@ public struct AIStagedAsset: Sendable {
                     var entry = try JSONDecoder().decode(AIAgentEntry.self, from: row.payload)
                     if entry.turn == head.currentTurn {
                         entry.outcome = head.status; entry.error = head.error; row.payload = try JSONEncoder().encode(entry)
-                        if let index = changes.firstIndex(where: { $0.id == entry.id }) { changes[index] = entry }
-                        else { changes.append(entry) }
+                        if let index = commit.entries.firstIndex(where: { $0.id == entry.id }) { commit.entries[index] = entry }
+                        else { commit.entries.append(entry) }
                     }
                 }
             }
-            return changes
+            if finish, session.kind == nil, session.allowsAutomaticTitle == true, let previousHead {
+                commit.titleRequest = titleRequest(session, previous: previousHead, next: head)
+            }
+            return commit
         }
+    }
+    private func titleRequest(_ row: AIConversationRecord, previous: Data, next: AIAgentHead) -> AIConversationTitleRequest? {
+        let id = row.id
+        do {
+            let old = try JSONDecoder().decode(AIAgentHead.self, from: previous)
+            guard old.currentTurn == next.currentTurn, !old.status.isTerminal, next.status.isTerminal else { return nil }
+            let first = try Self.firstUserEntry(id, in: modelContext)
+            guard first == nil || first?.turn == next.currentTurn else { return nil }
+            if next.status == .completed, let first, let selection = next.selection {
+                let entries = try history(id, after: first.sequence, limit: nil)
+                let reply = AIConversationTurn.committed([first] + entries.filter { $0.turn == next.currentTurn }).first?.answer ?? ""
+                let answer = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !answer.isEmpty {
+                    return .init(id: id, selection: selection, question: String(first.inputText.prefix(500)),
+                                 answer: String(answer.prefix(1000)))
+                }
+            }
+        } catch {
+            AIPersistedJSON.skipped("AIRepository.titleRequest", index: 0)
+        }
+        row.allowsAutomaticTitle = false
+        return nil
     }
     /// The newest matching message of each of the given conversations.
     public func newestMatches(_ text: String, in ids: Set<String>) throws -> [String: AIAgentEntry] {

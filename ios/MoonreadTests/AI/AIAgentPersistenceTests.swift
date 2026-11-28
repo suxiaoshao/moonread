@@ -236,6 +236,34 @@ final class AIAgentPersistenceBookAITests: BookAIFixture {
 }
 
 final class AIAgentPersistenceConversationTests: ConversationFixture {
+  func testCompletedFirstReplyRequestsATitleThroughTheExistingConnection() async throws {
+    let (service, repository, connection, suite) = try await fixture()
+    defer { cleanup(connection, suite: suite) }
+    let conversation = try await created(service, context: .init(contentSHA: "synthetic", title: "关联书名夹具"))
+    XCTAssertEqual(conversation.title, AIConversationTitle.untitled)
+    XCTAssertFalse(conversation.hasSentMessage)
+    let question = "离线首问"
+    service.updateDraft(conversation.id, text: question)
+    service.send(conversation.id)
+    await wait { conversation.hasSentMessage && !conversation.allowsAutomaticTitle && !conversation.running }
+    let stored = try await repository.session(conversation.id)
+    let answer = try XCTUnwrap(conversation.turns.last?.answer)
+    XCTAssertEqual(stored.title, AIConversationTitle.generated(answer))
+    XCTAssertEqual(conversation.title, stored.title)
+    XCTAssertEqual(AITestURLProtocol.state.counts.0, 2)
+    let data = try XCTUnwrap(AITestURLProtocol.state.requestBody)
+    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let input = try XCTUnwrap(body["input"] as? [[String: Any]])
+    XCTAssertEqual(input.count, 1)
+    XCTAssertEqual(input.first?["role"] as? String, "user")
+    XCTAssertTrue((body["tools"] as? [Any] ?? []).isEmpty)
+    let content = try XCTUnwrap(input.first?["content"] as? [[String: Any]])
+    let text = try XCTUnwrap(content.first?["text"] as? String)
+    let fields = try JSONDecoder().decode([String: String].self, from: Data(text.utf8))
+    XCTAssertEqual(fields, ["question": question, "answer": answer])
+    XCTAssertTrue(service.sharing.requests.isEmpty)
+  }
+
   // S166: 未发送会话与附件选择保持内存草稿，不产生持久会话和自动发送。
   func testUnsentConversationsStayInMemoryIncludingSelectionAndAttachments() async throws {
     let (service, repository, connection, suite) = try await fixture()

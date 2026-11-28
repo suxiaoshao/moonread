@@ -15,6 +15,7 @@ public struct AIProviderRequest {
 
     public init(connection: AIConnection, model: AIModelOption, credential: RuntimeCredential,
          thinking: String?, conversationID: String, instructions: String, transport: AITransport,
+         includeReasoning: Bool = true,
          onUnauthorized: @escaping @Sendable () async throws -> Void = {}) throws {
         if connection.authMethod == .chatGPT {
             guard connection.baseURL == AIChatGPTProtocol.resource,
@@ -63,7 +64,7 @@ public struct AIProviderRequest {
             if connection.authMethod == .chatGPT { options["instructions"] = .string(instructions); options["forceReasoning"] = .bool(!model.thinking.isEmpty) }
             if !model.thinking.isEmpty {
                 // Reasoning summaries are a Responses capability, independent of login method.
-                options["reasoningSummary"] = .string("auto")
+                if includeReasoning { options["reasoningSummary"] = .string("auto") }
                 options["forceReasoning"] = .bool(true)
             }
             if let thinking { options["reasoningEffort"] = .string(model.thinkingLevelMap?[thinking] ?? thinking) }
@@ -138,7 +139,7 @@ public struct AIProviderRequest {
         } else {
             namespace = "google"
             if let thinking {
-                var config: [String: JSONValue] = ["includeThoughts": .bool(true)]
+                var config: [String: JSONValue] = ["includeThoughts": .bool(includeReasoning)]
                 if ["none", "off"].contains(thinking) { config["thinkingBudget"] = .number(0) }
                 else if let budget,
                    !hasEffort {

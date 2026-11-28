@@ -43,9 +43,10 @@ AI 会话与附件只在本机 SwiftData，不进 CloudKit；模块移动继续�
 ## 单一数据归属
 
 - 连接显式保存 providerID、providerName、wireProtocol、authMethod 与计费方式；预设创建完整连接，自定义连接也必须完整填写。不保留早期 Codex 默认对象、kind 分类及覆盖字段。
-- 当前会话的模型选择仅存在 AgentHead.selection。ConversationRecord 保存标题、阅读关联和任务分类；界面从会话头读取连接、模型和思考档位。已经启动的请求保留当次选择快照，后续切换只影响下一请求。
+- 当前会话的模型选择仅存在 AgentHead.selection。ConversationRecord 保存标题、自动拟题资格、阅读关联和任务分类。标题写入与首轮转换由 `AIRepository` 负责。已经启动的请求保留当次选择快照，后续切换只影响下一请求。会话服务收到已提交的首轮完成事件后才发起[标题请求](providers.md#通用请求与回放边界)。
 - AIContext 只保存对话与正文 SHA、书名、章节的关联。入口的 AIEntryContext 携带本次阅读附件，附件进入输入草稿并随用户消息保存；可移除的输入附件不写入会话头或固定上下文。
-- 删除未使用的 AIAttachmentRecord；后续 schema 变更需版本迁移并验证历史读写。
+- `AIConversationSchemaV1` 冻结 1.9 的 Conversation、Head、Entry、Asset 四实体，`AIConversationSchemaV2` 只加可空的 `allowsAutomaticTitle`。升级后仓储一次性整理名称等于关联书名的旧阅读对话，有已保存首问则从首问取标题，无首问用「新对话」。损坏历史保留原名并记录存储诊断。仓储保持原库路径、附件关系、历史与排序时间。
+- 会话库兼容范围仅包括从 1.9 向前升级。使用 1.9 打开已升级的库会丢失标题锁定标志，降级后再升级不受支持。
 
 `AINativeExecutor` 按默认用途解析连接并复用 SDK 原生工具；`AINativeTools` 只定义应用工具参数和调度。每个工具有独立可取消传输，连接服务登记取消句柄，移除/退出连接能停止不同聊天模型委托的请求。`AIAssetRecord` 保存会话资产，`AIImageStore` 只准备私有图片值并按 owner/ref 读取，工具历史只携带范围内引用，页面不拥有生成任务。
 

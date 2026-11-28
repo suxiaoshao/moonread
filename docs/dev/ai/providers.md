@@ -65,6 +65,8 @@ AI 连接列表不展示余额，也不查询余额。仅打开支持查询且�
 
 ## 通用请求与回放边界
 
+首轮完成后，会话标题沿用会话所选文本模型、现有请求适配和相同目的地的有效数据共享许可。只发送首问前 500 个 Character 和最终可见回复前 1000 个 Character，两段分别作为纯文本字段。这个后台请求只执行一步，无工具或附件，SDK 重试数为零，输出上限按模型能力取 64 token 以内。SIWC 网关沿用原协议对请求字段的约束。支持禁用思考时发送关闭值，强制思考或需要新授权时沿用首问。流结束后才接受单个标题，空结果、多行候选或请求失败均保留临时标题。用量计入当前服务商账户，沿用其额度查询。
+
 - 普通 Chat 请求开启 usage；DeepSeek 的必要 assistant reasoning_content、Mistral 的9位工具 ID及跨协议调用/结果 ID配对集中在 Providers，不让 UI 补参数。
 - OpenRouter 不透明 reasoning_details 经 SDK 扩展点保存，只在原连接原模型回放，切换时剥离；不把供应商签名当普通可迁移文本。
 - Responses 的稳定 promptCacheKey、Anthropic cacheControl 与 OpenRouter Anthropic 的缓存断点由适配层负责。usage 中缓存读写单列，不重复加进总输入；请求字段正确不证明服务端实际命中。
