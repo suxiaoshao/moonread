@@ -14,7 +14,7 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 
 | 改动范围 | PR 检查 |
 | --- | --- |
-| `crates/**`、根目录 `Cargo.*`、`flake.*` | 同一 macOS 作业中的 fmt／Clippy／Rust 测试及 iOS 单测 |
+| `crates/**`、`.cargo/**`、根目录 `Cargo.*`、`flake.*`、`rust-toolchain*`、`.gitattributes` | 同一 macOS 作业中的 fmt／Clippy／Rust 测试及 iOS 单测 |
 | `ios/**`、`assets/icon/**` | iOS 单测 |
 | `docs/site/**`、`flake.nix`、`flake.lock` | `Website checks`：Nix 环境 `zola build`，不设为必需检查 |
 | `.github/**` | actionlint，且全部检查都跑 |
@@ -23,7 +23,7 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 
 `Secret scan` 对任何改动都运行：gitleaks 扫描当前 HEAD 可达的已提交历史并遮盖密钥。`Workflow syntax` 仍在 Linux 运行 actionlint；网站生成检查同样留在 Linux。这些轻量作业不保存 Actions 缓存。
 
-`Rust and iOS tests` 是唯一 macOS 执行作业，使用 `xcode-27` arm64 镜像，固定 Xcode 27.2（27B52） 与镜像已有的 iOS 27.0 iPhone 18 Pro；缺失时失败，不新建模拟器或替换工具链。先要求密钥及适用的工作流检查成功，再恢复缓存、实现当前 Nix 环境、按 Rust 范围串行运行 fmt/nixfmt、工作区全 target/feature Clippy 和 Rust 测试，随后 build-for-testing 并运行完整 MoonreadTests。纯 Swift PR 跳过 Rust 规则检查，但 Xcode 仍每次构建 Rust/绑定；分支 push 和手动运行仍全检查。Cargo 使用 `--locked`，测试关闭并行、固定简中、ad-hoc 签名以保留真实 Keychain 接线，每项最多五分钟。
+`Rust and iOS tests` 是唯一 macOS 执行作业，使用 `xcode-27` arm64 镜像，固定 Xcode 27.2（27B52） 与镜像已有的 iOS 27.0 iPhone 18 Pro；缺失时失败，不新建模拟器或替换工具链。先要求密钥及适用的工作流检查成功，再恢复缓存、实现当前 Nix 环境、按 Rust 范围串行运行 fmt/nixfmt、工作区全 target/feature Clippy 和 Rust 测试，随后 build-for-testing 并运行完整 MoonreadTests。纯 Swift PR 跳过 Rust 规则检查，Xcode 仍调用 Cargo 构建静态库。Cargo 使用 `--locked`，测试关闭并行、固定简中、ad-hoc 签名以保留真实 Keychain 接线，每项最多五分钟。
 
 范围判断失败回退全检查。PR 无相关改动时，`Rust and iOS tests` 可按范围跳过。分支 push 的 [TestFlight 来源检查](development.md#testflight-手动-ci)仍要求该作业明确成功。同一 PR 的新提交取消旧运行。
 
@@ -37,7 +37,11 @@ SwiftPM 的共享仓库缓存放在 `build/DerivedData/SwiftPMPackageCache`，�
 
 每个新包（含编译缓存）API 存储量预算为 4 GiB。独立清理作业先确认成功 key 在精确 writer ref 唯一可见且在预算内，再删除同命名空间更旧 ID 及明确列出的旧 Cargo/DerivedData 前缀；保留当前和更晚并发代，保存失败或 API 不可确认时不删旧。新代超预算只移除该新代，保留旧种子并报告容量未通过；不提高额度。迁移清理仅作用于 Actions cache ID，不删除日志、xcresult 或 TestFlight artifact。
 
-缓存不决定测试源码：每次仍运行当前 Cargo、UniFFI 和 Xcode build-for-testing。先移除缓存中的旧 xctestrun，再用 `generic/platform=iOS Simulator` 和 `ARCHS=arm64` 预编译并生成唯一的当前 manifest。选定的模拟器在预编译期间于后台启动，单测执行前用 `simctl bootstatus -b` 等待同一台设备就绪。`test-without-building` 接收本次生成的 manifest 和该设备的 UDID。不会仅因 cache hit 直接测试旧 App，也不按提交时间伪造 mtime。UniFFI 写入临时目录，然后逐文件比对包内的 Swift 接口、C 头与 module map。缺失或变化会停止构建。
+可信 release 的 CI 在 Cargo 和 Xcode 构建检查通过后，把 Rust 输入的内容散列、权限与实际 mtime 记录在同一缓存包内。恢复时只给同一路径、内容和权限一致的工作区文件还原 mtime，变化的文件使用恢复后的当前时间。没有可用记录时沿用 checkout 时间。
+
+只有范围判断成功且没有 Rust 改动的 PR 可以复用 UniFFI 核对结果，并要求当前 Rust 输入、绑定文件和构建配置与同一环境下已核对的缓存记录匹配。其余情况仍构建生成器、在临时目录生成并逐文件比对 Swift 接口、C 头与 module map，缺失或不一致时失败。本机、分支 push、手动 CI 和 TestFlight 都保留完整核对。
+
+每次 iOS 检查均运行当前 Cargo 和 Xcode build-for-testing。先移除缓存中的旧 xctestrun，再用 `generic/platform=iOS Simulator` 和 `ARCHS=arm64` 预编译并生成唯一的当前 manifest。选定的模拟器在预编译期间于后台启动，单测执行前用 `simctl bootstatus -b` 等待同一台设备就绪。`test-without-building` 接收本次生成的 manifest 和该设备的 UDID。
 
 阶段耗时、源码与环境身份、展开尺寸（CAS 与 SwiftPM 单列但不重复计入 DerivedData）、缓存命中、SwiftPM 解析日志、编译缓存诊断、Xcode build timing、Rust/Swift 测试日志和 xcresult 保留七天；restore/save 耗时以 Actions 步骤为准，压缩包大小以 API 为准。冷缓存 PR 只读，热缓存及 Swift/Rust 源码负向对照等待 release push 生成首个种子后执行。本工作流没有打包上传逻辑，不能将性能检查当发布或真实环境验收。
 

@@ -58,8 +58,9 @@ jobs:
                   os.environ['BASE_SHA'] + '...' + os.environ['HEAD_SHA'], '--',
               ]).split(b'\0')
           github = any(path.startswith(b'.github/') for path in paths)
-          rust = any(path.startswith(b'crates/') or
-                     (b'/' not in path and path.startswith((b'Cargo.', b'flake.')))
+          rust = any(path.startswith((b'crates/', b'.cargo/')) or
+                     (b'/' not in path and path.startswith((b'Cargo.', b'flake.'))) or
+                     path in (b'.gitattributes', b'rust-toolchain', b'rust-toolchain.toml')
                      for path in paths)
           site_inputs = (
               b'crates/moonread-core/src/reading/layout.rs',
@@ -181,7 +182,7 @@ jobs:
         id: cache-key
         env:
           ENV_INPUTS: ${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock', 'ios/**/Package.resolved') }}
-          SOURCE_INPUTS: ${{ hashFiles('ios/**', 'crates/**', 'assets/icon/**', '.cargo/**', 'Cargo.toml', 'Cargo.lock', 'flake.nix', 'flake.lock', '.github/workflows/ci.yml') }}
+          SOURCE_INPUTS: ${{ hashFiles('ios/**', 'crates/**', 'assets/icon/**', '.cargo/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain*', 'flake.nix', 'flake.lock', '.gitattributes', 'docs/site/static/schema/moonread-metadata-v1.schema.json', 'docs/site/static/skills/moonread-metadata/examples/**', '.github/workflows/ci.yml', '.github/scripts/cargo-cache.py') }}
         run: |
           python3 - <<'PY'
           import hashlib, json, os, pathlib, subprocess
@@ -219,6 +220,12 @@ jobs:
             ${{ steps.cache-key.outputs.nix-inputs }}
           key: ${{ steps.cache-key.outputs.key }}
           restore-keys: ${{ steps.cache-key.outputs.prefix }}
+      - name: Restore Cargo source mtimes and identify verified UniFFI inputs
+        id: cargo-cache
+        if: ${{ steps.restore-macos.outputs.cache-matched-key != '' }}
+        env:
+          MATCHED_KEY: ${{ steps.restore-macos.outputs.cache-matched-key }}
+        run: python3 .github/scripts/cargo-cache.py restore "$MATCHED_KEY"
       - name: Prepare the current locked Nix environment
         run: |
           start=$SECONDS
@@ -269,6 +276,7 @@ jobs:
         id: ios-build
         env:
           SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+          MOONREAD_CI_SKIP_UNIFFI_CHECK: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.rust == 'false' && steps.cargo-cache.outputs.uniffi-verified == 'true' && 'YES' || 'NO' }}
         run: |
           # Remove only old launch manifests. The current build must create its own.
           python3 - <<'PY'
@@ -335,9 +343,16 @@ jobs:
           if not allowed:
               print('::warning::Nix input cache exceeds its 1.5 GiB expanded budget; do not publish this generation.')
           PY
+      - name: Record the checked Cargo and UniFFI inputs for this cache
+        id: cache-inputs
+        if: ${{ needs.changes.outputs.cache-writer == 'true' && steps.rust-test.outcome == 'success' && steps.cache-budget.outputs.allowed == 'true' && steps.restore-macos.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        env:
+          CACHE_KEY: ${{ steps.cache-key.outputs.key }}
+        run: python3 .github/scripts/cargo-cache.py record "$CACHE_KEY"
       - name: Save the single current-release cache
         id: save-macos
-        if: ${{ needs.changes.outputs.cache-writer == 'true' && steps.rust-test.outcome == 'success' && steps.cache-budget.outputs.allowed == 'true' && steps.restore-macos.outputs.cache-hit != 'true' }}
+        if: ${{ steps.cache-inputs.outcome == 'success' }}
         continue-on-error: true
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

@@ -61,7 +61,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - 构建阶段先进入 Nix devShell，再在本机按 PATH、`$HOME/.cargo/bin/mbx` 的顺序寻找 mbx；找到时用 `mbx build`，否则用 `cargo build`。CI 始终直接用 Cargo。mbx 使用 devShell 中锁定的 Cargo/Rust（含 iOS targets），不选系统 rustup 工具链；UniFFI 绑定生成仍用 Cargo。
 - 构建阶段每次编译当前 Rust 库与 host bindgen 工具，再运行生成器；三段分别输出耗时。target、Debug/Release、链接路径声明在 [Rust.xcconfig](../../../ios/Rust.xcconfig)。
 - 主 App 的 `Prune unused math fonts` 阶段依赖 SwiftPM 已复制的资源 bundle，在 Release 签名前只保留 Latin Modern Math 的 OTF、metrics plist 与三份许可证；上游依赖不变。该阶段每次构建执行，防止增量复制恢复未用字体，缺少必需资源时构建失败。Debug 的 SwiftPM 资源 bundle 有独立临时签名，不做裁剪。
-- UniFFI 绑定由本地 Swift 包 `ios/Packages/MoonreadCoreBindings` 编译。包内提交 Swift 接口、C 头和 module map。Xcode 构建使用锁定生成器和 [uniffi.toml](../../../crates/moonread-core/uniffi.toml)，对当前 SDK 的 Rust 静态库用 `--no-format` 重新生成到临时目录，逐文件比对。接口缺失或内容不一致会使构建失败。ABI 变动时，用同一生成命令更新包内三份接口并提交。
+- UniFFI 绑定由本地 Swift 包 `ios/Packages/MoonreadCoreBindings` 编译。包内提交 Swift 接口、C 头和 module map。Xcode 构建使用锁定生成器和 [uniffi.toml](../../../crates/moonread-core/uniffi.toml)，对当前 SDK 的 Rust 静态库用 `--no-format` 重新生成到临时目录，逐文件比对。接口缺失或内容不一致会使构建失败。只有符合[缓存复用条件](repository.md#单份-macos-缓存)的 PR CI 跳过重新生成。ABI 变动时，用同一生成命令更新包内三份接口并提交。
 - 链接明确指定 `libmoonread_core.a`，避免同目录动态库被优先选中或把 Mac 路径带进 iPhone。
 - 主 App 另外链接 `libmoonread_ai_cover.a`，由同一个 Nix 构建阶段编译。封面 crate 含网页解析，C 接口不参与正文 UniFFI 生成。Swift 包通过 App 注入的封面适配调用该接口。
 - `ios/Packages/MoonreadAI` 是 iOS 18 / Swift 6 本地包。Swift AI SDK、Litext、MarkdownView 版本在其清单声明，由 Xcode workspace 同一 `Package.resolved` 锁定。模型快照和品牌资源随包资源复制。对话列表、聊天布局、输入框、原生消息滚动与 Markdown、AI 设置列表和附件/原文预览界面也在此包，宿主注入路由、许可、实际授权读取和提案执行。测试继续由 Moonread scheme 运行。
